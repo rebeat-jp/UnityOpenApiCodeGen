@@ -27,7 +27,7 @@ namespace ReBeat.OpenApiCodeGen.UI
         public static void ShowExample()
         {
             MenuWindow wnd = GetWindow<MenuWindow>();
-            wnd.titleContent = new GUIContent("Swagger Code Generator");
+            wnd.titleContent = new GUIContent("OpenAPI Code Generator");
         }
 
         public void CreateGUI()
