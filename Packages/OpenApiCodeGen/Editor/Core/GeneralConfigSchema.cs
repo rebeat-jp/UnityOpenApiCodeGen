@@ -9,7 +9,7 @@ namespace ReBeat.OpenApiCodeGen.Core
     public class GeneralConfigSchema
     {
         [JsonIgnore]
-        public static readonly string ConfigFilePath = $"{Environment.CurrentDirectory}/Packages/SwaggerCodeGen/Editor/Core/config.json";
+        public static readonly string ConfigFilePath = $"{Environment.CurrentDirectory}/Packages/OpenApiCodeGen/Editor/Core/config.json";
 
         [JsonProperty]
         public GenerateProvider GenerateProvider { get; private set; }

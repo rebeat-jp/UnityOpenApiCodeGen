@@ -9,7 +9,7 @@ namespace ReBeat.OpenApiCodeGen.Lib
     class OpenApiCodeGenerator : IGenerable
     {
 
-        public static readonly string JarFilePath = $"{Environment.CurrentDirectory}/Packages/SwaggerCodeGen/Editor/Lib/OpenApi/openapi-generator-cli-7.3.0.jar";
+        public static readonly string JarFilePath = $"{Environment.CurrentDirectory}/Packages/OpenApiCodeGen/Editor/Lib/OpenApi/openapi-generator-cli-7.3.0.jar";
         readonly GeneralConfigSchema _generalConfigSchema;
         public OpenApiCodeGenerator(GeneralConfigSchema config)
         {
@@ -31,7 +31,8 @@ namespace ReBeat.OpenApiCodeGen.Lib
                 FileName = _generalConfigSchema.JavaPath,
                 Arguments = arguments,
                 UseShellExecute = false,
-                RedirectStandardOutput = true
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
             };
             using var process = new Process { StartInfo = processInfo };
             try
@@ -42,12 +43,11 @@ namespace ReBeat.OpenApiCodeGen.Lib
             }
             catch (Exception e)
             {
-
                 return new ProcessResponse(128, e.Message);
             }
-
+            var errorMessage = process.StandardError.ReadToEnd();
             var message = process.StandardOutput.ReadToEnd();
-            return new ProcessResponse(process.ExitCode, arguments);
+            return new ProcessResponse(process.ExitCode, process.ExitCode == 0 ? message : errorMessage);
         }
     }
 }

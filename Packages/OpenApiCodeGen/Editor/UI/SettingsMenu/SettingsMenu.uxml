@@ -7,8 +7,8 @@
             <ui:TextField picking-mode="Ignore" label="Java Path" name="JavaPathField" />
             <ui:Label tabindex="-1" display-tooltip-when-elided="true" name="JavaTestResultLabel" style="-unity-text-align: upper-center;" />
             <ui:Button text="Test" display-tooltip-when-elided="true" name="TestButton" />
-            <ui:TextField picking-mode="Ignore" label="API Document Path" name="ApiDocumentPathField" />
-            <ui:TextField picking-mode="Ignore" label="API Client Output Path" name="ApiClientFolderField" />
+            <ui:TextField picking-mode="Ignore" label="Default API Document Path" name="ApiDocumentPathField" />
+            <ui:TextField picking-mode="Ignore" label="Default API Client Output Path" name="ApiClientFolderField" />
         </ui:GroupBox>
         <ui:GroupBox name="OpenApiBox">
             <ui:Label tabindex="-1" text="Open Api Code Gen" display-tooltip-when-elided="true" name="OpenApiTitle" style="font-size: 20px; -unity-font-style: bold; margin-bottom: 8px;" />

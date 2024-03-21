@@ -37,7 +37,7 @@ public class SettingsMenu : EditorWindow
         _presenter = new SettingPresenter();
     }
 
-    [MenuItem("Window/Swagger Code Generator/Settings")]
+    [MenuItem("Window/OpenAPI Code Generator/Settings")]
     public static void ShowExample()
     {
         SettingsMenu wnd = GetWindow<SettingsMenu>();

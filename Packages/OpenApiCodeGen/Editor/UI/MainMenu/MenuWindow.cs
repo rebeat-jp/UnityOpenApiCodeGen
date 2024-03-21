@@ -23,7 +23,7 @@ namespace ReBeat.OpenApiCodeGen.UI
             _presenter = new MenuPresenter();
         }
 
-        [MenuItem("Window/Swagger Code Generator/Generator")]
+        [MenuItem("Window/OpenAPI Code Generator/Generator")]
         public static void ShowExample()
         {
             MenuWindow wnd = GetWindow<MenuWindow>();
@@ -72,7 +72,6 @@ namespace ReBeat.OpenApiCodeGen.UI
             }
 
             var response = _presenter.Generate(apiDocumentFilePathOrUrl, apiClientOutputPath);
-            _presenter.Save(apiDocumentFilePathOrUrl, apiClientOutputPath);
         }
 
     }

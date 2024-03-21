@@ -24,7 +24,7 @@ public class SetupMenu : EditorWindow
         _presenter = new SetupPresenter();
     }
 
-    [MenuItem("Window/Swagger Code Generator/Setup")]
+    [MenuItem("Window/OpenAPI Code Generator/Setup")]
     public static void ShowExample()
     {
         SetupMenu wnd = GetWindow<SetupMenu>();

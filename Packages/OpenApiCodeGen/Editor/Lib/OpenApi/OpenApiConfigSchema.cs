@@ -8,7 +8,7 @@ namespace ReBeat.OpenApiCodeGen.Lib
     public class OpenApiConfigSchema
     {
         [JsonIgnore]
-        public static readonly string ConfigFilePath = $"{Environment.CurrentDirectory}/Packages/SwaggerCodeGen/Editor/Lib/OpenApi/config.json";
+        public static readonly string ConfigFilePath = $"{Environment.CurrentDirectory}/Packages/OpenApiCodeGen/Editor/Lib/OpenApi/config.json";
 
 
         [JsonProperty("packageName")]
