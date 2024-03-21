@@ -11,3 +11,6 @@ You need a Java runtime to work the OpenAPI CodeGen.
 
 **WORKING**
 
+## License
+
+This package is under a [MIT License](github.com/rebeat-jp/UnityOpenApiCodeGen/LICENSE)
