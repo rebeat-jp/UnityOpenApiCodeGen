@@ -1,6 +1,6 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
     <Style src="project://database/Packages/com.rebeat.openapicodegen/Editor/UI/SetupMenu/SetupMenu.uss?fileID=7433441132597879392&amp;guid=95ad4dafff53c44029241f28a46bf7b4&amp;type=3#SetupMenu" />
-    <ui:Label text="Setup Swagger Code Generator" style="-unity-font-style: bold; font-size: 30px;" />
+    <ui:Label text="Setup OpenAPI Code Generator" style="-unity-font-style: bold; font-size: 30px;" />
     <ui:GroupBox name="SetupGroup" style="margin-top: 24px;">
         <ui:Label tabindex="-1" text="1. Java Runtime Config Setup" display-tooltip-when-elided="true" style="-unity-font-style: bold; font-size: 16px; margin-bottom: 16px;" />
         <ui:TextField picking-mode="Ignore" label="Java Path" name="JavaPathField" style="top: auto;" />
