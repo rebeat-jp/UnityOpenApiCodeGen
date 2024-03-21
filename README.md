@@ -11,6 +11,10 @@ You need a Java runtime to work the OpenAPI CodeGen.
 
 **WORKING**
 
+## Ecosystem
+- [OpenAPI CodeGen](https://openapi-generator.tech/)
+- [UniTask](https://github.com/Cysharp/UniTask)
+
 ## License
 
 This package is under a [MIT License](LICENSE)
