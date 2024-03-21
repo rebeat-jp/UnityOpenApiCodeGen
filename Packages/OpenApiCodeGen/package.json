@@ -16,7 +16,7 @@
     "url": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/tree/main/Packages/OpenApiCodeGen"
   },
   "dependencies": {
-    "com.cysharp.unitask": "https://github.com/Cysharp/UniTask.git?path=src/UniTask/Assets/Plugins/UniTask",
+    "com.cysharp.unitask": "https://github.com/Cysharp/UniTask.git?path=src/UniTask/Assets/Plugins/UniTask#release/2.5.1",
     "com.unity.nuget.newtonsoft-json": "3.2.1"
   }
 }
