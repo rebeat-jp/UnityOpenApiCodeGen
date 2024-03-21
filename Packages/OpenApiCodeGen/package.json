@@ -3,7 +3,18 @@
   "version": "0.1.0",
   "displayName": "OpenApiCodeGen",
   "description": "This is a package to make a rest api client c-sharp file from swagger's json and yaml",
+  "author": "Re:Beat",
+  "keywords": [
+    "unity",
+    "openapi",
+    "swagger"
+  ],
   "unity": "2021.3",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/tree/main/Packages/OpenApiCodeGen"
+  },
   "dependencies": {
     "com.cysharp.unitask": "2.5.3",
     "com.unity.nuget.newtonsoft-json": "3.2.1"
