@@ -1,0 +1,8 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
+    <Style src="project://database/Packages/com.rebeat.openapicodegen/Editor/UI/MainMenu/MenuWindow.uss?fileID=7433441132597879392&amp;guid=388ca6004f36749a6b4b09cb6c501c03&amp;type=3#MenuWindow" />
+    <ui:Label tabindex="-1" text="Swagger Code Generator" display-tooltip-when-elided="true" name="Title" style="-unity-font-style: bold; font-size: 28px;" />
+    <ui:TextField picking-mode="Ignore" label="document file path/url" name="DocumentFilePath" binding-path="m_DocumentFilePath" style="white-space: nowrap; text-overflow: ellipsis;" />
+    <ui:TextField picking-mode="Ignore" label="Output path name" readonly="false" binding-path="m_OutputFolderPath" name="OutputFolderPath" />
+    <ui:Button text="Generate" display-tooltip-when-elided="true" binding-path="m_GenerateButton" name="GenerateButton" style="position: relative; bottom: auto; max-width: 600px;" />
+    <ui:ProgressBar value="0" name="Progress" binding-path="m_ProgressValue" style="display: none;" />
+</ui:UXML>

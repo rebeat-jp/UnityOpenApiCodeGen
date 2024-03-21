@@ -1,0 +1,10 @@
+{
+  "name": "com.rebeat.openapicodegen",
+  "version": "0.1.0",
+  "displayName": "OpenApiCodeGen",
+  "description": "This is a package to make a rest api client c-sharp file from swagger's json and yaml",
+  "unity": "2020.3",
+  "dependencies": {
+    "com.cysharp.unitask": "2.5.3"
+  }
+}
