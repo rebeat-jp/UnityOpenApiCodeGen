@@ -81,7 +81,7 @@ public class SettingsMenu : EditorWindow
         root.Q<Button>("TestButton").clicked += HandleOnClickTest;
 
         var (generalSettings, openApiSettings) = _presenter.LoadSetting();
-
+        Debug.Log(GeneralConfigSchema.ConfigFilePath);
         var generalSettingsDto =
         new GeneralSettingsDto(generalSettings.GenerateProvider, generalSettings.JavaPath, generalSettings.ApiDocumentFilePathOrUrl, generalSettings.ApiClientOutputFolderPath);
         InjectGeneralSettings(generalSettingsDto);

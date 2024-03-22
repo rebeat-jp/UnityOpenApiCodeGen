@@ -41,6 +41,10 @@ namespace ReBeat.OpenApiCodeGen.Lib
                 File.WriteAllText(filePath, jsonContent);
                 return value;
             }
+            if (!Directory.Exists(Path.GetDirectoryName(filePath)))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+            }
             using var jsonFile = File.CreateText(filePath);
             jsonFile.Write(jsonContent);
             jsonFile.Flush();

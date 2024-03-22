@@ -1,6 +1,9 @@
 using System;
+using System.IO;
 
 using Newtonsoft.Json;
+
+using UnityEngine;
 
 namespace ReBeat.OpenApiCodeGen.Lib
 {
@@ -8,7 +11,7 @@ namespace ReBeat.OpenApiCodeGen.Lib
     public class OpenApiConfigSchema
     {
         [JsonIgnore]
-        public static readonly string ConfigFilePath = $"{Environment.CurrentDirectory}/Packages/OpenApiCodeGen/Editor/Lib/OpenApi/config.json";
+        public static readonly string ConfigFilePath = Path.Combine(Application.persistentDataPath, "OpenApiCodeGen/openapi-config.json");
 
 
         [JsonProperty("packageName")]
