@@ -19,27 +19,14 @@ namespace ReBeat.OpenApiCodeGen.Model
 
         readonly ReactiveProperty<SetupStatus> _status;
 
-        readonly JsonRepository<GeneralConfigSchema> _generalSettingsRepository;
-        readonly JsonRepository<OpenApiCsharpOption> _openApiSettingsRepository;
+        readonly IRepository<GeneralConfigSchema> _generalSettingsRepository;
+        readonly IRepository<OpenApiCsharpOption> _openApiSettingsRepository;
 
 
         public SetupModel()
         {
-            _generalSettingsRepository = new(
-                Path.Combine(
-                    Directory.GetCurrentDirectory(),
-                    "Assets",
-                    "OpenApiCodeGen",
-                    "general.json")
-                );
-            _openApiSettingsRepository =
-            new(
-                Path.Combine(
-                    Directory.GetCurrentDirectory(),
-                    "Assets",
-                    "OpenApiCodeGen",
-                    "openapi.json")
-                    );
+            _generalSettingsRepository = new GeneralSettingJsonRepository();
+            _openApiSettingsRepository = new OpenApiCsharpSettingJsonRepository();
             SetupMenuDto = new(
                 new SetupMenuDto(
                     GenerateProvider.OpenApi,

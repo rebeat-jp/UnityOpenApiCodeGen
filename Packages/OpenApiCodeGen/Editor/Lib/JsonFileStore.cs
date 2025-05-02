@@ -1,15 +1,16 @@
 #nullable enable
-using System;
+
 using System.IO;
-using Newtonsoft.Json;
 using System.Threading.Tasks;
+
+using Newtonsoft.Json;
 
 namespace ReBeat.OpenApiCodeGen.Lib
 {
-    class JsonRepository<T> where T : class
+    public class JsonFileStore<T> where T : class
     {
         readonly string _savePath;
-        public JsonRepository(string savePath)
+        public JsonFileStore(string savePath)
         {
             _savePath = savePath;
         }
@@ -77,5 +78,6 @@ namespace ReBeat.OpenApiCodeGen.Lib
 
             return _savePath;
         }
+
     }
 }

@@ -19,25 +19,13 @@ namespace ReBeat.OpenApiCodeGen.Model
         public ReadOnlyReactiveProperty<GenerateStatus> Status => _status;
 
         readonly ReactiveProperty<GenerateStatus> _status;
-        readonly JsonRepository<GeneralConfigSchema> _generalSettingsRepository;
-        readonly JsonRepository<OpenApiCsharpOption> _openApiSettingsRepository;
+        readonly IRepository<GeneralConfigSchema> _generalSettingsRepository;
+        readonly IRepository<OpenApiCsharpOption> _openApiSettingsRepository;
+
         public GenerateModel()
         {
-            _generalSettingsRepository = new(
-                Path.Combine(
-                    Directory.GetCurrentDirectory(),
-                    "Assets",
-                    "OpenApiCodeGen",
-                    "general.json")
-                );
-            _openApiSettingsRepository =
-            new(
-                Path.Combine(
-                    Directory.GetCurrentDirectory(),
-                    "Assets",
-                    "OpenApiCodeGen",
-                    "openapi.json")
-                    );
+            _generalSettingsRepository = new GeneralSettingJsonRepository();
+            _openApiSettingsRepository = new OpenApiCsharpSettingJsonRepository();
 
             var generalConfig = _generalSettingsRepository.Read();
             var initialDto = generalConfig != null
