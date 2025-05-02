@@ -1,36 +1,47 @@
 #nullable enable
 
+using System.IO;
+
+using Cysharp.Threading.Tasks;
+
+using R3;
+
 using ReBeat.OpenApiCodeGen.Core;
+using ReBeat.OpenApiCodeGen.Dto;
 using ReBeat.OpenApiCodeGen.Lib;
+using ReBeat.OpenApiCodeGen.Model;
 
 namespace ReBeat.OpenApiCodeGen.Presenter
 {
-    public class SetupPresenter : ISetupPresenter
+    internal class SetupPresenter : ISetupPresenter
     {
-
-
-        public void OnEnable()
+        readonly SetupModel _setupModel;
+        SetupMenu? _setupMenu;
+        public SetupPresenter()
         {
+            _setupModel = new();
         }
 
-
-        public ProcessResponse RunJavaTest(string javaPath)
+        public void Bind(SetupMenu setupMenu)
         {
-            var javaRuntimeTester = new JavaRuntimeTester();
-
-            return javaRuntimeTester.Test(javaPath);
+            _setupMenu = setupMenu;
+            _setupMenu.SetOnChangeHandler((dto) => _setupModel.SetupMenuDto.Value = dto);
+            _setupModel.Status.Subscribe(s => _setupMenu.SetProgressStatus(s));
         }
 
-        public void SetUp(string javaPath, GenerateProvider generateProvider)
+        public bool CheckRunnableDockerPath()
         {
-            var generalSettingsRepository = new JsonRepository<GeneralConfigSchema>();
-            var openApiSettingsRepository = new JsonRepository<OpenApiConfigSchema>();
-            generalSettingsRepository.Save(
-                GeneralConfigSchema.ConfigFilePath,
-                new GeneralConfigSchema(generateProvider, javaPath)
-                );
+            return _setupModel.CheckRunnableDockerPath();
+        }
 
-            openApiSettingsRepository.Save(OpenApiConfigSchema.ConfigFilePath, new OpenApiConfigSchema());
+        public void OnDestroy()
+        {
+            _setupModel.Dispose();
+        }
+
+        public void Setup()
+        {
+            _setupModel.Setup();
         }
     }
 }

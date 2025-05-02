@@ -1,53 +1,70 @@
 #nullable enable
 using System;
-using System.Diagnostics;
+using System.IO;
+
+using Cysharp.Threading.Tasks;
 
 using ReBeat.OpenApiCodeGen.Core;
 
 namespace ReBeat.OpenApiCodeGen.Lib
 {
-    class OpenApiCodeGenerator : IGenerable
+    internal class OpenApiCodeGenerator : IGenerable
     {
 
-        public static readonly string JarFilePath = $"{Environment.CurrentDirectory}/Packages/OpenApiCodeGen/Editor/Lib/OpenApi/openapi-generator-cli-7.3.0.jar";
-        readonly GeneralConfigSchema _generalConfigSchema;
-        public OpenApiCodeGenerator(GeneralConfigSchema config)
+        public OpenApiCodeGenerator()
         {
-            _generalConfigSchema = config;
         }
 
-        public ProcessResponse Generate(string documentFilePath, string outputFolderPath)
+        public ProcessResponse Generate(SettingSchema settingSchema)
         {
-            if (string.IsNullOrEmpty(outputFolderPath))
+            var generalConfigSchema = settingSchema.GeneralSettings;
+            var openApiConfigSchema = settingSchema.OpenApiCsharpOption;
+
+
+
+            if (openApiConfigSchema == null)
             {
-                throw new ArgumentException("invalid output folder path");
+                return new ProcessResponse(ExitStatus.FatalError, "Failed to load OpenAPI config data.");
+            }
+            if (!Directory.Exists(generalConfigSchema.ApiClientOutputFolderPath))
+            {
+                Directory.CreateDirectory(generalConfigSchema.ApiClientOutputFolderPath);
             }
 
-
-            var arguments = $"-jar \"{JarFilePath}\" generate -i \"{documentFilePath}\" -g csharp -c \"{OpenApiConfigSchema.ConfigFilePath}\" -o \"{outputFolderPath}\" ";
-
-            var processInfo = new ProcessStartInfo
+            var dockerProcess = new DockerProcess
             {
-                FileName = _generalConfigSchema.JavaPath,
-                Arguments = arguments,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
+                Path = generalConfigSchema.DockerPath
             };
-            using var process = new Process { StartInfo = processInfo };
-            try
-            {
-                process.Start();
-                process.WaitForExit();
+            var arguments =
+            $"run --rm -v \"{generalConfigSchema.ApiClientOutputFolderPath}:/local\" openapitools/openapi-generator-cli generate -i \"{generalConfigSchema.ApiDocumentFilePathOrUrl}\" -g \"csharp\" -o \"/local\"";
 
-            }
-            catch (Exception e)
+            return dockerProcess.Send(arguments);
+
+        }
+
+        public async UniTask<ProcessResponse> GenerateAsync(SettingSchema settingSchema)
+        {
+            var generalConfigSchema = settingSchema.GeneralSettings;
+            var openApiConfigSchema = settingSchema.OpenApiCsharpOption;
+
+            if (openApiConfigSchema == null)
             {
-                return new ProcessResponse(128, e.Message);
+                return new ProcessResponse(ExitStatus.FatalError, "Failed to load OpenAPI config data.");
             }
-            var errorMessage = process.StandardError.ReadToEnd();
-            var message = process.StandardOutput.ReadToEnd();
-            return new ProcessResponse(process.ExitCode, process.ExitCode == 0 ? message : errorMessage);
+            if (!Directory.Exists(generalConfigSchema.ApiClientOutputFolderPath))
+            {
+                Directory.CreateDirectory(generalConfigSchema.ApiClientOutputFolderPath);
+            }
+
+            var dockerProcess = new DockerProcess
+            {
+                Path = generalConfigSchema.DockerPath
+            };
+            var arguments =
+            $"run --rm -v \"{generalConfigSchema.ApiClientOutputFolderPath}:/local\" openapitools/openapi-generator-cli generate -i \"{generalConfigSchema.ApiDocumentFilePathOrUrl}\" -g \"csharp\" -o \"/local\"";
+
+            return await dockerProcess.SendAsync(arguments);
+
         }
     }
 }

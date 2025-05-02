@@ -2,15 +2,15 @@ using ReBeat.OpenApiCodeGen.Lib;
 
 namespace ReBeat.OpenApiCodeGen.Core
 {
-    public class SettingSchema
+    internal class SettingSchema
     {
         public GeneralConfigSchema GeneralSettings { get; private set; }
-        public OpenApiConfigSchema OpenApiSettings { get; private set; }
+        public OpenApiCsharpOption OpenApiCsharpOption { get; private set; }
 
-        public SettingSchema(GeneralConfigSchema generalSettings, OpenApiConfigSchema openApiSettings)
+        public SettingSchema(GeneralConfigSchema generalSettings, OpenApiCsharpOption openApiCsharpOption)
         {
             this.GeneralSettings = generalSettings;
-            this.OpenApiSettings = openApiSettings;
+            this.OpenApiCsharpOption = openApiCsharpOption;
         }
 
     }

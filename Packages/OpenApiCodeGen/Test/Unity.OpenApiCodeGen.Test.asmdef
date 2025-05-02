@@ -1,0 +1,18 @@
+{
+    "name": "Unity.OpenApiCodeGen.Test",
+    "rootNamespace": "",
+    "references": [
+        "GUID:14df82094cbab4445b7c82b7c71fb30d"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

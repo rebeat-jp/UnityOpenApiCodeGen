@@ -1,34 +1,65 @@
 #nullable enable
 using System;
-using System.IO;
 
-using Newtonsoft.Json;
+using ReBeat.OpenApiCodeGen.Lib;
 
 using UnityEngine;
 
 namespace ReBeat.OpenApiCodeGen.Core
 {
-    [JsonObject]
-    public class GeneralConfigSchema
+    public class GeneralConfigSchema : IScriptable<GeneralConfigSchema>
     {
-        [JsonIgnore]
-        public static readonly string ConfigFilePath = Path.Combine(Application.persistentDataPath, "OpenApiCodeGen/config.json");
 
-        [JsonProperty]
-        public GenerateProvider GenerateProvider { get; private set; }
-        [JsonProperty]
-        public string JavaPath { get; private set; }
-        [JsonProperty]
-        public string ApiDocumentFilePathOrUrl { get; private set; }
-        [JsonProperty]
-        public string ApiClientOutputFolderPath { get; private set; }
+        public GenerateProvider GenerateProvider { get; set; }
+        public string DockerPath { get; set; }
+        public string ApiDocumentFilePathOrUrl { get; set; }
+        public string ApiClientOutputFolderPath { get; set; }
+        public string CacheFolderPath { get; set; }
 
-        public GeneralConfigSchema(GenerateProvider generateProvider = GenerateProvider.OpenApi, string javaPath = "", string apiDocumentFilePathOrUrl = "", string apiClientOutputFolderPath = "")
+        public GeneralConfigSchema(GenerateProvider generateProvider = GenerateProvider.OpenApi, string dockerPath = "", string apiDocumentFilePathOrUrl = "", string apiClientOutputFolderPath = "", string cacheFolderPath = "")
         {
             GenerateProvider = generateProvider;
-            JavaPath = javaPath;
+            DockerPath = dockerPath;
             ApiDocumentFilePathOrUrl = apiDocumentFilePathOrUrl;
             ApiClientOutputFolderPath = apiClientOutputFolderPath;
+            CacheFolderPath = cacheFolderPath;
         }
+
+        public GeneralConfigSchema()
+        {
+            GenerateProvider = GenerateProvider.OpenApi;
+            DockerPath = "";
+            ApiDocumentFilePathOrUrl = "";
+            ApiClientOutputFolderPath = "";
+            CacheFolderPath = "";
+
+        }
+
+        public ScriptableObject ToScriptable()
+        {
+            var value = ScriptableObject.CreateInstance<GeneralConfigSchemaAsScriptableObject>();
+            return value;
+
+        }
+
+        public GeneralConfigSchema FromScriptable(ScriptableObject scriptableObject)
+        {
+            return scriptableObject is not GeneralConfigSchemaAsScriptableObject generalConfigSchemaAsScriptableObject
+                ? throw new ArgumentException()
+                : new GeneralConfigSchema()
+                {
+                    GenerateProvider = generalConfigSchemaAsScriptableObject.GenerateProvider,
+                    DockerPath = generalConfigSchemaAsScriptableObject.DockerPath,
+                    ApiDocumentFilePathOrUrl = generalConfigSchemaAsScriptableObject.DefaultApiDocumentFilePathOrUrl,
+                    ApiClientOutputFolderPath = generalConfigSchemaAsScriptableObject.DefaultApiClientOutputFolderPath,
+                    CacheFolderPath = generalConfigSchemaAsScriptableObject.CacheFolderPath,
+                };
+        }
+
+        public Type GetScriptableType()
+        {
+            return typeof(GeneralConfigSchemaAsScriptableObject);
+        }
+
     }
 }

@@ -1,11 +1,15 @@
+using System;
+
 using ReBeat.OpenApiCodeGen.Core;
+using ReBeat.OpenApiCodeGen.Dto;
 
 namespace ReBeat.OpenApiCodeGen.Presenter
 {
     interface ISetupPresenter
     {
-        ProcessResponse RunJavaTest(string javaPath);
-        void OnEnable();
-        void SetUp(string javaPath, GenerateProvider generateProvider);
+        void Bind(SetupMenu setupMenu);
+        void Setup();
+        bool CheckRunnableDockerPath();
+        void OnDestroy();
     }
 }

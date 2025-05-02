@@ -1,6 +1,10 @@
 #nullable enable
 
+using System;
+
 using ReBeat.OpenApiCodeGen.Core;
+using ReBeat.OpenApiCodeGen.Dto;
+using ReBeat.OpenApiCodeGen.Model;
 using ReBeat.OpenApiCodeGen.Presenter;
 using ReBeat.OpenApiCodeGen.UI;
 
@@ -15,10 +19,11 @@ public class SetupMenu : EditorWindow
     private VisualTreeAsset? _visualTreeAsset = default;
 
     readonly ISetupPresenter _presenter;
-
-    TextField? _javaPathField;
+    Label? _messageLabel;
     EnumField? _providerField;
-    Label? _javaTestResultText;
+    TextField? _dockerPathField;
+    Button? _checkRunnableDockerButton;
+    Button? _setupButton;
     public SetupMenu()
     {
         _presenter = new SetupPresenter();
@@ -29,6 +34,47 @@ public class SetupMenu : EditorWindow
     {
         SetupMenu wnd = GetWindow<SetupMenu>();
         wnd.titleContent = new GUIContent("SetupMenu");
+    }
+
+    internal void SetOnChangeHandler(Action<SetupMenuDto> onChangeHandler)
+    {
+        if (_dockerPathField == null || _providerField == null)
+        {
+            return;
+        }
+
+        _dockerPathField.RegisterCallback<FocusOutEvent>((e) =>
+        {
+            var dto = new SetupMenuDto((GenerateProvider)_providerField.value, _dockerPathField.text);
+            onChangeHandler(dto);
+        });
+
+        _providerField.RegisterValueChangedCallback(e =>
+        {
+            var dto = new SetupMenuDto((GenerateProvider)e.newValue, _dockerPathField.text);
+            onChangeHandler(dto);
+
+        });
+    }
+
+    internal void SetProgressStatus(SetupStatus setupStatus)
+    {
+        if (setupStatus.Message != null)
+        {
+            var textColor = setupStatus.Type switch
+            {
+                SetupStatusType.None => new Color(r: 1, g: 1, b: 1),
+                SetupStatusType.Pending => new Color(r: 1, g: 1, b: 1),
+                SetupStatusType.Success => new Color(r: 1, g: 1, b: 1),
+                SetupStatusType.Error => new Color(r: 1, g: 0, b: 0),
+                _ => new Color(r: 1, g: 1, b: 1),
+            };
+            DisplayMessage(setupStatus.Message, textColor);
+        }
+
+        var isPending = setupStatus.Type == SetupStatusType.Pending;
+
+        SetOperable(isPending);
     }
 
     public void CreateGUI()
@@ -46,67 +92,55 @@ public class SetupMenu : EditorWindow
         VisualElement labelFromUXML = _visualTreeAsset.Instantiate();
         root.Add(labelFromUXML);
 
-        _javaTestResultText = root.Q<Label>("JavaTestResultText");
-        _javaPathField = root.Q<TextField>("JavaPathField");
+        _messageLabel = root.Q<Label>("ErrorMessageLabel");
+        _dockerPathField = root.Q<TextField>("DockerPathField");
         _providerField = root.Q<EnumField>("ProviderField");
+        _checkRunnableDockerButton = root.Q<Button>("CheckRunnableDockerButton");
+        _setupButton = root.Q<Button>("SetupButton");
 
-        root.Q<Button>("TestButton").clicked += OnRunTest;
-        root.Q<Button>("SetupButton").clicked += OnSetup;
+        _setupButton.clicked += OnSetup;
+        _checkRunnableDockerButton.clicked += CheckRunnableDockerPath;
 
+        _presenter.Bind(this);
     }
 
-    void OnEnable()
+
+    void SetOperable(bool isOperable)
     {
-        _presenter.OnEnable();
-    }
-
-
-    void OnRunTest()
-    {
-        if (_javaPathField is null)
+        if (_dockerPathField != null)
         {
-            Debug.LogWarning("Java Path Field is null");
-            return;
-        }
-        var result = _presenter.RunJavaTest(_javaPathField.value);
-
-        switch (result.ExitStatus)
-        {
-            case 0:
-                DisplayJavaTestResultLabel("OK! This is valid path.", StyleStatus.Success);
-                break;
-            default:
-                DisplayJavaTestResultLabel("NG! This is invalid Path.", StyleStatus.Error);
-                break;
+            _dockerPathField.isReadOnly = isOperable;
         }
     }
 
-    void DisplayJavaTestResultLabel(string content, StyleStatus status)
-    {
-        if (_javaTestResultText is null)
-        {
-            Debug.LogWarning("JavaTestResultLabel is empty");
-            return;
-        }
-
-        _javaTestResultText.text = content;
-        _javaTestResultText.style.color = status switch
-        {
-            StyleStatus.Success => Color.green,
-            StyleStatus.Info => Color.white,
-            StyleStatus.Warn => Color.yellow,
-            StyleStatus.Error => Color.red,
-            _ => throw new System.NotImplementedException(),
-        }; ;
-    }
 
     void OnSetup()
     {
-        if (_javaPathField is null || _providerField is null)
+        _presenter.Setup();
+    }
+
+    void DisplayMessage(string message, Color textColor)
+    {
+        if (_messageLabel == null)
         {
-            Debug.LogWarning("Field is null");
             return;
         }
-        _presenter.SetUp(_javaPathField.value, (GenerateProvider)_providerField.value);
+        _messageLabel.text = message;
+        _messageLabel.style.color = textColor;
+    }
+
+
+    void CheckRunnableDockerPath()
+    {
+        var isRunnable = _presenter.CheckRunnableDockerPath();
+        if (_checkRunnableDockerButton != null)
+        {
+            _checkRunnableDockerButton.text = isRunnable ? "OK" : "NG";
+        }
+    }
+
+    void OnDestroy()
+    {
+        _presenter.OnDestroy();
     }
 }

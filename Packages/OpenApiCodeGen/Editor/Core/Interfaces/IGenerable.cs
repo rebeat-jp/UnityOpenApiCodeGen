@@ -1,7 +1,10 @@
+using Cysharp.Threading.Tasks;
+
 namespace ReBeat.OpenApiCodeGen.Core
 {
     interface IGenerable
     {
-        ProcessResponse Generate(string documentFilePath, string outputFolderPath);
+        ProcessResponse Generate(SettingSchema settingSchema);
+        UniTask<ProcessResponse> GenerateAsync(SettingSchema settingSchema);
     }
 }

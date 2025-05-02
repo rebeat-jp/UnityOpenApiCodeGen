@@ -2,14 +2,12 @@
     <Style src="project://database/Packages/com.rebeat.openapicodegen/Editor/UI/SetupMenu/SetupMenu.uss?fileID=7433441132597879392&amp;guid=95ad4dafff53c44029241f28a46bf7b4&amp;type=3#SetupMenu" />
     <ui:Label text="Setup OpenAPI Code Generator" style="-unity-font-style: bold; font-size: 30px;" />
     <ui:GroupBox name="SetupGroup" style="margin-top: 24px;">
-        <ui:Label tabindex="-1" text="1. Java Runtime Config Setup" display-tooltip-when-elided="true" style="-unity-font-style: bold; font-size: 16px; margin-bottom: 16px;" />
-        <ui:TextField picking-mode="Ignore" label="Java Path" name="JavaPathField" style="top: auto;" />
-        <ui:Label tabindex="-1" display-tooltip-when-elided="true" name="JavaTestResultText" style="-unity-font-style: bold; -unity-text-align: upper-center;" />
-        <ui:Button text="Test" display-tooltip-when-elided="true" name="TestButton" style="min-width: 300px; width: 80%; margin-top: 15px; align-self: center;" />
+        <ui:Label tabindex="-1" text="1. Choose Generate Provider" display-tooltip-when-elided="true" style="-unity-font-style: bold; font-size: 16px; margin-bottom: 16px;" />
+        <ui:EnumField label="Provider" type="ReBeat.OpenApiCodeGen.Core.GenerateProvider, Unity.OpenApiCodeGen.Editor" name="ProviderField" />
+        <ui:Label tabindex="-1" text="2. Input Docker application full path" display-tooltip-when-elided="true" style="-unity-font-style: bold; font-size: 16px; margin-bottom: 16px;" />
+        <ui:TextField picking-mode="Ignore" label="Docker fullpath" auto-correction="false" name="DockerPathField" />
+        <ui:Button text="click to check path" display-tooltip-when-elided="true" name="CheckRunnableDockerButton" focusable="true" />
     </ui:GroupBox>
-    <ui:GroupBox name="TestGroup" style="margin-top: 24px;">
-        <ui:Label tabindex="-1" text="2. Test Run Runtime" display-tooltip-when-elided="true" style="-unity-font-style: bold; font-size: 16px; margin-bottom: 16px;" />
-        <ui:EnumField label="Tool" type="ReBeat.OpenApiCodeGen.Core.GenerateProvider, Unity.SwaggerCodeGen.Editor" name="ProviderField" include-obsolete-values="false" />
-        <ui:Button text="Setup" display-tooltip-when-elided="true" name="SetupButton" style="margin-top: 16px; width: 80%; min-width: 300px; align-self: center;" />
-    </ui:GroupBox>
+    <ui:Label tabindex="-1" display-tooltip-when-elided="true" name="ErrorMessageLabel" style="margin-top: 16px; -unity-text-align: upper-center; white-space: normal;" />
+    <ui:Button text="Setup" display-tooltip-when-elided="true" name="SetupButton" style="margin-top: 16px; width: 80%; min-width: 300px; align-self: center;" />
 </ui:UXML>

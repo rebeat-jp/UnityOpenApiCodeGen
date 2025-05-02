@@ -8,71 +8,74 @@ namespace ReBeat.OpenApiCodeGen.Lib
 {
     class JsonRepository<T> where T : class
     {
-        public T? Read(string filePath)
+        readonly string _savePath;
+        public JsonRepository(string savePath)
         {
-            if (!File.Exists(filePath))
+            _savePath = savePath;
+        }
+
+        public T? Read()
+        {
+            if (!File.Exists(_savePath))
             {
                 return null;
             }
-            var jsonContent = File.ReadAllText(filePath);
-            return JsonConvert.DeserializeObject<T>(jsonContent)
-            ?? throw new ArgumentException($"Cannot convert to {typeof(T).Name}");
+            var jsonContent = File.ReadAllText(_savePath);
+            return JsonConvert.DeserializeObject<T>(jsonContent);
         }
 
-        async public Task<T?> ReadAsync(string filePath)
+        async public Task<T?> ReadAsync()
         {
-            if (!File.Exists(filePath))
+            if (!File.Exists(_savePath))
             {
                 return null;
             }
 
-            var jsonContent = await File.ReadAllTextAsync(filePath);
-            return JsonConvert.DeserializeObject<T>(jsonContent)
-                  ?? throw new ArgumentException($"Cannot convert to {typeof(T).Name}");
-
+            var jsonContent = await File.ReadAllTextAsync(_savePath);
+            return JsonConvert.DeserializeObject<T>(jsonContent);
         }
 
-        public T Save(string filePath, T value)
+        public T Save(T value)
         {
             var jsonContent = JsonConvert.SerializeObject(value);
 
-            if (File.Exists(filePath))
+            if (File.Exists(_savePath))
             {
-                File.WriteAllText(filePath, jsonContent);
+                File.WriteAllText(_savePath, jsonContent);
                 return value;
             }
-            if (!Directory.Exists(Path.GetDirectoryName(filePath)))
+            if (!Directory.Exists(Path.GetDirectoryName(_savePath)))
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                Directory.CreateDirectory(Path.GetDirectoryName(_savePath));
             }
-            using var jsonFile = File.CreateText(filePath);
+            using var jsonFile = File.CreateText(_savePath);
             jsonFile.Write(jsonContent);
             jsonFile.Flush();
             return value;
         }
-        async public Task<T> SaveAsync(string filePath, T value)
+        async public Task<T> SaveAsync(T value)
         {
             var jsonContent = JsonConvert.SerializeObject(value);
 
-            if (File.Exists(filePath))
+            if (File.Exists(_savePath))
             {
-                await File.WriteAllTextAsync(filePath, jsonContent);
+                await File.WriteAllTextAsync(_savePath, jsonContent);
                 return value;
             }
-            using var jsonFile = File.CreateText(filePath);
+            using var jsonFile = File.CreateText(_savePath);
             await jsonFile.WriteAsync(jsonContent);
             await jsonFile.FlushAsync();
             return value;
         }
-        public string? Delete(string filePath)
+        public string? Delete()
         {
-            if (!File.Exists(filePath))
+            if (!File.Exists(_savePath))
             {
                 return null;
             }
-            File.Delete(filePath);
+            File.Delete(_savePath);
 
-            return filePath;
+            return _savePath;
         }
     }
 }

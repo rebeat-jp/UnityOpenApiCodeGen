@@ -1,61 +1,45 @@
 #nullable enable
 using System;
+using System.IO;
+
+using Cysharp.Threading.Tasks;
+
+using R3;
 
 using ReBeat.OpenApiCodeGen.Core;
 using ReBeat.OpenApiCodeGen.Lib;
+using ReBeat.OpenApiCodeGen.Model;
+using ReBeat.OpenApiCodeGen.UI;
 
 
 namespace ReBeat.OpenApiCodeGen.Presenter
 {
     public class MenuPresenter : IGenerablePresenter
     {
-        readonly JsonRepository<GeneralConfigSchema> _generalConfigSchemaRepository;
-
+        readonly GenerateModel _generateModel;
+        MenuWindow? _menuWindow;
         public MenuPresenter()
         {
-            _generalConfigSchemaRepository = new();
+            _generateModel = new();
         }
 
-        public GeneralConfigSchema GetGenerateConfig()
+        public void Bind(MenuWindow menuWindow)
         {
-            return _generalConfigSchemaRepository.Read(GeneralConfigSchema.ConfigFilePath)
-            ?? _generalConfigSchemaRepository.Save(GeneralConfigSchema.ConfigFilePath, new GeneralConfigSchema());
+            _menuWindow = menuWindow;
 
+            _menuWindow.SetOnChangeHandler(dto => _generateModel.GenerateDto.Value = dto);
+            _generateModel.GenerateDto.Subscribe((dto) => _menuWindow.SetFormValue(dto));
+            _generateModel.Status.Subscribe(status => _menuWindow.SetGenerateStatus(status));
         }
 
-        public ProcessResponse Generate(string documentFilePath, string outputFolderPath)
+        public void Generate()
         {
-            var generalConfig = _generalConfigSchemaRepository.Read(GeneralConfigSchema.ConfigFilePath)
-            ?? _generalConfigSchemaRepository.Save(GeneralConfigSchema.ConfigFilePath, new GeneralConfigSchema());
-            var generable = new OpenApiCodeGenerator(generalConfig);
-
-            var currentDirectory = Environment.CurrentDirectory;
-
-
-            var outputPath = !string.IsNullOrEmpty(outputFolderPath) ? outputFolderPath : $"{currentDirectory}/Packages/SwaggerCodeGen/Runtime/Generate/";
-
-            var response = generable.Generate(documentFilePath, outputPath);
-            return response;
+            _generateModel.GenerateAsync().Forget();
         }
 
-        public GeneralConfigSchema Save(string apiDocumentFilePathOrUrl, string apiClientOutputFolderPath)
+        public void OnDestroy()
         {
-            var generalSettings = _generalConfigSchemaRepository.Read(GeneralConfigSchema.ConfigFilePath);
-            if (generalSettings is null)
-            {
-                var defaultSaveResult = _generalConfigSchemaRepository.Save(GeneralConfigSchema.ConfigFilePath,
-                new GeneralConfigSchema(GenerateProvider.OpenApi, "", apiDocumentFilePathOrUrl, apiClientOutputFolderPath)
-                );
-
-                return defaultSaveResult;
-            }
-
-            var result = _generalConfigSchemaRepository.Save(GeneralConfigSchema.ConfigFilePath,
-            new GeneralConfigSchema(generalSettings.GenerateProvider, generalSettings.JavaPath, apiDocumentFilePathOrUrl, apiClientOutputFolderPath)
-            );
-
-            return result;
-
+            _generateModel.Dispose();
         }
     }
 }
