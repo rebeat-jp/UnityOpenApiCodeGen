@@ -142,7 +142,7 @@ internal class SettingMenu : EditorWindow
         // General
         _generateProviderField = root.Q<EnumField>("GenerateProviderField");
         _dockerPathField = root.Q<TextField>("DockerPathField");
-        _defaultApiClientOutputFolderPathField = root.Q<TextField>("DefaultApiClientOutputFolderPathField");
+        _defaultApiClientOutputFolderPathField = root.Q<TextField>("DefaultOutputFolderPathField");
         _defaultApiDocumentFilePathOrUrlField = root.Q<TextField>("DefaultApiDocumentFilePathOrUrlField");
 
         // Open API

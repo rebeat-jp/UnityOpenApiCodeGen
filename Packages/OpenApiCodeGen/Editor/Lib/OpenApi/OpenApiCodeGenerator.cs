@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.IO;
+using System.Text;
 
 using Cysharp.Threading.Tasks;
 
@@ -35,10 +36,18 @@ namespace ReBeat.OpenApiCodeGen.Lib
             {
                 Path = generalConfigSchema.DockerPath
             };
-            var arguments =
-            $"run --rm -v \"{generalConfigSchema.ApiClientOutputFolderPath}:/local\" openapitools/openapi-generator-cli generate -i \"{generalConfigSchema.ApiDocumentFilePathOrUrl}\" -g \"csharp\" -o \"/local\"";
+            var openApiConfigJsonFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Assets", "OpenApiCodeGen", "openapi.json");
 
-            return dockerProcess.Send(arguments);
+            var argumentsBuilder = new StringBuilder(1000);
+            argumentsBuilder.Append("run --rm");
+            argumentsBuilder.Append($"-v \"{generalConfigSchema.ApiClientOutputFolderPath}:/local\" ");
+            argumentsBuilder.Append($"-v \"{openApiConfigJsonFilePath}:/config/config.json\" ");
+            argumentsBuilder.Append("openapitools/openapi-generator-cli generate ");
+            argumentsBuilder.Append($"-i \"{generalConfigSchema.ApiDocumentFilePathOrUrl}\" ");
+            argumentsBuilder.Append("-g \"csharp\" -o \"/local\" ");
+            argumentsBuilder.Append("-c /config/config.json");
+
+            return dockerProcess.Send(argumentsBuilder.ToString());
 
         }
 
@@ -62,8 +71,18 @@ namespace ReBeat.OpenApiCodeGen.Lib
             };
             var arguments =
             $"run --rm -v \"{generalConfigSchema.ApiClientOutputFolderPath}:/local\" openapitools/openapi-generator-cli generate -i \"{generalConfigSchema.ApiDocumentFilePathOrUrl}\" -g \"csharp\" -o \"/local\"";
+            var openApiConfigJsonFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Assets", "OpenApiCodeGen", "openapi.json");
 
-            return await dockerProcess.SendAsync(arguments);
+            var argumentsBuilder = new StringBuilder(1000);
+            argumentsBuilder.Append("run ");
+            argumentsBuilder.Append($"-v \"{generalConfigSchema.ApiClientOutputFolderPath}:/local\" ");
+            argumentsBuilder.Append($"-v \"{openApiConfigJsonFilePath}:/config/config.json\" ");
+            argumentsBuilder.Append("openapitools/openapi-generator-cli generate ");
+            argumentsBuilder.Append($"-i \"{generalConfigSchema.ApiDocumentFilePathOrUrl}\" ");
+            argumentsBuilder.Append("-g \"csharp\" -o \"/local\" ");
+            argumentsBuilder.Append("-c /config/config.json");
+
+            return await dockerProcess.SendAsync(argumentsBuilder.ToString());
 
         }
     }

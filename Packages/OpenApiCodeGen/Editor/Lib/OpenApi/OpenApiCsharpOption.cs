@@ -27,7 +27,7 @@ namespace ReBeat.OpenApiCodeGen.Lib
         [JsonProperty("licenseId")]
         public string? LicenseId = null;
         [JsonProperty("modelPropertyNaming")]
-        public string ModelPropertyNaming = "";
+        public string ModelPropertyNaming = "PascalCase";
         [JsonProperty("netCoreProjectFile")]
         public bool NetCoreProjectFile = false;
         [JsonProperty("nonPublicApi")]
