@@ -1,4 +1,38 @@
-<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
     <Style src="project://database/Packages/com.rebeat.openapicodegen/Editor/UI/SettingMenu/SettingMenu.uss?fileID=7433441132597879392&amp;guid=85d61e68e42234629a04d6023ac5024b&amp;type=3#SettingMenu" />
-    <ui:ListView focusable="true" />
+    <ui:ScrollView>
+        <ui:Label tabindex="-1" text="Setting Menu" display-tooltip-when-elided="true" style="font-size: 30px; -unity-font-style: bold;" />
+        <ui:Foldout text="General" name="GeneralFoldout" style="font-size: 14px;">
+            <ui:EnumField label="Generate Provider" type="ReBeat.OpenApiCodeGen.Core.GenerateProvider, Unity.OpenApiCodeGen.Editor" name="GenerateProviderField" />
+            <ui:TextField picking-mode="Ignore" label="Docker Path" name="DockerPathField" />
+            <ui:TextField picking-mode="Ignore" label="Default API Document File URL" name="DefaultApiDocumentFilePathOrUrlField" />
+            <ui:TextField picking-mode="Ignore" label="Default Output Folder Path" name="DefaultOutputFolderPathField" />
+        </ui:Foldout>
+        <ui:Foldout text="Open API" name="OpenApiFoldout" style="font-size: 14px;">
+            <ui:Toggle label="Allow Unicode Identifiers" name="AllowUnicodeIdentifiersField" />
+            <ui:TextField picking-mode="Ignore" label="ApiName" name="ApiNameField" />
+            <ui:Toggle label="Case Insensitive Response Headers" name="CaseInsensitiveResponseHeadersField" />
+            <ui:Toggle label="Conditional Serialization" name="ConditionalSerializationField" />
+            <ui:Toggle label="Disallow Additional Properties If Not Present" name="DisallowAdditionalPropertiesIfNotPresentField" value="false" style="text-overflow: clip;" />
+            <ui:Toggle label="Equatable" name="EquatableField" style="display: flex; visibility: visible; justify-content: flex-start;" />
+            <ui:Toggle label="Hide Generation Timestamp" name="HideGenerationTimestampField" />
+            <ui:TextField picking-mode="Ignore" label="Interface Prefix" name="InterfacePrefixField" />
+            <ui:TextField picking-mode="Ignore" label="Library" name="LibraryField" />
+            <ui:TextField picking-mode="Ignore" label="License ID" name="LicenseIdField" />
+            <ui:TextField picking-mode="Ignore" label="Model Property Naming" name="ModelPropertyNamingField" />
+            <ui:Toggle label=".Net Core Project File" name="NetCoreProjectFileField" />
+            <ui:Toggle label="Non Public Api" name="NonPublicApiField" />
+            <ui:Toggle label="Nullable Reference Types" name="NullableReferenceTypesField" />
+            <ui:Toggle label="Optional Emit Default Values" name="OptionalEmitDefaultValuesField" />
+            <ui:Toggle label="Optional Method Argument" name="OptionalMethodArgumentField" />
+            <ui:Toggle label="Optional Assembly Info" name="OptionalAssemblyInfoField" />
+            <ui:Toggle label="Optional Project File" name="OptionalProjectFileField" />
+            <ui:TextField picking-mode="Ignore" label="Package Name" name="PackageNameField" />
+            <ui:Toggle label="Return I Collection" name="ReturnICollectionField" />
+            <ui:TextField picking-mode="Ignore" label="Target Framework" name="TargetFrameworkField" />
+            <ui:Toggle label="Use Collection" name="UseCollectionField" />
+            <ui:Toggle label="Use One Of Discriminator Lookup" name="UseOneOfDiscriminatorLookupField" />
+            <ui:Toggle label="Validatable" name="ValidatableField" />
+        </ui:Foldout>
+    </ui:ScrollView>
 </ui:UXML>

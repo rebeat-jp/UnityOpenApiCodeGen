@@ -1,11 +1,13 @@
+using System;
+
 using ReBeat.OpenApiCodeGen.Core;
-using ReBeat.OpenApiCodeGen.Lib;
 
 namespace ReBeat.OpenApiCodeGen.Presenter
 {
     internal interface ISettingPresenter
     {
-        public SettingSchema LoadSetting();
-        public SettingSchema SaveSettings(SettingSchema settingSchema);
+        public void SaveSettings();
+        public void OnDestroy();
+        public void Bind(SettingMenu settingMenu);
     }
 }
