@@ -69,12 +69,10 @@ namespace ReBeat.OpenApiCodeGen.Lib
             {
                 Path = generalConfigSchema.DockerPath
             };
-            var arguments =
-            $"run --rm -v \"{generalConfigSchema.ApiClientOutputFolderPath}:/local\" openapitools/openapi-generator-cli generate -i \"{generalConfigSchema.ApiDocumentFilePathOrUrl}\" -g \"csharp\" -o \"/local\"";
             var openApiConfigJsonFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Assets", "OpenApiCodeGen", "openapi.json");
 
             var argumentsBuilder = new StringBuilder(1000);
-            argumentsBuilder.Append("run ");
+            argumentsBuilder.Append("run --rm");
             argumentsBuilder.Append($"-v \"{generalConfigSchema.ApiClientOutputFolderPath}:/local\" ");
             argumentsBuilder.Append($"-v \"{openApiConfigJsonFilePath}:/config/config.json\" ");
             argumentsBuilder.Append("openapitools/openapi-generator-cli generate ");
