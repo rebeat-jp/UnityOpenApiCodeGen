@@ -21,7 +21,9 @@
       "depth": 0,
       "source": "embedded",
       "dependencies": {
-        "com.unity.nuget.newtonsoft-json": "3.2.1"
+        "com.unity.nuget.newtonsoft-json": "3.2.1",
+        "com.cysharp.unitask": "2.5.4",
+        "com.cysharp.r3": "1.3.0"
       }
     },
     "com.unity.burst": {
