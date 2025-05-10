@@ -1,8 +1,8 @@
 {
   "name": "com.rebeat.openapicodegen",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "displayName": "OpenApiCodeGen",
-  "description": "This is a package to make a rest api client c-sharp file from swagger's json and yaml",
+  "description": "This is a package to make a rest api client c-sharp file from openapi's json and yaml",
   "author": "Re:Beat",
   "keywords": [
     "unity",
