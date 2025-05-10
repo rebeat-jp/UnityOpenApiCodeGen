@@ -39,7 +39,7 @@ namespace ReBeat.OpenApiCodeGen.Lib
             var openApiConfigJsonFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Assets", "OpenApiCodeGen", "openapi.json");
 
             var argumentsBuilder = new StringBuilder(1000);
-            argumentsBuilder.Append("run --rm");
+            argumentsBuilder.Append("run --rm ");
             argumentsBuilder.Append($"-v \"{generalConfigSchema.ApiClientOutputFolderPath}:/local\" ");
             argumentsBuilder.Append($"-v \"{openApiConfigJsonFilePath}:/config/config.json\" ");
             argumentsBuilder.Append("openapitools/openapi-generator-cli generate ");
@@ -72,7 +72,7 @@ namespace ReBeat.OpenApiCodeGen.Lib
             var openApiConfigJsonFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Assets", "OpenApiCodeGen", "openapi.json");
 
             var argumentsBuilder = new StringBuilder(1000);
-            argumentsBuilder.Append("run --rm");
+            argumentsBuilder.Append("run --rm ");
             argumentsBuilder.Append($"-v \"{generalConfigSchema.ApiClientOutputFolderPath}:/local\" ");
             argumentsBuilder.Append($"-v \"{openApiConfigJsonFilePath}:/config/config.json\" ");
             argumentsBuilder.Append("openapitools/openapi-generator-cli generate ");
