@@ -4,6 +4,7 @@ using System;
 using ReBeat.OpenApiCodeGen.Core;
 using ReBeat.OpenApiCodeGen.Lib;
 using ReBeat.OpenApiCodeGen.Presenter;
+using ReBeat.OpenApiCodeGen.UI;
 
 using UnityEditor;
 
@@ -32,7 +33,7 @@ internal class SettingMenu : EditorWindow
     Toggle? _equatableField;
     Toggle? _hideGenerationTimestampField;
     TextField? _interfacePrefixField;
-    TextField? _libraryField;
+    EnumField? _libraryField;
     TextField? _licenseIdField;
     TextField? _modelPropertyNamingField;
     Toggle? _netCoreProjectFileField;
@@ -102,7 +103,7 @@ internal class SettingMenu : EditorWindow
         _equatableField?.RegisterValueChangedCallback(toggleChangeEvent);
         _hideGenerationTimestampField?.RegisterValueChangedCallback(toggleChangeEvent);
         _interfacePrefixField?.RegisterCallback(focusOutEvent);
-        _libraryField?.RegisterCallback(focusOutEvent);
+        _libraryField?.RegisterValueChangedCallback(enumChangeEvent);
         _licenseIdField?.RegisterCallback(focusOutEvent);
         _modelPropertyNamingField?.RegisterCallback(focusOutEvent);
         _netCoreProjectFileField?.RegisterValueChangedCallback(toggleChangeEvent);
@@ -154,7 +155,7 @@ internal class SettingMenu : EditorWindow
         _equatableField = root.Q<Toggle>("EquatableField");
         _hideGenerationTimestampField = root.Q<Toggle>("HideGenerationTimestampField");
         _interfacePrefixField = root.Q<TextField>("InterfacePrefixField");
-        _libraryField = root.Q<TextField>("LibraryField");
+        _libraryField = root.Q<EnumField>("LibraryField");
         _licenseIdField = root.Q<TextField>("LicenseIdField");
         _modelPropertyNamingField = root.Q<TextField>("ModelPropertyNamingField");
         _netCoreProjectFileField = root.Q<Toggle>("NetCoreProjectFileField");
@@ -231,7 +232,7 @@ internal class SettingMenu : EditorWindow
         }
         if (_libraryField != null)
         {
-            _libraryField.value = openApiCsharpOption.Library;
+            _libraryField.value = OpenApiDependenceLibraryExtend.ConvertFromString(openApiCsharpOption.Library);
         }
         if (_licenseIdField != null)
         {
@@ -339,7 +340,7 @@ internal class SettingMenu : EditorWindow
         }
         if (_libraryField != null)
         {
-            openApiCsharpOption.Library = _libraryField.value;
+            openApiCsharpOption.Library = ((OpenApiDependenceLibrary)_libraryField.value).ToConfigString();
         }
         if (_licenseIdField != null)
         {

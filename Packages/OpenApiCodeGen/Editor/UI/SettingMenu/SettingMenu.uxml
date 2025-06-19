@@ -17,7 +17,7 @@
             <ui:Toggle label="Equatable" name="EquatableField" style="display: flex; visibility: visible; justify-content: flex-start;" />
             <ui:Toggle label="Hide Generation Timestamp" name="HideGenerationTimestampField" />
             <ui:TextField picking-mode="Ignore" label="Interface Prefix" name="InterfacePrefixField" />
-            <ui:TextField picking-mode="Ignore" label="Library" name="LibraryField" />
+            <ui:EnumField label="Enum" type="ReBeat.OpenApiCodeGen.UI.OpenApiDependenceLibrary, Unity.OpenApiCodeGen.Editor" name="LibraryField" />
             <ui:TextField picking-mode="Ignore" label="License ID" name="LicenseIdField" />
             <ui:TextField picking-mode="Ignore" label="Model Property Naming" name="ModelPropertyNamingField" />
             <ui:Toggle label=".Net Core Project File" name="NetCoreProjectFileField" />
