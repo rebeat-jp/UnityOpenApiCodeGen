@@ -3,7 +3,8 @@
 using System.IO;
 using System.Threading.Tasks;
 
-using Newtonsoft.Json;
+
+using UnityEngine;
 
 namespace ReBeat.OpenApiCodeGen.Lib
 {
@@ -22,7 +23,7 @@ namespace ReBeat.OpenApiCodeGen.Lib
                 return null;
             }
             var jsonContent = File.ReadAllText(_savePath);
-            return JsonConvert.DeserializeObject<T>(jsonContent);
+            return JsonUtility.FromJson<T>(jsonContent);
         }
 
         async public Task<T?> ReadAsync()
@@ -33,12 +34,12 @@ namespace ReBeat.OpenApiCodeGen.Lib
             }
 
             var jsonContent = await File.ReadAllTextAsync(_savePath);
-            return JsonConvert.DeserializeObject<T>(jsonContent);
+            return JsonUtility.FromJson<T>(jsonContent);
         }
 
         public T Save(T value)
         {
-            var jsonContent = JsonConvert.SerializeObject(value);
+            var jsonContent = JsonUtility.ToJson(value);
 
             if (File.Exists(_savePath))
             {
@@ -56,7 +57,7 @@ namespace ReBeat.OpenApiCodeGen.Lib
         }
         async public Task<T> SaveAsync(T value)
         {
-            var jsonContent = JsonConvert.SerializeObject(value);
+            var jsonContent = JsonUtility.ToJson(value);
 
             if (File.Exists(_savePath))
             {

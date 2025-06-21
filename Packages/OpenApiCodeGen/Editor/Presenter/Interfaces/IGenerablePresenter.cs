@@ -8,6 +8,5 @@ namespace ReBeat.OpenApiCodeGen.Presenter
     {
         void Generate();
         void Bind(MenuWindow menuWindow);
-        void OnDestroy();
     }
 }

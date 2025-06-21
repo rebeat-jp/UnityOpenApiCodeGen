@@ -5,6 +5,9 @@ namespace ReBeat.OpenApiCodeGen.UI
     public enum OpenApiDependenceLibrary
     {
         UnityWebRequest,
+        GenericHost,
+        HttpClient,
+        RestSharp
     }
 
     public static class OpenApiDependenceLibraryExtend
@@ -14,15 +17,22 @@ namespace ReBeat.OpenApiCodeGen.UI
             return openApiDependenceLibrary switch
             {
                 OpenApiDependenceLibrary.UnityWebRequest => "unityWebRequest",
+                OpenApiDependenceLibrary.GenericHost => "generichost",
+                OpenApiDependenceLibrary.HttpClient => "httpclient",
+                OpenApiDependenceLibrary.RestSharp => "restsharp",
                 _ => throw new ArgumentException("Cannot convert to string"),
+
             };
         }
 
         public static OpenApiDependenceLibrary ConvertFromString(string value)
         {
-            return value switch
+            return value.ToLower() switch
             {
-                "unityWebRequest" => OpenApiDependenceLibrary.UnityWebRequest,
+                "unitywebrequest" => OpenApiDependenceLibrary.UnityWebRequest,
+                "generichost" => OpenApiDependenceLibrary.GenericHost,
+                "httpclient" => OpenApiDependenceLibrary.HttpClient,
+                "restsharp" => OpenApiDependenceLibrary.RestSharp,
                 _ => throw new NotImplementedException(),
             };
         }

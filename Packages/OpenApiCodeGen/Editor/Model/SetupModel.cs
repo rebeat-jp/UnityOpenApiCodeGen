@@ -1,9 +1,6 @@
 #nullable enable
 
 using System;
-using System.IO;
-
-using R3;
 
 using ReBeat.OpenApiCodeGen.Core;
 using ReBeat.OpenApiCodeGen.Dto;
@@ -12,12 +9,32 @@ using ReBeat.OpenApiCodeGen.UI;
 
 namespace ReBeat.OpenApiCodeGen.Model
 {
-    internal class SetupModel : IDisposable
+    internal class SetupModel
     {
-        public ReactiveProperty<SetupMenuDto> SetupMenuDto { get; }
-        public ReadOnlyReactiveProperty<SetupStatus> Status => _status;
+        public SetupMenuDto SetupMenuDto
+        {
+            get => _setupMenuDto;
+            set
+            {
+                _setupMenuDto = value;
+                OnChangeDto?.Invoke(_setupMenuDto);
+            }
+        }
+        public SetupStatus Status
+        {
+            get => _status;
+            private set
+            {
+                _status = value;
+                OnChangeStatus?.Invoke(_status);
+            }
+        }
 
-        readonly ReactiveProperty<SetupStatus> _status;
+        public Action<SetupMenuDto>? OnChangeDto;
+        public Action<SetupStatus>? OnChangeStatus;
+
+        SetupMenuDto _setupMenuDto = new(GenerateProvider.OpenApi, "");
+        SetupStatus _status = new(SetupStatusType.None);
 
         readonly IRepository<GeneralConfigSchema> _generalSettingsRepository;
         readonly IRepository<OpenApiCsharpOption> _openApiSettingsRepository;
@@ -27,17 +44,13 @@ namespace ReBeat.OpenApiCodeGen.Model
         {
             _generalSettingsRepository = new GeneralSettingJsonRepository();
             _openApiSettingsRepository = new OpenApiCsharpSettingJsonRepository();
-            SetupMenuDto = new(
-                new SetupMenuDto(
-                    GenerateProvider.OpenApi,
-                    "")
-                );
+            SetupMenuDto = new SetupMenuDto(GenerateProvider.OpenApi, "");
 
-            _status = new(new(SetupStatusType.None));
+            Status = new(SetupStatusType.None);
         }
         public bool CheckRunnableDockerPath()
         {
-            var dockerProcess = new DockerProcess(path: SetupMenuDto.CurrentValue.DockerPath);
+            var dockerProcess = new DockerProcess(path: SetupMenuDto.DockerPath);
             var sendResult = dockerProcess.Send("--version");
             return sendResult.Status == ExitStatus.Success;
         }
@@ -45,19 +58,19 @@ namespace ReBeat.OpenApiCodeGen.Model
 
         public void Setup()
         {
-            _status.Value = new(SetupStatusType.Pending);
+            Status = new(SetupStatusType.Pending);
 
             var isRunnable = CheckRunnableDockerPath();
 
             if (!isRunnable)
             {
-                _status.Value = new(SetupStatusType.Error, "invalid docker path.");
+                Status = new(SetupStatusType.Error, "invalid docker path.");
                 return;
             }
 
             var generalConfigSchema = new GeneralConfigSchema(
-                generateProvider: SetupMenuDto.CurrentValue.GenerateProvider,
-                dockerPath: SetupMenuDto.CurrentValue.DockerPath, "", "");
+                generateProvider: SetupMenuDto.GenerateProvider,
+                dockerPath: SetupMenuDto.DockerPath, "", "");
 
             _generalSettingsRepository?.Save(
                 generalConfigSchema
@@ -65,13 +78,7 @@ namespace ReBeat.OpenApiCodeGen.Model
             var openApiConfigSchema = new OpenApiCsharpOption();
             _openApiSettingsRepository?.Save(openApiConfigSchema);
 
-            _status.Value = new(SetupStatusType.Success, "setup is success!");
-        }
-
-        public void Dispose()
-        {
-            SetupMenuDto.Dispose();
-            _status.Dispose();
+            Status = new(SetupStatusType.Success, "setup is success!");
         }
     }
 }

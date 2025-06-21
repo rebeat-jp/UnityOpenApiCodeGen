@@ -10,11 +10,11 @@ namespace ReBeat.OpenApiCodeGen.Core
     public class GeneralConfigSchema : IScriptable<GeneralConfigSchema>
     {
 
-        public GenerateProvider GenerateProvider { get; set; }
-        public string DockerPath { get; set; }
-        public string ApiDocumentFilePathOrUrl { get; set; }
-        public string ApiClientOutputFolderPath { get; set; }
-        public string CacheFolderPath { get; set; }
+        public GenerateProvider GenerateProvider;
+        public string DockerPath;
+        public string ApiDocumentFilePathOrUrl;
+        public string ApiClientOutputFolderPath;
+        public string CacheFolderPath;
 
         public GeneralConfigSchema(GenerateProvider generateProvider = GenerateProvider.OpenApi, string dockerPath = "", string apiDocumentFilePathOrUrl = "", string apiClientOutputFolderPath = "", string cacheFolderPath = "")
         {

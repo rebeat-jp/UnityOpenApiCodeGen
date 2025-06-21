@@ -10,6 +10,5 @@ namespace ReBeat.OpenApiCodeGen.Presenter
         void Bind(SetupMenu setupMenu);
         void Setup();
         bool CheckRunnableDockerPath();
-        void OnDestroy();
     }
 }

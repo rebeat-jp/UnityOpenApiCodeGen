@@ -138,9 +138,4 @@ public class SetupMenu : EditorWindow
             _checkRunnableDockerButton.text = isRunnable ? "OK" : "NG";
         }
     }
-
-    void OnDestroy()
-    {
-        _presenter.OnDestroy();
-    }
 }

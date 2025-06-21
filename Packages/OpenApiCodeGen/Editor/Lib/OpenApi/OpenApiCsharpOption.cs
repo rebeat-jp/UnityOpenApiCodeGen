@@ -1,63 +1,38 @@
 #nullable enable
 
-using Newtonsoft.Json;
 
 namespace ReBeat.OpenApiCodeGen.Lib
 {
     internal class OpenApiCsharpOption
     {
-        [JsonProperty("allowUnicodeIdentifiers")]
-        public bool AllowUnicodeIdentifiers;
-        [JsonProperty("apiName")]
-        public string ApiName = "Api";
-        [JsonProperty("caseInsensitiveResponseHeaders")]
-        public bool CaseInsensitiveResponseHeaders = false;
-        [JsonProperty("conditionalSerialization")]
-        public bool ConditionalSerialization = false;
-        [JsonProperty("disallowAdditionalPropertiesIfNotPresent")]
-        public bool DisallowAdditionalPropertiesIfNotPresent = true;
-        [JsonProperty("equatable")]
-        public bool Equatable;
-        [JsonProperty("hideGenerationTimestamp")]
-        public bool HideGenerationTimestamp;
-        [JsonProperty("interfacePrefix")]
-        public string InterfacePrefix = "I";
-        [JsonProperty("library")]
-        public string Library = "unityWebRequest";
-        [JsonProperty("licenseId")]
-        public string? LicenseId = null;
-        [JsonProperty("modelPropertyNaming")]
-        public string ModelPropertyNaming = "PascalCase";
-        [JsonProperty("netCoreProjectFile")]
-        public bool NetCoreProjectFile = false;
-        [JsonProperty("nonPublicApi")]
-        public bool NonPublicApi = false;
-        [JsonProperty("nullableReferenceTypes")]
-        public bool NullableReferenceTypes = true;
-        [JsonProperty("optionalEmitDefaultValues")]
-        public bool OptionalEmitDefaultValues = false;
-        [JsonProperty("optionalMethodArgument")]
-        public bool OptionalMethodArgument = true;
-        [JsonProperty("optionalAssemblyInfo")]
-        public bool OptionalAssemblyInfo = true;
-        [JsonProperty("optionalProjectFile")]
-        public bool OptionalProjectFile = false;
-        [JsonProperty("packageName")]
-        public string PackageName = "ReBeat.OpenApiCodeGen";
-        [JsonProperty("returnICollection")]
-        public bool ReturnICollection = false;
+        public bool allowUnicodeIdentifiers;
+        public string apiName = "Api";
+        public bool caseInsensitiveResponseHeaders = false;
+        public bool conditionalSerialization = false;
+        public bool disallowAdditionalPropertiesIfNotPresent = true;
+        public bool equatable;
+        public bool hideGenerationTimestamp;
+        public string interfacePrefix = "I";
+        public string library = "unityWebRequest";
+        public string? licenseId = null;
+        public string modelPropertyNaming = "PascalCase";
+        public bool netCoreProjectFile = false;
+        public bool nonPublicApi = false;
+        public bool nullableReferenceTypes = true;
+        public bool optionalEmitDefaultValues = false;
+        public bool optionalMethodArgument = true;
+        public bool optionalAssemblyInfo = true;
+        public bool optionalProjectFile = false;
+        public string packageName = "ReBeat.OpenApiCodeGen";
+        public bool returnICollection = false;
         /// <summary>
         /// The target .NET framework version. To target multiple frameworks, use ; as the separator, 
         /// e.g. [netstandard2.1;netcoreapp3.1]
         /// </summary>
-        [JsonProperty("targetFramework")]
-        public string TargetFramework = "netstandard2.1";
-        [JsonProperty("useCollection")]
-        public bool UseCollection = false;
-        [JsonProperty("useOneOfDiscriminatorLookup")]
-        public bool UseOneOfDiscriminatorLookup = false;
-        [JsonProperty("validatable")]
-        public bool Validatable = true;
+        public string targetFramework = "netstandard2.1";
+        public bool useCollection = false;
+        public bool useOneOfDiscriminatorLookup = false;
+        public bool validatable = true;
 
     }
 }

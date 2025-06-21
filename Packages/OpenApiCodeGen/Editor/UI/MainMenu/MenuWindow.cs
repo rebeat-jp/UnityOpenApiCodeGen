@@ -95,12 +95,6 @@ namespace ReBeat.OpenApiCodeGen.UI
             SetProgressBarValue(generateStatus.Progress, generateStatus.Message ?? "");
         }
 
-        void OnDestroy()
-        {
-            _presenter.OnDestroy();
-        }
-
-
         void OnGenerate()
         {
             var canGenerable = true;
