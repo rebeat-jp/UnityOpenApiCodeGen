@@ -2,8 +2,7 @@
 using System;
 using System.IO;
 using System.Text;
-
-using Cysharp.Threading.Tasks;
+using System.Threading.Tasks;
 
 using ReBeat.OpenApiCodeGen.Core;
 
@@ -51,7 +50,7 @@ namespace ReBeat.OpenApiCodeGen.Lib
 
         }
 
-        public async UniTask<ProcessResponse> GenerateAsync(SettingSchema settingSchema)
+        public async Task<ProcessResponse> GenerateAsync(SettingSchema settingSchema)
         {
             var generalConfigSchema = settingSchema.GeneralSettings;
             var openApiConfigSchema = settingSchema.OpenApiCsharpOption;

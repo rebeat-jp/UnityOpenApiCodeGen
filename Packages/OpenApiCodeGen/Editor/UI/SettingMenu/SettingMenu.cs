@@ -178,122 +178,38 @@ internal class SettingMenu : EditorWindow
 
     void SetGeneralValue(GeneralConfigSchema generalConfigSchema)
     {
-        if (_generateProviderField != null)
-        {
-            _generateProviderField.value = generalConfigSchema.GenerateProvider;
-        }
-        if (_dockerPathField != null)
-        {
-            _dockerPathField.value = generalConfigSchema.DockerPath;
-        }
-        if (_defaultApiClientOutputFolderPathField != null)
-        {
-            _defaultApiClientOutputFolderPathField.value = generalConfigSchema.ApiClientOutputFolderPath;
-        }
-        if (_defaultApiDocumentFilePathOrUrlField != null)
-        {
-            _defaultApiDocumentFilePathOrUrlField.value = generalConfigSchema.ApiDocumentFilePathOrUrl;
-        }
+        _generateProviderField?.SetValueWithoutNotify(generalConfigSchema.GenerateProvider);
+        _dockerPathField?.SetValueWithoutNotify(generalConfigSchema.DockerPath);
+        _defaultApiClientOutputFolderPathField?.SetValueWithoutNotify(generalConfigSchema.ApiClientOutputFolderPath);
+        _defaultApiDocumentFilePathOrUrlField?.SetValueWithoutNotify(generalConfigSchema.ApiDocumentFilePathOrUrl);
     }
 
     void SetOepnApiValue(OpenApiCsharpOption openApiCsharpOption)
     {
-        if (_allowUnicodeIdentifiersField != null)
-        {
-            _allowUnicodeIdentifiersField.value = openApiCsharpOption.AllowUnicodeIdentifiers;
-        }
-        if (_apiNameField != null)
-        {
-            _apiNameField.value = openApiCsharpOption.ApiName;
-        }
-        if (_caseInsensitiveResponseHeadersField != null)
-        {
-            _caseInsensitiveResponseHeadersField.value = openApiCsharpOption.CaseInsensitiveResponseHeaders;
-        }
-        if (_conditionalSerializationField != null)
-        {
-            _conditionalSerializationField.value = openApiCsharpOption.ConditionalSerialization;
-        }
-        if (_disallowAdditionalPropertiesIfNotPresentField != null)
-        {
-            _disallowAdditionalPropertiesIfNotPresentField.value = openApiCsharpOption.DisallowAdditionalPropertiesIfNotPresent;
-        }
-        if (_equatableField != null)
-        {
-            _equatableField.value = openApiCsharpOption.Equatable;
-        }
-        if (_hideGenerationTimestampField != null)
-        {
-            _hideGenerationTimestampField.value = openApiCsharpOption.HideGenerationTimestamp;
-        }
-        if (_interfacePrefixField != null)
-        {
-            _interfacePrefixField.value = openApiCsharpOption.InterfacePrefix;
-        }
-        if (_libraryField != null)
-        {
-            _libraryField.value = OpenApiDependenceLibraryExtend.ConvertFromString(openApiCsharpOption.Library);
-        }
-        if (_licenseIdField != null)
-        {
-            _licenseIdField.value = openApiCsharpOption.LicenseId;
-        }
-        if (_modelPropertyNamingField != null)
-        {
-            _modelPropertyNamingField.value = openApiCsharpOption.ModelPropertyNaming;
-        }
-        if (_netCoreProjectFileField != null)
-        {
-            _netCoreProjectFileField.value = openApiCsharpOption.NetCoreProjectFile;
-        }
-        if (_nonPublicApiField != null)
-        {
-            _nonPublicApiField.value = openApiCsharpOption.NonPublicApi;
-        }
-        if (_nullableReferenceTypesField != null)
-        {
-            _nullableReferenceTypesField.value = openApiCsharpOption.NullableReferenceTypes;
-        }
-        if (_optionalEmitDefaultValuesField != null)
-        {
-            _optionalEmitDefaultValuesField.value = openApiCsharpOption.OptionalEmitDefaultValues;
-        }
-        if (_optionalMethodArgumentField != null)
-        {
-            _optionalMethodArgumentField.value = openApiCsharpOption.OptionalMethodArgument;
-        }
-        if (_optionalAssemblyInfoField != null)
-        {
-            _optionalAssemblyInfoField.value = openApiCsharpOption.OptionalAssemblyInfo;
-        }
-        if (_optionalProjectFileField != null)
-        {
-            _optionalProjectFileField.value = openApiCsharpOption.OptionalProjectFile;
-        }
-        if (_packageNameField != null)
-        {
-            _packageNameField.value = openApiCsharpOption.PackageName;
-        }
-        if (_returnICollectionField != null)
-        {
-            _returnICollectionField.value = openApiCsharpOption.ReturnICollection;
-        }
-        if (_targetFrameworkField != null)
-        {
-            _targetFrameworkField.value = openApiCsharpOption.TargetFramework;
-        }
-        if (_useCollectionField != null)
-        {
-            _useCollectionField.value = openApiCsharpOption.UseCollection;
-        }
-        if (_useOneOfDiscriminatorLookupField != null)
-        {
-            _useOneOfDiscriminatorLookupField.value = openApiCsharpOption.UseOneOfDiscriminatorLookup;
-        }
-        if (_validatableField != null)
-        {
-            _validatableField.value = openApiCsharpOption.Validatable;
-        }
+        _allowUnicodeIdentifiersField?.SetValueWithoutNotify(openApiCsharpOption.allowUnicodeIdentifiers);
+        _apiNameField?.SetValueWithoutNotify(openApiCsharpOption.apiName);
+        _caseInsensitiveResponseHeadersField?.SetValueWithoutNotify(openApiCsharpOption.caseInsensitiveResponseHeaders);
+        _conditionalSerializationField?.SetValueWithoutNotify(openApiCsharpOption.conditionalSerialization);
+        _disallowAdditionalPropertiesIfNotPresentField?.SetValueWithoutNotify(openApiCsharpOption.disallowAdditionalPropertiesIfNotPresent);
+        _equatableField?.SetValueWithoutNotify(openApiCsharpOption.equatable);
+        _hideGenerationTimestampField?.SetValueWithoutNotify(openApiCsharpOption.hideGenerationTimestamp);
+        _interfacePrefixField?.SetValueWithoutNotify(openApiCsharpOption.interfacePrefix);
+        _libraryField?.SetValueWithoutNotify(OpenApiDependenceLibraryExtend.ConvertFromString(openApiCsharpOption.library));
+        _licenseIdField?.SetValueWithoutNotify(openApiCsharpOption.licenseId);
+        _modelPropertyNamingField?.SetValueWithoutNotify(openApiCsharpOption.modelPropertyNaming);
+        _netCoreProjectFileField?.SetValueWithoutNotify(openApiCsharpOption.netCoreProjectFile);
+        _nonPublicApiField?.SetValueWithoutNotify(openApiCsharpOption.nonPublicApi);
+        _nullableReferenceTypesField?.SetValueWithoutNotify(openApiCsharpOption.nullableReferenceTypes);
+        _optionalEmitDefaultValuesField?.SetValueWithoutNotify(openApiCsharpOption.optionalEmitDefaultValues);
+        _optionalMethodArgumentField?.SetValueWithoutNotify(openApiCsharpOption.optionalMethodArgument);
+        _optionalAssemblyInfoField?.SetValueWithoutNotify(openApiCsharpOption.optionalAssemblyInfo);
+        _optionalProjectFileField?.SetValueWithoutNotify(openApiCsharpOption.optionalProjectFile);
+        _packageNameField?.SetValueWithoutNotify(openApiCsharpOption.packageName);
+        _returnICollectionField?.SetValueWithoutNotify(openApiCsharpOption.returnICollection);
+        _targetFrameworkField?.SetValueWithoutNotify(openApiCsharpOption.targetFramework);
+        _useCollectionField?.SetValueWithoutNotify(openApiCsharpOption.useCollection);
+        _useOneOfDiscriminatorLookupField?.SetValueWithoutNotify(openApiCsharpOption.useOneOfDiscriminatorLookup);
+        _validatableField?.SetValueWithoutNotify(openApiCsharpOption.validatable);
 
     }
 
@@ -308,99 +224,99 @@ internal class SettingMenu : EditorWindow
         var openApiCsharpOption = new OpenApiCsharpOption();
         if (_allowUnicodeIdentifiersField != null)
         {
-            openApiCsharpOption.AllowUnicodeIdentifiers = _allowUnicodeIdentifiersField.value;
+            openApiCsharpOption.allowUnicodeIdentifiers = _allowUnicodeIdentifiersField.value;
         }
         if (_apiNameField != null)
         {
-            openApiCsharpOption.ApiName = _apiNameField.value;
+            openApiCsharpOption.apiName = _apiNameField.value;
         }
         if (_caseInsensitiveResponseHeadersField != null)
         {
-            openApiCsharpOption.CaseInsensitiveResponseHeaders = _caseInsensitiveResponseHeadersField.value;
+            openApiCsharpOption.caseInsensitiveResponseHeaders = _caseInsensitiveResponseHeadersField.value;
         }
         if (_conditionalSerializationField != null)
         {
-            openApiCsharpOption.ConditionalSerialization = _conditionalSerializationField.value;
+            openApiCsharpOption.conditionalSerialization = _conditionalSerializationField.value;
         }
         if (_disallowAdditionalPropertiesIfNotPresentField != null)
         {
-            openApiCsharpOption.DisallowAdditionalPropertiesIfNotPresent = _disallowAdditionalPropertiesIfNotPresentField.value;
+            openApiCsharpOption.disallowAdditionalPropertiesIfNotPresent = _disallowAdditionalPropertiesIfNotPresentField.value;
         }
         if (_equatableField != null)
         {
-            openApiCsharpOption.Equatable = _equatableField.value;
+            openApiCsharpOption.equatable = _equatableField.value;
         }
         if (_hideGenerationTimestampField != null)
         {
-            openApiCsharpOption.HideGenerationTimestamp = _hideGenerationTimestampField.value;
+            openApiCsharpOption.hideGenerationTimestamp = _hideGenerationTimestampField.value;
         }
         if (_interfacePrefixField != null)
         {
-            openApiCsharpOption.InterfacePrefix = _interfacePrefixField.value;
+            openApiCsharpOption.interfacePrefix = _interfacePrefixField.value;
         }
         if (_libraryField != null)
         {
-            openApiCsharpOption.Library = ((OpenApiDependenceLibrary)_libraryField.value).ToConfigString();
+            openApiCsharpOption.library = ((OpenApiDependenceLibrary)_libraryField.value).ToConfigString();
         }
         if (_licenseIdField != null)
         {
-            openApiCsharpOption.LicenseId = _licenseIdField.value != string.Empty ? _licenseIdField.value : null;
+            openApiCsharpOption.licenseId = _licenseIdField.value != string.Empty ? _licenseIdField.value : null;
         }
         if (_modelPropertyNamingField != null)
         {
-            openApiCsharpOption.ModelPropertyNaming = _modelPropertyNamingField.value;
+            openApiCsharpOption.modelPropertyNaming = _modelPropertyNamingField.value;
         }
         if (_netCoreProjectFileField != null)
         {
-            openApiCsharpOption.NetCoreProjectFile = _netCoreProjectFileField.value;
+            openApiCsharpOption.netCoreProjectFile = _netCoreProjectFileField.value;
         }
         if (_nonPublicApiField != null)
         {
-            openApiCsharpOption.NonPublicApi = _nonPublicApiField.value;
+            openApiCsharpOption.nonPublicApi = _nonPublicApiField.value;
         }
         if (_nullableReferenceTypesField != null)
         {
-            openApiCsharpOption.NullableReferenceTypes = _nullableReferenceTypesField.value;
+            openApiCsharpOption.nullableReferenceTypes = _nullableReferenceTypesField.value;
         }
         if (_optionalEmitDefaultValuesField != null)
         {
-            openApiCsharpOption.OptionalEmitDefaultValues = _optionalEmitDefaultValuesField.value;
+            openApiCsharpOption.optionalEmitDefaultValues = _optionalEmitDefaultValuesField.value;
         }
         if (_optionalMethodArgumentField != null)
         {
-            openApiCsharpOption.OptionalMethodArgument = _optionalMethodArgumentField.value;
+            openApiCsharpOption.optionalMethodArgument = _optionalMethodArgumentField.value;
         }
         if (_optionalAssemblyInfoField != null)
         {
-            openApiCsharpOption.OptionalAssemblyInfo = _optionalAssemblyInfoField.value;
+            openApiCsharpOption.optionalAssemblyInfo = _optionalAssemblyInfoField.value;
         }
         if (_optionalProjectFileField != null)
         {
-            openApiCsharpOption.OptionalProjectFile = _optionalProjectFileField.value;
+            openApiCsharpOption.optionalProjectFile = _optionalProjectFileField.value;
         }
         if (_packageNameField != null)
         {
-            openApiCsharpOption.PackageName = _packageNameField.value;
+            openApiCsharpOption.packageName = _packageNameField.value;
         }
         if (_returnICollectionField != null)
         {
-            openApiCsharpOption.ReturnICollection = _returnICollectionField.value;
+            openApiCsharpOption.returnICollection = _returnICollectionField.value;
         }
         if (_targetFrameworkField != null)
         {
-            openApiCsharpOption.TargetFramework = _targetFrameworkField.value;
+            openApiCsharpOption.targetFramework = _targetFrameworkField.value;
         }
         if (_useCollectionField != null)
         {
-            openApiCsharpOption.UseCollection = _useCollectionField.value;
+            openApiCsharpOption.useCollection = _useCollectionField.value;
         }
         if (_useOneOfDiscriminatorLookupField != null)
         {
-            openApiCsharpOption.UseOneOfDiscriminatorLookup = _useOneOfDiscriminatorLookupField.value;
+            openApiCsharpOption.useOneOfDiscriminatorLookup = _useOneOfDiscriminatorLookupField.value;
         }
         if (_validatableField != null)
         {
-            openApiCsharpOption.Validatable = _validatableField.value;
+            openApiCsharpOption.validatable = _validatableField.value;
         }
 
         var settings = new SettingSchema(generalConfigSchema, openApiCsharpOption);

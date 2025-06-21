@@ -1,22 +1,38 @@
 #nullable enable
 
 using System;
-
-using Cysharp.Threading.Tasks;
-
-using R3;
+using System.Threading.Tasks;
 
 using ReBeat.OpenApiCodeGen.Core;
 using ReBeat.OpenApiCodeGen.Lib;
 
 namespace ReBeat.OpenApiCodeGen.Model
 {
-    internal class SettingModel : IDisposable
+    internal class SettingModel
     {
-        public ReactiveProperty<SettingSchema> Settings { get; }
-        public ReadOnlyReactiveProperty<bool?> IsAvailableDockerPath => _isAvailableDockerPath;
+        public SettingSchema Settings
+        {
+            get => _settings;
+            set
+            {
+                _settings = value;
+                OnChangeSettings?.Invoke(_settings);
+            }
+        }
+        public bool? IsAvailableDockerPath
+        {
+            get => _isAvailableDockerPath;
+            private set
+            {
+                _isAvailableDockerPath = value;
+                OnChangeIsAvailableDockerPath?.Invoke(_isAvailableDockerPath);
+            }
+        }
 
-        readonly ReactiveProperty<bool?> _isAvailableDockerPath;
+        public Action<SettingSchema>? OnChangeSettings;
+        public Action<bool?>? OnChangeIsAvailableDockerPath;
+        SettingSchema _settings = new(new(), new());
+        bool? _isAvailableDockerPath = null;
 
         readonly IRepository<GeneralConfigSchema> _generalConfigRepository;
         readonly IRepository<OpenApiCsharpOption> _openApiConfigRepository;
@@ -26,38 +42,34 @@ namespace ReBeat.OpenApiCodeGen.Model
             _generalConfigRepository = new GeneralSettingJsonRepository();
             _openApiConfigRepository = new OpenApiCsharpSettingJsonRepository();
 
+            FetchSettings();
 
-            var initGeneralConfig = _generalConfigRepository.Read();
-            var initOpenApiOption = _openApiConfigRepository.Read();
-
-            Settings = new(
-                new(
-                    initGeneralConfig ?? new(),
-                    initOpenApiOption ?? new()
-                    ));
-            _isAvailableDockerPath = new(null);
+            IsAvailableDockerPath = null;
         }
 
-        public async UniTask SaveSettingAsync()
+        public async Task SaveSettingAsync()
         {
-            await _generalConfigRepository.SaveAsync(Settings.CurrentValue.GeneralSettings);
-            await _openApiConfigRepository.SaveAsync(Settings.CurrentValue.OpenApiCsharpOption);
+            await _generalConfigRepository.SaveAsync(Settings.GeneralSettings);
+            await _openApiConfigRepository.SaveAsync(Settings.OpenApiCsharpOption);
         }
 
-        public async UniTask CheckRunnableDockerPath()
+        public async Task CheckRunnableDockerPath()
         {
-            var dockerPath = Settings.CurrentValue.GeneralSettings.DockerPath;
+            var dockerPath = Settings.GeneralSettings.DockerPath;
             var dockerProcess = new DockerProcess(path: dockerPath);
 
             var runResult = await dockerProcess.SendAsync("--version");
             var isAvailable = runResult.Status == ExitStatus.Success;
-            _isAvailableDockerPath.Value = isAvailable;
+            IsAvailableDockerPath = isAvailable;
         }
 
-        public void Dispose()
+        public void FetchSettings()
         {
-            _isAvailableDockerPath.Dispose();
-            Settings.Dispose();
+            var generalConfig = _generalConfigRepository.Read();
+            var openApiOption = _openApiConfigRepository.Read();
+
+            Settings = new(generalConfig ?? new(), openApiOption ?? new());
+
         }
     }
 }

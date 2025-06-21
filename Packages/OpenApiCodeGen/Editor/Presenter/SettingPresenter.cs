@@ -1,9 +1,6 @@
 #nullable enable
 
-using ReBeat.OpenApiCodeGen.Core;
 using ReBeat.OpenApiCodeGen.Model;
-using R3;
-using Cysharp.Threading.Tasks;
 
 namespace ReBeat.OpenApiCodeGen.Presenter
 {
@@ -21,19 +18,20 @@ namespace ReBeat.OpenApiCodeGen.Presenter
         {
             _settingMenu = settingMenu;
 
-            _settingModel.Settings.Subscribe(s => _settingMenu.SetValue(s));
-            _settingMenu.SetOnChangeHandler((s) => _settingModel.Settings.Value = s);
+            _settingModel.OnChangeSettings += (s) => _settingMenu.SetValue(s);
+            _settingMenu.SetOnChangeHandler((s) => _settingModel.Settings = s);
+
+            _settingModel.FetchSettings();
         }
 
         public void SaveSettings()
         {
-            _settingModel.SaveSettingAsync().Forget();
+            _ = _settingModel.SaveSettingAsync();
         }
 
         public void OnDestroy()
         {
             SaveSettings();
-            _settingModel.Dispose();
         }
     }
 }

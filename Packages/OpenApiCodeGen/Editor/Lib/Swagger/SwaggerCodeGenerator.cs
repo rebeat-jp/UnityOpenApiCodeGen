@@ -1,7 +1,6 @@
 #nullable enable
-using System.Diagnostics;
 using System;
-using Cysharp.Threading.Tasks;
+using System.Threading.Tasks;
 namespace ReBeat.OpenApiCodeGen.Core
 {
     internal class SwaggerCodeGenerator : IGenerable
@@ -28,9 +27,9 @@ namespace ReBeat.OpenApiCodeGen.Core
             return javaProcess.Send(arguments);
         }
 
-        public async UniTask<ProcessResponse> GenerateAsync(SettingSchema settingSchema)
+        public async Task<ProcessResponse> GenerateAsync(SettingSchema settingSchema)
         {
-            return await UniTask.RunOnThreadPool(() => Generate(settingSchema));
+            return await Task.Run(() => Generate(settingSchema));
         }
     }
 

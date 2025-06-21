@@ -1,11 +1,7 @@
 #nullable enable
 
 using System;
-using System.IO;
-
-using Cysharp.Threading.Tasks;
-
-using R3;
+using System.Threading.Tasks;
 
 using ReBeat.OpenApiCodeGen.Core;
 using ReBeat.OpenApiCodeGen.Lib;
@@ -13,12 +9,31 @@ using ReBeat.OpenApiCodeGen.UI;
 
 namespace ReBeat.OpenApiCodeGen.Model
 {
-    public class GenerateModel : IDisposable
+    public class GenerateModel
     {
-        public ReactiveProperty<GenerateMenuDto> GenerateDto { get; }
-        public ReadOnlyReactiveProperty<GenerateStatus> Status => _status;
+        public GenerateMenuDto GenerateDto
+        {
+            get => _generateMenuDto;
+            set
+            {
+                _generateMenuDto = value;
+                OnChangedDto?.Invoke(_generateMenuDto);
+            }
+        }
+        public GenerateStatus Status
+        {
+            get => _status;
+            private set
+            {
+                _status = value;
+                OnChangeStatus?.Invoke(_status);
+            }
+        }
+        public Action<GenerateMenuDto>? OnChangedDto;
+        public Action<GenerateStatus>? OnChangeStatus;
 
-        readonly ReactiveProperty<GenerateStatus> _status;
+        GenerateStatus _status = new(GenerateStatusType.None, 0);
+        GenerateMenuDto _generateMenuDto = new(GenerateProvider.OpenApi, "", "");
         readonly IRepository<GeneralConfigSchema> _generalSettingsRepository;
         readonly IRepository<OpenApiCsharpOption> _openApiSettingsRepository;
 
@@ -35,29 +50,31 @@ namespace ReBeat.OpenApiCodeGen.Model
                     apiClientOutputFolderPath: generalConfig.ApiClientOutputFolderPath
                     )
                 : new(GenerateProvider.OpenApi, "", "");
-            GenerateDto = new(initialDto);
+            GenerateDto = initialDto;
 
-            _status = new(
-                new(GenerateStatusType.None, 0));
+            Status = new(GenerateStatusType.None, 0);
         }
 
-        public GeneralConfigSchema GetGenerateConfig()
+        public void FetchGenerateConfig()
         {
-            return _generalSettingsRepository.Read()
-            ?? new GeneralConfigSchema();
+            var configSchema = _generalSettingsRepository.Read() ?? new GeneralConfigSchema();
+            GenerateDto = new(
+                configSchema.GenerateProvider,
+                configSchema.ApiDocumentFilePathOrUrl,
+                configSchema.ApiClientOutputFolderPath);
 
         }
 
-        public async UniTask GenerateAsync()
+        public async Task GenerateAsync()
         {
-            _status.Value = new(GenerateStatusType.Pending, 10);
+            Status = new(GenerateStatusType.Pending, 10);
 
             var generalConfig = _generalSettingsRepository.Read();
             var openApiConfig = _openApiSettingsRepository.Read();
 
             if (generalConfig == null || openApiConfig == null)
             {
-                _status.Value = new(GenerateStatusType.Error, 1, "Config is not found. Please finish to setup.");
+                Status = new(GenerateStatusType.Error, 1, "Config is not found. Please finish to setup.");
                 return;
             }
 
@@ -69,28 +86,23 @@ namespace ReBeat.OpenApiCodeGen.Model
 
             if (generable == null)
             {
-                _status.Value = new(GenerateStatusType.Error, 1, "Fatal Error. not implimented function");
+                Status = new(GenerateStatusType.Error, 1, "Fatal Error. not implimented function");
                 return;
             }
 
-            generalConfig.ApiDocumentFilePathOrUrl = GenerateDto.Value.ApiDocumentFilePathOrUrl;
-            generalConfig.ApiClientOutputFolderPath = GenerateDto.Value.ApiClientOutputFolderPath;
+            generalConfig.ApiDocumentFilePathOrUrl = GenerateDto.ApiDocumentFilePathOrUrl;
+            generalConfig.ApiClientOutputFolderPath = GenerateDto.ApiClientOutputFolderPath;
 
             var settingSchema = new SettingSchema(generalConfig, openApiConfig);
 
-            _status.Value = new(GenerateStatusType.Pending, 50f, "Generating...");
+            Status = new(GenerateStatusType.Pending, 50f, "Generating...");
             var response = await generable.GenerateAsync(settingSchema);
 
             var isSuccess = response.Status == ExitStatus.Success;
 
-            _status.Value = isSuccess
+            Status = isSuccess
                 ? new(GenerateStatusType.Success, 100, "Generating is Success")
                 : new(GenerateStatusType.Error, 0, response.Message);
-        }
-
-        public void Dispose()
-        {
-            _status.Dispose();
         }
 
     }

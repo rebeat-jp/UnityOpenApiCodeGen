@@ -2,8 +2,7 @@
 
 using System;
 using System.Diagnostics;
-
-using Cysharp.Threading.Tasks;
+using System.Threading.Tasks;
 
 namespace ReBeat.OpenApiCodeGen.Core
 {
@@ -63,9 +62,9 @@ namespace ReBeat.OpenApiCodeGen.Core
 
         }
 
-        public async UniTask<ProcessResponse> SendAsync(string argumentsSeparateWithSpace)
+        public async Task<ProcessResponse> SendAsync(string argumentsSeparateWithSpace)
         {
-            var result = await UniTask.RunOnThreadPool(() => Send(argumentsSeparateWithSpace));
+            var result = await Task.Run(() => Send(argumentsSeparateWithSpace));
             return result;
         }
     }
