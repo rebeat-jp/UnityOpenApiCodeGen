@@ -25,8 +25,6 @@ Look Settings window at `Window/OpenAPI Code Generator/Settings`.
 
 ## Ecosystem
 - [OpenAPI Generator](https://openapi-generator.tech/)
-- [UniTask](https://github.com/Cysharp/UniTask)
-- [R3](https://github.com/Cysharp/R3)
 
 ## License
 
