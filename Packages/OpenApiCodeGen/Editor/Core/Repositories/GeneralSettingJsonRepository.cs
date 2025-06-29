@@ -1,5 +1,6 @@
 #nullable enable
 
+using System;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -13,12 +14,49 @@ namespace ReBeat.OpenApiCodeGen.Core
 
         public GeneralSettingJsonRepository()
         {
+#if UNITY_EDITOR_WIN
+            var savedPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                "AppData",
+                "LocalLow",
+                "ReBeat",
+                "OpenApiCodeGen",
+                "general.json"
+            );
+#elif UNITY_EDITOR_OSX
+            var savedPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                "Library",
+                "Application Support",
+                "ReBeat",
+                "OpenApiCodeGen",
+                "general.json"
+            );
+#elif UNITY_EDITOR_LINUX
+            var savedPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".config",
+                "ReBeat",
+                "OpenApiCodeGen",
+                "general.json"
+            );
+#else
+            var savedPath = Path.Combine(
+                Directory.GetCurrentDirectory(),
+                "Assets",
+                "OpenApiCodeGen",
+                "general.json"
+            );
+#endif
+
+            var directory = Path.GetDirectoryName(savedPath);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
             _jsonFileStore = new(
-                Path.Combine(
-                    Directory.GetCurrentDirectory(),
-                    "Assets",
-                    "OpenApiCodeGen",
-                    "general.json")
+                savedPath
             );
         }
 
