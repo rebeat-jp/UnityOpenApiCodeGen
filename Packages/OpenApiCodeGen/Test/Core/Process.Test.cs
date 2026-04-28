@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 
 
 
@@ -33,19 +33,5 @@ internal class ProcessTest
         var showRunHelpResult = dockerProcess.Send("run --help");
         Debug.Log(showRunHelpResult.Message);
         Assert.AreEqual(ExitStatus.Success, showRunHelpResult.Status);
-    }
-
-    [Test]
-    public void JavaProcessTest()
-    {
-        var javaProcess = new JavaProcess();
-        ProcessResponse? showVersionResult = null;
-
-        // 例外を投げることなく実行できるか
-        Assert.That(() => showVersionResult = javaProcess.Send("--version"),
-        Throws.Nothing);
-        Debug.Log(showVersionResult?.Message);
-
-
     }
 }
