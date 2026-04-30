@@ -1,6 +1,8 @@
 ﻿#nullable enable
 
 
+using ReBeat.OpenApiCodeGen.Core;
+
 namespace ReBeat.OpenApiCodeGen.Lib
 {
     internal class OpenApiCsharpOption
@@ -36,5 +38,35 @@ namespace ReBeat.OpenApiCodeGen.Lib
         public bool validatable = true;
 
 #pragma warning restore IDE1006 // 命名スタイル
+        public OpenApiCsharpOption()
+        {
+        }
+        public OpenApiCsharpOption(GenerationCSharpSetting cSharpSetting)
+        {
+            allowUnicodeIdentifiers = cSharpSetting.AllowUnicodeIdentifiers;
+            apiName = cSharpSetting.ApiName;
+            caseInsensitiveResponseHeaders = cSharpSetting.CaseInsensitiveResponseHeaders;
+            conditionalSerialization = cSharpSetting.ConditionalSerialization;
+            disallowAdditionalPropertiesIfNotPresent = cSharpSetting.DisallowAdditionalPropertiesIfNotPresent;
+            equatable = cSharpSetting.Equatable;
+            hideGenerationTimestamp = cSharpSetting.HideGenerationTimestamp;
+            interfacePrefix = cSharpSetting.InterfacePrefix;
+            library = cSharpSetting.Library;
+            licenseId = cSharpSetting.LicenseId;
+            modelPropertyNaming = cSharpSetting.ModelPropertyNaming;
+            netCoreProjectFile = cSharpSetting.NetCoreProjectFile;
+            nonPublicApi = cSharpSetting.NonPublicApi;
+            nullableReferenceTypes = cSharpSetting.NullableReferenceTypes;
+            optionalEmitDefaultValues = cSharpSetting.OptionalEmitDefaultValues;
+            optionalMethodArgument = cSharpSetting.OptionalMethodArgument;
+            optionalAssemblyInfo = cSharpSetting.OptionalAssemblyInfo;
+            optionalProjectFile = cSharpSetting.OptionalProjectFile;
+            packageName = cSharpSetting.PackageName;
+            returnICollection = cSharpSetting.ReturnICollection;
+            targetFramework = cSharpSetting.TargetFramework;
+            useCollection = cSharpSetting.UseCollection;
+            useOneOfDiscriminatorLookup = cSharpSetting.UseOneOfDiscriminatorLookup;
+            validatable = cSharpSetting.Validatable;
+        }
     }
 }

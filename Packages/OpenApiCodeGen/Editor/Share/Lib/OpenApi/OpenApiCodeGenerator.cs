@@ -8,11 +8,14 @@ using System.Threading.Tasks;
 
 using ReBeat.OpenApiCodeGen.Core;
 
+using UnityEngine;
+
 namespace ReBeat.OpenApiCodeGen.Lib
 {
     internal class OpenApiCodeGenerator : IGenerator
     {
         const string CachedOpenApiDocumentFileName = "openapi-document.json";
+        const string OpenApiCSharpConfigJsonFileName = "openapi-csharp-config.json";
 
         public ProcessResponse Generate(ProjectSetting projectSetting, GenerationCSharpSetting cSharpSetting, UserSetting userSetting)
         {
@@ -21,13 +24,16 @@ namespace ReBeat.OpenApiCodeGen.Lib
                 projectSetting.ApiDocumentFilePathOrUrl,
                 CancellationToken.None).GetAwaiter().GetResult();
 
+            var cachedOpenApiConfigFilePath = CacheCSharpConfigFileAsync(
+                cSharpSetting,
+                CancellationToken.None).GetAwaiter().GetResult();
+
             var dockerProcess = CreateDockerProcess(userSetting);
-            var openApiConfigJsonFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Assets", "OpenApiCodeGen", "openapi.json");
 
             var argumentsBuilder = new StringBuilder(1000);
             argumentsBuilder.Append("run --rm ");
             argumentsBuilder.Append($"-v \"{projectSetting.ApiClientOutputFolderPath}:/local\" ");
-            argumentsBuilder.Append($"-v \"{openApiConfigJsonFilePath}:/config/config.json\" ");
+            argumentsBuilder.Append($"-v \"{cachedOpenApiConfigFilePath}:/config/config.json\" ");
             argumentsBuilder.Append($"-v \"{cachedOpenApiDocumentFilePath}:/input/openapi.json\" ");
             argumentsBuilder.Append("openapitools/openapi-generator-cli generate ");
             argumentsBuilder.Append("-i \"/input/openapi.json\" ");
@@ -47,12 +53,14 @@ namespace ReBeat.OpenApiCodeGen.Lib
                 cancellationToken);
 
             var dockerProcess = CreateDockerProcess(userSetting);
-            var openApiConfigJsonFilePath = Path.Combine(Directory.GetCurrentDirectory(), "Assets", "OpenApiCodeGen", "openapi.json");
+            var cachedOpenApiConfigFilePath = await CacheCSharpConfigFileAsync(
+                cSharpSetting,
+                cancellationToken);
 
             var argumentsBuilder = new StringBuilder(1000);
             argumentsBuilder.Append("run --rm ");
             argumentsBuilder.Append($"-v \"{projectSetting.ApiClientOutputFolderPath}:/local\" ");
-            argumentsBuilder.Append($"-v \"{openApiConfigJsonFilePath}:/config/config.json\" ");
+            argumentsBuilder.Append($"-v \"{cachedOpenApiConfigFilePath}:/config/config.json\" ");
             argumentsBuilder.Append($"-v \"{cachedOpenApiDocumentFilePath}:/input/openapi.json\" ");
             argumentsBuilder.Append("openapitools/openapi-generator-cli generate ");
             argumentsBuilder.Append("-i \"/input/openapi.json\" ");
@@ -99,6 +107,27 @@ namespace ReBeat.OpenApiCodeGen.Lib
             catch (Exception e) when (e is not ExternalStorageException && e is not ExternalServiceException && e is not OperationCanceledException)
             {
                 throw new ExternalStorageException($"OpenAPIドキュメントのキャッシュ保存に失敗しました。path or url: {documentFilePathOrUrl}", e);
+            }
+        }
+
+        static async Task<string> CacheCSharpConfigFileAsync(GenerationCSharpSetting cSharpSetting, CancellationToken cancellationToken)
+        {
+            try
+            {
+                if (!Directory.Exists(ApplicationConstant.CacheFolderPath))
+                {
+                    Directory.CreateDirectory(ApplicationConstant.CacheFolderPath);
+                }
+
+                var configFilePath = Path.Combine(ApplicationConstant.CacheFolderPath, OpenApiCSharpConfigJsonFileName);
+                var openApiCsharpConfig = new OpenApiCsharpOption(cSharpSetting);
+                var json = JsonUtility.ToJson(openApiCsharpConfig);
+                await File.WriteAllTextAsync(configFilePath, json, cancellationToken);
+                return configFilePath;
+            }
+            catch (Exception e)
+            {
+                throw new ExternalStorageException("OpenAPI C#ジェネレーター設定のキャッシュ保存に失敗しました。", e);
             }
         }
 
