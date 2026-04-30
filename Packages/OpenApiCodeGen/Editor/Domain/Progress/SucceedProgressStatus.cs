@@ -3,6 +3,6 @@ namespace ReBeat.OpenApiCodeGen.UI
 {
     internal class SucceedProgressStatus : IProgressStatus
     {
-        public double Progress => 100.0;
+        public double Progress => 1.0;
     }
 }

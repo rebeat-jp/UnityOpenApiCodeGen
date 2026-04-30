@@ -160,7 +160,7 @@ namespace ReBeat.OpenApiCodeGen.UI
                 return;
             }
 
-            this._progressBar.value = progress;
+            this._progressBar.value = progress * 100.0f;
             _progressBar.title = message;
 
         }
