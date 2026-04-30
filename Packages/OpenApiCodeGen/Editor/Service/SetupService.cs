@@ -36,11 +36,7 @@ namespace ReBeat.OpenApiCodeGen.Core
         {
             try
             {
-                // 既存の設定を保持しつつ、ユーザ設定を更新して保存する
-                var userSetting = await _userSettingJsonRepository.ReadAsync() ??
-                 new UserSetting(
-                    dockerPath: setupDto.DockerPath
-                );
+                var userSetting = new UserSetting(dockerPath: setupDto.DockerPath);
 
                 var projectSetting = new ProjectSetting(
                     apiClientOutputFolderPath: "Assets/OpenAPIGenerator/Generated",
