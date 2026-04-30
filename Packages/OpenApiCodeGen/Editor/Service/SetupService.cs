@@ -17,18 +17,12 @@ namespace ReBeat.OpenApiCodeGen.Core
         {
             try
             {
-                var dockerProcess = new DockerProcess(path: checkDockerInstalledDto.DockerPath);
-                var res = await dockerProcess.SendAsync("--version");
-
-                return res.Status == ExitStatus.Success;
+                await EnsureDockerInstalledAsync(checkDockerInstalledDto.DockerPath);
+                return true;
             }
-            catch (ExternalServiceException)
+            catch (Exception)
             {
                 return false;
-            }
-            catch (Exception e)
-            {
-                throw new ApplicationServiceException("Dockerインストール確認ユースケースに失敗しました。", e);
             }
         }
 
@@ -36,6 +30,7 @@ namespace ReBeat.OpenApiCodeGen.Core
         {
             try
             {
+                await EnsureDockerInstalledAsync(setupDto.DockerPath);
                 var userSetting = new UserSetting(dockerPath: setupDto.DockerPath);
 
                 var projectSetting = new ProjectSetting(
@@ -51,6 +46,28 @@ namespace ReBeat.OpenApiCodeGen.Core
             catch (Exception e) when (e is not ApplicationServiceException)
             {
                 throw new ApplicationServiceException("セットアップユースケースに失敗しました。", e);
+            }
+        }
+
+        async Task EnsureDockerInstalledAsync(string dockerPath)
+        {
+            try
+            {
+                var dockerProcess = new DockerProcess(path: dockerPath);
+                var res = await dockerProcess.SendAsync("--version");
+
+                if (res.Status != ExitStatus.Success)
+                {
+                    throw new ApplicationServiceException("Dockerがインストールされていないか、パスが間違っています。");
+                }
+            }
+            catch (ExternalServiceException)
+            {
+                throw new ApplicationServiceException("Dockerがインストールされていないか、パスが間違っています。");
+            }
+            catch (Exception e)
+            {
+                throw new ApplicationServiceException("Dockerインストール確認ユースケースに失敗しました。", e);
             }
         }
     }
