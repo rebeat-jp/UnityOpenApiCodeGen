@@ -104,7 +104,7 @@ namespace ReBeat.OpenApiCodeGen.Presenter
             }
 
             _generationView?.SetInputEnabled(false);
-            SetProgressStatus(new PendingProgressStatus(20));
+            SetProgressStatus(new PendingProgressStatus(0.2));
 
             try
             {

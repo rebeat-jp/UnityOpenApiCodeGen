@@ -25,6 +25,7 @@ namespace ReBeat.OpenApiCodeGen.UI
         Label? _outputFolderPathComment;
         ProgressBar? _progressBar;
         TextField? _generationFailureLog;
+        Button? _generateButton;
 
         readonly IGenerationPresenter _presenter;
 
@@ -62,10 +63,10 @@ namespace ReBeat.OpenApiCodeGen.UI
             _progressBar = root.Q<ProgressBar>("Progress");
             _generationFailureLog = root.Q<TextField>("GenerationFailureLog");
 
-            var generateButton = root.Q<Button>("GenerateButton");
-            if (generateButton != null)
+            _generateButton = root.Q<Button>("GenerateButton");
+            if (_generateButton != null)
             {
-                generateButton.clicked += OnGenerate;
+                _generateButton.clicked += OnGenerate;
             }
 
             RegisterGenerateSettingChangeHandlers();
@@ -187,6 +188,7 @@ namespace ReBeat.OpenApiCodeGen.UI
         {
             _documentFilePath?.SetEnabled(isEnabled);
             _outputFolderPath?.SetEnabled(isEnabled);
+            _generateButton?.SetEnabled(isEnabled);
         }
 
     }
