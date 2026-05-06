@@ -1,6 +1,6 @@
 {
   "name": "jp.rebeat.openapicodegen",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "displayName": "OpenApiCodeGen",
   "description": "This is a package to make a rest api client c-sharp file from openapi's json and yaml",
   "author": "Re:Beat",
