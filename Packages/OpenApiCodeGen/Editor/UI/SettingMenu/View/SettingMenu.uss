@@ -1,0 +1,30 @@
+.custom-label {
+    font-size: 20px;
+    -unity-font-style: bold;
+    color: rgb(68, 138, 255);
+}
+
+.setting-menu-scroll {
+    padding-left: 8px;
+    padding-right: 8px;
+}
+
+.setting-section {
+    margin-top: 12px;
+}
+
+.setting-section .unity-base-field {
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.setting-section .unity-base-field__label {
+    width: 240px;
+    min-width: 240px;
+    margin-right: 8px;
+    white-space: normal;
+}
+
+.setting-section .unity-base-field__input {
+    flex-grow: 1;
+}
