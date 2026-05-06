@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## unreleased
 
-## Feature
+## [0.3.0]
+
+### Feature
 
 - Display Generated Result on Generate Menu
 
