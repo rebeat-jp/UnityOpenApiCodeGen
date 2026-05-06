@@ -1,5 +1,5 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
-    <Style src="project://database/Packages/com.rebeat.openapicodegen/Editor/UI/SettingMenu/SettingMenu.uss?fileID=7433441132597879392&amp;guid=85d61e68e42234629a04d6023ac5024b&amp;type=3#SettingMenu" />
+    <Style src="project://database/Packages/jp.rebeat.openapicodegen/Editor/UI/SettingMenu/SettingMenu.uss?fileID=7433441132597879392&amp;guid=85d61e68e42234629a04d6023ac5024b&amp;type=3#SettingMenu" />
     <ui:ScrollView class="setting-menu-scroll">
         <ui:Label tabindex="-1" text="Setting Menu" display-tooltip-when-elided="true" style="font-size: 30px; -unity-font-style: bold;" />
         <ui:Foldout text="User Settings" name="UserSettingsFoldout" class="setting-section" style="font-size: 14px;">
