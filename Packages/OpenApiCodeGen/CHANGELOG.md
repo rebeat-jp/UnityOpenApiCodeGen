@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## unreleased
 
+### Fixed
+
+- change package name
+- change namespace Begining by "Rhycol"
+
 ## [0.3.1]
 
 ### Fixed

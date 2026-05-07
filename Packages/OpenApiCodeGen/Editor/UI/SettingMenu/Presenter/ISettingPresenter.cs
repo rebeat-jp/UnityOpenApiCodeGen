@@ -1,8 +1,8 @@
 ﻿#nullable enable
 
-using ReBeat.OpenApiCodeGen.UI;
+using Rhycol.OpenApiCodeGen.UI;
 
-namespace ReBeat.OpenApiCodeGen.Presenter
+namespace Rhycol.OpenApiCodeGen.Presenter
 {
     internal interface ISettingPresenter
     {

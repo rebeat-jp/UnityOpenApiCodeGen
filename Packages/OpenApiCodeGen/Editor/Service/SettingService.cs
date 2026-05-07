@@ -2,10 +2,10 @@
 using System;
 using System.Threading.Tasks;
 
-using ReBeat.OpenApiCodeGen.UI;
+using Rhycol.OpenApiCodeGen.UI;
 
 
-namespace ReBeat.OpenApiCodeGen.Core
+namespace Rhycol.OpenApiCodeGen.Core
 {
     internal class SettingService
     {

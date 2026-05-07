@@ -1,4 +1,4 @@
-﻿namespace ReBeat.OpenApiCodeGen.UI
+﻿namespace Rhycol.OpenApiCodeGen.UI
 {
     internal class UserSettingDisplayDto
     {

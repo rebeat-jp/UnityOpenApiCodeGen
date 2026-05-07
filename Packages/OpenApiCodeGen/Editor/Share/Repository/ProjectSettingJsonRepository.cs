@@ -4,10 +4,10 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 
-using ReBeat.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Core;
 
 
-namespace ReBeat.OpenApiCodeGen.Lib
+namespace Rhycol.OpenApiCodeGen.Lib
 {
     internal class ProjectSettingJsonRepository : IAsyncRepository<ProjectSetting>
     {

@@ -5,10 +5,10 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
-using ReBeat.OpenApiCodeGen.Lib;
-using ReBeat.OpenApiCodeGen.UI;
+using Rhycol.OpenApiCodeGen.Lib;
+using Rhycol.OpenApiCodeGen.UI;
 
-namespace ReBeat.OpenApiCodeGen.Core
+namespace Rhycol.OpenApiCodeGen.Core
 {
     internal class GenerationService
     {

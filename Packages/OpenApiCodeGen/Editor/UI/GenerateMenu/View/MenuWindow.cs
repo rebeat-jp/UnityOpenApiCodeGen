@@ -2,15 +2,15 @@
 
 using System;
 
-using ReBeat.OpenApiCodeGen.Core;
-using ReBeat.OpenApiCodeGen.Presenter;
+using Rhycol.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Presenter;
 
 using UnityEditor;
 
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace ReBeat.OpenApiCodeGen.UI
+namespace Rhycol.OpenApiCodeGen.UI
 {
     internal class MenuWindow : EditorWindow, IGenerationView
     {

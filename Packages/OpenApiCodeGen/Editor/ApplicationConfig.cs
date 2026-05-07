@@ -1,7 +1,7 @@
-﻿using ReBeat.OpenApiCodeGen.Core;
-using ReBeat.OpenApiCodeGen.Lib;
+﻿using Rhycol.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Lib;
 
-namespace ReBeat.OpenApiCodeGen
+namespace Rhycol.OpenApiCodeGen
 {
     internal static class ApplicationConfig
     {

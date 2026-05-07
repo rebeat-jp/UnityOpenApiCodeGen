@@ -4,10 +4,10 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 
-using ReBeat.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Core;
 
 
-namespace ReBeat.OpenApiCodeGen.Lib
+namespace Rhycol.OpenApiCodeGen.Lib
 {
     internal class GenerationCSharpSettingJsonRepository : IAsyncRepository<GenerationCSharpSetting>
     {
@@ -64,7 +64,7 @@ namespace ReBeat.OpenApiCodeGen.Lib
             public bool OptionalMethodArgument = true;
             public bool OptionalAssemblyInfo = true;
             public bool OptionalProjectFile = false;
-            public string PackageName = "ReBeat.OpenApiCodeGen";
+            public string PackageName = "Rhycol.OpenApiCodeGen";
             public bool ReturnICollection = false;
             public string TargetFramework = "netstandard2.1";
             public bool UseCollection = false;

@@ -3,7 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 
-namespace ReBeat.OpenApiCodeGen.Core
+namespace Rhycol.OpenApiCodeGen.Core
 {
     interface IGenerator
     {

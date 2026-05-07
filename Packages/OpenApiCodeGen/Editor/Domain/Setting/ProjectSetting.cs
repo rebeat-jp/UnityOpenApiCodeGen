@@ -1,5 +1,5 @@
 ﻿#nullable enable
-namespace ReBeat.OpenApiCodeGen.Core
+namespace Rhycol.OpenApiCodeGen.Core
 {
     internal class ProjectSetting
     {
