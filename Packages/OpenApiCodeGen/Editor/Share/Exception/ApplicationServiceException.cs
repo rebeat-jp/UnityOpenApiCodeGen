@@ -2,7 +2,7 @@
 
 using System;
 
-namespace ReBeat.OpenApiCodeGen.Core
+namespace Rhycol.OpenApiCodeGen.Core
 {
     public class ApplicationServiceException : Exception
     {

@@ -2,7 +2,7 @@
 
 using System;
 
-namespace ReBeat.OpenApiCodeGen.UI
+namespace Rhycol.OpenApiCodeGen.UI
 {
     internal class PendingProgressStatus : IProgressStatus
     {

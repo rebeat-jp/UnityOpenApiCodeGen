@@ -2,9 +2,9 @@
 
 using System;
 
-using ReBeat.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Core;
 
-namespace ReBeat.OpenApiCodeGen.UI
+namespace Rhycol.OpenApiCodeGen.UI
 {
     internal interface ISetupView
     {

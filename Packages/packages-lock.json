@@ -193,7 +193,7 @@
       },
       "url": "https://packages.unity.com"
     },
-    "jp.rebeat.openapicodegen": {
+    "jp.rhycol.openapicodegen": {
       "version": "file:OpenApiCodeGen",
       "depth": 0,
       "source": "embedded",

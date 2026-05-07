@@ -6,11 +6,11 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-using ReBeat.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Core;
 
 using UnityEngine;
 
-namespace ReBeat.OpenApiCodeGen.Lib
+namespace Rhycol.OpenApiCodeGen.Lib
 {
     internal class OpenApiCodeGenerator : IGenerator
     {

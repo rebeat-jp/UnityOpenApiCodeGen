@@ -1,7 +1,7 @@
 ﻿#nullable enable
 using System;
 
-namespace ReBeat.OpenApiCodeGen.UI
+namespace Rhycol.OpenApiCodeGen.UI
 {
     internal interface IGenerationView
     {
