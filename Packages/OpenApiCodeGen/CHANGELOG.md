@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## unreleased
 
+## [0.4.0]
+
 ### Fixed
 
 - change package name

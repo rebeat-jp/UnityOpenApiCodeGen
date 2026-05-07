@@ -1,6 +1,6 @@
 {
   "name": "jp.rhycol.openapicodegen",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "displayName": "OpenApiCodeGen",
   "description": "This is a package to make a rest api client c-sharp file from openapi's json and yaml",
   "author": "Re:Beat",
