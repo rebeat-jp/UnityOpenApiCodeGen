@@ -3,11 +3,11 @@ using System;
 using System.Text;
 using System.Threading.Tasks;
 
-using ReBeat.OpenApiCodeGen.Core;
-using ReBeat.OpenApiCodeGen.UI;
+using Rhycol.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.UI;
 
 
-namespace ReBeat.OpenApiCodeGen.Presenter
+namespace Rhycol.OpenApiCodeGen.Presenter
 {
     internal class MenuPresenter : IGenerationPresenter
     {

@@ -5,11 +5,11 @@ using System.IO;
 using System.Threading.Tasks;
 
 
-using ReBeat.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Core;
 
 using UnityEngine;
 
-namespace ReBeat.OpenApiCodeGen.Lib
+namespace Rhycol.OpenApiCodeGen.Lib
 {
     public class JsonFileStore<T> where T : class
     {

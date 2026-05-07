@@ -1,9 +1,9 @@
 ﻿#nullable enable
 using System;
 
-using ReBeat.OpenApiCodeGen.Core;
-using ReBeat.OpenApiCodeGen.Presenter;
-using ReBeat.OpenApiCodeGen.UI;
+using Rhycol.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Presenter;
+using Rhycol.OpenApiCodeGen.UI;
 
 using UnityEditor;
 

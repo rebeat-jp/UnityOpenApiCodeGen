@@ -1,9 +1,9 @@
 ﻿#nullable enable
 
 
-using ReBeat.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Core;
 
-namespace ReBeat.OpenApiCodeGen.Lib
+namespace Rhycol.OpenApiCodeGen.Lib
 {
     internal class OpenApiCsharpOption
     {
@@ -26,7 +26,7 @@ namespace ReBeat.OpenApiCodeGen.Lib
         public bool optionalMethodArgument = true;
         public bool optionalAssemblyInfo = true;
         public bool optionalProjectFile = false;
-        public string packageName = "ReBeat.OpenApiCodeGen";
+        public string packageName = "Rhycol.OpenApiCodeGen";
         public bool returnICollection = false;
         /// <summary>
         /// The target .NET framework version. To target multiple frameworks, use ; as the separator, 

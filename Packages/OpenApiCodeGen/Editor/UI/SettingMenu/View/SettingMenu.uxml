@@ -1,12 +1,12 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
-    <Style src="project://database/Packages/jp.rebeat.openapicodegen/Editor/UI/SettingMenu/SettingMenu.uss?fileID=7433441132597879392&amp;guid=85d61e68e42234629a04d6023ac5024b&amp;type=3#SettingMenu" />
+    <Style src="project://database/Packages/jp.rhycol.openapicodegen/Editor/UI/SettingMenu/SettingMenu.uss?fileID=7433441132597879392&amp;guid=85d61e68e42234629a04d6023ac5024b&amp;type=3#SettingMenu" />
     <ui:ScrollView class="setting-menu-scroll">
         <ui:Label tabindex="-1" text="Setting Menu" display-tooltip-when-elided="true" style="font-size: 30px; -unity-font-style: bold;" />
         <ui:Foldout text="User Settings" name="UserSettingsFoldout" class="setting-section" style="font-size: 14px;">
             <ui:TextField picking-mode="Ignore" label="Docker Path" name="DockerPathField" />
         </ui:Foldout>
         <ui:Foldout text="Project Settings" name="ProjectSettingsFoldout" class="setting-section" style="font-size: 14px;">
-            <ui:EnumField label="Generate Provider" type="ReBeat.OpenApiCodeGen.Core.GenerateProvider, Unity.OpenApiCodeGen.Editor" name="GenerateProviderField" />
+            <ui:EnumField label="Generate Provider" type="Rhycol.OpenApiCodeGen.Core.GenerateProvider, Unity.OpenApiCodeGen.Editor" name="GenerateProviderField" />
             <ui:TextField picking-mode="Ignore" label="Default API Document File URL" name="DefaultApiDocumentFilePathOrUrlField" />
             <ui:TextField picking-mode="Ignore" label="Default Output Folder Path" name="DefaultOutputFolderPathField" />
         </ui:Foldout>
@@ -19,7 +19,7 @@
             <ui:Toggle label="Equatable" name="EquatableField" style="display: flex; visibility: visible; justify-content: flex-start;" />
             <ui:Toggle label="Hide Generation Timestamp" name="HideGenerationTimestampField" />
             <ui:TextField picking-mode="Ignore" label="Interface Prefix" name="InterfacePrefixField" />
-            <ui:EnumField label="Library" type="ReBeat.OpenApiCodeGen.UI.OpenApiDependenceLibrary, Unity.OpenApiCodeGen.Editor" name="LibraryField" />
+            <ui:EnumField label="Library" type="Rhycol.OpenApiCodeGen.UI.OpenApiDependenceLibrary, Unity.OpenApiCodeGen.Editor" name="LibraryField" />
             <ui:TextField picking-mode="Ignore" label="License ID" name="LicenseIdField" />
             <ui:TextField picking-mode="Ignore" label="Model Property Naming" name="ModelPropertyNamingField" />
             <ui:Toggle label=".Net Core Project File" name="NetCoreProjectFileField" />

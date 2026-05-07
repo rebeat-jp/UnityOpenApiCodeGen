@@ -2,10 +2,10 @@
 
 using System;
 
-using ReBeat.OpenApiCodeGen.Core;
-using ReBeat.OpenApiCodeGen.UI;
+using Rhycol.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.UI;
 
-namespace ReBeat.OpenApiCodeGen.UI
+namespace Rhycol.OpenApiCodeGen.UI
 {
     interface ISetupPresenter
     {

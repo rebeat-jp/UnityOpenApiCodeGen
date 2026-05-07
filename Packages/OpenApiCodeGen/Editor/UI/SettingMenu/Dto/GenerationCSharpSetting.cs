@@ -1,7 +1,7 @@
 ﻿#nullable enable
 
 
-namespace ReBeat.OpenApiCodeGen.UI
+namespace Rhycol.OpenApiCodeGen.UI
 {
     internal class GenerationCSharpSettingDisplayDto
     {
@@ -23,7 +23,7 @@ namespace ReBeat.OpenApiCodeGen.UI
         public bool OptionalMethodArgument { get; set; } = true;
         public bool OptionalAssemblyInfo { get; set; } = true;
         public bool OptionalProjectFile { get; set; } = false;
-        public string PackageName { get; set; } = "ReBeat.OpenApiCodeGen";
+        public string PackageName { get; set; } = "Rhycol.OpenApiCodeGen";
         public bool ReturnICollection { get; set; } = false;
         /// <summary>
         /// The target .NET framework version. To target multiple frameworks, use ; as the separator, 

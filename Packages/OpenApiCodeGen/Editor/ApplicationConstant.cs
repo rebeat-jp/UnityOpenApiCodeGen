@@ -1,13 +1,13 @@
 ﻿using System;
 using System.IO;
 
-namespace ReBeat.OpenApiCodeGen
+namespace Rhycol.OpenApiCodeGen
 {
     internal static class ApplicationConstant
     {
         public static readonly string CacheFolderPath = Path.Combine(
             Path.GetTempPath(),
-            "ReBeat",
+            "Rhycol",
             "OpenApiCodeGen"
         );
         public static readonly string PROJECT_FOLDER_PATH = Path.Combine(
@@ -21,7 +21,7 @@ namespace ReBeat.OpenApiCodeGen
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             "AppData",
             "LocalLow",
-            "ReBeat",
+            "Rhycol",
             "OpenApiCodeGen"
         );
 #elif UNITY_EDITOR_OSX
@@ -29,14 +29,14 @@ namespace ReBeat.OpenApiCodeGen
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             "Library",
             "Application Support",
-            "ReBeat",
+            "Rhycol",
             "OpenApiCodeGen"
         );
 #elif UNITY_EDITOR_LINUX
         public static readonly string USER_FOLDER_PATH = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 ".config",
-                "ReBeat",
+                "Rhycol",
                 "OpenApiCodeGen"
             );
 #else

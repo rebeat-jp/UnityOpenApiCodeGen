@@ -1,7 +1,7 @@
 ﻿#nullable enable
 using System.Threading.Tasks;
 
-namespace ReBeat.OpenApiCodeGen.Core
+namespace Rhycol.OpenApiCodeGen.Core
 {
     public interface IAsyncRepository<T> where T : class
     {

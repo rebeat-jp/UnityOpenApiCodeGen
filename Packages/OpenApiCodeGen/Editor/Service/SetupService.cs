@@ -1,7 +1,7 @@
 ﻿using System.Threading.Tasks;
 using System;
 
-namespace ReBeat.OpenApiCodeGen.Core
+namespace Rhycol.OpenApiCodeGen.Core
 {
     internal class SetupService
     {

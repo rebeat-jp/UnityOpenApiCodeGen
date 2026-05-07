@@ -4,7 +4,7 @@
 
 using NUnit.Framework;
 
-using ReBeat.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Core;
 
 using UnityEngine;
 
