@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Register the Source Generator with the base package's Generation Provider registry.
+- Report analyzer availability without loading analyzer-only dependencies.
+
+### Changed
+
+- Return an explicit Phase 3 pending result from Generate instead of falling back to Docker.
+
 ## [0.1.0]
 
 ### Added

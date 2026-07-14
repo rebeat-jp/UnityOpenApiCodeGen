@@ -8,10 +8,20 @@ Editor-only normalizer/cache service. Raw OpenAPI JSON is parsed in the Editor
 with Json.NET and persisted as a deterministic Normalized Spec Bundle v1. The
 analyzer consumes only the generated AdditionalFile and does not load Json.NET.
 
+Phase 2 registers this add-on with the base package's public Generation Provider
+registry. The provider is available only when the packaged analyzer DLL and its
+`RoslynAnalyzer` metadata are valid. Select it from the base package Settings
+window; it never falls back to Docker.
+
 `NormalizedSpecCacheService` is intentionally internal and is not wired to the
-existing Docker-backed Generate menu in Phase 1. A later Provider phase will
-invoke this boundary explicitly; normalization failures never fall back to
-Docker.
+Generate operation yet. During Phase 2, Generate returns an explicit message
+that the local JSON pipeline is pending Phase 3. Normalization failures never
+fall back to Docker.
+
+When this provider is selected and available, the base package synchronizes
+`OPENAPI_CODEGEN_SOURCE_GENERATOR` to the active `NamedBuildTarget`. Removing
+the add-on or selecting Docker removes the define when that target is next
+synchronized; code that references generated types may then stop compiling.
 
 The generated compiler mirror is stored at:
 
@@ -23,4 +33,5 @@ Assets/OpenApiCodeGen/Generated/SpecCache/
 Assemblies that should receive generated code must explicitly reference the
 `Unity.OpenApiCodeGen.SourceGenerator` owner assembly definition. Provider UI,
 multiple specs per target assembly, YAML, URLs, and external `$ref` are not part
-of Phase 1.
+of Phase 1. Provider registration and define synchronization are included in
+Phase 2, while partial-definition and cache-service wiring remain Phase 3 work.
