@@ -11,6 +11,7 @@ namespace ReBeat.OpenApiCodeGen.SourceGenerator
     /// インクリメンタル Source Generator の入口。
     /// Entry point for the incremental source generator.
     /// </summary>
+    [Generator(LanguageNames.CSharp)]
     public class ApiClientCodeGenerator : IIncrementalGenerator
     {
         /// <summary>

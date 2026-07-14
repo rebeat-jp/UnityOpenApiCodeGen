@@ -1,11 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
-using System.Text;
 using System.Text.Json;
-
-using YamlDotNet.RepresentationModel;
 
 namespace ReBeat.OpenApiCodeGen.SourceGenerator
 {
@@ -630,104 +625,6 @@ namespace ReBeat.OpenApiCodeGen.SourceGenerator
             }
 
             return values;
-        }
-
-        /// <summary>
-        /// YAML を JSON に変換する。
-        /// Converts YAML to JSON.
-        /// </summary>
-        private static string ConvertYamlToJson(YamlNode node)
-        {
-            using var stream = new MemoryStream();
-            using (var writer = new Utf8JsonWriter(stream))
-            {
-                WriteYamlNode(writer, node);
-            }
-
-            return Encoding.UTF8.GetString(stream.ToArray());
-        }
-
-        /// <summary>
-        /// YAML ノードを JSON に書き出す。
-        /// Writes a YAML node as JSON.
-        /// </summary>
-        private static void WriteYamlNode(Utf8JsonWriter writer, YamlNode node)
-        {
-            switch (node)
-            {
-                case YamlMappingNode mapping:
-                    writer.WriteStartObject();
-                    foreach (var entry in mapping.Children)
-                    {
-                        var keyNode = entry.Key as YamlScalarNode;
-                        var key = keyNode?.Value ?? entry.Key.ToString() ?? string.Empty;
-                        writer.WritePropertyName(key);
-                        WriteYamlNode(writer, entry.Value);
-                    }
-                    writer.WriteEndObject();
-                    break;
-                case YamlSequenceNode sequence:
-                    writer.WriteStartArray();
-                    foreach (var item in sequence.Children)
-                    {
-                        WriteYamlNode(writer, item);
-                    }
-                    writer.WriteEndArray();
-                    break;
-                case YamlScalarNode scalar:
-                    WriteScalar(writer, scalar);
-                    break;
-                default:
-                    writer.WriteNullValue();
-                    break;
-            }
-        }
-
-        /// <summary>
-        /// YAML スカラーを JSON 値に変換する。
-        /// Converts a YAML scalar to a JSON value.
-        /// </summary>
-        private static void WriteScalar(Utf8JsonWriter writer, YamlScalarNode scalar)
-        {
-            var value = scalar.Value;
-            if (value is null)
-            {
-                writer.WriteNullValue();
-                return;
-            }
-
-            if (string.Equals(value, "null", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(value, "~", StringComparison.Ordinal))
-            {
-                writer.WriteNullValue();
-                return;
-            }
-
-            if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase))
-            {
-                writer.WriteBooleanValue(true);
-                return;
-            }
-
-            if (string.Equals(value, "false", StringComparison.OrdinalIgnoreCase))
-            {
-                writer.WriteBooleanValue(false);
-                return;
-            }
-
-            if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue))
-            {
-                writer.WriteNumberValue(longValue);
-                return;
-            }
-
-            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
-            {
-                writer.WriteNumberValue(doubleValue);
-                return;
-            }
-
-            writer.WriteStringValue(value);
         }
 
         /// <summary>
