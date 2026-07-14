@@ -20,6 +20,7 @@ namespace Rhycol.OpenApiCodeGen.UI
 
         [SerializeField]
         private VisualTreeAsset? _visualTreeAsset = default;
+        TextField? _generateProviderField;
         TextField? _documentFilePath;
         Label? _documentFilePathComment;
         TextField? _outputFolderPath;
@@ -27,6 +28,7 @@ namespace Rhycol.OpenApiCodeGen.UI
         ProgressBar? _progressBar;
         TextField? _generationFailureLog;
         Button? _generateButton;
+        GenerateProvider _generateProvider = GenerateProvider.OpenApi;
 
         readonly IGenerationPresenter _presenter;
 
@@ -57,6 +59,7 @@ namespace Rhycol.OpenApiCodeGen.UI
             VisualElement labelFromUXML = _visualTreeAsset.Instantiate();
             root.Add(labelFromUXML);
 
+            _generateProviderField = root.Q<TextField>("GenerateProvider");
             _documentFilePath = root.Q<TextField>("DocumentFilePath");
             _outputFolderPath = root.Q<TextField>("OutputFolderPath");
             _documentFilePathComment = root.Q<Label>("DocumentFilePathComment");
@@ -90,7 +93,7 @@ namespace Rhycol.OpenApiCodeGen.UI
             EventCallback<FocusOutEvent> textEditedCallback = (e) =>
             {
                 var dto = new GenerateApiClientDto(
-                    generateProvider: GenerateProvider.OpenApi,
+                    generateProvider: _generateProvider,
                     apiDocumentFilePathOrUrl: _documentFilePath.text,
                     apiClientOutputFolderPath: _outputFolderPath.text);
                 GenerateSettingChanged?.Invoke(dto);
@@ -104,8 +107,29 @@ namespace Rhycol.OpenApiCodeGen.UI
         {
             var dto = generateMenuDto;
 
+            _generateProvider = dto.GenerateProvider;
+            _generateProviderField?.SetValueWithoutNotify(GetProviderDisplayName(_generateProvider));
             _documentFilePath?.SetValueWithoutNotify(dto.ApiDocumentFilePathOrUrl);
             _outputFolderPath?.SetValueWithoutNotify(dto.ApiClientOutputFolderPath);
+            if (_outputFolderPath != null)
+            {
+                _outputFolderPath.label = _generateProvider == GenerateProvider.SourceGenerator
+                    ? "Definition Output Folder"
+                    : "Output path name";
+            }
+        }
+
+        static string GetProviderDisplayName(GenerateProvider provider)
+        {
+            GenerationProviderResolution resolution = GenerationProviderRegistry.Shared.Resolve(provider);
+            if (resolution.IsResolved)
+            {
+                return resolution.Provider!.Descriptor.DisplayName;
+            }
+
+            return Enum.IsDefined(typeof(GenerateProvider), provider)
+                ? provider.ToString()
+                : $"Unknown provider ({(int)provider})";
         }
 
         public void SetGenerateStatus(IProgressStatus generateStatus)
@@ -124,7 +148,7 @@ namespace Rhycol.OpenApiCodeGen.UI
         void OnGenerate()
         {
             var dto = new GenerateApiClientDto(
-                generateProvider: GenerateProvider.OpenApi,
+                generateProvider: _generateProvider,
                 apiDocumentFilePathOrUrl: _documentFilePath?.value ?? "",
                 apiClientOutputFolderPath: _outputFolderPath?.value ?? "");
 

@@ -7,6 +7,8 @@
         </ui:Foldout>
         <ui:Foldout text="Project Settings" name="ProjectSettingsFoldout" class="setting-section" style="font-size: 14px;">
             <ui:EnumField label="Generate Provider" type="Rhycol.OpenApiCodeGen.Editor.Generation.GenerateProvider, Unity.OpenApiCodeGen.Editor.Contracts" name="GenerateProviderField" />
+            <ui:Label name="GenerateProviderDisplayNameLabel" style="margin-left: 3px; white-space: normal;" />
+            <ui:Label name="GenerateProviderAvailabilityLabel" style="margin-left: 3px; margin-bottom: 4px; white-space: normal;" />
             <ui:TextField picking-mode="Ignore" label="Default API Document File URL" name="DefaultApiDocumentFilePathOrUrlField" />
             <ui:TextField picking-mode="Ignore" label="Default Output Folder Path" name="DefaultOutputFolderPathField" />
         </ui:Foldout>

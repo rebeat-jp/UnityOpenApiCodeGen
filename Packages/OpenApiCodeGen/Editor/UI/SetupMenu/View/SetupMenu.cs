@@ -3,7 +3,6 @@
 using System;
 
 using Rhycol.OpenApiCodeGen.Core;
-using Rhycol.OpenApiCodeGen.Editor.Generation;
 using Rhycol.OpenApiCodeGen.Presenter;
 using Rhycol.OpenApiCodeGen.UI;
 
@@ -22,7 +21,6 @@ internal class SetupMenu : EditorWindow, ISetupView
 
     readonly ISetupPresenter _presenter;
     Label? _messageLabel;
-    EnumField? _providerField;
     TextField? _dockerPathField;
     Button? _checkRunnableDockerButton;
     Button? _setupButton;
@@ -40,22 +38,15 @@ internal class SetupMenu : EditorWindow, ISetupView
 
     internal void SetOnSaveHandler(Action<SetupDto> onChangeHandler)
     {
-        if (_dockerPathField == null || _providerField == null)
+        if (_dockerPathField == null)
         {
             return;
         }
 
         _dockerPathField.RegisterCallback<FocusOutEvent>((e) =>
         {
-            var dto = new SetupDto(_dockerPathField.text, (GenerateProvider)_providerField.value);
+            var dto = new SetupDto(_dockerPathField.text);
             onChangeHandler(dto);
-        });
-
-        _providerField.RegisterValueChangedCallback(e =>
-        {
-            var dto = new SetupDto(_dockerPathField.text, (GenerateProvider)e.newValue);
-            onChangeHandler(dto);
-
         });
     }
 
@@ -89,7 +80,6 @@ internal class SetupMenu : EditorWindow, ISetupView
 
         _messageLabel = root.Q<Label>("ErrorMessageLabel");
         _dockerPathField = root.Q<TextField>("DockerPathField");
-        _providerField = root.Q<EnumField>("ProviderField");
         _checkRunnableDockerButton = root.Q<Button>("CheckRunnableDockerButton");
         _setupButton = root.Q<Button>("SetupButton");
 
@@ -129,7 +119,6 @@ internal class SetupMenu : EditorWindow, ISetupView
     public void SetInputEnabled(bool isEnabled)
     {
         _dockerPathField?.SetEnabled(isEnabled);
-        _providerField?.SetEnabled(isEnabled);
         _checkRunnableDockerButton?.SetEnabled(isEnabled);
         _setupButton?.SetEnabled(isEnabled);
     }
@@ -138,9 +127,7 @@ internal class SetupMenu : EditorWindow, ISetupView
     void OnSetupInternal()
     {
         var dockerPath = _dockerPathField?.text ?? "";
-        var providerType = (GenerateProvider)(_providerField?.value ?? GenerateProvider.OpenApi);
-
-        var dto = new SetupDto(dockerPath, providerType);
+        var dto = new SetupDto(dockerPath);
         SetupRequested?.Invoke(dto);
     }
 
