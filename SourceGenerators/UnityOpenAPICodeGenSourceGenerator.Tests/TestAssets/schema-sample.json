@@ -1,0 +1,101 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Schema Sample",
+    "version": "1.0.0"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "BooleanTrue": true,
+      "BooleanFalse": false,
+      "Base": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }
+        },
+        "required": ["id"]
+      },
+      "Composite": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://example.com/schema",
+        "$anchor": "root",
+        "$dynamicRef": "#meta",
+        "$dynamicAnchor": "meta",
+        "$vocabulary": {
+          "https://json-schema.org/draft/2020-12/vocab/core": true
+        },
+        "$comment": "note",
+        "title": "Composite",
+        "description": "Test schema",
+        "type": ["object"],
+        "format": "custom",
+        "const": 1,
+        "enum": [1, 2, 3],
+        "default": 2,
+        "examples": [1, 2],
+        "multipleOf": 2,
+        "maximum": 10,
+        "exclusiveMaximum": 11,
+        "minimum": 1,
+        "exclusiveMinimum": 0,
+        "maxLength": 5,
+        "minLength": 1,
+        "pattern": "^a+$",
+        "maxItems": 5,
+        "minItems": 1,
+        "uniqueItems": true,
+        "maxContains": 2,
+        "minContains": 1,
+        "maxProperties": 5,
+        "minProperties": 1,
+        "properties": {
+          "flag": { "const": true },
+          "name": { "type": ["string", "null"] }
+        },
+        "patternProperties": {
+          "^S_": { "type": "string" }
+        },
+        "additionalProperties": { "type": "number" },
+        "prefixItems": [
+          { "type": "string" },
+          { "type": "integer" }
+        ],
+        "items": false,
+        "contains": { "type": "string" },
+        "unevaluatedItems": false,
+        "unevaluatedProperties": { "type": "boolean" },
+        "propertyNames": { "pattern": "^[a-z]+$" },
+        "dependentRequired": {
+          "credit_card": ["billing_address"]
+        },
+        "dependentSchemas": {
+          "details": { "type": "object", "properties": { "value": { "type": "string" } } }
+        },
+        "if": { "properties": { "flag": { "const": true } } },
+        "then": { "required": ["flag"] },
+        "else": { "required": ["other"] },
+        "allOf": [
+          { "$ref": "#/components/schemas/Base" },
+          { "type": "object" }
+        ],
+        "anyOf": [
+          { "type": "integer" },
+          { "type": "string" }
+        ],
+        "oneOf": [
+          { "type": "string" },
+          { "type": "number" }
+        ],
+        "not": { "type": "null" },
+        "$defs": {
+          "Inner": { "type": "string" },
+          "Always": true
+        },
+        "contentEncoding": "base64",
+        "contentMediaType": "application/json",
+        "contentSchema": { "type": "string" }
+      }
+    }
+  }
+}
