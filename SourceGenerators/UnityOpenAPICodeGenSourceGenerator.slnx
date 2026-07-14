@@ -1,5 +1,0 @@
-<Solution>
-  <Project Path="UnityOpenAPICodeGenSourceGenerator/UnityOpenAPICodeGenSourceGenerator.csproj" />
-  <Project
-    Path="UnityOpenAPICodeGenSourceGenerator.Tests/UnityOpenAPICodeGenSourceGenerator.Tests.csproj" />
-</Solution>

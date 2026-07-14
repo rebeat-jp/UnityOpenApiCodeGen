@@ -13,9 +13,9 @@ GitHub issue #23.
 
 The snapshot consists of:
 
-- `UnityOpenAPICodeGenSourceGenerator/`
-- `UnityOpenAPICodeGenSourceGenerator.Tests/`
-- `UnityOpenAPICodeGenSourceGenerator.slnx`
+- `Rhycol.OpenApiCodeGen.SourceGenerator/` (imported as `UnityOpenAPICodeGenSourceGenerator/`)
+- `Rhycol.OpenApiCodeGen.SourceGenerator.Tests/` (imported as `UnityOpenAPICodeGenSourceGenerator.Tests/`)
+- `Rhycol.OpenApiCodeGen.SourceGenerator.slnx` (imported as `UnityOpenAPICodeGenSourceGenerator.slnx`)
 - the upstream `.editorconfig`
 
 Repository-specific workflows, editor settings, and agent instructions were not copied because they are not part of

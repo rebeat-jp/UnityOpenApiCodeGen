@@ -1,0 +1,98 @@
+{
+  "formatVersion": 1,
+  "specId": "0123456789abcdef0123456789abcdef",
+  "rawSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "rootDocumentId": "root",
+  "documents": [
+    {
+      "documentId": "root",
+      "sourcePath": "Assets/Specs/openapi.json",
+      "root": {
+        "kind": "object",
+        "line": 1,
+        "column": 1,
+        "properties": [
+          {
+            "name": "openapi",
+            "line": 2,
+            "column": 3,
+            "value": {
+              "kind": "string",
+              "line": 2,
+              "column": 14,
+              "value": "3.1.0"
+            }
+          },
+          {
+            "name": "info",
+            "line": 3,
+            "column": 3,
+            "value": {
+              "kind": "object",
+              "line": 3,
+              "column": 11,
+              "properties": [
+                {
+                  "name": "title",
+                  "line": 3,
+                  "column": 13,
+                  "value": {
+                    "kind": "string",
+                    "line": 3,
+                    "column": 22,
+                    "value": "Unity Minimal"
+                  }
+                },
+                {
+                  "name": "version",
+                  "line": 3,
+                  "column": 39,
+                  "value": {
+                    "kind": "string",
+                    "line": 3,
+                    "column": 50,
+                    "value": "1.0.0"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "paths",
+            "line": 4,
+            "column": 3,
+            "value": {
+              "kind": "object",
+              "line": 4,
+              "column": 12,
+              "properties": []
+            }
+          },
+          {
+            "name": "components",
+            "line": 5,
+            "column": 3,
+            "value": {
+              "kind": "object",
+              "line": 5,
+              "column": 17,
+              "properties": [
+                {
+                  "name": "schemas",
+                  "line": 5,
+                  "column": 19,
+                  "value": {
+                    "kind": "object",
+                    "line": 5,
+                    "column": 30,
+                    "properties": []
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
