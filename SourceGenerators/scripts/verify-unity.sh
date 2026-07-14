@@ -14,6 +14,7 @@ fi
 unity_version="${1:-6000.3.2f1}"
 unity_executable="${UNITY_EXECUTABLE:-/Applications/Unity/Hub/Editor/${unity_version}/Unity.app/Contents/MacOS/Unity}"
 verification_fixture="${source_generators_root}/BuildTools/UnityVerificationFixture"
+package_removal_fixture="${source_generators_root}/BuildTools/UnityPackageRemovalVerification"
 normalized_bundle_fixture="${source_generators_root}/Rhycol.OpenApiCodeGen.SourceGenerator.Tests/TestAssets/unity-minimal.normalized-v1.json"
 additional_file_name="0123456789abcdef0123456789abcdef.${analyzer_assembly_name}.additionalfile"
 
@@ -43,6 +44,7 @@ require_file "${package_analyzer}"
 require_file "${package_analyzer}.meta"
 require_file "${normalized_bundle_fixture}"
 require_file "${verification_fixture}/Target/GeneratedClientProbe.cs"
+require_file "${package_removal_fixture}/Editor/SourceGeneratorPackageRemovalVerification.cs"
 
 if [[ "${SOURCE_GENERATOR_SKIP_DOTNET_VERIFY:-0}" != "1" ]]; then
   "${scripts_directory}/verify.sh"
@@ -52,10 +54,12 @@ temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/UnityOpenApiCodeGen-SourceGenerator
 project_path="${temporary_root}/UnityProject"
 results="${temporary_root}/source-generator-results.xml"
 log="${temporary_root}/source-generator.log"
+bootstrap_log="${temporary_root}/source-generator-bootstrap.log"
 no_change_log="${temporary_root}/source-generator-no-change.log"
 changed_log="${temporary_root}/source-generator-changed.log"
 without_addon_results="${temporary_root}/without-addon-results.xml"
 without_addon_log="${temporary_root}/without-addon.log"
+without_addon_bootstrap_log="${temporary_root}/without-addon-bootstrap.log"
 trap 'rm -rf "${temporary_root}"' EXIT
 
 mkdir -p "${project_path}"
@@ -85,11 +89,46 @@ if [[ "${unity_version}" == "6000.0.23f1" ]]; then
   rm -f "${project_path}/Packages/packages-lock.json"
 fi
 
+# Register the add-on as a direct local dependency so the live-removal check
+# can use the same Package Manager Client.Remove path as a consumer project.
+local_packages="${temporary_root}/LocalPackages"
+mkdir -p "${local_packages}"
+mv \
+  "${project_path}/Packages/OpenApiCodeGen.SourceGenerator" \
+  "${local_packages}/OpenApiCodeGen.SourceGenerator"
+perl -0pi -e \
+  's/"dependencies": \{/"dependencies": {\n    "jp.rhycol.openapicodegen.source-generator": "file:..\/..\/LocalPackages\/OpenApiCodeGen.SourceGenerator",/' \
+  "${project_path}/Packages/manifest.json"
+if grep -q '"scopedRegistries"' "${project_path}/Packages/manifest.json"; then
+  perl -0pi -e \
+    's/\n  "scopedRegistries":/\n  "testables": ["jp.rhycol.openapicodegen.source-generator"],\n  "scopedRegistries":/' \
+    "${project_path}/Packages/manifest.json"
+else
+  perl -0pi -e \
+    's/\n}$/\n  ,"testables": ["jp.rhycol.openapicodegen.source-generator"]\n}/' \
+    "${project_path}/Packages/manifest.json"
+fi
+rm -f "${project_path}/Packages/packages-lock.json"
+
 verification_assets="${project_path}/Assets/OpenApiCodeGen/SourceGeneratorVerification"
 mkdir -p "${verification_assets}"
 rsync -a "${verification_fixture}/" "${verification_assets}/"
+package_removal_verification_assets="${project_path}/Assets/OpenApiCodeGen/SourceGeneratorPackageRemovalVerification"
+mkdir -p "${package_removal_verification_assets}"
+rsync -a "${package_removal_fixture}/" "${package_removal_verification_assets}/"
 additional_file="${verification_assets}/Target/${additional_file_name}"
 cp "${normalized_bundle_fixture}" "${additional_file}"
+
+# Exercise the Phase 2 provider/define path. The add-on run must enable the
+# active target define, while the final base-only run must remove it without
+# falling back to Docker.
+printf '%s\n' \
+  '{"GenerateProvider":1,"ApiDocumentFilePathOrUrl":"","ApiClientOutputFolderPath":""}' \
+  > "${project_path}/Assets/OpenApiCodeGen/projectSettings.json"
+
+# ApplicationConstant resolves the project settings folder from the current
+# directory, so Unity must inherit the temporary verification project as cwd.
+cd "${project_path}"
 
 run_unity_tests() {
   local test_results="$1"
@@ -117,6 +156,23 @@ run_unity_tests() {
   fi
 }
 
+bootstrap_unity_project() {
+  local bootstrap_output="$1"
+
+  rm -f "${bootstrap_output}"
+  if ! "${unity_executable}" \
+      -batchmode \
+      -nographics \
+      -projectPath "${project_path}" \
+      -executeMethod \
+      Rhycol.OpenApiCodeGen.Core.SourceGeneratorDefineSynchronization.SynchronizeActiveBuildTargetForBatchMode \
+      -logFile "${bootstrap_output}"; then
+    echo "Unity ${unity_version} bootstrap failed." >&2
+    tail -100 "${bootstrap_output}" >&2
+    exit 1
+  fi
+}
+
 assert_test_passed() {
   local test_results="$1"
   local test_name="$2"
@@ -139,6 +195,10 @@ assert_test_class_ran() {
   fi
 }
 
+# Provider selection changes a scripting define and therefore requests a
+# compilation. Let that domain reload settle before starting the test runner;
+# otherwise Unity can lose the original -runTests request during recompilation.
+bootstrap_unity_project "${bootstrap_log}"
 run_unity_tests "${results}" "${log}"
 assert_test_passed \
   "${results}" \
@@ -204,21 +264,44 @@ if grep -q 'CS8785' "${changed_log}"; then
   exit 1
 fi
 
-# Rebuild a clean temporary project without the add-on or its verification fixture.
-# This proves that adding Phase 1 did not regress the base package EditMode suite.
-rm -rf \
-  "${project_path}/Assets/OpenApiCodeGen/SourceGeneratorVerification" \
-  "${project_path}/Packages/OpenApiCodeGen.SourceGenerator" \
-  "${project_path}/Library" \
-  "${project_path}/Temp" \
-  "${project_path}/Logs"
-rm -f "${project_path}/Packages/packages-lock.json"
+# Remove the add-on from inside the running editor. The verification method
+# also creates a #error guard while auto-refresh is suspended; compilation can
+# succeed only if registeringPackages removes the define first. Library stays
+# intact so the old domain and its package-transition subscription are used.
+rm -f "${without_addon_bootstrap_log}"
+"${unity_executable}" \
+  -batchmode \
+  -nographics \
+  -projectPath "${project_path}" \
+  -executeMethod \
+  Rhycol.OpenApiCodeGen.SourceGenerator.PackageRemovalVerification.SourceGeneratorPackageRemovalVerification.RemovePackageInLiveEditorDomain \
+  -logFile "${without_addon_bootstrap_log}"
+if ! grep -q \
+  'OpenApiCodeGen disabled the Source Generator provider and scripting define' \
+  "${without_addon_bootstrap_log}"; then
+  echo "Unity did not observe the live Source Generator package removal." >&2
+  exit 1
+fi
+if ! grep -q \
+  'OpenApiCodeGen live Source Generator package removal verification passed' \
+  "${without_addon_bootstrap_log}"; then
+  echo "Unity did not complete the live Source Generator package removal." >&2
+  exit 1
+fi
+if grep -Eq \
+  'error CS1029:.*Source Generator define was not removed before compilation' \
+  "${without_addon_bootstrap_log}"; then
+  echo "Unity compiled the package-removal guard before removing the define." >&2
+  exit 1
+fi
 run_unity_tests "${without_addon_results}" "${without_addon_log}"
 
 echo "Unity ${unity_version} source-generator verification passed."
 echo "Results: ${results}"
 echo "Log: ${log}"
+echo "Bootstrap log: ${bootstrap_log}"
 echo "No-change log: ${no_change_log}"
 echo "Changed-input log: ${changed_log}"
 echo "Without-add-on results: ${without_addon_results}"
 echo "Without-add-on log: ${without_addon_log}"
+echo "Without-add-on bootstrap log: ${without_addon_bootstrap_log}"

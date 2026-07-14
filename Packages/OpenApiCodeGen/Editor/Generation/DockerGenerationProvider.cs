@@ -75,18 +75,27 @@ namespace Rhycol.OpenApiCodeGen.Editor.Generation
                 throw new ArgumentNullException(nameof(request));
             }
 
-            GenerationCSharpSetting cSharpSetting =
-                _readCSharpSettingAsync().GetAwaiter().GetResult()
-                ?? new GenerationCSharpSetting();
-            UserSetting userSetting =
-                _readUserSettingAsync().GetAwaiter().GetResult()
-                ?? new UserSetting(dockerPath: string.Empty);
+            // The repositories and the existing synchronous generator both wait on
+            // asynchronous file I/O internally. Run the complete synchronous pipeline
+            // without Unity's main-thread SynchronizationContext so those continuations
+            // can complete while this API synchronously waits for the final result.
+            return Task.Run(async () =>
+            {
+                GenerationCSharpSetting cSharpSetting =
+                    await _readCSharpSettingAsync().ConfigureAwait(false)
+                    ?? new GenerationCSharpSetting();
+                UserSetting userSetting =
+                    await _readUserSettingAsync().ConfigureAwait(false)
+                    ?? new UserSetting(dockerPath: string.Empty);
 
-            ProcessResponse response = _generator.Generate(
-                CreateProjectSetting(request),
-                cSharpSetting,
-                userSetting);
-            return ToGenerationResult(response);
+                ProcessResponse response = _generator.Generate(
+                    CreateProjectSetting(request),
+                    cSharpSetting,
+                    userSetting);
+                return ToGenerationResult(response);
+            })
+                .GetAwaiter()
+                .GetResult();
         }
 
         public async Task<GenerationResult> GenerateAsync(

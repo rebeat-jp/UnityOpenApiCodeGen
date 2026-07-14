@@ -82,6 +82,48 @@ internal sealed class GenerationProviderRegistryTests
         Assert.That(resolution.Provider.Descriptor.Availability.Reason, Is.EqualTo("Analyzer is missing."));
     }
 
+    [Test]
+    public void UnregisterRemovesProviderAndRaisesChangeEvent()
+    {
+        var registry = new GenerationProviderRegistry();
+        var provider = new StubGenerationProvider(GenerateProvider.SourceGenerator);
+        int providersChangedCount = 0;
+        registry.ProvidersChanged += () => providersChangedCount++;
+        Assert.That(registry.TryRegister(provider, out _), Is.True);
+
+        bool unregistered = registry.TryUnregister(
+            GenerateProvider.SourceGenerator,
+            out string failureReason);
+
+        Assert.That(unregistered, Is.True, failureReason);
+        Assert.That(failureReason, Is.Empty);
+        Assert.That(providersChangedCount, Is.EqualTo(2));
+        Assert.That(
+            registry.Resolve(GenerateProvider.SourceGenerator).IsResolved,
+            Is.False);
+    }
+
+    [Test]
+    public void UnregisterRejectsUnknownOrMissingProviderWithoutChangeEvent()
+    {
+        var registry = new GenerationProviderRegistry();
+        int providersChangedCount = 0;
+        registry.ProvidersChanged += () => providersChangedCount++;
+
+        bool missingUnregistered = registry.TryUnregister(
+            GenerateProvider.SourceGenerator,
+            out string missingFailureReason);
+        bool unknownUnregistered = registry.TryUnregister(
+            (GenerateProvider)99,
+            out string unknownFailureReason);
+
+        Assert.That(missingUnregistered, Is.False);
+        Assert.That(missingFailureReason, Does.Contain("is not registered"));
+        Assert.That(unknownUnregistered, Is.False);
+        Assert.That(unknownFailureReason, Does.Contain("Unknown generation provider value: 99"));
+        Assert.That(providersChangedCount, Is.Zero);
+    }
+
     sealed class StubGenerationProvider : IGenerationProvider
     {
         public GenerationProviderDescriptor Descriptor { get; }

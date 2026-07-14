@@ -107,10 +107,15 @@ namespace Rhycol.OpenApiCodeGen.UI
         {
             var dto = generateMenuDto;
 
-            _generateProvider = dto.GenerateProvider;
-            _generateProviderField?.SetValueWithoutNotify(GetProviderDisplayName(_generateProvider));
+            SetGenerateProvider(dto.GenerateProvider);
             _documentFilePath?.SetValueWithoutNotify(dto.ApiDocumentFilePathOrUrl);
             _outputFolderPath?.SetValueWithoutNotify(dto.ApiClientOutputFolderPath);
+        }
+
+        public void SetGenerateProvider(GenerateProvider generateProvider)
+        {
+            _generateProvider = generateProvider;
+            _generateProviderField?.SetValueWithoutNotify(GetProviderDisplayName(_generateProvider));
             if (_outputFolderPath != null)
             {
                 _outputFolderPath.label = _generateProvider == GenerateProvider.SourceGenerator

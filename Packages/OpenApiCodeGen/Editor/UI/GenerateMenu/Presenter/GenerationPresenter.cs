@@ -20,6 +20,11 @@ namespace Rhycol.OpenApiCodeGen.Presenter
             _generateService = new GenerationService();
         }
 
+        internal MenuPresenter(GenerationService generateService)
+        {
+            _generateService = generateService ?? throw new ArgumentNullException(nameof(generateService));
+        }
+
         public void Bind(IGenerationView generationView)
         {
             Unbind();
@@ -28,12 +33,15 @@ namespace Rhycol.OpenApiCodeGen.Presenter
 
             _generationView.GenerateRequested += OnGenerateRequested;
             _generationView.GenerateSettingChanged += OnGenerateSettingChanged;
+            ProjectSettingChangeNotification.Saved += OnProjectSettingSaved;
 
             _ = LoadConfigAsync();
         }
 
         public void Unbind()
         {
+            ProjectSettingChangeNotification.Saved -= OnProjectSettingSaved;
+
             if (_generationView == null)
             {
                 return;
@@ -79,35 +87,64 @@ namespace Rhycol.OpenApiCodeGen.Presenter
             _ = GenerateAsync();
         }
 
-        async Task GenerateAsync()
+        void OnProjectSettingSaved()
         {
-            _generationView?.SetDocumentFilePathComment("");
-            _generationView?.SetOutputPathComment("");
+            _ = RefreshGenerateProviderForViewAsync();
+        }
 
-            var canGenerate = true;
-
-            if (string.IsNullOrEmpty(_generateApiClientDto.ApiDocumentFilePathOrUrl))
-            {
-                canGenerate = false;
-                _generationView?.SetDocumentFilePathComment("Api document file path or url is Empty");
-            }
-
-            if (string.IsNullOrEmpty(_generateApiClientDto.ApiClientOutputFolderPath))
-            {
-                canGenerate = false;
-                _generationView?.SetOutputPathComment("Api Client file output Folder is Empty");
-            }
-
-            if (!canGenerate)
-            {
-                return;
-            }
-
-            _generationView?.SetInputEnabled(false);
-            SetProgressStatus(new PendingProgressStatus(0.2));
-
+        async Task RefreshGenerateProviderForViewAsync()
+        {
             try
             {
+                await RefreshGenerateProviderAsync();
+            }
+            catch (ApplicationServiceException e)
+            {
+                SetProgressStatus(new FailedProgressStatus(BuildFailureLog(e)));
+            }
+        }
+
+        async Task RefreshGenerateProviderAsync()
+        {
+            GenerateApiClientDto savedSetting =
+                await _generateService.GetDefaultGenerateApiClientDtoAsync();
+            _generateApiClientDto = new GenerateApiClientDto(
+                generateProvider: savedSetting.GenerateProvider,
+                apiDocumentFilePathOrUrl: _generateApiClientDto.ApiDocumentFilePathOrUrl,
+                apiClientOutputFolderPath: _generateApiClientDto.ApiClientOutputFolderPath);
+            _generationView?.SetGenerateProvider(savedSetting.GenerateProvider);
+        }
+
+        async Task GenerateAsync()
+        {
+            _generationView?.SetInputEnabled(false);
+            try
+            {
+                await RefreshGenerateProviderAsync();
+
+                _generationView?.SetDocumentFilePathComment("");
+                _generationView?.SetOutputPathComment("");
+
+                var canGenerate = true;
+
+                if (string.IsNullOrEmpty(_generateApiClientDto.ApiDocumentFilePathOrUrl))
+                {
+                    canGenerate = false;
+                    _generationView?.SetDocumentFilePathComment("Api document file path or url is Empty");
+                }
+
+                if (string.IsNullOrEmpty(_generateApiClientDto.ApiClientOutputFolderPath))
+                {
+                    canGenerate = false;
+                    _generationView?.SetOutputPathComment("Api Client file output Folder is Empty");
+                }
+
+                if (!canGenerate)
+                {
+                    return;
+                }
+
+                SetProgressStatus(new PendingProgressStatus(0.2));
                 await _generateService.GenerateApiClientAsync(
                     _generateApiClientDto);
 

@@ -70,6 +70,8 @@ namespace Rhycol.OpenApiCodeGen.Core
             try
             {
                 await ApplicationConfig.ProjectSettingRepository.SaveAsync(ToDomain(projectSetting));
+                ProjectSettingChangeNotification.PublishSaved();
+                SourceGeneratorDefineSynchronization.Schedule();
             }
             catch (Exception e) when (!(e is ApplicationServiceException))
             {

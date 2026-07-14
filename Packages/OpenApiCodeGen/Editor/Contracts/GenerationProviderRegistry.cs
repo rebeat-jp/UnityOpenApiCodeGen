@@ -71,6 +71,32 @@ namespace Rhycol.OpenApiCodeGen.Editor.Generation
             }
         }
 
+        public bool TryUnregister(
+            GenerateProvider provider,
+            out string failureReason)
+        {
+            if (!Enum.IsDefined(typeof(GenerateProvider), provider))
+            {
+                failureReason =
+                    $"Unknown generation provider value: {(int)provider}.";
+                return false;
+            }
+
+            lock (_gate)
+            {
+                if (!_providers.Remove(provider))
+                {
+                    failureReason =
+                        $"Generation provider '{provider}' is not registered.";
+                    return false;
+                }
+            }
+
+            failureReason = string.Empty;
+            ProvidersChanged?.Invoke();
+            return true;
+        }
+
         public IReadOnlyList<IGenerationProvider> GetRegisteredProviders()
         {
             lock (_gate)

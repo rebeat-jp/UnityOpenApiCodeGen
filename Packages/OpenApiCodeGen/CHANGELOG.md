@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## unreleased
 
+### Added
+
+- Add public Editor generation-provider contracts and registry.
+- Add explicit Docker and Source Generator provider selection.
+- Synchronize `OPENAPI_CODEGEN_SOURCE_GENERATOR` for the active build target.
+- Remove the Source Generator provider and define before package transitions.
+
+### Changed
+
+- Make the Setup window Docker-specific and route Generate through the saved provider.
+- Keep an open Generator window synchronized with the saved provider.
+
+### Fixed
+
+- Stop unknown or unavailable providers from falling back to Docker.
+- Avoid main-thread deadlocks in synchronous Docker provider generation.
+- Preserve the Dedicated Server named build target during define synchronization.
+
 ## [0.4.0]
 
 ### Fixed

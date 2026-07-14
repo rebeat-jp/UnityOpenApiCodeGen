@@ -40,8 +40,8 @@ SourceGenerators/scripts/verify.sh
 
 ## Unity verification matrix
 
-Unity 6000.0.23f1と6000.3.2f1をUnity Hubの標準pathへinstallしたmacOS環境では、local matrixを
-実行できます。
+Unity 2021.3.19f1、6000.0.23f1、6000.3.2f1をUnity Hubの標準pathへinstallしたmacOS環境では、
+base packageのminimum-version checkを含むlocal matrixを実行できます。
 
 ```sh
 SourceGenerators/scripts/verify-unity-matrix.sh
@@ -50,6 +50,7 @@ SourceGenerators/scripts/verify-unity-matrix.sh
 特定versionだけを確認する場合は次のcommandを使用します。
 
 ```sh
+SourceGenerators/scripts/verify-base-unity.sh 2021.3.19f1
 SourceGenerators/scripts/verify-unity.sh 6000.3.2f1
 ```
 
@@ -61,7 +62,8 @@ Unity検証はtemporary projectだけを変更し、次を確認します。
 - unchanged reopenで不要なC# compileが発生しないこと
 - AdditionalFile変更時の限定されたrecompile
 - `CS8785`が発生しないこと
-- add-onを除いたclean projectでもbase packageのEditMode testsが通ること
+- 稼働中Editorでadd-onを外す前にdefineが除去され、base-onlyへ再compileできること
+- add-onを除いたprojectでもbase packageのEditMode testsが通ること
 
 ## CI
 

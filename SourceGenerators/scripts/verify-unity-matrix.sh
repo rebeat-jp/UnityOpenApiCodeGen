@@ -5,6 +5,7 @@ set -euo pipefail
 scripts_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 "${scripts_directory}/verify.sh"
+"${scripts_directory}/verify-base-unity.sh" 2021.3.19f1
 
 for unity_version in 6000.0.23f1 6000.3.2f1; do
   SOURCE_GENERATOR_SKIP_DOTNET_VERIFY=1 \

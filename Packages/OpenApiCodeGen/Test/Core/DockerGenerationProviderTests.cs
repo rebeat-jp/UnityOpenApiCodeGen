@@ -1,5 +1,6 @@
 #nullable enable
 
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -53,7 +54,48 @@ internal sealed class DockerGenerationProviderTests
     }
 
     [Test]
-    public async Task GenerateAsyncDelegatesToExistingAsynchronousGeneratorAndMapsFailure()
+    public void GenerateRunsSynchronousPipelineOutsideCallerSynchronizationContext()
+    {
+        var callerSynchronizationContext = new ThreadPoolSynchronizationContext();
+        var cSharpSettingRepository =
+            new SynchronizationContextRecordingRepository<GenerationCSharpSetting>(
+                new GenerationCSharpSetting());
+        var userSettingRepository =
+            new SynchronizationContextRecordingRepository<UserSetting>(
+                new UserSetting(dockerPath: "docker"));
+        var generator = new RecordingGenerator();
+        var provider = new DockerGenerationProvider(
+            generator,
+            cSharpSettingRepository,
+            userSettingRepository);
+        int callerThreadId = Thread.CurrentThread.ManagedThreadId;
+        SynchronizationContext? previousSynchronizationContext =
+            SynchronizationContext.Current;
+
+        try
+        {
+            SynchronizationContext.SetSynchronizationContext(callerSynchronizationContext);
+
+            GenerationResult result = provider.Generate(
+                new GenerationRequest("spec/openapi.json", "/tmp/generated-client"));
+
+            Assert.That(result.IsSuccess, Is.True);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previousSynchronizationContext);
+        }
+
+        Assert.That(cSharpSettingRepository.SynchronizationContextAtRead, Is.Null);
+        Assert.That(userSettingRepository.SynchronizationContextAtRead, Is.Null);
+        Assert.That(generator.SynchronousCallCount, Is.EqualTo(1));
+        Assert.That(generator.AsynchronousCallCount, Is.Zero);
+        Assert.That(generator.SynchronousSynchronizationContext, Is.Null);
+        Assert.That(generator.SynchronousThreadId, Is.Not.EqualTo(callerThreadId));
+    }
+
+    [Test]
+    public void GenerateAsyncDelegatesToExistingAsynchronousGeneratorAndMapsFailure()
     {
         var cSharpSetting = new GenerationCSharpSetting { ApiName = "AsyncRegressionApi" };
         var userSetting = new UserSetting(dockerPath: "docker-custom");
@@ -68,8 +110,10 @@ internal sealed class DockerGenerationProviderTests
         var request = new GenerationRequest("https://example.test/openapi.json", "/tmp/async-client");
         using var cancellationSource = new CancellationTokenSource();
 
-        GenerationResult result =
-            await provider.GenerateAsync(request, cancellationSource.Token);
+        GenerationResult result = provider
+            .GenerateAsync(request, cancellationSource.Token)
+            .GetAwaiter()
+            .GetResult();
 
         Assert.That(result.IsSuccess, Is.False);
         Assert.That(result.Message, Is.EqualTo("docker failed"));
@@ -94,6 +138,8 @@ internal sealed class DockerGenerationProviderTests
         public GenerationCSharpSetting? CSharpSetting { get; private set; }
         public UserSetting? UserSetting { get; private set; }
         public CancellationToken CancellationToken { get; private set; }
+        public int SynchronousThreadId { get; private set; }
+        public SynchronizationContext? SynchronousSynchronizationContext { get; private set; }
 
         public ProcessResponse Generate(
             ProjectSetting projectSetting,
@@ -101,6 +147,8 @@ internal sealed class DockerGenerationProviderTests
             UserSetting userSetting)
         {
             SynchronousCallCount++;
+            SynchronousThreadId = Thread.CurrentThread.ManagedThreadId;
+            SynchronousSynchronizationContext = SynchronizationContext.Current;
             Capture(projectSetting, cSharpSetting, userSetting);
             return SynchronousResponse;
         }
@@ -150,6 +198,44 @@ internal sealed class DockerGenerationProviderTests
         public Task DeleteAsync()
         {
             return Task.CompletedTask;
+        }
+    }
+
+    sealed class SynchronizationContextRecordingRepository<T> : IAsyncRepository<T>
+        where T : class
+    {
+        readonly T _value;
+
+        public SynchronizationContext? SynchronizationContextAtRead { get; private set; }
+
+        public SynchronizationContextRecordingRepository(T value)
+        {
+            _value = value;
+        }
+
+        public async Task<T?> ReadAsync()
+        {
+            SynchronizationContextAtRead = SynchronizationContext.Current;
+            await Task.Yield();
+            return _value;
+        }
+
+        public Task SaveAsync(T value)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task DeleteAsync()
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    sealed class ThreadPoolSynchronizationContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback callback, object state)
+        {
+            ThreadPool.QueueUserWorkItem(_ => callback(state));
         }
     }
 }

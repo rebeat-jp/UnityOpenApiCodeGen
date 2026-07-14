@@ -6,6 +6,7 @@
 
 - Register the Source Generator with the base package's Generation Provider registry.
 - Report analyzer availability without loading analyzer-only dependencies.
+- Remove the provider define before add-on package transitions are applied.
 
 ### Changed
 

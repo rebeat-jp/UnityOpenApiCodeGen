@@ -1,6 +1,5 @@
 #nullable enable
 
-using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,7 +13,7 @@ using Rhycol.OpenApiCodeGen.UI;
 internal sealed class GenerationServiceProviderTests
 {
     [Test]
-    public async Task GenerateReloadsSavedProviderForEveryExecution()
+    public void GenerateReloadsSavedProviderForEveryExecution()
     {
         var projectSettingRepository = new MutableProjectSettingRepository(
             new ProjectSetting(generateProvider: GenerateProvider.SourceGenerator));
@@ -27,10 +26,10 @@ internal sealed class GenerationServiceProviderTests
             apiDocumentFilePathOrUrl: "spec/openapi.json",
             apiClientOutputFolderPath: "GeneratedClient");
 
-        await service.GenerateApiClientAsync(dto);
+        service.GenerateApiClientAsync(dto).GetAwaiter().GetResult();
         projectSettingRepository.Value =
             new ProjectSetting(generateProvider: GenerateProvider.OpenApi);
-        await service.GenerateApiClientAsync(dto);
+        service.GenerateApiClientAsync(dto).GetAwaiter().GetResult();
 
         Assert.That(projectSettingRepository.ReadCount, Is.EqualTo(2));
         Assert.That(sourceGeneratorProvider.GenerateAsyncCallCount, Is.EqualTo(1));
@@ -51,8 +50,8 @@ internal sealed class GenerationServiceProviderTests
             projectSettingRepository,
             CreateRegistry(dockerProvider));
 
-        ApplicationServiceException exception = Assert.ThrowsAsync<ApplicationServiceException>(
-            async () => await service.GenerateApiClientAsync(CreateDto()))!;
+        ApplicationServiceException exception = Assert.Throws<ApplicationServiceException>(
+            () => service.GenerateApiClientAsync(CreateDto()).GetAwaiter().GetResult())!;
 
         Assert.That(exception.Message, Does.Contain("Unknown generation provider value: 99"));
         Assert.That(dockerProvider.GenerateAsyncCallCount, Is.Zero);
@@ -68,8 +67,8 @@ internal sealed class GenerationServiceProviderTests
             projectSettingRepository,
             CreateRegistry(dockerProvider));
 
-        ApplicationServiceException exception = Assert.ThrowsAsync<ApplicationServiceException>(
-            async () => await service.GenerateApiClientAsync(CreateDto()))!;
+        ApplicationServiceException exception = Assert.Throws<ApplicationServiceException>(
+            () => service.GenerateApiClientAsync(CreateDto()).GetAwaiter().GetResult())!;
 
         Assert.That(exception.Message, Does.Contain("SourceGenerator"));
         Assert.That(exception.Message, Does.Contain("is not registered"));
@@ -89,8 +88,8 @@ internal sealed class GenerationServiceProviderTests
             projectSettingRepository,
             CreateRegistry(unavailableProvider));
 
-        ApplicationServiceException exception = Assert.ThrowsAsync<ApplicationServiceException>(
-            async () => await service.GenerateApiClientAsync(CreateDto()))!;
+        ApplicationServiceException exception = Assert.Throws<ApplicationServiceException>(
+            () => service.GenerateApiClientAsync(CreateDto()).GetAwaiter().GetResult())!;
 
         Assert.That(exception.Message, Does.Contain(reason));
         Assert.That(unavailableProvider.GenerateAsyncCallCount, Is.Zero);
@@ -110,8 +109,8 @@ internal sealed class GenerationServiceProviderTests
             projectSettingRepository,
             CreateRegistry(dockerProvider, failedProvider));
 
-        ApplicationServiceException exception = Assert.ThrowsAsync<ApplicationServiceException>(
-            async () => await service.GenerateApiClientAsync(CreateDto()))!;
+        ApplicationServiceException exception = Assert.Throws<ApplicationServiceException>(
+            () => service.GenerateApiClientAsync(CreateDto()).GetAwaiter().GetResult())!;
 
         Assert.That(exception.Message, Does.Contain(failedProvider.Descriptor.DisplayName));
         Assert.That(exception.Message, Does.Contain(failureMessage));

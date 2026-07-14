@@ -20,8 +20,9 @@ fall back to Docker.
 
 When this provider is selected and available, the base package synchronizes
 `OPENAPI_CODEGEN_SOURCE_GENERATOR` to the active `NamedBuildTarget`. Removing
-the add-on or selecting Docker removes the define when that target is next
-synchronized; code that references generated types may then stop compiling.
+or updating the add-on removes the define before Unity applies the package
+transition. Selecting Docker removes it when that target is synchronized; code
+that references generated types may then stop compiling.
 
 The generated compiler mirror is stored at:
 

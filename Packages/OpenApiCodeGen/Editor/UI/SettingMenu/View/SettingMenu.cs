@@ -11,6 +11,10 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 
+#if !UNITY_2022_1_OR_NEWER
+using EnumField = UnityEditor.UIElements.EnumField;
+#endif
+
 internal class SettingMenu : EditorWindow, ISettingView
 {
     public event Action<UserSettingDisplayDto>? UserSettingChanged;
