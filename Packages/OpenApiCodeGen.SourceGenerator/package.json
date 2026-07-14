@@ -1,0 +1,22 @@
+{
+  "name": "jp.rhycol.openapicodegen.source-generator",
+  "version": "0.1.0",
+  "displayName": "OpenApiCodeGen Source Generator",
+  "description": "Incremental source-generator add-on for Unity OpenApiCodeGen.",
+  "unity": "6000.0",
+  "author": "Re:Beat",
+  "license": "MIT",
+  "keywords": [
+    "unity",
+    "openapi",
+    "source-generator"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/tree/main/Packages/OpenApiCodeGen.SourceGenerator"
+  },
+  "dependencies": {
+    "jp.rhycol.openapicodegen": "0.4.0",
+    "com.unity.nuget.newtonsoft-json": "3.2.2"
+  }
+}
