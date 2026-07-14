@@ -2,6 +2,7 @@
 using System;
 
 using Rhycol.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Editor.Generation;
 using Rhycol.OpenApiCodeGen.Presenter;
 using Rhycol.OpenApiCodeGen.UI;
 

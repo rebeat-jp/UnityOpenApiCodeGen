@@ -1,5 +1,6 @@
 ﻿#nullable enable
 using Rhycol.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Editor.Generation;
 
 namespace Rhycol.OpenApiCodeGen.UI
 {

@@ -5,6 +5,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Rhycol.OpenApiCodeGen.Editor.Generation;
 using Rhycol.OpenApiCodeGen.Lib;
 using Rhycol.OpenApiCodeGen.UI;
 

@@ -2,7 +2,8 @@
     "name": "Unity.OpenApiCodeGen.Test",
     "rootNamespace": "",
     "references": [
-        "GUID:14df82094cbab4445b7c82b7c71fb30d"
+        "GUID:14df82094cbab4445b7c82b7c71fb30d",
+        "Unity.OpenApiCodeGen.Editor.Contracts"
     ],
     "includePlatforms": [
         "Editor"
