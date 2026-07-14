@@ -6,6 +6,14 @@
     <RootNamespace>Rhycol.OpenApiCodeGen.SourceGenerator</RootNamespace>
     <Nullable>enable</Nullable>
     <LangVersion>9.0</LangVersion>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <PathMap>$(MSBuildProjectDirectory)=/_/SourceGenerators/Rhycol.OpenApiCodeGen.SourceGenerator</PathMap>
+    <SuppressImplicitGitSourceLink>true</SuppressImplicitGitSourceLink>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
 
     <!-- SourceGeneratorを動作させるための設定 -->
     <IsRoslynComponent>true</IsRoslynComponent>
@@ -19,7 +27,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.1" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.1" PrivateAssets="all" />
   </ItemGroup>
 
   <!-- NuGetパッケージの出力先をanalyzers/dotnet/csに -->

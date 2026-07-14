@@ -1,0 +1,70 @@
+# Production Source Generator
+
+このdirectoryには、`Rhycol.OpenApiCodeGen.SourceGenerator`のsource、tests、build toolsを置きます。
+Analyzerは`netstandard2.0`、testsとbuild toolsは.NET SDK 10.0.301を使用します。
+
+## Build and test
+
+Production testsだけを実行します。
+
+```sh
+SourceGenerators/scripts/test.sh
+```
+
+決定的なRelease Analyzerをbuildし、assembly名、target framework、禁止されたassembly referenceを
+検査します。このcommandはUPM内のtracked DLLを変更しません。
+
+```sh
+SourceGenerators/scripts/build.sh
+```
+
+検証済みbuildをembedded UPM packageへ同期する唯一のcommandです。Analyzer sourceを変更したときは
+明示的に実行し、DLL差分をsource差分と一緒にreviewします。
+
+```sh
+SourceGenerators/scripts/sync-analyzer.sh
+```
+
+tracked DLLを変更せず、現在のRelease buildとbyte-for-byte一致することだけを確認できます。
+
+```sh
+SourceGenerators/scripts/verify-analyzer-sync.sh
+```
+
+CIと同じ.NET検証一式は次のcommandで実行します。Production tests、異なるcheckout pathでの再現build、
+absolute path非混入、tracked DLL同期、UPM内のDLL数・RoslynAnalyzer metadata・禁止dependencyを検査します。
+
+```sh
+SourceGenerators/scripts/verify.sh
+```
+
+## Unity verification matrix
+
+Unity 6000.0.23f1と6000.3.2f1をUnity Hubの標準pathへinstallしたmacOS環境では、local matrixを
+実行できます。
+
+```sh
+SourceGenerators/scripts/verify-unity-matrix.sh
+```
+
+特定versionだけを確認する場合は次のcommandを使用します。
+
+```sh
+SourceGenerators/scripts/verify-unity.sh 6000.3.2f1
+```
+
+Unity検証はtemporary projectだけを変更し、次を確認します。
+
+- clean compileとEditMode tests
+- generated clientを参照するtarget assemblyのcompile
+- AnalyzerとAdditionalFileのasmdef reference scope
+- unchanged reopenで不要なC# compileが発生しないこと
+- AdditionalFile変更時の限定されたrecompile
+- `CS8785`が発生しないこと
+- add-onを除いたclean projectでもbase packageのEditMode testsが通ること
+
+## CI
+
+`.github/workflows/source-generator-ci.yml`はpull request、および`main`/`develop`へのpushで
+`SourceGenerators/scripts/verify.sh`を実行します。Unity Editor licenseを必要とするmatrixはCIへ含めず、
+上記local commandでrelease前に実行します。
