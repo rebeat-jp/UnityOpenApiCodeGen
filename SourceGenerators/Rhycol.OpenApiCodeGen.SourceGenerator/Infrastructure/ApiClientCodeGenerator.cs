@@ -85,7 +85,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             "OACG008",
             "Unsupported OpenAPI document format",
             "OpenAPI client definition for Spec ID '{0}' uses unsupported document format value '{1}'. " +
-            "Phase 3 supports Json (0) only.",
+            "The Source Generator supports Json (0) only.",
             "OpenApiCodeGen",
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
@@ -94,6 +94,62 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             "OACG009",
             "Normalized spec bundle ID mismatch",
             "Normalized spec bundle '{0}' declares Spec ID '{1}', but the AdditionalFile name declares '{2}'.",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor InvalidOpenApiDocument = new(
+            "OACG100",
+            "Invalid OpenAPI document",
+            "OpenAPI validation failed for '{0}' at logical path '{1}': {2}",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor UnsupportedOpenApiElement = new(
+            "OACG101",
+            "Unsupported OpenAPI element",
+            "OpenAPI validation failed for '{0}' at logical path '{1}': {2}",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor UnresolvedOpenApiReference = new(
+            "OACG102",
+            "Unresolved OpenAPI reference",
+            "OpenAPI validation failed for '{0}' at logical path '{1}': {2}",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor CyclicOpenApiReference = new(
+            "OACG103",
+            "Cyclic OpenAPI reference",
+            "OpenAPI validation failed for '{0}' at logical path '{1}': {2}",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor ExternalOpenApiReference = new(
+            "OACG104",
+            "External OpenAPI reference is unsupported",
+            "OpenAPI validation failed for '{0}' at logical path '{1}': {2}",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor InconsistentOpenApiResponse = new(
+            "OACG105",
+            "Inconsistent OpenAPI response contract",
+            "OpenAPI validation failed for '{0}' at logical path '{1}': {2}",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor InvalidGeneratedIdentifier = new(
+            "OACG106",
+            "Invalid generated API identifier",
+            "OpenAPI validation failed for '{0}' at logical path '{1}': {2}",
             "OpenApiCodeGen",
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
@@ -582,9 +638,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             try
             {
                 var service = new GenerationService();
-                IReadOnlyList<GeneratedFile> files = service.GenerateFromApiDocument(
+                IReadOnlyList<GeneratedFile> files = service.GenerateMvpFromOpenApiNode(
                     bundle.Root,
-                    workItem.Definition.Options.ToDomainOptions());
+                    workItem.Definition.Options);
                 for (int index = 0; index < files.Count; index++)
                 {
                     GeneratedFile file = files[index];
@@ -592,6 +648,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         CreateHintName(workItem.SpecId, file.FileName, index),
                         SourceText.From(file.Content, Encoding.UTF8));
                 }
+            }
+            catch (OpenApiSemanticException exception)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    GetSemanticDescriptor(exception.Kind),
+                    CreateExternalLocation(
+                        bundle.SourcePath,
+                        exception.Location.Line,
+                        exception.Location.Column),
+                    bundle.SourcePath,
+                    exception.Location.LogicalPath,
+                    exception.Message));
             }
             catch (Exception exception)
             {
@@ -640,6 +708,29 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 path,
                 new TextSpan(0, 0),
                 new LinePositionSpan(position, position));
+        }
+
+        private static DiagnosticDescriptor GetSemanticDescriptor(OpenApiSemanticErrorKind kind)
+        {
+            switch (kind)
+            {
+                case OpenApiSemanticErrorKind.InvalidDocument:
+                    return InvalidOpenApiDocument;
+                case OpenApiSemanticErrorKind.UnsupportedElement:
+                    return UnsupportedOpenApiElement;
+                case OpenApiSemanticErrorKind.UnresolvedReference:
+                    return UnresolvedOpenApiReference;
+                case OpenApiSemanticErrorKind.CyclicReference:
+                    return CyclicOpenApiReference;
+                case OpenApiSemanticErrorKind.ExternalReference:
+                    return ExternalOpenApiReference;
+                case OpenApiSemanticErrorKind.InconsistentResponse:
+                    return InconsistentOpenApiResponse;
+                case OpenApiSemanticErrorKind.InvalidIdentifier:
+                    return InvalidGeneratedIdentifier;
+                default:
+                    return InvalidOpenApiDocument;
+            }
         }
     }
 }

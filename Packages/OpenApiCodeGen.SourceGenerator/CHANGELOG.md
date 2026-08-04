@@ -4,6 +4,10 @@
 
 ### Added
 
+- Generate deterministic Newtonsoft.Json DTOs, HTTP clients, and API exceptions from the supported OpenAPI 3.0.* and 3.1.* local JSON MVP surface.
+- Parse normalized bundles through an OpenAPI semantic model and internal reference resolver before Roslyn `AddSource` emission.
+- Report OACG100–OACG106 diagnostics for invalid documents, unsupported elements, reference failures, inconsistent responses, and invalid identifiers.
+
 - Register the Source Generator with the base package's Generation Provider registry.
 - Report analyzer availability without loading analyzer-only dependencies.
 - Remove the provider define before add-on package transitions are applied.
@@ -13,6 +17,7 @@
 
 ### Changed
 
+- Treat unsupported wire-affecting OpenAPI features as generation diagnostics instead of silently ignoring them.
 - Generate from local JSON through the normalized cache and compiler mirror without Docker fallback.
 - Avoid rewriting unchanged cache and definition inputs or requesting unnecessary script compilation.
 

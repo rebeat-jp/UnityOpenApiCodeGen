@@ -77,7 +77,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             Assert.Contains("namespace Generated.Clients", generated);
             Assert.Contains("public partial class TestApi", generated);
             Assert.Contains("/// <summary>Get items</summary>", generated);
-            Assert.Contains("public System.Collections.Generic.IReadOnlyList<string> getItems()", generated);
+            Assert.Contains(
+                "public async global::System.Threading.Tasks.Task<global::System.Collections.Generic.List<string>> getItems(global::System.Threading.CancellationToken cancellationToken = default)",
+                generated);
+            Assert.Contains("public TestApi(global::System.Net.Http.HttpClient httpClient)", generated);
         }
 
         [Fact]
@@ -170,7 +173,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         }
 
         [Fact]
-        public void MappingFailureReportsOacg003AtRawSourceLocation()
+        public void InvalidDocumentReportsOacg100AtRawSourceLocation()
         {
             const string Root = "{\"kind\":\"array\",\"line\":7,\"column\":9,\"items\":[]}";
             const string SourcePath = "Assets/Specs/not-openapi.json";
@@ -181,7 +184,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             Diagnostic diagnostic = Assert.Single(RunSingleBundle(compilation, bundle).Diagnostics);
             FileLinePositionSpan lineSpan = diagnostic.Location.GetLineSpan();
 
-            Assert.Equal("OACG003", diagnostic.Id);
+            Assert.Equal("OACG100", diagnostic.Id);
             Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
             Assert.Equal(SourcePath, lineSpan.Path);
             Assert.Equal(new LinePosition(6, 8), lineSpan.StartLinePosition);
@@ -366,9 +369,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         public void MultipleDefinitionsMatchOnlyTheirOwnSpecsAndUseStableUniqueHintNames()
         {
             const string JsonA =
-                "{\"openapi\":\"3.1.0\",\"paths\":{\"/a\":{\"get\":{\"operationId\":\"getA\",\"responses\":{}}}}}";
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"A\",\"version\":\"1\"},\"paths\":{\"/a\":{\"get\":{\"operationId\":\"getA\",\"responses\":{\"204\":{\"description\":\"No Content\"}}}}}}";
             const string JsonB =
-                "{\"openapi\":\"3.1.0\",\"paths\":{\"/b\":{\"get\":{\"operationId\":\"getB\",\"responses\":{}}}}}";
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"B\",\"version\":\"1\"},\"paths\":{\"/b\":{\"get\":{\"operationId\":\"getB\",\"responses\":{\"204\":{\"description\":\"No Content\"}}}}}}";
             CSharpCompilation compilation = CreateCompilation(
                 CreateDefinition(TestBundleFactory.SpecId, "FirstApi", "Generated.First", "FirstApi") +
                 CreateDefinition(SecondSpecId, "SecondApi", "Generated.Second", "SecondApi"));
@@ -403,9 +406,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         public void SeparateCompilationsGenerateOnlyTheDefinitionInEachAssembly()
         {
             const string JsonA =
-                "{\"openapi\":\"3.1.0\",\"paths\":{\"/a\":{\"get\":{\"operationId\":\"getA\",\"responses\":{}}}}}";
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"A\",\"version\":\"1\"},\"paths\":{\"/a\":{\"get\":{\"operationId\":\"getA\",\"responses\":{\"204\":{\"description\":\"No Content\"}}}}}}";
             const string JsonB =
-                "{\"openapi\":\"3.1.0\",\"paths\":{\"/b\":{\"get\":{\"operationId\":\"getB\",\"responses\":{}}}}}";
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"B\",\"version\":\"1\"},\"paths\":{\"/b\":{\"get\":{\"operationId\":\"getB\",\"responses\":{\"204\":{\"description\":\"No Content\"}}}}}}";
             var additionalTexts = ImmutableArray.Create<AdditionalText>(
                 CreateBundleText(TestBundleFactory.SpecId, TestBundleFactory.Create(JsonA)),
                 CreateBundleText(
@@ -437,11 +440,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         public void ReusedDriverKeepsUnrelatedClientInputUnchangedWhenOneBundleChanges()
         {
             const string JsonA =
-                "{\"openapi\":\"3.1.0\",\"paths\":{\"/a\":{\"get\":{\"operationId\":\"getA\",\"responses\":{}}}}}";
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"A\",\"version\":\"1\"},\"paths\":{\"/a\":{\"get\":{\"operationId\":\"getA\",\"responses\":{\"204\":{\"description\":\"No Content\"}}}}}}";
             const string JsonB =
-                "{\"openapi\":\"3.1.0\",\"paths\":{\"/b\":{\"get\":{\"operationId\":\"getB\",\"responses\":{}}}}}";
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"B\",\"version\":\"1\"},\"paths\":{\"/b\":{\"get\":{\"operationId\":\"getB\",\"responses\":{\"204\":{\"description\":\"No Content\"}}}}}}";
             const string JsonBChanged =
-                "{\"openapi\":\"3.1.0\",\"paths\":{\"/b2\":{\"get\":{\"operationId\":\"getBChanged\",\"responses\":{}}}}}";
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"B\",\"version\":\"1\"},\"paths\":{\"/b2\":{\"get\":{\"operationId\":\"getBChanged\",\"responses\":{\"204\":{\"description\":\"No Content\"}}}}}}";
             CSharpCompilation compilation = CreateCompilation(
                 CreateDefinition(TestBundleFactory.SpecId, "FirstApi", "Generated.First", "FirstApi") +
                 CreateDefinition(SecondSpecId, "SecondApi", "Generated.Second", "SecondApi"));

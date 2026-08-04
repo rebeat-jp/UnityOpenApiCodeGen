@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Threading.Tasks;
 
 using NUnit.Framework;
 using Rhycol.OpenApiCodeGen.SourceGenerator;
@@ -136,14 +139,35 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Verification.Tests
 
             string expectedMethod = expectsUpdatedOperation ? "getUpdatedItems" : "getItems";
             string obsoleteMethod = expectsUpdatedOperation ? "getItems" : "getUpdatedItems";
+            MethodInfo generatedMethod = clientType.GetMethod(expectedMethod);
             Assert.That(
-                clientType.GetMethod(expectedMethod),
+                generatedMethod,
                 Is.Not.Null,
                 $"Analyzer output did not contain method '{expectedMethod}'.");
             Assert.That(
                 clientType.GetMethod(obsoleteMethod),
                 Is.Null,
                 $"Analyzer output still contained obsolete method '{obsoleteMethod}'.");
+
+            Assert.That(generatedMethod.ReturnType.IsGenericType, Is.True);
+            Assert.That(
+                generatedMethod.ReturnType.GetGenericTypeDefinition(),
+                Is.EqualTo(typeof(Task<>)));
+            Type responseType = generatedMethod.ReturnType.GetGenericArguments().Single();
+            Assert.That(responseType.GetGenericTypeDefinition(), Is.EqualTo(typeof(List<>)));
+            Type itemType = responseType.GetGenericArguments().Single();
+            Assert.That(
+                itemType.FullName,
+                Is.EqualTo("Rhycol.OpenApiCodeGen.Generated.VerificationItem"));
+            Assert.That(itemType.GetProperty("Id").PropertyType, Is.EqualTo(typeof(int)));
+            Assert.That(
+                itemType.GetCustomAttributes(inherit: false)
+                    .Select(attribute => attribute.GetType().FullName),
+                Does.Contain("Newtonsoft.Json.JsonObjectAttribute"));
+            Assert.That(
+                itemType.GetProperty("Id").GetCustomAttributes(inherit: false)
+                    .Select(attribute => attribute.GetType().FullName),
+                Does.Contain("Newtonsoft.Json.JsonPropertyAttribute"));
         }
 
         private static string[] GetFileNames(string[] paths)

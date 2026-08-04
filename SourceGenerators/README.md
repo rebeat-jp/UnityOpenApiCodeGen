@@ -3,6 +3,16 @@
 このdirectoryには、`Rhycol.OpenApiCodeGen.SourceGenerator`のsource、tests、build toolsを置きます。
 Analyzerは`netstandard2.0`、testsとbuild toolsは.NET SDK 10.0.301を使用します。
 
+## Phase 4 OpenAPI generation
+
+Source Generator providerはlocal JSONをNormalized Spec Bundleへ正規化し、OAS semantic parserと
+internal `$ref` resolverでRoslyn非依存のgeneration modelを作成します。その後、Roslynでparseする
+deterministic emitterがsourceを生成し、analyzerが`AddSource`します。対応範囲、診断、generated APIと
+利用制約は[OpenAPI MVP support matrix](OpenApiMvpSupportMatrix.md)を参照してください。
+
+wire formatへ影響する未対応のOpenAPI機能はsilentに無視せず、diagnosticとして生成を失敗させます。
+生成されたpublic APIは再Generateされるcontractであり、手編集するsourceではありません。
+
 ## Build and test
 
 Production testsだけを実行します。
@@ -68,6 +78,10 @@ Unity検証はtemporary projectだけを変更し、次を確認します。
 - `CS8785`が発生しないこと
 - 稼働中Editorでadd-onを外す前にdefineが除去され、base-onlyへ再compileできること
 - add-onを除いたprojectでもbase packageのEditMode testsが通ること
+
+このmatrixではbase packageのUnity 2021.3.19f1（33/33）と、Source Generator add-onのUnity
+6000.0.23f1および6000.3.2f1のvertical verificationを確認済みです。対応機能の詳細は
+[OpenAPI MVP support matrix](OpenApiMvpSupportMatrix.md)を参照してください。
 
 ## CI
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator
 {
@@ -47,6 +48,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiDocument document = OpenApiDocumentMapper.Parse(root);
             CSharpFile file = _openApiFileGenerator.Generate(document, option);
             return new[] { _codeGenerator.Generate(file) };
+        }
+
+        /// <summary>
+        /// Phase 4 の厳密な OpenAPI 3.x MVP pipeline でコードを生成する。
+        /// Generates code through the strict Phase 4 OpenAPI 3.x MVP pipeline.
+        /// </summary>
+        internal IReadOnlyList<GeneratedFile> GenerateMvpFromOpenApiNode(
+            SpecNode root,
+            GeneratorOptions options)
+        {
+            if (root is null)
+            {
+                throw new ArgumentNullException(nameof(root));
+            }
+
+            OpenApiSemanticDocument document = OpenApiSemanticParser.Parse(root);
+            OpenApiGenerationModel model = OpenApiGenerationModelBuilder.Build(document, options);
+            var files = new List<GeneratedFile>();
+            files.AddRange(new NewtonsoftDtoSourceEmitter().Emit(model));
+            files.Add(new HttpClientSourceEmitter().Emit(model));
+            return files.OrderBy(static file => file.FileName, StringComparer.Ordinal).ToArray();
         }
 
         /// <summary>
