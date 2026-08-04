@@ -6,8 +6,8 @@ using UnityEngine;
 namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 {
     /// <summary>
-    /// Editor-side boundary used by a generation provider to normalize and publish one local JSON spec.
-    /// The provider is intentionally deferred; this service performs no Docker fallback.
+    /// Editor-side boundary used by the Source Generator provider to normalize and publish one local JSON spec.
+    /// This service performs no Docker fallback.
     /// </summary>
     internal sealed class NormalizedSpecCacheService
     {

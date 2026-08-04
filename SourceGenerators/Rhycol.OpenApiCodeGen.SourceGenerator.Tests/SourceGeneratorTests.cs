@@ -3,11 +3,9 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
 
 using Xunit;
@@ -16,10 +14,34 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 {
     public class SourceGeneratorTests
     {
-        [Fact]
-        public async Task GeneratesClientFromAdditionalFile()
+        private const string SecondSpecId = "fedcba9876543210fedcba9876543210";
+        private const string AttributeContract = @"
+namespace Rhycol.OpenApiCodeGen.SourceGenerator
+{
+    public enum OpenApiDocumentFormat
+    {
+        Json = 0,
+        Yaml = 1
+    }
+
+    [System.AttributeUsage(System.AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    public sealed class OpenApiClientDefinitionAttribute : System.Attribute
+    {
+        public OpenApiClientDefinitionAttribute(
+            string specId,
+            string apiName,
+            string generatedNamespace,
+            OpenApiDocumentFormat documentFormat)
         {
-            var openApiJson = @"{
+        }
+    }
+}
+";
+
+        [Fact]
+        public void GeneratesClientFromMatchingDefinitionAndAdditionalFile()
+        {
+            const string OpenApiJson = @"{
   ""openapi"": ""3.1.0"",
   ""info"": { ""title"": ""Sample"", ""version"": ""1.0.0"" },
   ""paths"": {
@@ -42,101 +64,106 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
   },
   ""components"": { ""schemas"": {} }
 }";
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "TestApi", "Generated.Clients", "TestApi"));
+            var additionalTexts = ImmutableArray.Create<AdditionalText>(CreateBundleText(
+                TestBundleFactory.SpecId,
+                TestBundleFactory.Create(OpenApiJson)));
 
-            var compilation = CSharpCompilation.Create(
-                "GeneratorTests",
-                new[] { CSharpSyntaxTree.ParseText("public class Dummy { }") },
-                new[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) },
-                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            GeneratorDriverRunResult result = Run(compilation, additionalTexts);
+            string generated = result.GeneratedTrees.Single().ToString();
 
-            var additionalTexts = ImmutableArray.Create<AdditionalText>(
-                new InMemoryAdditionalText(
-                    TestBundleFactory.SpecId + ApiClientCodeGenerator.AdditionalFileSuffix,
-                    TestBundleFactory.Create(openApiJson)));
-
-            var optionsProvider = new InMemoryAnalyzerConfigOptionsProvider(
-                new Dictionary<string, string>
-                {
-                    ["build_property.OpenApiApiName"] = "TestApi",
-                    ["build_property.OpenApiNamespace"] = "Rhycol.OpenApiCodeGen.Generated"
-                });
-
-            var generator = new ApiClientCodeGenerator().AsSourceGenerator();
-            GeneratorDriver driver = CSharpGeneratorDriver.Create(
-                generators: new[] { generator },
-                additionalTexts: additionalTexts,
-                parseOptions: (CSharpParseOptions)compilation.SyntaxTrees.First().Options,
-                optionsProvider: optionsProvider);
-
-            driver = driver.RunGenerators(compilation);
-
-            var result = driver.GetRunResult();
-            var generated = result.GeneratedTrees.Select(tree => tree.ToString()).ToArray();
-
-            Assert.Contains(generated, text => text.Contains("class TestApi"));
-            Assert.Contains(generated, text => text.Contains("/// <summary>Get items</summary>"));
-            Assert.Contains(generated, text => text.Contains("public System.Collections.Generic.IReadOnlyList<string> getItems()"));
-            await Task.CompletedTask;
+            Assert.Empty(result.Diagnostics);
+            Assert.Contains("namespace Generated.Clients", generated);
+            Assert.Contains("public partial class TestApi", generated);
+            Assert.Contains("/// <summary>Get items</summary>", generated);
+            Assert.Contains("public System.Collections.Generic.IReadOnlyList<string> getItems()", generated);
         }
 
         [Fact]
-        public void NoBundleProducesNoSourcesOrDiagnostics()
+        public void BundleWithoutDefinitionProducesNoSources()
         {
-            GeneratorDriver driver = CreateDriver(ImmutableArray<AdditionalText>.Empty);
+            CSharpCompilation compilation = CreateCompilation("public class Dummy { }");
+            var additionalTexts = ImmutableArray.Create<AdditionalText>(CreateBundleText(
+                TestBundleFactory.SpecId,
+                TestBundleFactory.Create("{\"openapi\":\"3.1.0\",\"paths\":{}}")));
 
-            GeneratorDriverRunResult result = driver.RunGenerators(CreateCompilation()).GetRunResult();
+            GeneratorDriverRunResult result = Run(compilation, additionalTexts);
 
             Assert.Empty(result.GeneratedTrees);
             Assert.Empty(result.Diagnostics);
         }
 
         [Fact]
-        public void CommittedUnityFixtureGeneratesDefaultClient()
+        public void DefinitionWithoutBundleReportsOacg006Error()
+        {
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "Api", "Generated", "Api"));
+
+            GeneratorDriverRunResult result = Run(compilation, ImmutableArray<AdditionalText>.Empty);
+            Diagnostic diagnostic = Assert.Single(result.Diagnostics);
+
+            Assert.Equal("OACG006", diagnostic.Id);
+            Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+            Assert.Empty(result.GeneratedTrees);
+        }
+
+        [Fact]
+        public void CommittedUnityFixtureGeneratesDefinedClient()
         {
             string bundle = TestAssetLoader.LoadAsset("unity-minimal.normalized-v1.json");
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "Api", "Rhycol.OpenApiCodeGen.Generated", "Api"));
 
-            GeneratorDriverRunResult result = RunSingleBundle(bundle);
+            GeneratorDriverRunResult result = RunSingleBundle(compilation, bundle);
             string generated = result.GeneratedTrees.Single().ToString();
 
             Assert.Empty(result.Diagnostics);
             Assert.Contains("namespace Rhycol.OpenApiCodeGen.Generated", generated);
-            Assert.Contains("public class Api", generated);
+            Assert.Contains("public partial class Api", generated);
         }
 
         [Fact]
         public void CaseSensitiveSuffixNearMissIsIgnored()
         {
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "Api", "Generated", "Api"));
             var additionalTexts = ImmutableArray.Create<AdditionalText>(
                 new InMemoryAdditionalText(
                     TestBundleFactory.SpecId + ".Rhycol.OpenApiCodeGen.SourceGenerator.ADDITIONALFILE",
                     TestBundleFactory.Create("{\"openapi\":\"3.1.0\",\"paths\":{}}")));
 
-            GeneratorDriverRunResult result = CreateDriver(additionalTexts)
-                .RunGenerators(CreateCompilation())
-                .GetRunResult();
+            GeneratorDriverRunResult result = Run(compilation, additionalTexts);
+            Diagnostic diagnostic = Assert.Single(result.Diagnostics);
 
+            Assert.Equal("OACG006", diagnostic.Id);
             Assert.Empty(result.GeneratedTrees);
-            Assert.Empty(result.Diagnostics);
         }
 
         [Fact]
-        public void MalformedFieldOrderReportsOacg001Error()
+        public void MalformedFieldOrderReportsOacg001ErrorWithoutCascadingMissingError()
         {
             string bundle = TestBundleFactory.Create("{}").Replace(
                 "\"specId\":",
                 "\"unexpected\":0,\"specId\":");
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "Api", "Generated", "Api"));
 
-            Diagnostic diagnostic = RunSingleBundle(bundle).Diagnostics.Single();
+            Diagnostic diagnostic = Assert.Single(RunSingleBundle(compilation, bundle).Diagnostics);
 
             Assert.Equal("OACG001", diagnostic.Id);
             Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
         }
 
         [Fact]
-        public void UnsupportedVersionReportsOacg002Error()
+        public void UnsupportedBundleVersionReportsOacg002ErrorWithoutCascadingMissingError()
         {
-            Diagnostic diagnostic = RunSingleBundle(
-                TestBundleFactory.Create("{}", formatVersion: 2)).Diagnostics.Single();
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "Api", "Generated", "Api"));
+
+            Diagnostic diagnostic = Assert.Single(RunSingleBundle(
+                compilation,
+                TestBundleFactory.Create("{}", formatVersion: 2)).Diagnostics);
 
             Assert.Equal("OACG002", diagnostic.Id);
             Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
@@ -148,8 +175,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             const string Root = "{\"kind\":\"array\",\"line\":7,\"column\":9,\"items\":[]}";
             const string SourcePath = "Assets/Specs/not-openapi.json";
             string bundle = TestBundleFactory.CreateWithEncodedRoot(Root, sourcePath: SourcePath);
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "Api", "Generated", "Api"));
 
-            Diagnostic diagnostic = RunSingleBundle(bundle).Diagnostics.Single();
+            Diagnostic diagnostic = Assert.Single(RunSingleBundle(compilation, bundle).Diagnostics);
             FileLinePositionSpan lineSpan = diagnostic.Location.GetLineSpan();
 
             Assert.Equal("OACG003", diagnostic.Id);
@@ -160,17 +189,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void MultipleBundlesReportOacg004Error()
+        public void DuplicateBundleSpecIdReportsOacg004Error()
         {
-            string bundle = TestBundleFactory.Create("{}");
+            string bundle = TestBundleFactory.Create("{\"openapi\":\"3.1.0\",\"paths\":{}}");
             var additionalTexts = ImmutableArray.Create<AdditionalText>(
-                new InMemoryAdditionalText("first" + ApiClientCodeGenerator.AdditionalFileSuffix, bundle),
-                new InMemoryAdditionalText("second" + ApiClientCodeGenerator.AdditionalFileSuffix, bundle));
+                CreateBundleText(TestBundleFactory.SpecId, bundle, "first"),
+                CreateBundleText(TestBundleFactory.SpecId, bundle, "second"));
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "Api", "Generated", "Api"));
 
-            GeneratorDriverRunResult result = CreateDriver(additionalTexts)
-                .RunGenerators(CreateCompilation())
-                .GetRunResult();
-            Diagnostic diagnostic = result.Diagnostics.Single();
+            GeneratorDriverRunResult result = Run(compilation, additionalTexts);
+            Diagnostic diagnostic = Assert.Single(result.Diagnostics);
 
             Assert.Equal("OACG004", diagnostic.Id);
             Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
@@ -178,71 +207,374 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void ReusedDriverKeepsUnchangedOutputAndUpdatesOneChangedBundle()
+        public void InvalidAttributeArgumentsReportOacg005Error()
         {
-            const string JsonA = "{\"openapi\":\"3.1.0\",\"paths\":{\"/a\":{\"get\":{\"operationId\":\"getA\",\"responses\":{}}}}}";
-            const string JsonB = "{\"openapi\":\"3.1.0\",\"paths\":{\"/b\":{\"get\":{\"operationId\":\"getB\",\"responses\":{}}}}}";
-            string path = TestBundleFactory.SpecId + ApiClientCodeGenerator.AdditionalFileSuffix;
-            var firstText = new InMemoryAdditionalText(path, TestBundleFactory.Create(JsonA));
-            var secondText = new InMemoryAdditionalText(path, TestBundleFactory.Create(JsonB));
-            CSharpCompilation compilation = CreateCompilation();
-            GeneratorDriver driver = CreateDriver(ImmutableArray.Create<AdditionalText>(firstText));
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(string.Empty, "Api", "Generated", "Api"));
 
-            driver = driver.RunGenerators(compilation);
-            string firstOutput = driver.GetRunResult().GeneratedTrees.Single().ToString();
-            Assert.Equal(
-                new[] { IncrementalStepRunReason.New },
-                GetReasons(driver.GetRunResult(), "OpenApiReadNormalizedBundle"));
-            driver = driver.RunGenerators(compilation);
-            string unchangedOutput = driver.GetRunResult().GeneratedTrees.Single().ToString();
-            Assert.Equal(
-                new[] { IncrementalStepRunReason.Cached },
-                GetReasons(driver.GetRunResult(), "OpenApiReadNormalizedBundle"));
-            driver = driver.ReplaceAdditionalText(firstText, secondText).RunGenerators(compilation);
-            string changedOutput = driver.GetRunResult().GeneratedTrees.Single().ToString();
-            Assert.Equal(
-                new[] { IncrementalStepRunReason.Modified },
-                GetReasons(driver.GetRunResult(), "OpenApiReadNormalizedBundle"));
-            Assert.Equal(
-                new[] { IncrementalStepRunReason.Modified },
-                GetReasons(driver.GetRunResult(), "OpenApiCollectNormalizedBundles"));
+            GeneratorDriverRunResult result = Run(compilation, ImmutableArray<AdditionalText>.Empty);
+            Diagnostic diagnostic = Assert.Single(result.Diagnostics);
 
-            Assert.Equal(firstOutput, unchangedOutput);
+            Assert.Equal("OACG005", diagnostic.Id);
+            Assert.Contains("specId", diagnostic.GetMessage());
+            Assert.Empty(result.GeneratedTrees);
+        }
+
+        [Theory]
+        [InlineData("WrongApi", null, true, "apiName")]
+        [InlineData("Api", "Other.Namespace", true, "generatedNamespace")]
+        [InlineData("Api", null, false, "partial class")]
+        public void InvalidDefinitionTargetReportsOacg005Error(
+            string className,
+            string? targetNamespace,
+            bool isPartial,
+            string expectedMessage)
+        {
+            CSharpCompilation compilation = CreateCompilation(CreateDefinition(
+                TestBundleFactory.SpecId,
+                "Api",
+                "Generated",
+                className,
+                targetNamespace: targetNamespace,
+                isPartial: isPartial));
+
+            GeneratorDriverRunResult result = Run(compilation, ImmutableArray<AdditionalText>.Empty);
+            Diagnostic diagnostic = Assert.Single(result.Diagnostics);
+
+            Assert.Equal("OACG005", diagnostic.Id);
+            Assert.Contains(expectedMessage, diagnostic.GetMessage());
+            Assert.Empty(result.GeneratedTrees);
+        }
+
+        [Fact]
+        public void MalformedBundleSuppressesMissingDiagnosticOnlyForItsFileSpecId()
+        {
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "FirstApi", "Generated.First", "FirstApi") +
+                CreateDefinition(SecondSpecId, "SecondApi", "Generated.Second", "SecondApi"));
+            string malformedBundle = TestBundleFactory.Create("{}").Replace(
+                "\"specId\":",
+                "\"unexpected\":0,\"specId\":");
+            var additionalTexts = ImmutableArray.Create<AdditionalText>(CreateBundleText(
+                TestBundleFactory.SpecId,
+                malformedBundle));
+
+            GeneratorDriverRunResult result = Run(compilation, additionalTexts);
+
+            Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Id == "OACG001");
+            Diagnostic missingDiagnostic = Assert.Single(
+                result.Diagnostics,
+                diagnostic => diagnostic.Id == "OACG006");
+            Assert.Contains(SecondSpecId, missingDiagnostic.GetMessage());
+            Assert.Empty(result.GeneratedTrees);
+        }
+
+        [Fact]
+        public void DefinitionAndBundleSpecIdMismatchReportsMissingBundle()
+        {
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "Api", "Generated", "Api"));
+            var additionalTexts = ImmutableArray.Create<AdditionalText>(CreateBundleText(
+                SecondSpecId,
+                TestBundleFactory.Create(
+                    "{\"openapi\":\"3.1.0\",\"paths\":{}}",
+                    specId: SecondSpecId)));
+
+            GeneratorDriverRunResult result = Run(compilation, additionalTexts);
+            Diagnostic diagnostic = Assert.Single(result.Diagnostics);
+
+            Assert.Equal("OACG006", diagnostic.Id);
+            Assert.Empty(result.GeneratedTrees);
+        }
+
+        [Fact]
+        public void DuplicateDefinitionSpecIdReportsOacg007AtEachDefinition()
+        {
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "FirstApi", "Generated.First", "FirstApi") +
+                CreateDefinition(TestBundleFactory.SpecId, "SecondApi", "Generated.Second", "SecondApi"));
+            var additionalTexts = ImmutableArray.Create<AdditionalText>(CreateBundleText(
+                TestBundleFactory.SpecId,
+                TestBundleFactory.Create("{\"openapi\":\"3.1.0\",\"paths\":{}}")));
+
+            GeneratorDriverRunResult result = Run(compilation, additionalTexts);
+
+            Assert.Equal(2, result.Diagnostics.Length);
+            Assert.All(result.Diagnostics, diagnostic => Assert.Equal("OACG007", diagnostic.Id));
+            Assert.All(result.Diagnostics, diagnostic => Assert.True(diagnostic.Location.IsInSource));
+            Assert.Empty(result.GeneratedTrees);
+        }
+
+        [Fact]
+        public void UnsupportedDocumentFormatReportsOacg008Error()
+        {
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(
+                    TestBundleFactory.SpecId,
+                    "Api",
+                    "Generated",
+                    "Api",
+                    "Yaml"));
+
+            GeneratorDriverRunResult result = Run(compilation, ImmutableArray<AdditionalText>.Empty);
+            Diagnostic diagnostic = Assert.Single(result.Diagnostics);
+
+            Assert.Equal("OACG008", diagnostic.Id);
+            Assert.Contains("Json (0) only", diagnostic.GetMessage());
+            Assert.Empty(result.GeneratedTrees);
+        }
+
+        [Fact]
+        public void FileNameAndBundleSpecIdMismatchReportsOacg009Error()
+        {
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "Api", "Generated", "Api"));
+            var additionalTexts = ImmutableArray.Create<AdditionalText>(CreateBundleText(
+                SecondSpecId,
+                TestBundleFactory.Create("{\"openapi\":\"3.1.0\",\"paths\":{}}")));
+
+            GeneratorDriverRunResult result = Run(compilation, additionalTexts);
+            Diagnostic diagnostic = Assert.Single(result.Diagnostics);
+
+            Assert.Equal("OACG009", diagnostic.Id);
+            Assert.Contains(TestBundleFactory.SpecId, diagnostic.GetMessage());
+            Assert.Contains(SecondSpecId, diagnostic.GetMessage());
+            Assert.Empty(result.GeneratedTrees);
+        }
+
+        [Fact]
+        public void BundleEnvelopeMismatchForDefinitionFileReportsOnlyOacg009Error()
+        {
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "Api", "Generated", "Api"));
+            var additionalTexts = ImmutableArray.Create<AdditionalText>(CreateBundleText(
+                TestBundleFactory.SpecId,
+                TestBundleFactory.Create(
+                    "{\"openapi\":\"3.1.0\",\"paths\":{}}",
+                    specId: SecondSpecId)));
+
+            GeneratorDriverRunResult result = Run(compilation, additionalTexts);
+            Diagnostic diagnostic = Assert.Single(result.Diagnostics);
+
+            Assert.Equal("OACG009", diagnostic.Id);
+            Assert.Contains(TestBundleFactory.SpecId, diagnostic.GetMessage());
+            Assert.Contains(SecondSpecId, diagnostic.GetMessage());
+            Assert.Empty(result.GeneratedTrees);
+        }
+
+        [Fact]
+        public void MultipleDefinitionsMatchOnlyTheirOwnSpecsAndUseStableUniqueHintNames()
+        {
+            const string JsonA =
+                "{\"openapi\":\"3.1.0\",\"paths\":{\"/a\":{\"get\":{\"operationId\":\"getA\",\"responses\":{}}}}}";
+            const string JsonB =
+                "{\"openapi\":\"3.1.0\",\"paths\":{\"/b\":{\"get\":{\"operationId\":\"getB\",\"responses\":{}}}}}";
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "FirstApi", "Generated.First", "FirstApi") +
+                CreateDefinition(SecondSpecId, "SecondApi", "Generated.Second", "SecondApi"));
+            var additionalTexts = ImmutableArray.Create<AdditionalText>(
+                CreateBundleText(TestBundleFactory.SpecId, TestBundleFactory.Create(JsonA)),
+                CreateBundleText(
+                    SecondSpecId,
+                    TestBundleFactory.Create(JsonB, specId: SecondSpecId)));
+
+            GeneratorDriverRunResult result = Run(compilation, additionalTexts);
+            GeneratorRunResult generatorResult = Assert.Single(result.Results);
+            string firstOutput = Assert.Single(
+                result.GeneratedTrees,
+                tree => tree.ToString().Contains("class FirstApi")).ToString();
+            string secondOutput = Assert.Single(
+                result.GeneratedTrees,
+                tree => tree.ToString().Contains("class SecondApi")).ToString();
+            string[] hintNames = generatorResult.GeneratedSources.Select(source => source.HintName).ToArray();
+
+            Assert.Empty(result.Diagnostics);
+            Assert.Equal(2, result.GeneratedTrees.Length);
             Assert.Contains("getA", firstOutput);
-            Assert.DoesNotContain("getA", changedOutput);
-            Assert.Contains("getB", changedOutput);
+            Assert.DoesNotContain("getB", firstOutput);
+            Assert.Contains("getB", secondOutput);
+            Assert.DoesNotContain("getA", secondOutput);
+            Assert.Equal(2, hintNames.Distinct(StringComparer.Ordinal).Count());
+            Assert.Contains(hintNames, hintName => hintName.Contains(TestBundleFactory.SpecId));
+            Assert.Contains(hintNames, hintName => hintName.Contains(SecondSpecId));
         }
 
-        private static GeneratorDriverRunResult RunSingleBundle(string bundle)
+        [Fact]
+        public void SeparateCompilationsGenerateOnlyTheDefinitionInEachAssembly()
         {
-            var texts = ImmutableArray.Create<AdditionalText>(
-                new InMemoryAdditionalText(
-                    TestBundleFactory.SpecId + ApiClientCodeGenerator.AdditionalFileSuffix,
-                    bundle));
-            return CreateDriver(texts).RunGenerators(CreateCompilation()).GetRunResult();
+            const string JsonA =
+                "{\"openapi\":\"3.1.0\",\"paths\":{\"/a\":{\"get\":{\"operationId\":\"getA\",\"responses\":{}}}}}";
+            const string JsonB =
+                "{\"openapi\":\"3.1.0\",\"paths\":{\"/b\":{\"get\":{\"operationId\":\"getB\",\"responses\":{}}}}}";
+            var additionalTexts = ImmutableArray.Create<AdditionalText>(
+                CreateBundleText(TestBundleFactory.SpecId, TestBundleFactory.Create(JsonA)),
+                CreateBundleText(
+                    SecondSpecId,
+                    TestBundleFactory.Create(JsonB, specId: SecondSpecId)));
+            CSharpCompilation firstAssembly = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "FirstApi", "Generated.First", "FirstApi"),
+                "FirstAssembly");
+            CSharpCompilation secondAssembly = CreateCompilation(
+                CreateDefinition(SecondSpecId, "SecondApi", "Generated.Second", "SecondApi"),
+                "SecondAssembly");
+
+            GeneratorDriverRunResult firstResult = Run(firstAssembly, additionalTexts);
+            GeneratorDriverRunResult secondResult = Run(secondAssembly, additionalTexts);
+
+            string firstOutput = Assert.Single(firstResult.GeneratedTrees).ToString();
+            string secondOutput = Assert.Single(secondResult.GeneratedTrees).ToString();
+            Assert.Contains("class FirstApi", firstOutput);
+            Assert.Contains("getA", firstOutput);
+            Assert.DoesNotContain("getB", firstOutput);
+            Assert.Contains("class SecondApi", secondOutput);
+            Assert.Contains("getB", secondOutput);
+            Assert.DoesNotContain("getA", secondOutput);
+            Assert.Empty(firstResult.Diagnostics);
+            Assert.Empty(secondResult.Diagnostics);
         }
 
-        private static GeneratorDriver CreateDriver(ImmutableArray<AdditionalText> additionalTexts)
+        [Fact]
+        public void ReusedDriverKeepsUnrelatedClientInputUnchangedWhenOneBundleChanges()
         {
-            CSharpCompilation compilation = CreateCompilation();
+            const string JsonA =
+                "{\"openapi\":\"3.1.0\",\"paths\":{\"/a\":{\"get\":{\"operationId\":\"getA\",\"responses\":{}}}}}";
+            const string JsonB =
+                "{\"openapi\":\"3.1.0\",\"paths\":{\"/b\":{\"get\":{\"operationId\":\"getB\",\"responses\":{}}}}}";
+            const string JsonBChanged =
+                "{\"openapi\":\"3.1.0\",\"paths\":{\"/b2\":{\"get\":{\"operationId\":\"getBChanged\",\"responses\":{}}}}}";
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "FirstApi", "Generated.First", "FirstApi") +
+                CreateDefinition(SecondSpecId, "SecondApi", "Generated.Second", "SecondApi"));
+            var firstBundle = CreateBundleText(
+                TestBundleFactory.SpecId,
+                TestBundleFactory.Create(JsonA));
+            var originalSecondBundle = CreateBundleText(
+                SecondSpecId,
+                TestBundleFactory.Create(JsonB, specId: SecondSpecId));
+            var changedSecondBundle = CreateBundleText(
+                SecondSpecId,
+                TestBundleFactory.Create(JsonBChanged, specId: SecondSpecId));
+            GeneratorDriver driver = CreateDriver(
+                compilation,
+                ImmutableArray.Create<AdditionalText>(firstBundle, originalSecondBundle));
+
+            driver = driver.RunGenerators(compilation);
+            GeneratorDriverRunResult firstResult = driver.GetRunResult();
+            string firstClientBefore = FindGeneratedClient(firstResult, "FirstApi");
+            driver = driver.RunGenerators(compilation);
+            Assert.All(
+                GetReasons(driver.GetRunResult(), "OpenApiMatchDefinitionToBundle"),
+                reason => Assert.Equal(IncrementalStepRunReason.Cached, reason));
+
+            driver = driver.ReplaceAdditionalText(originalSecondBundle, changedSecondBundle)
+                .RunGenerators(compilation);
+            GeneratorDriverRunResult changedResult = driver.GetRunResult();
+            IReadOnlyList<IncrementalStepRunReason> parseReasons = GetReasons(
+                changedResult,
+                "OpenApiParseNormalizedBundle");
+            IReadOnlyList<IncrementalStepRunReason> matchReasons = GetReasons(
+                changedResult,
+                "OpenApiMatchDefinitionToBundle");
+
+            Assert.Contains(IncrementalStepRunReason.Cached, parseReasons);
+            Assert.Contains(IncrementalStepRunReason.Modified, parseReasons);
+            Assert.Contains(IncrementalStepRunReason.Unchanged, matchReasons);
+            Assert.Contains(IncrementalStepRunReason.Modified, matchReasons);
+            Assert.Equal(firstClientBefore, FindGeneratedClient(changedResult, "FirstApi"));
+            Assert.Contains("getBChanged", FindGeneratedClient(changedResult, "SecondApi"));
+            Assert.DoesNotContain("getB\"", FindGeneratedClient(changedResult, "SecondApi"));
+        }
+
+        private static GeneratorDriverRunResult RunSingleBundle(
+            CSharpCompilation compilation,
+            string bundle)
+        {
+            var texts = ImmutableArray.Create<AdditionalText>(CreateBundleText(
+                TestBundleFactory.SpecId,
+                bundle));
+            return Run(compilation, texts);
+        }
+
+        private static GeneratorDriverRunResult Run(
+            CSharpCompilation compilation,
+            ImmutableArray<AdditionalText> additionalTexts)
+        {
+            return CreateDriver(compilation, additionalTexts)
+                .RunGenerators(compilation)
+                .GetRunResult();
+        }
+
+        private static GeneratorDriver CreateDriver(
+            CSharpCompilation compilation,
+            ImmutableArray<AdditionalText> additionalTexts)
+        {
             return CSharpGeneratorDriver.Create(
                 generators: new[] { new ApiClientCodeGenerator().AsSourceGenerator() },
                 additionalTexts: additionalTexts,
                 parseOptions: (CSharpParseOptions)compilation.SyntaxTrees.First().Options,
-                optionsProvider: new InMemoryAnalyzerConfigOptionsProvider(
-                    new Dictionary<string, string>()),
                 driverOptions: new GeneratorDriverOptions(
                     disabledOutputs: IncrementalGeneratorOutputKind.None,
                     trackIncrementalGeneratorSteps: true));
         }
 
-        private static CSharpCompilation CreateCompilation()
+        private static CSharpCompilation CreateCompilation(
+            string definitions,
+            string assemblyName = "GeneratorTests")
         {
             return CSharpCompilation.Create(
-                "GeneratorTests",
-                new[] { CSharpSyntaxTree.ParseText("public class Dummy { }") },
+                assemblyName,
+                new[] { CSharpSyntaxTree.ParseText(AttributeContract + definitions) },
                 new[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) },
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        }
+
+        private static string CreateDefinition(
+            string specId,
+            string apiName,
+            string generatedNamespace,
+            string className,
+            string documentFormat = "Json",
+            string? targetNamespace = null,
+            bool isPartial = true)
+        {
+            string declarationNamespace = targetNamespace ?? generatedNamespace;
+            return "\nnamespace " + declarationNamespace + @"
+{
+[global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiClientDefinitionAttribute(" +
+                   ToCSharpString(specId) + ", " +
+                   ToCSharpString(apiName) + ", " +
+                   ToCSharpString(generatedNamespace) +
+                   ", global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat." +
+                   documentFormat + @")]
+public " + (isPartial ? "partial " : string.Empty) + "class " + className + @" { }
+}
+";
+        }
+
+        private static string ToCSharpString(string value)
+        {
+            return "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+        }
+
+        private static InMemoryAdditionalText CreateBundleText(
+            string fileSpecId,
+            string content,
+            string? directory = null)
+        {
+            string path = fileSpecId + ApiClientCodeGenerator.AdditionalFileSuffix;
+            if (!string.IsNullOrEmpty(directory))
+            {
+                path = directory + "/" + path;
+            }
+
+            return new InMemoryAdditionalText(path, content);
+        }
+
+        private static string FindGeneratedClient(GeneratorDriverRunResult result, string apiName)
+        {
+            return Assert.Single(
+                result.GeneratedTrees,
+                tree => tree.ToString().Contains("class " + apiName)).ToString();
         }
 
         private static IReadOnlyList<IncrementalStepRunReason> GetReasons(
@@ -272,43 +604,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         public override SourceText GetText(CancellationToken cancellationToken = default)
         {
             return _text;
-        }
-    }
-
-    internal sealed class InMemoryAnalyzerConfigOptionsProvider : AnalyzerConfigOptionsProvider
-    {
-        private readonly AnalyzerConfigOptions _globalOptions;
-
-        public InMemoryAnalyzerConfigOptionsProvider(IReadOnlyDictionary<string, string> globalOptions)
-        {
-            _globalOptions = new InMemoryAnalyzerConfigOptions(globalOptions);
-        }
-
-        public override AnalyzerConfigOptions GlobalOptions => _globalOptions;
-
-        public override AnalyzerConfigOptions GetOptions(SyntaxTree tree)
-        {
-            return _globalOptions;
-        }
-
-        public override AnalyzerConfigOptions GetOptions(AdditionalText textFile)
-        {
-            return _globalOptions;
-        }
-    }
-
-    internal sealed class InMemoryAnalyzerConfigOptions : AnalyzerConfigOptions
-    {
-        private readonly IReadOnlyDictionary<string, string> _options;
-
-        public InMemoryAnalyzerConfigOptions(IReadOnlyDictionary<string, string> options)
-        {
-            _options = options;
-        }
-
-        public override bool TryGetValue(string key, out string value)
-        {
-            return _options.TryGetValue(key, out value!);
         }
     }
 }

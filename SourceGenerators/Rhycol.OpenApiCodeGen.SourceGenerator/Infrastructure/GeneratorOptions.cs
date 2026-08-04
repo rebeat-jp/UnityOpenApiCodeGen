@@ -38,8 +38,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             unchecked
             {
-                return (StringComparer.Ordinal.GetHashCode(ApiName) * 397) ^
-                       StringComparer.Ordinal.GetHashCode(GeneratedNamespace);
+                return ((ApiName == null ? 0 : StringComparer.Ordinal.GetHashCode(ApiName)) * 397) ^
+                       (GeneratedNamespace == null
+                           ? 0
+                           : StringComparer.Ordinal.GetHashCode(GeneratedNamespace));
             }
         }
     }

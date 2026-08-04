@@ -13,11 +13,13 @@ namespace Rhycol.OpenApiCodeGen.Core
     internal class GenerationService
     {
         readonly IAsyncRepository<ProjectSetting> _projectSettingRepository;
+        readonly IAsyncRepository<GenerationCSharpSetting> _generationCSharpSettingRepository;
         readonly GenerationProviderRegistry _providerRegistry;
 
         public GenerationService()
             : this(
                 ApplicationConfig.ProjectSettingRepository,
+                ApplicationConfig.GenerationCsharpSettingRepository,
                 GenerationProviderRegistry.Shared)
         {
         }
@@ -25,9 +27,22 @@ namespace Rhycol.OpenApiCodeGen.Core
         internal GenerationService(
             IAsyncRepository<ProjectSetting> projectSettingRepository,
             GenerationProviderRegistry providerRegistry)
+            : this(
+                projectSettingRepository,
+                ApplicationConfig.GenerationCsharpSettingRepository,
+                providerRegistry)
+        {
+        }
+
+        internal GenerationService(
+            IAsyncRepository<ProjectSetting> projectSettingRepository,
+            IAsyncRepository<GenerationCSharpSetting> generationCSharpSettingRepository,
+            GenerationProviderRegistry providerRegistry)
         {
             _projectSettingRepository = projectSettingRepository
                 ?? throw new ArgumentNullException(nameof(projectSettingRepository));
+            _generationCSharpSettingRepository = generationCSharpSettingRepository
+                ?? throw new ArgumentNullException(nameof(generationCSharpSettingRepository));
             _providerRegistry = providerRegistry
                 ?? throw new ArgumentNullException(nameof(providerRegistry));
         }
@@ -79,9 +94,15 @@ namespace Rhycol.OpenApiCodeGen.Core
                         + $"{Environment.NewLine}{availability.Reason}");
                 }
 
+                GenerationCSharpSetting generationCSharpSetting =
+                    await _generationCSharpSettingRepository.ReadAsync()
+                    ?? new GenerationCSharpSetting();
+                cancellationToken.ThrowIfCancellationRequested();
                 var request = new GenerationRequest(
                     generateApiClientDto.ApiDocumentFilePathOrUrl,
-                    Path.GetFullPath(generateApiClientDto.ApiClientOutputFolderPath));
+                    Path.GetFullPath(generateApiClientDto.ApiClientOutputFolderPath),
+                    generationCSharpSetting.ApiName,
+                    generationCSharpSetting.PackageName);
                 GenerationResult result =
                     await provider.GenerateAsync(request, cancellationToken);
 

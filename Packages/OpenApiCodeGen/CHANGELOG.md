@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Add explicit Docker and Source Generator provider selection.
 - Synchronize `OPENAPI_CODEGEN_SOURCE_GENERATOR` for the active build target.
 - Remove the Source Generator provider and define before package transitions.
+- Pass the configured API name and namespace through the provider-neutral generation request.
 
 ### Changed
 

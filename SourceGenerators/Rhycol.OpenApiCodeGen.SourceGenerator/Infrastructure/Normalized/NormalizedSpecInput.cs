@@ -29,8 +29,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             unchecked
             {
-                return (StringComparer.Ordinal.GetHashCode(Path) * 397) ^
-                       StringComparer.Ordinal.GetHashCode(Content);
+                return ((Path == null ? 0 : StringComparer.Ordinal.GetHashCode(Path)) * 397) ^
+                       (Content == null ? 0 : StringComparer.Ordinal.GetHashCode(Content));
             }
         }
     }

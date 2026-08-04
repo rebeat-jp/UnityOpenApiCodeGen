@@ -23,14 +23,16 @@ case-sensitive suffix を持ちます。
 .Rhycol.OpenApiCodeGen.SourceGenerator.additionalfile
 ```
 
-Phase 1 の標準ファイル名は次のとおりです。`specId` は lower-case の Guid `N` format です。
+標準ファイル名は次のとおりです。`specId` は lower-case の Guid `N` format です。
 
 ```text
 <specId>.Rhycol.OpenApiCodeGen.SourceGenerator.additionalfile
 ```
 
-Analyzer は suffix が完全一致しない AdditionalFile を無視します。Phase 1 では対象 assembly ごとに
-bundle は最大1件です。複数件を検出した場合は diagnostic にし、どれかを暗黙選択しません。
+Analyzer は suffix が完全一致しない AdditionalFile を無視します。ファイル名の`specId`とenvelope内の
+`specId`は一致しなければなりません。対象assembly内の属性付きpartial definitionとbundleを`specId`で
+対応付けるため、複数bundleを扱えます。重複または不一致を検出した場合はdiagnosticにし、どれかを
+暗黙選択しません。
 
 ## Envelope schema
 
@@ -213,6 +215,33 @@ version diagnosticを返します。
 OpenAPIの意味解析はnormalizerで行いません。normalizerはJSON syntaxをlosslessな`SpecNode`へ変換する責務だけを
 持ちます。
 
+## Client definition contract
+
+Source Generator Providerは選択されたoutput folderを包含する最寄りのasmdefをtarget assemblyとします。
+このasmdefは`Unity.OpenApiCodeGen.SourceGenerator`をassembly nameまたはGUIDで直接参照する必要があります。
+output folderはprojectの`Assets`配下に限定します。
+
+Providerは次の所有ファイルを生成します。
+
+```text
+<output folder>/<apiName>.OpenApiDefinition.cs
+```
+
+- `apiName`はC# identifier、`generatedNamespace`は空でないC# namespaceでなければならない
+- client identityは`<target assembly name>\n<generatedNamespace>\n<apiName>`のUTF-8 bytesとする
+- 初回`specId`はclient identityのSHA-256先頭16 bytesをlower-case hexadecimalで表す
+- 所有header、client identity hash、有効な`specId`が一致する既存ファイルは同じ`specId`を再利用する
+- 所有headerがない同名ファイル、または別identityの所有ファイルを上書きしない
+- definitionは`OPENAPI_CODEGEN_SOURCE_GENERATOR`内で`public partial class <apiName>`を宣言し、
+  `OpenApiClientDefinitionAttribute(specId, apiName, generatedNamespace, Json)`を付与する
+- definitionとcompiler mirrorのどちらも変化しないGenerateではscript compilationを要求しない
+
+属性にはcache pathを保存しません。Analyzerが参照するcontentはRoslynから渡されるAdditionalFileだけであり、
+definitionの`specId`を使って対応するbundleを選択します。
+Phase 3の4つのpositional constructor引数とmetadata nameは互換契約として固定します。将来の任意生成オプションは
+既存Analyzerが未知の値を無視できるnamed propertyとして追加します。positional引数や既存の意味を壊す変更が
+必要な場合は、別versionの属性契約として導入します。
+
 ## Cache contract
 
 Authoritative cache:
@@ -248,7 +277,10 @@ Assets/OpenApiCodeGen/Generated/SpecCache/<specId>.Rhycol.OpenApiCodeGen.SourceG
 - raw `.openapi.json`を解析しない
 - `Newtonsoft.Json`、`System.Text.Json`、`YamlDotNet`をassembly referenceに持たない
 - AdditionalFileをcase-sensitive exact suffixでfilterする
-- 対象assemblyにbundleがない場合は何も生成しない
+- `ForAttributeWithMetadataName`で`OpenApiClientDefinitionAttribute`付きclassだけを収集する
+- definition、AdditionalFile名、bundle envelopeを`specId`で厳密に対応付ける
+- definitionがないbundleからはcodeを生成しない
+- 複数definitionおよび複数bundleの順序に依存せず、生成hint nameへ`specId`を含める
 - network、environment依存の取得、file writeを行わない
 
 Diagnostic ID:
@@ -258,7 +290,12 @@ Diagnostic ID:
 | `OACG001` | Error | malformed normalized bundle |
 | `OACG002` | Error | unsupported `formatVersion` |
 | `OACG003` | Error | OpenAPI mappingまたはcode generation failure |
-| `OACG004` | Error | Phase 1対象assemblyに複数bundleが存在する |
+| `OACG004` | Error | 複数bundleが同じ`specId`を宣言している |
+| `OACG005` | Error | 属性付きclient definitionが不正 |
+| `OACG006` | Error | client definitionに対応するbundleがない |
+| `OACG007` | Error | 複数client definitionが同じ`specId`を使用している |
+| `OACG008` | Error | 未対応のdocument format。Phase 3はJSONのみ |
+| `OACG009` | Error | AdditionalFile名とbundle envelopeの`specId`が不一致 |
 
 `OACG003`はraw sourceのpath、line、column、logical pathを使用します。bundle schema自体の問題はcompiler
 mirrorのpathを使用します。
@@ -269,8 +306,8 @@ mirrorのpathを使用します。
 - writerは常に現在versionを出力し、古いauthoritative cacheを現在versionへ再生成する
 - readerは対応していないversionを推測して読まない
 - format migrationはEditorがraw inputから再生成する。Analyzer内でcache migrationしない
-- Phase 1では1 spec / 1 root document / 1 target assemblyを上限とする
-- 複数specと属性による対応付けは後続Phaseで追加する
+- v1 bundleごとの上限は1 spec / 1 root documentのままとする
+- target assemblyごとの複数specは属性と`specId`で対応付ける
 
 ## Verification requirements
 
@@ -278,7 +315,11 @@ mirrorのpathを使用します。
 - cache hit時にauthoritative cacheとmirrorのmtimeが変わらない
 - raw input変更時だけ両fileが更新される
 - invalid raw JSONで最後の正常cacheを上書きしない
+- local raw JSONからProviderを通してcache、mirror、属性付きpartialを生成できる
+- 同じclient identityの再Generateとraw input更新で同じ`specId`を維持する
+- 属性とbundleが複数あっても`specId`で正しく対応し、欠落・重複・不一致をdiagnosticにする
+- Unity上でraw input由来のgenerated memberを参照でき、input更新後もmemberが追随してrecompileがAnalyzer参照scopeに限定される
+- Source Generatorが失敗してもDocker Providerへfallbackしない
 - source locationとlogical pathがAnalyzer diagnosticへ引き継がれる
 - committed Analyzerに禁止assembly referenceと依存DLLが存在しない
 - Unity 6000.0.23f1と6000.3.2f1のclean compileでmirrorから生成できる
-- Source Generator失敗時にDocker生成が呼ばれない

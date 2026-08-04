@@ -263,6 +263,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
 
                 var kind = SyntaxFacts.GetKeywordKind(modifier);
+                if (kind == SyntaxKind.None)
+                {
+                    kind = SyntaxFacts.GetContextualKeywordKind(modifier);
+                }
+
                 if (kind != SyntaxKind.None)
                 {
                     tokens.Add(SyntaxFactory.Token(kind));

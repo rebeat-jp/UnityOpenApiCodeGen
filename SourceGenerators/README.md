@@ -56,11 +56,15 @@ SourceGenerators/scripts/verify-unity.sh 6000.3.2f1
 
 Unity検証はtemporary projectだけを変更し、次を確認します。
 
-- clean compileとEditMode tests
-- generated clientを参照するtarget assemblyのcompile
+- generated clientが存在しない初期projectのclean compile
+- SettingsでSource Generatorを選択し、登録済みpublic providerへlocal raw JSONを渡す縦断生成
+- authoritative cache、compiler mirror、属性付きpartial definitionの生成
+- generated clientとraw JSON由来operation methodをreflectionで参照するtarget assemblyのcompileとEditMode tests
+- 同じinputの再GenerateでspecIdと生成物が変わらず、compileを要求しないこと
 - AnalyzerとAdditionalFileのasmdef reference scope
 - unchanged reopenで不要なC# compileが発生しないこと
-- AdditionalFile変更時の限定されたrecompile
+- operationIdを変えたraw JSONの再GenerateでもspecIdを維持し、生成memberを更新して対象assemblyだけをrecompileすること
+- Docker Providerを解決不能にした状態でもSource Generator生成が完了すること
 - `CS8785`が発生しないこと
 - 稼働中Editorでadd-onを外す前にdefineが除去され、base-onlyへ再compileできること
 - add-onを除いたprojectでもbase packageのEditMode testsが通ること

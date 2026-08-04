@@ -3,7 +3,6 @@
 using System;
 using System.IO;
 using System.Text;
-using System.Threading.Tasks;
 using NUnit.Framework;
 using Rhycol.OpenApiCodeGen.Editor.Generation;
 using Rhycol.OpenApiCodeGen.SourceGenerator.Editor;
@@ -134,32 +133,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(provider.Descriptor.Provider, Is.EqualTo(GenerateProvider.SourceGenerator));
             Assert.That(provider.Descriptor.DisplayName, Is.EqualTo("Source Generator"));
             Assert.That(provider.Descriptor.Availability, Is.SameAs(availability));
-        }
-
-        [Test]
-        public void GenerateReturnsExplicitPhase3Failure()
-        {
-            var provider = new SourceGeneratorGenerationProvider(
-                GenerationProviderAvailability.Available());
-
-            GenerationResult result = provider.Generate(
-                new GenerationRequest("openapi.json", "Generated"));
-
-            Assert.That(result.IsSuccess, Is.False);
-            Assert.That(result.Message, Does.Contain("Phase 3"));
-        }
-
-        [Test]
-        public async Task GenerateAsyncReturnsExplicitPhase3Failure()
-        {
-            var provider = new SourceGeneratorGenerationProvider(
-                GenerationProviderAvailability.Available());
-
-            GenerationResult result = await provider.GenerateAsync(
-                new GenerationRequest("openapi.json", "Generated"));
-
-            Assert.That(result.IsSuccess, Is.False);
-            Assert.That(result.Message, Does.Contain("Phase 3"));
         }
 
         [Test]

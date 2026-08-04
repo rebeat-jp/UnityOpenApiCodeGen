@@ -72,7 +72,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             var content = files.Single().Content;
 
             Assert.Contains("namespace Rhycol.OpenApiCodeGen.Generated", content);
-            Assert.Contains("class SampleApi", content);
+            Assert.Contains("public partial class SampleApi", content);
             Assert.Contains("/// <summary>Get items</summary>", content);
             Assert.Contains("/// <remarks>operationId: getItems</remarks>", content);
             Assert.Contains("public System.Collections.Generic.IReadOnlyList<string> getItems(int limit, string? cursor)", content);

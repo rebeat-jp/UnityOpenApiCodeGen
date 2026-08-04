@@ -3,10 +3,15 @@ using System;
 namespace Rhycol.OpenApiCodeGen.SourceGenerator.Verification
 {
     /// <summary>
-    /// Makes compilation fail if the production analyzer does not generate the expected client.
+    /// Resolves the generated client without making the pre-generation project uncompilable.
     /// </summary>
     public static class GeneratedClientProbe
     {
-        public static Type ClientType => typeof(Rhycol.OpenApiCodeGen.Generated.Api);
+        private const string GeneratedClientAssemblyQualifiedName =
+            "Rhycol.OpenApiCodeGen.Generated.Api, Unity.OpenApiCodeGen.SourceGenerator.Verification";
+
+        public static Type ClientType => Type.GetType(
+            GeneratedClientAssemblyQualifiedName,
+            throwOnError: false);
     }
 }

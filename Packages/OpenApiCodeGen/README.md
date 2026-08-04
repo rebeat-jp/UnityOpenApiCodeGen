@@ -29,8 +29,11 @@ The Setup window configures Docker only and does not change the saved provider.
 Provider resolution never falls back to Docker. An unknown, unregistered, or
 unavailable provider produces an explicit error instead.
 
-Phase 2 registers and validates the Source Generator provider, but its Generate
-operation intentionally reports that the local JSON pipeline is pending Phase 3.
+The Source Generator provider accepts a local JSON document and publishes a
+normalized compiler input plus an attributed partial client definition. Its
+output folder must be under `Assets` and contained by an asmdef that directly
+references `Unity.OpenApiCodeGen.SourceGenerator`. URLs and YAML are not part of
+the local JSON flow.
 Selecting an available Source Generator provider enables
 `OPENAPI_CODEGEN_SOURCE_GENERATOR` for the active `NamedBuildTarget`; selecting
 Docker removes it when that target is synchronized. Removing or updating the

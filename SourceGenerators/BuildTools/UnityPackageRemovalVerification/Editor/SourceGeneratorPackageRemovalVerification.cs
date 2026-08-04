@@ -23,6 +23,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.PackageRemovalVerification
 
         static double _deadline;
         static bool _autoRefreshDisallowed;
+        static bool _registeringPackagesVerified;
 
         static SourceGeneratorPackageRemovalVerification()
         {
@@ -37,13 +38,47 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.PackageRemovalVerification
             try
             {
                 AssertDefineEnabledBeforeRemoval();
+                _registeringPackagesVerified = false;
                 SessionState.SetBool(PendingSessionKey, true);
                 _deadline = EditorApplication.timeSinceStartup + TimeoutSeconds;
+                Events.registeringPackages += OnRegisteringPackages;
                 Events.registeredPackages += OnRegisteredPackages;
                 EditorApplication.update += CheckForTimeout;
 
                 AssetDatabase.DisallowAutoRefresh();
                 _autoRefreshDisallowed = true;
+
+                Client.Remove(SourceGeneratorPackageName);
+            }
+            catch (Exception exception)
+            {
+                Fail(exception);
+            }
+        }
+
+        static void OnRegisteringPackages(PackageRegistrationEventArgs args)
+        {
+            if (!args.removed.Any(package =>
+                    string.Equals(
+                        package.name,
+                        SourceGeneratorPackageName,
+                        StringComparison.Ordinal)))
+            {
+                return;
+            }
+
+            Events.registeringPackages -= OnRegisteringPackages;
+
+            try
+            {
+                PlayerSettings.GetScriptingDefineSymbols(
+                    GetActiveBuildTarget(),
+                    out string[] defines);
+                if (defines.Contains(DefineSymbol))
+                {
+                    throw new InvalidOperationException(
+                        $"{DefineSymbol} was not removed before package registration.");
+                }
 
                 string guardPath = Path.Combine(
                     Application.dataPath,
@@ -54,16 +89,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.PackageRemovalVerification
                     "#if OPENAPI_CODEGEN_SOURCE_GENERATOR\n"
                     + "#error Source Generator define was not removed before compilation.\n"
                     + "#endif\n");
-
-                const string verificationAssetPath =
-                    "Assets/OpenApiCodeGen/SourceGeneratorVerification";
-                if (!AssetDatabase.DeleteAsset(verificationAssetPath))
-                {
-                    throw new InvalidOperationException(
-                        $"Failed to delete '{verificationAssetPath}'.");
-                }
-
-                Client.Remove(SourceGeneratorPackageName);
+                _registeringPackagesVerified = true;
             }
             catch (Exception exception)
             {
@@ -83,6 +109,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.PackageRemovalVerification
             }
 
             Events.registeredPackages -= OnRegisteredPackages;
+            if (!_registeringPackagesVerified)
+            {
+                Fail(new InvalidOperationException(
+                    "The Source Generator removal was registered without verifying "
+                    + "the pre-registration define state."));
+                return;
+            }
+
             AllowAutoRefresh();
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
         }
@@ -201,6 +235,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.PackageRemovalVerification
 
         static void Fail(Exception exception)
         {
+            Events.registeringPackages -= OnRegisteringPackages;
             Events.registeredPackages -= OnRegisteredPackages;
             EditorApplication.update -= CheckForTimeout;
             AllowAutoRefresh();

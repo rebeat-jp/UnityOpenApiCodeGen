@@ -59,5 +59,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Contains("/// <summary>", content);
             Assert.Contains("/// Box summary.", content);
         }
+
+        [Fact]
+        public void Generate_EmitsContextualKeywordModifier()
+        {
+            var file = new CSharpSyntaxGenerator("PartialClient.g.cs", "Example")
+                .AddClass("PartialClient", builder =>
+                {
+                    builder.AddModifiers("public", "partial");
+                })
+                .Build();
+
+            string content = new RoslynCodeGenerator().Generate(file).Content;
+
+            Assert.Contains("public partial class PartialClient", content);
+        }
     }
 }

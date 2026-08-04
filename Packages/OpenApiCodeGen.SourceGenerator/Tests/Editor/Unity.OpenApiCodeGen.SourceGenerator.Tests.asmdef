@@ -2,6 +2,7 @@
   "name": "Unity.OpenApiCodeGen.SourceGenerator.Tests",
   "rootNamespace": "Rhycol.OpenApiCodeGen.SourceGenerator.Tests",
   "references": [
+    "Unity.OpenApiCodeGen.SourceGenerator",
     "Unity.OpenApiCodeGen.SourceGenerator.Editor",
     "Unity.OpenApiCodeGen.Editor.Contracts"
   ],

@@ -69,13 +69,31 @@ namespace Rhycol.OpenApiCodeGen.Editor.Generation
     {
         public string ApiDocumentFilePathOrUrl { get; }
         public string OutputFolderPath { get; }
+        public string ApiName { get; }
+        public string GeneratedNamespace { get; }
 
         public GenerationRequest(string apiDocumentFilePathOrUrl, string outputFolderPath)
+            : this(
+                apiDocumentFilePathOrUrl,
+                outputFolderPath,
+                "Api",
+                "Rhycol.OpenApiCodeGen")
+        {
+        }
+
+        public GenerationRequest(
+            string apiDocumentFilePathOrUrl,
+            string outputFolderPath,
+            string apiName,
+            string generatedNamespace)
         {
             ApiDocumentFilePathOrUrl = apiDocumentFilePathOrUrl
                 ?? throw new ArgumentNullException(nameof(apiDocumentFilePathOrUrl));
             OutputFolderPath = outputFolderPath
                 ?? throw new ArgumentNullException(nameof(outputFolderPath));
+            ApiName = apiName ?? throw new ArgumentNullException(nameof(apiName));
+            GeneratedNamespace = generatedNamespace
+                ?? throw new ArgumentNullException(nameof(generatedNamespace));
         }
     }
 

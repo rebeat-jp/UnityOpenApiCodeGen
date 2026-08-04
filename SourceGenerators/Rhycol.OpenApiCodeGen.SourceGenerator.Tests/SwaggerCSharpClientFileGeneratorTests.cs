@@ -31,7 +31,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             var file = new SwaggerCSharpClientFileGenerator().Generate(document, option);
             var content = new RoslynCodeGenerator().Generate(file).Content;
 
-            Assert.Contains("class SwaggerApi", content);
+            Assert.Contains("public partial class SwaggerApi", content);
             Assert.Contains("public SwaggerApi()", content);
             Assert.Contains("public SwaggerApi(HttpClient httpClient)", content);
             Assert.Contains("public SwaggerApi(HttpMessageHandler handler)", content);

@@ -23,7 +23,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             var file = new OpenApiCSharpClientFileGenerator().Generate(document, option);
             var content = new RoslynCodeGenerator().Generate(file).Content;
 
-            Assert.Contains("class OpenApiClient", content);
+            Assert.Contains("public partial class OpenApiClient", content);
             Assert.Contains("public OpenApiClient()", content);
             Assert.Contains("public OpenApiClient(HttpClient httpClient)", content);
             Assert.Contains("public OpenApiClient(HttpMessageHandler handler)", content);
