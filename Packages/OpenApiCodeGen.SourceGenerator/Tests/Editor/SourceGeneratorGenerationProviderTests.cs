@@ -124,9 +124,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [TestCase("https://example.test/openapi.json", "URLs are not supported")]
-        [TestCase("Assets/Specs/openapi.yaml", "YAML is not supported")]
-        [TestCase("Assets/Specs/openapi.yml", "YAML is not supported")]
-        public void GenerateRejectsInputsOutsideLocalJsonScope(
+        [TestCase("Assets/Specs/openapi.txt", "supports local .json, .yaml, and .yml documents only")]
+        public void GenerateRejectsInputsOutsideLocalSupportedScope(
             string input,
             string expectedMessage)
         {
@@ -145,6 +144,86 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(definitionImports, Is.Empty);
         }
 
+        [TestCase("petstore.yaml")]
+        [TestCase("petstore.YML")]
+        public void GenerateAcceptsLocalYamlAndPropagatesDocumentFormat(string fileName)
+        {
+            string yamlPath = Path.Combine(projectRoot, "Assets", "Specs", fileName);
+            File.WriteAllText(
+                yamlPath,
+                "openapi: 3.0.3\ninfo:\n  title: Pet Store\n  version: 1.0.0\npaths: {}\n",
+                new UTF8Encoding(false));
+            SourceGeneratorGenerationProvider provider = CreateProvider();
+            GenerationRequest request = new GenerationRequest(
+                yamlPath,
+                outputFolder,
+                "PetStoreApi",
+                "Example.Generated.PetStore");
+
+            GenerationResult result = provider.Generate(request);
+
+            Assert.That(result.IsSuccess, Is.True, result.Message);
+            string specId = ReadSpecId(result.Message);
+            string mirrorPath = Path.Combine(
+                projectRoot,
+                NormalizedSpecBundleConstants.CompilerMirrorRelativePath,
+                specId + NormalizedSpecBundleConstants.AdditionalFileSuffix);
+            string definitionPath = Path.Combine(
+                outputFolder,
+                "PetStoreApi.OpenApiDefinition.cs");
+            Assert.That(File.Exists(mirrorPath), Is.True);
+            Assert.That(
+                File.ReadAllText(definitionPath),
+                Does.Contain("OpenApiDocumentFormat.Yaml"));
+            Assert.That(mirrorImporter.ImportedAssetPaths, Has.Count.EqualTo(1));
+            Assert.That(compilationRequestCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void InvalidYamlPreservesLastKnownGoodCacheAndDefinitionWithoutCompilation()
+        {
+            string yamlPath = Path.Combine(projectRoot, "Assets", "Specs", "petstore.yaml");
+            File.WriteAllText(
+                yamlPath,
+                "openapi: 3.0.3\npaths: {}\n",
+                new UTF8Encoding(false));
+            SourceGeneratorGenerationProvider provider = CreateProvider();
+            GenerationRequest request = new GenerationRequest(
+                yamlPath,
+                outputFolder,
+                "PetStoreApi",
+                "Example.Generated.PetStore");
+            GenerationResult first = provider.Generate(request);
+            Assert.That(first.IsSuccess, Is.True, first.Message);
+            string specId = ReadSpecId(first.Message);
+            string mirrorPath = Path.Combine(
+                projectRoot,
+                NormalizedSpecBundleConstants.CompilerMirrorRelativePath,
+                specId + NormalizedSpecBundleConstants.AdditionalFileSuffix);
+            string definitionPath = Path.Combine(
+                outputFolder,
+                "PetStoreApi.OpenApiDefinition.cs");
+            byte[] mirrorBytes = File.ReadAllBytes(mirrorPath);
+            byte[] definitionBytes = File.ReadAllBytes(definitionPath);
+            DateTime mirrorTimestamp = File.GetLastWriteTimeUtc(mirrorPath);
+            DateTime definitionTimestamp = File.GetLastWriteTimeUtc(definitionPath);
+            mirrorImporter.ImportedAssetPaths.Clear();
+            definitionImports.Clear();
+            File.WriteAllText(yamlPath, "openapi: [\n", new UTF8Encoding(false));
+
+            GenerationResult invalid = provider.Generate(request);
+
+            Assert.That(invalid.IsSuccess, Is.False);
+            Assert.That(invalid.Message, Does.Contain("YAML"));
+            Assert.That(File.ReadAllBytes(mirrorPath), Is.EqualTo(mirrorBytes));
+            Assert.That(File.ReadAllBytes(definitionPath), Is.EqualTo(definitionBytes));
+            Assert.That(File.GetLastWriteTimeUtc(mirrorPath), Is.EqualTo(mirrorTimestamp));
+            Assert.That(File.GetLastWriteTimeUtc(definitionPath), Is.EqualTo(definitionTimestamp));
+            Assert.That(mirrorImporter.ImportedAssetPaths, Is.Empty);
+            Assert.That(definitionImports, Is.Empty);
+            Assert.That(compilationRequestCount, Is.EqualTo(1));
+        }
+
         [Test]
         public void InvalidJsonDoesNotPublishDefinitionOrRequestCompilation()
         {
@@ -160,6 +239,44 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Is.False);
             Assert.That(compilationRequestCount, Is.Zero);
             Assert.That(definitionImports, Is.Empty);
+        }
+
+        [Test]
+        public void InvalidUtf8YamlReportsDiagnosticAndDoesNotPublishOrRequestCompilation()
+        {
+            string yamlPath = Path.Combine(projectRoot, "Assets", "Specs", "petstore.yaml");
+            File.WriteAllBytes(yamlPath, new byte[] { 0x80 });
+            SourceGeneratorGenerationProvider provider = CreateProvider();
+            GenerationRequest request = new GenerationRequest(
+                yamlPath,
+                outputFolder,
+                "PetStoreApi",
+                "Example.Generated.PetStore");
+
+            GenerationResult result = provider.Generate(request);
+
+            Assert.That(result.IsSuccess, Is.False);
+            Assert.That(result.Message, Does.Contain("not valid UTF-8"));
+            string sourcePath = "Assets/Specs/petstore.yaml";
+            Assert.That(
+                CountOccurrences(result.Message, "YAML001"),
+                Is.EqualTo(1),
+                "Actual message: " + result.Message);
+            Assert.That(
+                CountOccurrences(result.Message, sourcePath + ":1:1"),
+                Is.EqualTo(1),
+                "Actual message: " + result.Message);
+            Assert.That(
+                File.Exists(Path.Combine(outputFolder, "PetStoreApi.OpenApiDefinition.cs")),
+                Is.False);
+            Assert.That(
+                Directory.Exists(Path.Combine(
+                    projectRoot,
+                    NormalizedSpecBundleConstants.AuthoritativeCacheRelativePath)),
+                Is.False);
+            Assert.That(mirrorImporter.ImportedAssetPaths, Is.Empty);
+            Assert.That(definitionImports, Is.Empty);
+            Assert.That(compilationRequestCount, Is.Zero);
         }
 
         [Test]
@@ -247,6 +364,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Path.Combine(directory, assemblyName + ".asmdef"),
                 json,
                 new UTF8Encoding(false));
+        }
+
+        static int CountOccurrences(string value, string substring)
+        {
+            int count = 0;
+            int offset = 0;
+            while ((offset = value.IndexOf(substring, offset, StringComparison.Ordinal)) >= 0)
+            {
+                count++;
+                offset += substring.Length;
+            }
+
+            return count;
         }
 
         sealed class RecordingMirrorImporter : ICompilerMirrorImporter

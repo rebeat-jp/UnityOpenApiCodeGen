@@ -3,16 +3,20 @@
 ## 目的
 
 `Normalized Spec Bundle` は、Unity Editor と Incremental Source Generator の境界で使用する
-versioned な中間形式です。
+versioned な中間形式です。raw sourceはJSONまたはYAMLですが、canonical envelopeは常に
+JSONです。YAML sourceをJSON textへ変換してから解析するのではなく、JSON normalizerと
+BCL-only YAML lexer/parserがそれぞれshared `SpecNode`へ直接lowerします。
 
 - Editor は raw JSON を `Newtonsoft.Json` で検証し、source location 付きの `SpecNode` へ変換する
+- Editor は raw YAML を専用BCL-only lexer/parserでtoken streamから直接 `SpecNode` へ変換する
 - Editor は `SpecNode` を本書の canonical JSON として永続化する
-- Source Generator は canonical JSON だけを読み、raw JSON を解析しない
+- Source Generator は canonical JSONだけを読み、raw JSON/YAMLを解析しない
 - Source Generator は `Newtonsoft.Json`、`System.Text.Json`、`YamlDotNet`、Unity API を参照しない
 - Source Generator はネットワークアクセスとディスク書き込みを行わない
 
 この契約は、Unity の Analyzer load context から UPM の `Newtonsoft.Json` を直接解決できないために
-導入します。Docker 生成への暗黙 fallback は行いません。
+導入します。Docker 生成への暗黙 fallback は行いません。YAML parserの専用asmdefも
+`refs=[]`、`noEngineReferences=true`のBCL-only構成で、YamlDotNet dependencyはありません。
 
 ## ファイル契約
 
@@ -77,13 +81,18 @@ v1 の field 順序は次で固定します。
 | `sourcePath` | project内はproject-relative、区切りは`/`。project外は正規化済みabsolute path |
 | `root` | document rootのnode。JSON objectに限定せず全JSON valueを表現できる |
 
+Envelopeにraw document formatを表すfieldはありません。raw sourceのformatはEditor側の
+provider dispatchと、生成された`OpenApiClientDefinitionAttribute`の
+`OpenApiDocumentFormat`（JSON=`0`、YAML=`1`）で伝播します。bundleのtransport encodingが
+JSONであることは、入力がJSON sourceであることを意味しません。
+
 相対pathにcheckout固有のabsolute prefixを含めません。source identity が変わった場合は、raw bytesが
 同じでもbundleを更新します。
 
 ## Node schema
 
 全nodeはfield順`kind`、`line`、`column`を共通に持ちます。`line`と`column`は1-basedで、値tokenの
-開始位置です。
+開始位置です。JSONとYAMLのsource orderを保持します。
 
 ### Object
 
@@ -175,6 +184,14 @@ v1 の field 順序は次で固定します。
 }
 ```
 
+### YAML source location
+
+YAML lexer token spanはsource path、1-based line/column、UTF-16 offset/lengthを持ちます。
+offset/lengthはlexer/parser内部の診断用で、bundleへは保存しません。YAMLをnormalizerが
+返す`NormalizedSpecException`はsource path、1-based line/column、YAML diagnostic codeを
+保持します。syntax段階ではlogical pathはroot（empty）で、semantic diagnosticのlogical
+pathはbundle tree traversalからJSON Pointerとして復元します。
+
 ## Logical path
 
 Logical path はbundleへ重複保存せず、tree traversal時にRFC 6901 JSON Pointerとして決定的に復元します。
@@ -214,6 +231,19 @@ version diagnosticを返します。
 
 OpenAPIの意味解析はnormalizerで行いません。normalizerはJSON syntaxをlosslessな`SpecNode`へ変換する責務だけを
 持ちます。
+
+## Raw YAML normalization
+
+- input extensionはlocal `.yaml`または`.yml`（case-insensitive）。UTF-8をstrict decodeし、UTF-8 BOMは許可する
+- raw bytesのSHA-256はBOMを含めて計算し、decode後のtreeからBOMを除く
+- BCL-only専用asmdefのlexerがsource path、1-based line/column、UTF-16 offset/length付きtoken streamを生成し、parserがそのstreamだけからshared `SpecNode`を構築する
+- block/flow mapping・sequence、simple string key、quoted/plain scalar、JSON-compatible `null`/boolean/RFC 8259 number、literal/folded block scalar、chomping、explicit indent `1`–`9`、anchor/aliasを扱う
+- YAML 1.1 implicit bool/date等はstringのまま保持する。flow plain valueの`,`, `[`, `]`, `{`, `}` delimiterはquoteが必要で、URL scheme colon（`https://`）は受理する
+- merge key `<<`、tags、directives、multiple documents、complex/non-string keys、flow内block scalar、undefined/cyclic/redefined anchorを拒否する
+- syntax/UTF-8/limit違反は`YAML001`–`YAML015`、source path、1-based line/columnで返す。syntax段階のlogical pathはempty
+
+YAML normalizerもOpenAPIの意味解析を行いません。JSON/YAMLの両normalizerはlosslessな
+`SpecNode`へ下げる責務だけを持ち、後段のsemantic/generation pipelineを共有します。
 
 ## Client definition contract
 
@@ -262,19 +292,19 @@ Assets/OpenApiCodeGen/Generated/SpecCache/<specId>.Rhycol.OpenApiCodeGen.SourceG
 - cache hit keyは`formatVersion`、`specId`、source identity、`rawSha256`
 - cache hitかつ両fileが同一なら書き込みもtimestamp更新も行わない
 - authoritative cacheが正常でmirrorが欠落・破損している場合はmirrorだけを修復する
-- raw JSON不正時はどちらも書き換えず、最後に成功したcacheとmirrorを保持してGenerateを失敗させる
+- raw JSON/YAMLまたはUTF-8が不正な場合はどちらも書き換えず、最後に成功したcacheとmirrorを保持してGenerateを失敗させる
 - validな更新はmemory上で完全なbundleを生成後、temporary fileからfile単位でatomic replaceする
 - mirror更新に失敗した場合はエラーを返し、Analyzerが読む旧mirrorを破壊しない。次回Generateで再同期する
 - AssetDatabase refresh/importはmirrorが実際に変わった場合だけ行う
 
-最後に成功したmirrorが残っていても、EditorのGenerate結果は失敗です。別ProviderやDockerを起動して成功扱いには
-しません。
+最後に成功したmirrorが残っていても、EditorのGenerate結果は失敗です。definition、cache、mirror、script
+compilationを不正入力からpublishしません。別ProviderやDockerを起動して成功扱いにはしません。
 
 ## Analyzer contract
 
 - `netstandard2.0`、`Microsoft.CodeAnalysis.CSharp` 4.3.1でbuildする
 - BCL-onlyの専用readerでbundleを読む
-- raw `.openapi.json`を解析しない
+- raw `.json`/`.yaml`/`.yml`を解析しない
 - `Newtonsoft.Json`、`System.Text.Json`、`YamlDotNet`をassembly referenceに持たない
 - AdditionalFileをcase-sensitive exact suffixでfilterする
 - `ForAttributeWithMetadataName`で`OpenApiClientDefinitionAttribute`付きclassだけを収集する
@@ -294,7 +324,7 @@ Diagnostic ID:
 | `OACG005` | Error | 属性付きclient definitionが不正 |
 | `OACG006` | Error | client definitionに対応するbundleがない |
 | `OACG007` | Error | 複数client definitionが同じ`specId`を使用している |
-| `OACG008` | Error | 未対応のdocument format。Phase 3はJSONのみ |
+| `OACG008` | Error | 未対応のdocument format。JSON=`0`とYAML=`1`以外の値 |
 | `OACG009` | Error | AdditionalFile名とbundle envelopeの`specId`が不一致 |
 
 `OACG003`はraw sourceのpath、line、column、logical pathを使用します。bundle schema自体の問題はcompiler
@@ -308,18 +338,20 @@ mirrorのpathを使用します。
 - format migrationはEditorがraw inputから再生成する。Analyzer内でcache migrationしない
 - v1 bundleごとの上限は1 spec / 1 root documentのままとする
 - target assemblyごとの複数specは属性と`specId`で対応付ける
+- `OpenApiDocumentFormat.Json`（`0`）と`OpenApiDocumentFormat.Yaml`（`1`）はdefinitionのincremental inputとして扱う。formatが変わるとdefinition/matchは再評価するが、同一bundleのparseは再利用できる
 
 ## Verification requirements
 
 - 同じinputを2回normalizeしたbytesとSHA-256が一致する
 - cache hit時にauthoritative cacheとmirrorのmtimeが変わらない
 - raw input変更時だけ両fileが更新される
-- invalid raw JSONで最後の正常cacheを上書きしない
-- local raw JSONからProviderを通してcache、mirror、属性付きpartialを生成できる
+- invalid raw JSON/YAMLで最後の正常cacheを上書きしない
+- local raw JSON/YAMLからProviderを通してcache、mirror、属性付きpartialを生成できる
 - 同じclient identityの再Generateとraw input更新で同じ`specId`を維持する
 - 属性とbundleが複数あっても`specId`で正しく対応し、欠落・重複・不一致をdiagnosticにする
 - Unity上でraw input由来のgenerated memberを参照でき、input更新後もmemberが追随してrecompileがAnalyzer参照scopeに限定される
 - Source Generatorが失敗してもDocker Providerへfallbackしない
-- source locationとlogical pathがAnalyzer diagnosticへ引き継がれる
+- JSON/YAML source locationとlogical pathがAnalyzer diagnosticへ引き継がれる
 - committed Analyzerに禁止assembly referenceと依存DLLが存在しない
+- raw JSON/YAMLが同じsemantic rootへ正規化され、同じgenerated sourceとcompile結果になる
 - Unity 6000.0.23f1と6000.3.2f1のclean compileでmirrorから生成できる

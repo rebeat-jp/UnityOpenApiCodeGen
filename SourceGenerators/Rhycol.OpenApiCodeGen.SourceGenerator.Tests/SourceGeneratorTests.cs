@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 
 using Microsoft.CodeAnalysis;
@@ -312,19 +314,284 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         public void UnsupportedDocumentFormatReportsOacg008Error()
         {
             CSharpCompilation compilation = CreateCompilation(
+                @"
+namespace Generated
+{
+    [global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiClientDefinitionAttribute(
+        ""0123456789abcdef0123456789abcdef"",
+        ""Api"",
+        ""Generated"",
+        (global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat)2)]
+    public partial class Api { }
+}
+");
+
+            GeneratorDriverRunResult result = Run(compilation, ImmutableArray<AdditionalText>.Empty);
+            Diagnostic diagnostic = Assert.Single(result.Diagnostics);
+
+            Assert.Equal("OACG008", diagnostic.Id);
+            Assert.Contains("Json (0) and Yaml (1)", diagnostic.GetMessage());
+            Assert.Empty(result.GeneratedTrees);
+        }
+
+        [Fact]
+        public void YamlDocumentFormatGeneratesFromMatchingBundle()
+        {
+            CSharpCompilation compilation = CreateCompilation(
                 CreateDefinition(
                     TestBundleFactory.SpecId,
                     "Api",
                     "Generated",
                     "Api",
                     "Yaml"));
+            var additionalTexts = ImmutableArray.Create<AdditionalText>(CreateBundleText(
+                TestBundleFactory.SpecId,
+                TestBundleFactory.Create(
+                    "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Sample\",\"version\":\"1.0.0\"},\"paths\":{}}")));
 
-            GeneratorDriverRunResult result = Run(compilation, ImmutableArray<AdditionalText>.Empty);
-            Diagnostic diagnostic = Assert.Single(result.Diagnostics);
+            GeneratorDriverRunResult result = Run(compilation, additionalTexts);
 
-            Assert.Equal("OACG008", diagnostic.Id);
-            Assert.Contains("Json (0) only", diagnostic.GetMessage());
-            Assert.Empty(result.GeneratedTrees);
+            Assert.Empty(result.Diagnostics);
+            Assert.Single(result.GeneratedTrees);
+            Assert.Contains("public partial class Api", result.GeneratedTrees.Single().ToString());
+        }
+
+        [Fact]
+        public void JsonAndYamlDocumentFormatsProduceIdenticalGeneratedSource()
+        {
+            const string OpenApi =
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Sample\",\"version\":\"1.0.0\"},\"paths\":{}}";
+            var additionalTexts = ImmutableArray.Create<AdditionalText>(CreateBundleText(
+                TestBundleFactory.SpecId,
+                TestBundleFactory.Create(OpenApi)));
+            GeneratorDriverRunResult jsonResult = Run(
+                CreateCompilation(CreateDefinition(
+                    TestBundleFactory.SpecId,
+                    "Api",
+                    "Generated",
+                    "Api",
+                    "Json")),
+                additionalTexts);
+            GeneratorDriverRunResult yamlResult = Run(
+                CreateCompilation(CreateDefinition(
+                    TestBundleFactory.SpecId,
+                    "Api",
+                    "Generated",
+                    "Api",
+                    "Yaml")),
+                additionalTexts);
+
+            Assert.Empty(jsonResult.Diagnostics);
+            Assert.Empty(yamlResult.Diagnostics);
+            Assert.Equal(
+                jsonResult.Results.Single().GeneratedSources.Select(source => source.HintName),
+                yamlResult.Results.Single().GeneratedSources.Select(source => source.HintName));
+            Assert.Equal(
+                jsonResult.GeneratedTrees.Select(tree => tree.ToString()),
+                yamlResult.GeneratedTrees.Select(tree => tree.ToString()));
+        }
+
+        [Fact]
+        public void RawJsonAndYamlNormalizeToParityBundlesAndIdenticalGeneratedSource()
+        {
+            const string JsonSourcePath = "Assets/Specs/parity.json";
+            const string YamlSourcePath = "Assets/Specs/parity.yaml";
+            const string RawJson = @"{
+  ""openapi"": ""3.0.3"",
+  ""info"": { ""title"": ""Parity Sample"", ""version"": ""1.0.0"" },
+  ""servers"": [ { ""url"": ""https://api.example.test/v1"" } ],
+  ""paths"": {
+    ""/pets"": {
+      ""get"": {
+        ""operationId"": ""listPets"",
+        ""summary"": ""List pets"",
+        ""responses"": {
+          ""200"": {
+            ""description"": ""OK"",
+            ""content"": {
+              ""application/json"": {
+                ""schema"": { ""$ref"": ""#/components/schemas/Pet"" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  ""components"": {
+    ""schemas"": {
+      ""Pet"": {
+        ""type"": ""object"",
+        ""required"": [ ""id"" ],
+        ""properties"": {
+          ""id"": { ""type"": ""integer"", ""format"": ""int64"" },
+          ""name"": { ""type"": ""string"" }
+        }
+      }
+    }
+  }
+}";
+            const string RawYaml = @"openapi: 3.0.3
+info:
+  title: Parity Sample
+  version: 1.0.0
+servers:
+  - url: ""https://api.example.test/v1""
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      summary: List pets
+      responses:
+        ""200"":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ""#/components/schemas/Pet""
+components:
+  schemas:
+    Pet:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+";
+
+            Rhycol.OpenApiCodeGen.SourceGenerator.Editor.NormalizedSpecBundle jsonBundle =
+                new Rhycol.OpenApiCodeGen.SourceGenerator.Editor.RawJsonNormalizer().Normalize(
+                    Encoding.UTF8.GetBytes(RawJson),
+                    TestBundleFactory.SpecId,
+                    JsonSourcePath);
+            Rhycol.OpenApiCodeGen.SourceGenerator.Editor.NormalizedSpecBundle yamlBundle =
+                new Rhycol.OpenApiCodeGen.SourceGenerator.Editor.RawYamlNormalizer().Normalize(
+                    Encoding.UTF8.GetBytes(RawYaml),
+                    TestBundleFactory.SpecId,
+                    YamlSourcePath);
+
+            Assert.Equal(TestBundleFactory.SpecId, jsonBundle.SpecId);
+            Assert.Equal(TestBundleFactory.SpecId, yamlBundle.SpecId);
+            Assert.NotEqual(jsonBundle.RawSha256, yamlBundle.RawSha256);
+            Assert.NotEqual(jsonBundle.SourcePath, yamlBundle.SourcePath);
+            Assert.False(jsonBundle.Bytes.SequenceEqual(yamlBundle.Bytes));
+
+            string jsonBundleText = Encoding.UTF8.GetString(jsonBundle.Bytes);
+            string yamlBundleText = Encoding.UTF8.GetString(yamlBundle.Bytes);
+            NormalizedSpecBundle jsonAnalyzerBundle = NormalizedSpecBundleReader.Read(jsonBundleText);
+            NormalizedSpecBundle yamlAnalyzerBundle = NormalizedSpecBundleReader.Read(yamlBundleText);
+            Assert.Equal(jsonAnalyzerBundle.Root.GetRawJson(), yamlAnalyzerBundle.Root.GetRawJson());
+
+            CSharpCompilation jsonCompilation = CreateParityCompilation(CreateDefinition(
+                TestBundleFactory.SpecId,
+                "ParityApi",
+                "Generated.Parity",
+                "ParityApi",
+                "Json"));
+            CSharpCompilation yamlCompilation = CreateParityCompilation(CreateDefinition(
+                TestBundleFactory.SpecId,
+                "ParityApi",
+                "Generated.Parity",
+                "ParityApi",
+                "Yaml"));
+            ImmutableArray<AdditionalText> jsonAdditionalTexts = ImmutableArray.Create<AdditionalText>(
+                CreateBundleText(TestBundleFactory.SpecId, jsonBundleText));
+            ImmutableArray<AdditionalText> yamlAdditionalTexts = ImmutableArray.Create<AdditionalText>(
+                CreateBundleText(TestBundleFactory.SpecId, yamlBundleText));
+
+            GeneratorDriver jsonDriver = CreateDriver(jsonCompilation, jsonAdditionalTexts);
+            jsonDriver = jsonDriver.RunGeneratorsAndUpdateCompilation(
+                jsonCompilation,
+                out Compilation jsonOutputCompilation,
+                out ImmutableArray<Diagnostic> jsonGeneratorDiagnostics);
+            GeneratorDriverRunResult jsonResult = jsonDriver.GetRunResult();
+            GeneratorDriver yamlDriver = CreateDriver(yamlCompilation, yamlAdditionalTexts);
+            yamlDriver = yamlDriver.RunGeneratorsAndUpdateCompilation(
+                yamlCompilation,
+                out Compilation yamlOutputCompilation,
+                out ImmutableArray<Diagnostic> yamlGeneratorDiagnostics);
+            GeneratorDriverRunResult yamlResult = yamlDriver.GetRunResult();
+
+            Assert.Empty(jsonResult.Diagnostics);
+            Assert.Empty(yamlResult.Diagnostics);
+            Assert.Empty(jsonGeneratorDiagnostics);
+            Assert.Empty(yamlGeneratorDiagnostics);
+            Assert.Empty(jsonOutputCompilation.GetDiagnostics().Where(
+                diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
+            Assert.Empty(yamlOutputCompilation.GetDiagnostics().Where(
+                diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
+
+            string[] jsonHintNames = jsonResult.Results.Single().GeneratedSources
+                .OrderBy(source => source.HintName, StringComparer.Ordinal)
+                .Select(source => source.HintName)
+                .ToArray();
+            string[] yamlHintNames = yamlResult.Results.Single().GeneratedSources
+                .OrderBy(source => source.HintName, StringComparer.Ordinal)
+                .Select(source => source.HintName)
+                .ToArray();
+            string[] jsonGeneratedSources = jsonResult.Results.Single().GeneratedSources
+                .OrderBy(source => source.HintName, StringComparer.Ordinal)
+                .Select(source => source.SourceText.ToString())
+                .ToArray();
+            string[] yamlGeneratedSources = yamlResult.Results.Single().GeneratedSources
+                .OrderBy(source => source.HintName, StringComparer.Ordinal)
+                .Select(source => source.SourceText.ToString())
+                .ToArray();
+
+            Assert.NotEmpty(jsonHintNames);
+            Assert.Equal(jsonHintNames, yamlHintNames);
+            Assert.Equal(jsonGeneratedSources, yamlGeneratedSources);
+        }
+
+        [Fact]
+        public void ChangingDefinitionFormatInvalidatesDefinitionMatchButReusesBundleParse()
+        {
+            const string OpenApi =
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Sample\",\"version\":\"1.0.0\"},\"paths\":{}}";
+            var additionalTexts = ImmutableArray.Create<AdditionalText>(CreateBundleText(
+                TestBundleFactory.SpecId,
+                TestBundleFactory.Create(OpenApi)));
+            CSharpCompilation jsonCompilation = CreateCompilation(CreateDefinition(
+                TestBundleFactory.SpecId,
+                "Api",
+                "Generated",
+                "Api",
+                "Json"));
+            CSharpCompilation yamlCompilation = CreateCompilation(CreateDefinition(
+                TestBundleFactory.SpecId,
+                "Api",
+                "Generated",
+                "Api",
+                "Yaml"));
+            GeneratorDriver driver = CreateDriver(jsonCompilation, additionalTexts)
+                .RunGenerators(jsonCompilation);
+            GeneratorDriverRunResult first = driver.GetRunResult();
+
+            driver = driver.RunGenerators(yamlCompilation);
+            GeneratorDriverRunResult changed = driver.GetRunResult();
+
+            Assert.Empty(first.Diagnostics);
+            Assert.Empty(changed.Diagnostics);
+            Assert.Equal(
+                first.GeneratedTrees.Select(tree => tree.ToString()),
+                changed.GeneratedTrees.Select(tree => tree.ToString()));
+            IReadOnlyList<IncrementalStepRunReason> definitionReasons = GetReasons(
+                changed,
+                "OpenApiClientDefinitions");
+            IReadOnlyList<IncrementalStepRunReason> parseReasons = GetReasons(
+                changed,
+                "OpenApiParseNormalizedBundle");
+            IReadOnlyList<IncrementalStepRunReason> matchReasons = GetReasons(
+                changed,
+                "OpenApiMatchDefinitionToBundle");
+            Assert.Contains(IncrementalStepRunReason.Modified, definitionReasons);
+            Assert.Contains(IncrementalStepRunReason.Cached, parseReasons);
+            Assert.Contains(IncrementalStepRunReason.Modified, matchReasons);
+            Assert.DoesNotContain(IncrementalStepRunReason.Cached, matchReasons);
         }
 
         [Fact]
@@ -528,6 +795,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 assemblyName,
                 new[] { CSharpSyntaxTree.ParseText(AttributeContract + definitions) },
                 new[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) },
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        }
+
+        private static CSharpCompilation CreateParityCompilation(string definitions)
+        {
+            string trustedAssemblies =
+                (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? string.Empty;
+            IEnumerable<MetadataReference> references = trustedAssemblies
+                .Split(Path.PathSeparator)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(path => MetadataReference.CreateFromFile(path));
+            return CSharpCompilation.Create(
+                "GeneratorParityTests",
+                new[] { CSharpSyntaxTree.ParseText(AttributeContract + definitions) },
+                references,
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         }
 

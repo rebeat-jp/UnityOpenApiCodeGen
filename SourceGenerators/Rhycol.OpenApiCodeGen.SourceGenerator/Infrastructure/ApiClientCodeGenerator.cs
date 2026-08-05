@@ -24,6 +24,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             "Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiClientDefinitionAttribute";
 
         private const int JsonDocumentFormat = 0;
+        private const int YamlDocumentFormat = 1;
 
         private static readonly DiagnosticDescriptor MalformedBundle = new(
             "OACG001",
@@ -85,7 +86,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             "OACG008",
             "Unsupported OpenAPI document format",
             "OpenAPI client definition for Spec ID '{0}' uses unsupported document format value '{1}'. " +
-            "The Source Generator supports Json (0) only.",
+            "The Source Generator supports Json (0) and Yaml (1).",
             "OpenApiCodeGen",
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
@@ -307,7 +308,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     diagnosticLocation);
             }
 
-            if (documentFormat != JsonDocumentFormat)
+            if (documentFormat != JsonDocumentFormat && documentFormat != YamlDocumentFormat)
             {
                 return OpenApiClientDefinitionInput.CreateUnsupportedDocumentFormat(
                     specId,

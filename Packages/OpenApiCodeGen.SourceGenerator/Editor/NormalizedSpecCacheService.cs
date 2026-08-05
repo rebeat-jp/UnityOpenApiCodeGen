@@ -1,24 +1,41 @@
 using System;
 using System.IO;
+using Rhycol.OpenApiCodeGen.SourceGenerator;
 using UnityEditor;
 using UnityEngine;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 {
     /// <summary>
-    /// Editor-side boundary used by the Source Generator provider to normalize and publish one local JSON spec.
+    /// Editor-side boundary used by the Source Generator provider to normalize and publish one local JSON or YAML spec.
     /// This service performs no Docker fallback.
     /// </summary>
     internal sealed class NormalizedSpecCacheService
     {
         private readonly string projectRoot;
         private readonly RawJsonNormalizer normalizer;
+        private readonly RawYamlNormalizer yamlNormalizer;
         private readonly IAtomicFileWriter fileWriter;
         private readonly ICompilerMirrorImporter importer;
 
         internal NormalizedSpecCacheService(
             string projectRoot,
             RawJsonNormalizer normalizer,
+            IAtomicFileWriter fileWriter,
+            ICompilerMirrorImporter importer)
+            : this(
+                projectRoot,
+                normalizer,
+                new RawYamlNormalizer(),
+                fileWriter,
+                importer)
+        {
+        }
+
+        internal NormalizedSpecCacheService(
+            string projectRoot,
+            RawJsonNormalizer normalizer,
+            RawYamlNormalizer yamlNormalizer,
             IAtomicFileWriter fileWriter,
             ICompilerMirrorImporter importer)
         {
@@ -29,6 +46,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
             this.projectRoot = Path.GetFullPath(projectRoot);
             this.normalizer = normalizer ?? throw new ArgumentNullException(nameof(normalizer));
+            this.yamlNormalizer = yamlNormalizer ?? throw new ArgumentNullException(nameof(yamlNormalizer));
             this.fileWriter = fileWriter ?? throw new ArgumentNullException(nameof(fileWriter));
             this.importer = importer ?? throw new ArgumentNullException(nameof(importer));
         }
@@ -39,15 +57,29 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             return new NormalizedSpecCacheService(
                 currentProjectRoot,
                 new RawJsonNormalizer(),
+                new RawYamlNormalizer(),
                 new AtomicFileWriter(),
                 new AssetDatabaseCompilerMirrorImporter());
         }
 
         internal NormalizedSpecCacheResult NormalizeAndCache(string rawSpecPath, string specId)
         {
+            return NormalizeAndCache(rawSpecPath, specId, OpenApiDocumentFormat.Json);
+        }
+
+        internal NormalizedSpecCacheResult NormalizeAndCache(
+            string rawSpecPath,
+            string specId,
+            OpenApiDocumentFormat format)
+        {
             if (string.IsNullOrEmpty(rawSpecPath))
             {
                 throw new ArgumentException("A raw spec path is required.", nameof(rawSpecPath));
+            }
+
+            if (format != OpenApiDocumentFormat.Json && format != OpenApiDocumentFormat.Yaml)
+            {
+                throw new ArgumentOutOfRangeException(nameof(format));
             }
 
             string fullRawSpecPath = GetFullPath(rawSpecPath);
@@ -71,7 +103,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
 
             // Normalization must finish before either last-known-good cache file is touched.
-            NormalizedSpecBundle bundle = normalizer.Normalize(rawBytes, specId, sourceIdentity);
+            NormalizedSpecBundle bundle = format == OpenApiDocumentFormat.Yaml
+                ? yamlNormalizer.Normalize(rawBytes, specId, sourceIdentity)
+                : normalizer.Normalize(rawBytes, specId, sourceIdentity);
             string authoritativePath = Path.Combine(
                 projectRoot,
                 NormalizedSpecBundleConstants.AuthoritativeCacheRelativePath,
@@ -117,6 +151,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 authoritativePath,
                 mirrorPath,
                 mirrorRelativePath,
+                format,
                 authoritativeChanged,
                 mirrorChanged);
         }
@@ -213,6 +248,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             string authoritativePath,
             string mirrorPath,
             string mirrorAssetPath,
+            OpenApiDocumentFormat format,
             bool authoritativeChanged,
             bool mirrorChanged)
         {
@@ -222,6 +258,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             AuthoritativePath = authoritativePath;
             MirrorPath = mirrorPath;
             MirrorAssetPath = mirrorAssetPath;
+            Format = format;
             AuthoritativeChanged = authoritativeChanged;
             MirrorChanged = mirrorChanged;
         }
@@ -237,6 +274,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         internal string MirrorPath { get; }
 
         internal string MirrorAssetPath { get; }
+
+        internal OpenApiDocumentFormat Format { get; }
 
         internal bool AuthoritativeChanged { get; }
 

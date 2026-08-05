@@ -4,6 +4,7 @@
   "references": [
     "Unity.OpenApiCodeGen.SourceGenerator",
     "Unity.OpenApiCodeGen.SourceGenerator.Editor",
+    "Unity.OpenApiCodeGen.SourceGenerator.Editor.Parsing",
     "Unity.OpenApiCodeGen.Editor.Contracts"
   ],
   "includePlatforms": [

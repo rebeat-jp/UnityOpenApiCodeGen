@@ -80,6 +80,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Test]
+        public void PrepareAndPublishWritesYamlDocumentFormat()
+        {
+            OpenApiClientDefinitionPlan plan = writer.Prepare(
+                outputFolder,
+                "PetStoreApi",
+                "Example.Generated.PetStore",
+                OpenApiDocumentFormat.Yaml);
+
+            Assert.That(plan.DocumentFormat, Is.EqualTo(OpenApiDocumentFormat.Yaml));
+            Assert.That(writer.Publish(plan), Is.True);
+            string source = File.ReadAllText(plan.DefinitionPath, new UTF8Encoding(false, true));
+
+            Assert.That(
+                source,
+                Does.Contain(
+                    "global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.Yaml"));
+        }
+
+        [Test]
         public void SameClientIdentityProducesStableSpecIdAcrossOutputSubfolders()
         {
             OpenApiClientDefinitionPlan first = writer.Prepare(

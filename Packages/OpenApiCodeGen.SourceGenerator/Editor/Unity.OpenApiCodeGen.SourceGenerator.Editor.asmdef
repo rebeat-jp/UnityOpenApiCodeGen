@@ -2,7 +2,9 @@
   "name": "Unity.OpenApiCodeGen.SourceGenerator.Editor",
   "rootNamespace": "Rhycol.OpenApiCodeGen.SourceGenerator.Editor",
   "references": [
-    "Unity.OpenApiCodeGen.Editor.Contracts"
+    "Unity.OpenApiCodeGen.Editor.Contracts",
+    "Unity.OpenApiCodeGen.SourceGenerator.Editor.Parsing",
+    "Unity.OpenApiCodeGen.SourceGenerator"
   ],
   "includePlatforms": [
     "Editor"

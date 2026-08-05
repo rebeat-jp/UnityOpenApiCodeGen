@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using NUnit.Framework;
+using Rhycol.OpenApiCodeGen.SourceGenerator;
 using Rhycol.OpenApiCodeGen.SourceGenerator.Editor;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
@@ -44,6 +45,53 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(Path.GetFileName(result.MirrorPath),
                 Is.EqualTo(SpecId + NormalizedSpecBundleConstants.AdditionalFileSuffix));
             Assert.That(importer.ImportedAssetPaths, Is.EqualTo(new[] { result.MirrorAssetPath }));
+        }
+
+        [Test]
+        public void NormalizeAndCacheSupportsYamlAndPreservesFormatAndLocations()
+        {
+            WriteRawAt(
+                "Assets/Specs/openapi.yaml",
+                "openapi: 3.0.3\ninfo:\n  title: Sample\n  version: 1.0.0\npaths: {}\n");
+
+            NormalizedSpecCacheResult result = CreateService().NormalizeAndCache(
+                "Assets/Specs/openapi.yaml",
+                SpecId,
+                OpenApiDocumentFormat.Yaml);
+            string canonical = Encoding.UTF8.GetString(File.ReadAllBytes(result.AuthoritativePath));
+
+            Assert.That(result.Format, Is.EqualTo(OpenApiDocumentFormat.Yaml));
+            Assert.That(canonical, Does.Contain("\"name\": \"openapi\""));
+            Assert.That(canonical, Does.Contain("\"line\": 1"));
+            Assert.That(canonical, Does.Contain("\"sourcePath\": \"Assets/Specs/openapi.yaml\""));
+            Assert.That(File.ReadAllBytes(result.MirrorPath), Is.EqualTo(File.ReadAllBytes(result.AuthoritativePath)));
+        }
+
+        [Test]
+        public void InvalidYamlDoesNotReplaceLastKnownGoodCacheOrMirror()
+        {
+            WriteRawAt("Assets/Specs/openapi.yaml", "openapi: 3.0.3\npaths: {}\n");
+            NormalizedSpecCacheService service = CreateService();
+            NormalizedSpecCacheResult valid = service.NormalizeAndCache(
+                "Assets/Specs/openapi.yaml",
+                SpecId,
+                OpenApiDocumentFormat.Yaml);
+            byte[] authoritativeBytes = File.ReadAllBytes(valid.AuthoritativePath);
+            byte[] mirrorBytes = File.ReadAllBytes(valid.MirrorPath);
+            File.WriteAllText(
+                Path.Combine(projectRoot, "Assets", "Specs", "openapi.yaml"),
+                "openapi: [\n",
+                new UTF8Encoding(false));
+
+            NormalizedSpecException exception = Assert.Throws<NormalizedSpecException>(
+                () => service.NormalizeAndCache(
+                    "Assets/Specs/openapi.yaml",
+                    SpecId,
+                    OpenApiDocumentFormat.Yaml));
+
+            Assert.That(exception.DiagnosticCode, Does.StartWith("YAML"));
+            Assert.That(File.ReadAllBytes(valid.AuthoritativePath), Is.EqualTo(authoritativeBytes));
+            Assert.That(File.ReadAllBytes(valid.MirrorPath), Is.EqualTo(mirrorBytes));
         }
 
         [Test]
@@ -263,10 +311,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
         private void WriteRaw(string json)
         {
-            File.WriteAllText(
-                Path.Combine(projectRoot, "Assets", "Specs", "openapi.json"),
-                json,
-                new UTF8Encoding(false));
+            WriteRawAt("Assets/Specs/openapi.json", json);
+        }
+
+        private void WriteRawAt(string relativePath, string content)
+        {
+            string path = Path.Combine(projectRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            File.WriteAllText(path, content, new UTF8Encoding(false));
         }
 
         private sealed class RecordingImporter : ICompilerMirrorImporter

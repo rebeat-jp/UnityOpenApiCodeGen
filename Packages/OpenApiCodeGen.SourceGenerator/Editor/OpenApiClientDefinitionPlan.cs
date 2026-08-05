@@ -1,3 +1,5 @@
+using Rhycol.OpenApiCodeGen.SourceGenerator;
+
 namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 {
     internal sealed class OpenApiClientDefinitionPlan
@@ -10,6 +12,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             string definitionAssetPath,
             string apiName,
             string generatedNamespace,
+            OpenApiDocumentFormat documentFormat,
             byte[] content)
         {
             SpecId = specId;
@@ -19,6 +22,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             DefinitionAssetPath = definitionAssetPath;
             ApiName = apiName;
             GeneratedNamespace = generatedNamespace;
+            DocumentFormat = documentFormat;
             Content = content;
         }
 
@@ -35,6 +39,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         internal string ApiName { get; }
 
         internal string GeneratedNamespace { get; }
+
+        internal OpenApiDocumentFormat DocumentFormat { get; }
 
         internal byte[] Content { get; }
     }

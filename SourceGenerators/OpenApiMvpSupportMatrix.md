@@ -4,7 +4,9 @@
 
 この文書は、`Rhycol.OpenApiCodeGen.SourceGenerator`で生成できるOpenAPI documentの
 MVP範囲を、API仕様の作成者とUnity利用者が判断するためのmatrixです。
-対象はlocal JSON documentをSource Generator providerで生成する場合です。
+対象はSource Generator providerで選択したlocal `.json`、`.yaml`、`.yml`
+document（extension case-insensitive）です。canonical Normalized Spec Bundle v1
+はraw形式に関係なくJSONです。
 
 生成器は、wire formatに影響する未対応要素を黙って省略または推測しません。
 Unsupportedに分類された要素と、Partialの制約外へ出た要素は診断を報告し、生成を完了しません。
@@ -21,12 +23,72 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 
 | 項目 | Status | 条件・制約 |
 | --- | --- | --- |
-| 入力document | Supported | localの単一JSON file。 |
+| 入力document | Supported | localの単一`.json`、`.yaml`、`.yml` file。extensionはcase-insensitive。 |
 | OpenAPI version | Partial | `3.0.*`と`3.1.*`のみ。 |
 | OpenAPI 3.2 / Swagger 2 | Unsupported | document versionは受け付けません。 |
-| YAML、URL入力 | Unsupported | providerはlocal JSONのみを受け付けます。 |
+| URL入力 | Unsupported | Source Generator providerはlocal fileだけを受け付け、Dockerへfallbackしません。 |
+| JSON/YAML semantic parity | Supported | 各normalizerがshared `SpecNode`へ正規化し、同じsemantic/generation pipelineを通ります。 |
 | `$ref` | Partial | `components/schemas`、`parameters`、`requestBodies`、`responses`へのdirect internal referenceのみ。 |
 | external / unresolved / cyclic `$ref` | Unsupported | それぞれ`OACG104`、`OACG102`、`OACG103`を報告します。 |
+
+## YAML subset
+
+YAMLは全仕様対応ではなく、source generatorが安全に正規化できる bounded
+YAML 1.2-compatible subsetです。subset外は黙ってJSONへ変換したり無視したり
+せず、`YAML001`–`YAML015`のsource-located diagnosticで拒否します。
+
+| 項目 | Status | 条件・制約 |
+| --- | --- | --- |
+| block mapping / sequence | Supported | indentationを使うmapping・sequence、nested/compact composition。compact continuationは2-space step。indentless sequenceと任意幅のcompact indentationは対象外。tabsはindentationに使用不可。 |
+| flow mapping / sequence | Supported | nested、multiline、source orderを保持。flow collection内のblock scalarは対象外。 |
+| mapping key | Partial | simple string keyのみ。duplicate、complex/non-string key、merge key `<<`は拒否。 |
+| comments / encoding | Supported | comments、UTF-8 BOM、LF、CRLF。BOMはtreeから除きraw hashには含めます。 |
+| quoted / plain scalar | Supported | single/double quoteとplain scalar。YAML 1.1 implicit bool/date等はstringとして保持。 |
+| JSON-compatible scalar | Supported | `null`、`true`/`false`、RFC 8259 number（integer/real）、string。 |
+| literal / folded block scalar | Partial | `|`/`>`、`+`/`-` chomping、explicit indent `1`–`9`。flow内は拒否。 |
+| flow plain delimiter | Partial | plain valueに`,`, `[`, `]`, `{`, `}`を含める場合はquote必須。URL scheme colon（`https://`）は受理。 |
+| anchor / alias | Partial | anchor定義とalias展開をサポート。alias rootにはalias位置を付与。undefined/cycle/redefinitionは拒否。同一行のcompact anchor mapping（`- &a key: value`）は対象外で、nestedまたはflow valueとして記述する。 |
+| tags / directives | Unsupported | explicit/custom tagとdirectiveは拒否。 |
+| document stream | Unsupported | multiple document（`---`/`...`による複数document）は拒否。 |
+
+### YAML source locations and limits
+
+Lexer tokenはsource path、1-based line/column、UTF-16 offset/lengthを持ちます。
+bundleへ保存するのはsource pathと1-based line/columnで、offset/lengthはlexer/parser
+内部の診断情報です。syntax diagnosticのlogical pathはroot（empty）で、semantic
+diagnosticのlogical pathはnormalized treeのtraversalで復元します。
+
+Parser limits are hard bounds:
+
+| Limit | Value |
+| --- | ---: |
+| Maximum input characters | 4,194,304 |
+| Maximum tokens | 1,000,000 |
+| Maximum scalar characters | 1,048,576 |
+| Maximum aliases | 4,096 |
+| Maximum anchors | 4,096 |
+| Maximum expanded nodes | 1,000,000 |
+| Maximum nesting depth | 256 |
+
+YAML diagnostic IDs are stable within Phase 5:
+
+| ID | Meaning |
+| --- | --- |
+| `YAML001` | Lexical error（invalid UTF-8など） |
+| `YAML002` | Invalid indentation |
+| `YAML003` | Invalid document |
+| `YAML004` | Invalid mapping |
+| `YAML005` | Invalid sequence |
+| `YAML006` | Invalid scalar |
+| `YAML007` | Duplicate key |
+| `YAML008` | Unsupported tag |
+| `YAML009` | Unsupported directive |
+| `YAML010` | Multiple documents |
+| `YAML011` | Complex key |
+| `YAML012` | Undefined alias |
+| `YAML013` | Alias cycle |
+| `YAML014` | Anchor redefinition |
+| `YAML015` | Limit exceeded |
 
 ## Operations、parameters、responses
 
@@ -66,7 +128,7 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 - path/query/header/body、`JsonConvert`、`CancellationToken`、宣言された`2xx` response handling
 - generated `<ApiName>Exception`
 
-生成モデルは、normalized bundleからOAS semantic parserとinternal reference resolverを通し、
+生成モデルは、raw JSON/YAMLを各normalizerでnormalized bundleへ変換した後、OAS semantic parserとinternal reference resolverを通し、
 Roslyn非依存のgeneration modelを作ってから、Roslynでparseしたdeterministic source emitterへ渡します。
 emitterの結果を`AddSource`します。serializer/backendは固定で、generated clientは
 Newtonsoft.Jsonと`System.Net.Http.HttpClient`を使用します。Docker providerは別providerであり、
@@ -91,8 +153,9 @@ namespace-levelのため、同じnamespaceには共存できません。
 
 ## 検証済み環境
 
-現在の検証では、.NET testsは75/75、analyzer出力はdeterministicでbyte-identical、packageの
-analyzer sync/reference checksは成功しています。base packageはUnity 2021.3で別途33/33を
-検証済みです。Source Generator add-onのminimum Unity versionは6000.0です。Unity 6000.0および
-6000.3では、DTO/Json.NETを含むSource Generatorのvertical matrix、unchanged/regeneration/scope/
-live removalを検証済みです。未検証のUnity versionへこの結果を拡張してはなりません。
+現在の検証では、.NET testsは79/79、analyzer出力はdeterministicでbyte-identical、packaged
+analyzer sync SHA256 prefixは`78b18d5f`、UPM dependency/reference checksは成功しています。
+base packageはUnity 2021.3.19f1で33/33、Source Generator add-onはUnity 6000.0.23f1で157/157、
+6000.3.2f1で157/157を検証済みです。regeneration/without-addonも通過し、`CS8785`は発生して
+いません。Source Generator add-onのminimum Unity versionは6000.0です。未検証のUnity versionへ
+この結果を拡張してはなりません。

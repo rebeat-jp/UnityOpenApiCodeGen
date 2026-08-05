@@ -16,7 +16,7 @@ This Plugin is able to operate the OpenAPI CodeGen, and setting on GUI.
 1. Add this package to Unity Package Manager from git url, and install this package.
 2. Open setup window at `Window/OpenAPI Code Generator/Setup` in the Unity's menu, and input absolute Docker Path. After that, press the `Setup` button.  <img width="1680" alt="スクリーンショット 2025-05-06 15 55 50" src="https://github.com/user-attachments/assets/135020e4-4a5f-4333-86cb-af41383c2fde" />
 
-3. Open generator window at `Window/OpenAPI Code Generator/Generator` in the Unity's menu. Input API Document file absolute URL and API Client code output absolute folder, and press the `Generate` button. <img width="1680" alt="スクリーンショット 2025-05-06 15 55 21" src="https://github.com/user-attachments/assets/cee3a098-6c02-4344-9697-c92ac5b2385e" />
+3. Open generator window at `Window/OpenAPI Code Generator/Generator` in the Unity's menu. Input the API document path or URL supported by the selected provider and the API Client code output absolute folder, then press the `Generate` button. <img width="1680" alt="スクリーンショット 2025-05-06 15 55 21" src="https://github.com/user-attachments/assets/cee3a098-6c02-4344-9697-c92ac5b2385e" />
 
 ## Generation providers
 
@@ -29,11 +29,21 @@ The Setup window configures Docker only and does not change the saved provider.
 Provider resolution never falls back to Docker. An unknown, unregistered, or
 unavailable provider produces an explicit error instead.
 
-The Source Generator provider accepts a local JSON document and publishes a
-normalized compiler input plus an attributed partial client definition. Its
-output folder must be under `Assets` and contained by an asmdef that directly
-references `Unity.OpenApiCodeGen.SourceGenerator`. URLs and YAML are not part of
-the local JSON flow.
+The Source Generator provider accepts a local `.json`, `.yaml`, or `.yml`
+document (extension matching is case-insensitive) and publishes a normalized
+compiler input plus an attributed partial client definition. Its output folder
+must be under `Assets` and contained by an asmdef that directly references
+`Unity.OpenApiCodeGen.SourceGenerator`. URLs are rejected and never fall back to
+Docker.
+
+YAML support is a bounded YAML 1.2-compatible subset: block/flow mappings and
+sequences, simple string keys, JSON-compatible scalars, quoted/plain strings,
+literal/folded block scalars, and anchors/aliases. In flow collections, plain
+values containing `,`, `[`, `]`, `{`, or `}` must be quoted; URL scheme colons
+such as `https://` are accepted. YAML tags, directives, merge keys, multiple
+documents, complex keys, and block scalars inside flow collections are rejected
+with a source-located diagnostic. Invalid YAML or UTF-8 keeps the last-known-good
+cache and mirror and still reports generation failure.
 Selecting an available Source Generator provider enables
 `OPENAPI_CODEGEN_SOURCE_GENERATOR` for the active `NamedBuildTarget`; selecting
 Docker removes it when that target is synchronized. Removing or updating the

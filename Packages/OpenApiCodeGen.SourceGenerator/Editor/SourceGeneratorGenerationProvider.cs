@@ -4,6 +4,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Rhycol.OpenApiCodeGen.SourceGenerator;
 using Rhycol.OpenApiCodeGen.Editor.Generation;
 using UnityEditor.Compilation;
 
@@ -77,14 +78,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         {
             try
             {
-                ValidateLocalJsonPath(request.ApiDocumentFilePathOrUrl);
+                OpenApiDocumentFormat documentFormat = DetectLocalDocumentFormat(request.ApiDocumentFilePathOrUrl);
                 OpenApiClientDefinitionPlan definitionPlan = definitionWriter.Prepare(
                     request.OutputFolderPath,
                     request.ApiName,
-                    request.GeneratedNamespace);
+                    request.GeneratedNamespace,
+                    documentFormat);
                 NormalizedSpecCacheResult cacheResult = cacheService.NormalizeAndCache(
                     request.ApiDocumentFilePathOrUrl,
-                    definitionPlan.SpecId);
+                    definitionPlan.SpecId,
+                    documentFormat);
                 bool definitionChanged = definitionWriter.Publish(definitionPlan);
                 bool compilerInputChanged = cacheResult.MirrorChanged || definitionChanged;
                 if (compilerInputChanged)
@@ -108,11 +111,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
         }
 
-        private static void ValidateLocalJsonPath(string documentPath)
+        private static OpenApiDocumentFormat DetectLocalDocumentFormat(string documentPath)
         {
             if (string.IsNullOrWhiteSpace(documentPath))
             {
-                throw new ArgumentException("A local OpenAPI JSON document path is required.");
+                throw new ArgumentException("A local OpenAPI JSON or YAML document path is required.");
             }
 
             Uri absoluteUri;
@@ -123,14 +126,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     "Source Generator generation supports local files only; URLs are not supported.");
             }
 
-            if (!string.Equals(
-                    Path.GetExtension(documentPath),
-                    ".json",
-                    StringComparison.OrdinalIgnoreCase))
+            string extension = Path.GetExtension(documentPath);
+            if (string.Equals(extension, ".json", StringComparison.OrdinalIgnoreCase))
             {
-                throw new NotSupportedException(
-                    "Source Generator generation currently supports local .json documents only; YAML is not supported.");
+                return OpenApiDocumentFormat.Json;
             }
+
+            if (string.Equals(extension, ".yaml", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(extension, ".yml", StringComparison.OrdinalIgnoreCase))
+            {
+                return OpenApiDocumentFormat.Yaml;
+            }
+
+            throw new NotSupportedException(
+                "Source Generator generation supports local .json, .yaml, and .yml documents only; URLs are not supported.");
         }
     }
 }

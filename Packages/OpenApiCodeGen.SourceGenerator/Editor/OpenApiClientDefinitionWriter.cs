@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using Rhycol.OpenApiCodeGen.SourceGenerator;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -57,6 +58,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             string apiName,
             string generatedNamespace)
         {
+            return Prepare(
+                outputFolderPath,
+                apiName,
+                generatedNamespace,
+                OpenApiDocumentFormat.Json);
+        }
+
+        internal OpenApiClientDefinitionPlan Prepare(
+            string outputFolderPath,
+            string apiName,
+            string generatedNamespace,
+            OpenApiDocumentFormat documentFormat)
+        {
+            if (documentFormat != OpenApiDocumentFormat.Json &&
+                documentFormat != OpenApiDocumentFormat.Yaml)
+            {
+                throw new ArgumentOutOfRangeException(nameof(documentFormat));
+            }
+
             if (!CSharpNameValidator.TryValidateIdentifier(apiName, out string apiNameFailure))
             {
                 throw new ArgumentException(
@@ -94,7 +114,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     specId,
                     clientIdentitySha256,
                     apiName,
-                    generatedNamespace));
+                    generatedNamespace,
+                    documentFormat));
 
             return new OpenApiClientDefinitionPlan(
                 specId,
@@ -104,6 +125,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 definitionAssetPath,
                 apiName,
                 generatedNamespace,
+                documentFormat,
                 content);
         }
 
@@ -355,7 +377,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             string specId,
             string clientIdentitySha256,
             string apiName,
-            string generatedNamespace)
+            string generatedNamespace,
+            OpenApiDocumentFormat documentFormat)
         {
             var builder = new StringBuilder();
             builder.AppendLine(OwnedFileHeader);
@@ -369,7 +392,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             builder.Append("        \"").Append(EscapeStringLiteral(specId)).AppendLine("\",");
             builder.Append("        \"").Append(EscapeStringLiteral(apiName)).AppendLine("\",");
             builder.Append("        \"").Append(EscapeStringLiteral(generatedNamespace)).AppendLine("\",");
-            builder.AppendLine("        global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.Json)]");
+            builder.Append("        global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.");
+            builder.AppendLine(documentFormat == OpenApiDocumentFormat.Yaml ? "Yaml)]" : "Json)]");
             builder.Append("    public partial class ").Append(apiName).AppendLine();
             builder.AppendLine("    {");
             builder.AppendLine("    }");
