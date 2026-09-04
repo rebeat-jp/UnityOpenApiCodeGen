@@ -1,8 +1,8 @@
 {
   "name": "jp.rhycol.openapicodegen",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "displayName": "OpenApiCodeGen",
-  "description": "This is a package to make a rest api client c-sharp file from openapi's json and yaml",
+  "description": "Generate strongly typed C# REST clients from OpenAPI 3.1 JSON or YAML documents in Unity.",
   "author": "Re:Beat",
   "keywords": [
     "unity",
@@ -13,7 +13,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/tree/main/Packages/OpenApiCodeGen"
+    "url": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/tree/0.5.0/Packages/OpenApiCodeGen"
   },
+  "documentationUrl": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/blob/0.5.0/Packages/OpenApiCodeGen/README.md",
+  "changelogUrl": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/blob/0.5.0/Packages/OpenApiCodeGen/CHANGELOG.md",
+  "licensesUrl": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/blob/0.5.0/Packages/OpenApiCodeGen/LICENSE.md",
   "dependencies": {}
 }

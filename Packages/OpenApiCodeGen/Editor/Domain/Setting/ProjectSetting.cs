@@ -1,4 +1,7 @@
 ﻿#nullable enable
+
+using Rhycol.OpenApiCodeGen.Editor.Generation;
+
 namespace Rhycol.OpenApiCodeGen.Core
 {
     internal class ProjectSetting

@@ -1,29 +1,57 @@
-﻿#nullable enable
+#nullable enable
 
 using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Rhycol.OpenApiCodeGen.Lib;
+using Rhycol.OpenApiCodeGen.Editor.Generation;
 using Rhycol.OpenApiCodeGen.UI;
 
 namespace Rhycol.OpenApiCodeGen.Core
 {
     internal class GenerationService
     {
-        IAsyncRepository<GenerationCSharpSetting> _generationCsharpSettingJsonRepository
-            => ApplicationConfig.GenerationCsharpSettingRepository;
-        IAsyncRepository<ProjectSetting> _generalConfigJsonRepository
-            => ApplicationConfig.ProjectSettingRepository;
-        IAsyncRepository<UserSetting> _userSettingJsonRepository
-            => ApplicationConfig.UserSettingsRepository;
+        readonly IAsyncRepository<ProjectSetting> _projectSettingRepository;
+        readonly IAsyncRepository<GenerationCSharpSetting> _generationCSharpSettingRepository;
+        readonly GenerationProviderRegistry _providerRegistry;
+
+        public GenerationService()
+            : this(
+                ApplicationConfig.ProjectSettingRepository,
+                ApplicationConfig.GenerationCsharpSettingRepository,
+                GenerationProviderRegistry.Shared)
+        {
+        }
+
+        internal GenerationService(
+            IAsyncRepository<ProjectSetting> projectSettingRepository,
+            GenerationProviderRegistry providerRegistry)
+            : this(
+                projectSettingRepository,
+                ApplicationConfig.GenerationCsharpSettingRepository,
+                providerRegistry)
+        {
+        }
+
+        internal GenerationService(
+            IAsyncRepository<ProjectSetting> projectSettingRepository,
+            IAsyncRepository<GenerationCSharpSetting> generationCSharpSettingRepository,
+            GenerationProviderRegistry providerRegistry)
+        {
+            _projectSettingRepository = projectSettingRepository
+                ?? throw new ArgumentNullException(nameof(projectSettingRepository));
+            _generationCSharpSettingRepository = generationCSharpSettingRepository
+                ?? throw new ArgumentNullException(nameof(generationCSharpSettingRepository));
+            _providerRegistry = providerRegistry
+                ?? throw new ArgumentNullException(nameof(providerRegistry));
+        }
 
         public async Task<GenerateApiClientDto> GetDefaultGenerateApiClientDtoAsync()
         {
             try
             {
-                var projectSetting = await _generalConfigJsonRepository.ReadAsync();
+                var projectSetting = await _projectSettingRepository.ReadAsync();
 
                 return projectSetting != null
                     ? new GenerateApiClientDto(
@@ -38,34 +66,55 @@ namespace Rhycol.OpenApiCodeGen.Core
             }
         }
 
-        public async Task GenerateApiClientAsync(
+        public async Task<GenerationResult> GenerateApiClientAsync(
             GenerateApiClientDto generateApiClientDto,
             CancellationToken cancellationToken = default)
         {
             try
             {
-                var csharpSetting = await _generationCsharpSettingJsonRepository.ReadAsync() ?? new GenerationCSharpSetting();
-                var absoluteOutputPath = Path.GetFullPath(generateApiClientDto.ApiClientOutputFolderPath);
-                var projectSetting = new ProjectSetting(
-                    apiClientOutputFolderPath: absoluteOutputPath,
-                    apiDocumentFilePathOrUrl: generateApiClientDto.ApiDocumentFilePathOrUrl,
-                    generateProvider: generateApiClientDto.GenerateProvider
-                );
-                var userSetting = await _userSettingJsonRepository.ReadAsync() ?? new UserSetting(
-                    dockerPath: ""
-                );
+                ProjectSetting savedProjectSetting =
+                    await _projectSettingRepository.ReadAsync() ?? new ProjectSetting();
+                GenerationProviderResolution resolution =
+                    _providerRegistry.Resolve(savedProjectSetting.GenerateProvider);
 
-                IGenerator generator = projectSetting.GenerateProvider switch
+                if (!resolution.IsResolved || resolution.Provider == null)
                 {
-                    GenerateProvider.OpenApi => new OpenApiCodeGenerator(),
-                    _ => new OpenApiCodeGenerator()
-                };
-
-                var response = await generator.GenerateAsync(projectSetting, csharpSetting, userSetting, cancellationToken);
-                if (response.Status != ExitStatus.Success)
-                {
-                    throw new ApplicationServiceException($"APIクライアント生成の外部サービス実行に失敗しました。{Environment.NewLine}{response.Message}");
+                    throw new ApplicationServiceException(
+                        $"生成Providerを解決できませんでした。{Environment.NewLine}"
+                        + resolution.FailureReason);
                 }
+
+                IGenerationProvider provider = resolution.Provider;
+                GenerationProviderAvailability availability =
+                    provider.Descriptor.Availability;
+                if (!availability.IsAvailable)
+                {
+                    throw new ApplicationServiceException(
+                        $"生成Provider '{provider.Descriptor.DisplayName}' は利用できません。"
+                        + $"{Environment.NewLine}{availability.Reason}");
+                }
+
+                GenerationCSharpSetting generationCSharpSetting =
+                    await _generationCSharpSettingRepository.ReadAsync()
+                    ?? new GenerationCSharpSetting();
+                cancellationToken.ThrowIfCancellationRequested();
+                var request = new GenerationRequest(
+                    generateApiClientDto.ApiDocumentFilePathOrUrl,
+                    Path.GetFullPath(generateApiClientDto.ApiClientOutputFolderPath),
+                    generationCSharpSetting.ApiName,
+                    generationCSharpSetting.PackageName);
+                GenerationResult result =
+                    await provider.GenerateAsync(request, cancellationToken);
+
+                if (!result.IsSuccess)
+                {
+                    throw new ApplicationServiceException(
+                        $"APIクライアント生成に失敗しました。Provider: "
+                        + $"{provider.Descriptor.DisplayName}{Environment.NewLine}"
+                        + result.Message);
+                }
+
+                return result;
             }
             catch (OperationCanceledException)
             {

@@ -1,0 +1,26 @@
+{
+  "name": "Unity.OpenApiCodeGen.SourceGenerator.Tests",
+  "rootNamespace": "Rhycol.OpenApiCodeGen.SourceGenerator.Tests",
+  "references": [
+    "Unity.OpenApiCodeGen.SourceGenerator",
+    "Unity.OpenApiCodeGen.SourceGenerator.Editor",
+    "Unity.OpenApiCodeGen.SourceGenerator.Editor.Parsing",
+    "Unity.OpenApiCodeGen.Editor.Contracts"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

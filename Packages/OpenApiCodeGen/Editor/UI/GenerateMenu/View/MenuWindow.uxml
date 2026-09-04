@@ -2,6 +2,7 @@
     <Style src="project://database/Packages/jp.rhycol.openapicodegen/Editor/UI/MainMenu/MenuWindow.uss?fileID=7433441132597879392&amp;guid=388ca6004f36749a6b4b09cb6c501c03&amp;type=3#MenuWindow" />
     <ui:ScrollView>
         <ui:Label tabindex="-1" text="OpenAPI Code Generator" display-tooltip-when-elided="true" name="Title" style="-unity-font-style: bold; font-size: 28px;" />
+        <ui:TextField label="Generate Provider" readonly="true" name="GenerateProvider" />
         <ui:TextField picking-mode="Ignore" label="document file path/url" name="DocumentFilePath" binding-path="m_DocumentFilePath" style="white-space: nowrap; text-overflow: ellipsis;" />
         <ui:Label tabindex="-1" display-tooltip-when-elided="true" name="DocumentFilePathComment" style="align-items: center; align-self: auto; color: rgb(255, 42, 42);" />
         <ui:TextField picking-mode="Ignore" label="Output path name" readonly="false" binding-path="m_OutputFolderPath" name="OutputFolderPath" />

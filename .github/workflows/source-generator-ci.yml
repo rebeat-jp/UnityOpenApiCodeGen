@@ -1,0 +1,39 @@
+name: Source Generator CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Build, test, and verify analyzer
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.301
+          cache: true
+          cache-dependency-path: SourceGenerators/**/*.csproj
+
+      - name: Verify source generator
+        shell: bash
+        run: SourceGenerators/scripts/verify.sh
+
+      - name: Upload UPM release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-codegen-upm-release-candidate
+          path: artifacts/upm/0.5.0
+          if-no-files-found: error

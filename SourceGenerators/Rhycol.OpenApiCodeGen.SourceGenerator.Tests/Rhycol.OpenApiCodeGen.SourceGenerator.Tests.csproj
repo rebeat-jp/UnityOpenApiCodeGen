@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Rhycol.OpenApiCodeGen.SourceGenerator.Tests</AssemblyName>
+    <RootNamespace>Rhycol.OpenApiCodeGen.SourceGenerator.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <LangVersion>10.0</LangVersion>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference
+      Include="../Rhycol.OpenApiCodeGen.SourceGenerator/Rhycol.OpenApiCodeGen.SourceGenerator.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.7.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.7">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="TestAssets/*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!--
+    The parity test intentionally executes the package's editor normalizers rather than a
+    test-only reimplementation. Keep the parser glob linked so new parser files are compiled
+    into this test assembly automatically; AssemblyInfo is excluded because its Unity-only
+    InternalsVisibleTo declarations do not belong here.
+  -->
+  <ItemGroup>
+    <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/CanonicalSpecBundleWriter.cs"
+             Link="LinkedProduction/CanonicalSpecBundleWriter.cs" />
+    <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/NormalizedSpecBundleConstants.cs"
+             Link="LinkedProduction/NormalizedSpecBundleConstants.cs" />
+    <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/NormalizedSpecException.cs"
+             Link="LinkedProduction/NormalizedSpecException.cs" />
+    <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/RawJsonNormalizer.cs"
+             Link="LinkedProduction/RawJsonNormalizer.cs" />
+    <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/RawYamlNormalizer.cs"
+             Link="LinkedProduction/RawYamlNormalizer.cs" />
+    <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/StrictJsonSpecParser.cs"
+             Link="LinkedProduction/StrictJsonSpecParser.cs" />
+    <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/Parsing/*.cs"
+             Exclude="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/Parsing/AssemblyInfo.cs"
+             Link="LinkedProduction/Parsing/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

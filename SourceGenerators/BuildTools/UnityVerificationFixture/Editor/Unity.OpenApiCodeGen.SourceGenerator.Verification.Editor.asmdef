@@ -1,0 +1,19 @@
+{
+  "name": "Unity.OpenApiCodeGen.SourceGenerator.Verification.Editor",
+  "rootNamespace": "Rhycol.OpenApiCodeGen.SourceGenerator.Verification.Editor",
+  "references": [
+    "Unity.OpenApiCodeGen.Editor.Contracts",
+    "Unity.OpenApiCodeGen.SourceGenerator.Editor"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
