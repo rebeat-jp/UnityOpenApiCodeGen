@@ -17,29 +17,11 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/VerificationItem"
+                    "$ref": "VerificationItem.yaml"
                   }
                 }
               }
             }
-          }
-        }
-      }
-    }
-  },
-  "components": {
-    "schemas": {
-      "VerificationItem": {
-        "type": "object",
-        "required": [
-          "id"
-        ],
-        "properties": {
-          "id": {
-            "type": "integer"
-          },
-          "label": {
-            "type": "string"
           }
         }
       }

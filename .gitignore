@@ -27,6 +27,9 @@
 /Assets/OpenApiCodeGen/Generated/
 /Assets/OpenApiCodeGen/Generated.meta
 
+# Reproducible UPM release-candidate archives and manifests.
+/artifacts/
+
 # Visual Studio cache directory
 .vs/
 

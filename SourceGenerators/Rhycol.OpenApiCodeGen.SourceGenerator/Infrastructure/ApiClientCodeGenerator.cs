@@ -639,9 +639,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             try
             {
                 var service = new GenerationService();
-                IReadOnlyList<GeneratedFile> files = service.GenerateMvpFromOpenApiNode(
-                    bundle.Root,
-                    workItem.Definition.Options);
+                IReadOnlyList<GeneratedFile> files = bundle.IsMultiDocument
+                    ? service.GenerateMvpFromOpenApiBundle(bundle, workItem.Definition.Options)
+                    : service.GenerateMvpFromOpenApiNode(bundle.Root, workItem.Definition.Options);
                 for (int index = 0; index < files.Count; index++)
                 {
                     GeneratedFile file = files[index];
@@ -652,13 +652,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
             catch (OpenApiSemanticException exception)
             {
+                string sourcePath = string.IsNullOrEmpty(exception.Location.SourcePath)
+                    ? bundle.SourcePath
+                    : exception.Location.SourcePath;
+                IEnumerable<Location> additionalLocations = exception.AdditionalLocations
+                    .Select(location => CreateExternalLocation(
+                        string.IsNullOrEmpty(location.SourcePath) ? bundle.SourcePath : location.SourcePath,
+                        location.Line,
+                        location.Column))
+                    .ToArray();
                 context.ReportDiagnostic(Diagnostic.Create(
                     GetSemanticDescriptor(exception.Kind),
-                    CreateExternalLocation(
-                        bundle.SourcePath,
-                        exception.Location.Line,
-                        exception.Location.Column),
-                    bundle.SourcePath,
+                    CreateExternalLocation(sourcePath, exception.Location.Line, exception.Location.Column),
+                    additionalLocations,
+                    sourcePath,
                     exception.Location.LogicalPath,
                     exception.Message));
             }

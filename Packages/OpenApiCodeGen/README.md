@@ -1,68 +1,49 @@
 # Unity OpenAPI CodeGen
 
-## What's Unity OpenAPI CodeGen
+## Purpose and audience
 
-You can Access Rest API to use OpenAPI Generator in Unity.
-This Plugin is able to operate the OpenAPI CodeGen, and setting on GUI.
+This base Unity package provides the OpenAPI CodeGen Editor windows and the
+provider registry. It supports the Docker provider on Unity 2021.3 or later
+and is also the required base package for the optional Source Generator add-on
+on Unity 6.
 
-## Required Environment
+## Install
 
-- Unity (2021.3) or later
-- Docker when using the OpenAPI Generator provider
-- Unity 6 and the optional `jp.rhycol.openapicodegen.source-generator` package when using the Source Generator provider
+For the Source Generator provider, add both packages to the Unity project's
+`Packages/manifest.json`:
 
-## Getting started
+```json
+{
+  "dependencies": {
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.0",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.0"
+  }
+}
+```
 
-1. Add this package to Unity Package Manager from git url, and install this package.
-2. Open setup window at `Window/OpenAPI Code Generator/Setup` in the Unity's menu, and input absolute Docker Path. After that, press the `Setup` button.  <img width="1680" alt="スクリーンショット 2025-05-06 15 55 50" src="https://github.com/user-attachments/assets/135020e4-4a5f-4333-86cb-af41383c2fde" />
+The base package is also usable by itself with the Docker provider. The
+Source Generator add-on requires Unity 6000.0 or later and
+`com.unity.nuget.newtonsoft-json` `3.2.2`.
 
-3. Open generator window at `Window/OpenAPI Code Generator/Generator` in the Unity's menu. Input the API document path or URL supported by the selected provider and the API Client code output absolute folder, then press the `Generate` button. <img width="1680" alt="スクリーンショット 2025-05-06 15 55 21" src="https://github.com/user-attachments/assets/cee3a098-6c02-4344-9697-c92ac5b2385e" />
+## Use the provider UI
 
-## Generation providers
+1. Select the project-wide provider in
+   `Window/OpenAPI Code Generator/Settings`.
+2. Configure Docker in `Window/OpenAPI Code Generator/Setup` only when using
+   the Docker provider.
+3. In `Window/OpenAPI Code Generator/Generator`, enter the document path or
+   URL and an output folder under `Assets`, then press `Generate`.
 
-Select the project-wide provider from `Window/OpenAPI Code Generator/Settings`.
-The Setup window configures Docker only and does not change the saved provider.
+`Generate` is the explicit fetch/refresh action for URL-based Source Generator
+inputs. Provider resolution is strict: an unknown, unavailable, or failing
+provider does not fall back to Docker.
 
-- `OpenApi = 0`: the existing OpenAPI Generator CLI running through Docker.
-- `SourceGenerator = 1`: the optional incremental source-generator add-on for Unity 6.
-
-Provider resolution never falls back to Docker. An unknown, unregistered, or
-unavailable provider produces an explicit error instead.
-
-The Source Generator provider accepts a local `.json`, `.yaml`, or `.yml`
-document (extension matching is case-insensitive) and publishes a normalized
-compiler input plus an attributed partial client definition. Its output folder
-must be under `Assets` and contained by an asmdef that directly references
-`Unity.OpenApiCodeGen.SourceGenerator`. URLs are rejected and never fall back to
-Docker.
-
-YAML support is a bounded YAML 1.2-compatible subset: block/flow mappings and
-sequences, simple string keys, JSON-compatible scalars, quoted/plain strings,
-literal/folded block scalars, and anchors/aliases. In flow collections, plain
-values containing `,`, `[`, `]`, `{`, or `}` must be quoted; URL scheme colons
-such as `https://` are accepted. YAML tags, directives, merge keys, multiple
-documents, complex keys, and block scalars inside flow collections are rejected
-with a source-located diagnostic. Invalid YAML or UTF-8 keeps the last-known-good
-cache and mirror and still reports generation failure.
-Selecting an available Source Generator provider enables
-`OPENAPI_CODEGEN_SOURCE_GENERATOR` for the active `NamedBuildTarget`; selecting
-Docker removes it when that target is synchronized. Removing or updating the
-add-on unregisters the provider and removes the define before Unity applies the
-package transition.
-Changing providers can therefore remove generated types and expose compile
-errors in code that still references them.
-
-## Custamize
-You can set default API Document URL, default Client File Output Path, Docker Path, and Generating C# Client Option.
-Look Settings window at `Window/OpenAPI Code Generator/Settings`.
-<img width="1680" alt="スクリーンショット 2025-05-06 15 55 35" src="https://github.com/user-attachments/assets/c988a0df-b3e6-4815-becf-2161232d2f2c" />
-
-
-## Ecosystem
-- [OpenAPI Generator](https://openapi-generator.tech/)
-- [UniTask](https://github.com/Cysharp/UniTask)
-- [R3](https://github.com/Cysharp/R3)
+When Source Generator is selected and available, the base package synchronizes
+`OPENAPI_CODEGEN_SOURCE_GENERATOR` for the active `NamedBuildTarget`. Removing
+or updating the add-on removes the define before Unity applies the package
+transition. Code that still references generated types can therefore fail to
+compile after switching providers.
 
 ## License
 
-This package is under a [MIT License](LICENSE)
+This package is distributed under the [MIT License](LICENSE.md).

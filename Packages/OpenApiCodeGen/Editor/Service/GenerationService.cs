@@ -66,7 +66,7 @@ namespace Rhycol.OpenApiCodeGen.Core
             }
         }
 
-        public async Task GenerateApiClientAsync(
+        public async Task<GenerationResult> GenerateApiClientAsync(
             GenerateApiClientDto generateApiClientDto,
             CancellationToken cancellationToken = default)
         {
@@ -113,6 +113,8 @@ namespace Rhycol.OpenApiCodeGen.Core
                         + $"{provider.Descriptor.DisplayName}{Environment.NewLine}"
                         + result.Message);
                 }
+
+                return result;
             }
             catch (OperationCanceledException)
             {

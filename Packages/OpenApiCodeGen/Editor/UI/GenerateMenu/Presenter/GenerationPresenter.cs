@@ -4,6 +4,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 using Rhycol.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Editor.Generation;
 using Rhycol.OpenApiCodeGen.UI;
 
 
@@ -145,10 +146,10 @@ namespace Rhycol.OpenApiCodeGen.Presenter
                 }
 
                 SetProgressStatus(new PendingProgressStatus(0.2));
-                await _generateService.GenerateApiClientAsync(
+                GenerationResult result = await _generateService.GenerateApiClientAsync(
                     _generateApiClientDto);
 
-                SetProgressStatus(new SucceedProgressStatus());
+                SetProgressStatus(new SucceedProgressStatus(result.Message));
             }
             catch (ApplicationServiceException e)
             {

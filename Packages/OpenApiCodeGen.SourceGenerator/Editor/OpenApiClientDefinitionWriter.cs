@@ -159,6 +159,68 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             return true;
         }
 
+        internal DefinitionPublication PublishTransactional(OpenApiClientDefinitionPlan plan)
+        {
+            if (plan == null)
+            {
+                throw new ArgumentNullException(nameof(plan));
+            }
+
+            DefinitionFileSnapshot snapshot = CaptureDefinitionSnapshot(plan.DefinitionPath);
+            try
+            {
+                bool changed = Publish(plan);
+                return new DefinitionPublication(
+                    changed,
+                    changed
+                        ? () => TryRestoreDefinitionSnapshot(plan, snapshot)
+                        : EmptyRollback);
+            }
+            catch
+            {
+                TryRestoreDefinitionSnapshot(plan, snapshot);
+                throw;
+            }
+        }
+
+        private static DefinitionFileSnapshot CaptureDefinitionSnapshot(string path)
+        {
+            if (!File.Exists(path))
+            {
+                return new DefinitionFileSnapshot(false, new byte[0]);
+            }
+
+            return new DefinitionFileSnapshot(true, File.ReadAllBytes(path));
+        }
+
+        private void TryRestoreDefinitionSnapshot(
+            OpenApiClientDefinitionPlan plan,
+            DefinitionFileSnapshot snapshot)
+        {
+            try
+            {
+                if (snapshot.Exists)
+                {
+                    fileWriter.WriteAllBytesAtomically(plan.DefinitionPath, snapshot.Bytes);
+                }
+                else if (File.Exists(plan.DefinitionPath))
+                {
+                    File.Delete(plan.DefinitionPath);
+                }
+
+                importAsset(plan.DefinitionAssetPath);
+            }
+            catch (Exception)
+            {
+                // The cache service owns a second durable snapshot for this path and will
+                // restore it even when a definition writer or AssetDatabase operation fails.
+            }
+        }
+
+        private static void EmptyRollback()
+        {
+        }
+
         private string ResolveOutputFolder(string outputFolderPath)
         {
             if (string.IsNullOrWhiteSpace(outputFolderPath))
@@ -572,5 +634,31 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
             internal bool ReferencesSourceGeneratorRuntime { get; }
         }
+
+        private sealed class DefinitionFileSnapshot
+        {
+            internal DefinitionFileSnapshot(bool exists, byte[] bytes)
+            {
+                Exists = exists;
+                Bytes = bytes;
+            }
+
+            internal bool Exists { get; }
+
+            internal byte[] Bytes { get; }
+        }
+    }
+
+    internal sealed class DefinitionPublication
+    {
+        internal DefinitionPublication(bool changed, Action rollback)
+        {
+            Changed = changed;
+            Rollback = rollback ?? throw new ArgumentNullException(nameof(rollback));
+        }
+
+        internal bool Changed { get; }
+
+        internal Action Rollback { get; }
     }
 }

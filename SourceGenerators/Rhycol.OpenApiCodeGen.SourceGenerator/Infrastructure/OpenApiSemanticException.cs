@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator
 {
@@ -19,19 +20,31 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiSemanticErrorKind kind,
             string message,
             SpecNode node)
+            : this(kind, message, OpenApiSourceLocation.FromNode(node), Array.Empty<OpenApiSourceLocation>())
+        {
+        }
+
+        internal OpenApiSemanticException(
+            OpenApiSemanticErrorKind kind,
+            string message,
+            OpenApiSourceLocation location,
+            IReadOnlyList<OpenApiSourceLocation> additionalLocations)
             : base(message)
         {
-            if (node is null)
+            if (additionalLocations is null)
             {
-                throw new ArgumentNullException(nameof(node));
+                throw new ArgumentNullException(nameof(additionalLocations));
             }
 
             Kind = kind;
-            Location = OpenApiSourceLocation.FromNode(node);
+            Location = location;
+            AdditionalLocations = additionalLocations;
         }
 
         internal OpenApiSemanticErrorKind Kind { get; }
 
         internal OpenApiSourceLocation Location { get; }
+
+        internal IReadOnlyList<OpenApiSourceLocation> AdditionalLocations { get; }
     }
 }

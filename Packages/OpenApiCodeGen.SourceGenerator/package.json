@@ -1,8 +1,8 @@
 {
   "name": "jp.rhycol.openapicodegen.source-generator",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "displayName": "OpenApiCodeGen Source Generator",
-  "description": "Incremental source-generator add-on for Unity OpenApiCodeGen.",
+  "description": "Incremental Roslyn source generator for OpenApiCodeGen with local and URL multi-document OpenAPI support.",
   "unity": "6000.0",
   "author": "Re:Beat",
   "license": "MIT",
@@ -13,10 +13,35 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/tree/main/Packages/OpenApiCodeGen.SourceGenerator"
+    "url": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/tree/0.5.0/Packages/OpenApiCodeGen.SourceGenerator"
   },
+  "documentationUrl": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/blob/0.5.0/Packages/OpenApiCodeGen.SourceGenerator/README.md",
+  "changelogUrl": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/blob/0.5.0/Packages/OpenApiCodeGen.SourceGenerator/CHANGELOG.md",
+  "licensesUrl": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/blob/0.5.0/Packages/OpenApiCodeGen.SourceGenerator/LICENSE.md",
   "dependencies": {
-    "jp.rhycol.openapicodegen": "0.4.0",
+    "jp.rhycol.openapicodegen": "0.5.0",
     "com.unity.nuget.newtonsoft-json": "3.2.2"
-  }
+  },
+  "samples": [
+    {
+      "displayName": "Local JSON",
+      "description": "Generate the Items API client from a local OpenAPI 3.1 JSON document.",
+      "path": "Samples~/Local JSON"
+    },
+    {
+      "displayName": "Local YAML",
+      "description": "Generate the Items API client from a local OpenAPI 3.1 YAML document.",
+      "path": "Samples~/Local YAML"
+    },
+    {
+      "displayName": "URL",
+      "description": "Generate the Items API client from the pinned OpenAPI 3.1 URL fixture.",
+      "path": "Samples~/URL"
+    },
+    {
+      "displayName": "External Reference",
+      "description": "Generate the Items API client from a JSON root with an external YAML schema reference.",
+      "path": "Samples~/External Reference"
+    }
+  ]
 }

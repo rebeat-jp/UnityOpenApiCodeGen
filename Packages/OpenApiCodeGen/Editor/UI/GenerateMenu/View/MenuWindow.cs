@@ -143,7 +143,7 @@ namespace Rhycol.OpenApiCodeGen.UI
             {
                 FailedProgressStatus failed => ("Generating was failed.", failed.Reason ?? ""),
                 PendingProgressStatus => ("Generating is pending...", ""),
-                SucceedProgressStatus => ("Generating was succeeded.", ""),
+                SucceedProgressStatus succeed => ("Generating was succeeded.", succeed.Message),
                 _ => ("", "")
             };
             SetProgressBarValue((float)generateStatus.Progress, message);

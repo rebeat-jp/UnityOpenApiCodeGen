@@ -97,6 +97,39 @@ namespace Rhycol.OpenApiCodeGen.Test.Core
             }
         }
 
+        [Test]
+        public void GeneratePropagatesProviderSuccessMessageToSucceedProgressStatus()
+        {
+            const string successMessage = "Source Generator cache and definition were published.";
+            var repository = new MutableProjectSettingRepository(
+                new ProjectSetting(GenerateProvider.SourceGenerator));
+            var provider = new RecordingProvider(
+                GenerateProvider.SourceGenerator,
+                GenerationResult.Success(successMessage));
+            var presenter = new MenuPresenter(
+                new GenerationService(repository, CreateRegistry(provider)));
+            var view = new RecordingGenerationView();
+
+            try
+            {
+                presenter.Bind(view);
+                AwaitWithTimeout(view.FormSet.Task);
+                view.RaiseGenerateRequested(
+                    new GenerateApiClientDto(
+                        GenerateProvider.SourceGenerator,
+                        "draft/openapi.json",
+                        "draft/output"));
+
+                AwaitWithTimeout(view.GenerationSucceeded.Task);
+
+                Assert.That(view.LastSuccessMessage, Is.EqualTo(successMessage));
+            }
+            finally
+            {
+                presenter.Unbind();
+            }
+        }
+
         static GenerationProviderRegistry CreateRegistry(
             params IGenerationProvider[] providers)
         {
@@ -132,6 +165,7 @@ namespace Rhycol.OpenApiCodeGen.Test.Core
 
             public int SetFormValueCallCount { get; private set; }
             public GenerateProvider? LastDisplayedProvider { get; private set; }
+            public string? LastSuccessMessage { get; private set; }
 
             public void RaiseGenerateRequested(GenerateApiClientDto dto)
             {
@@ -160,6 +194,7 @@ namespace Rhycol.OpenApiCodeGen.Test.Core
             {
                 if (generateStatus is SucceedProgressStatus)
                 {
+                    LastSuccessMessage = ((SucceedProgressStatus)generateStatus).Message;
                     GenerationSucceeded.TrySetResult(true);
                 }
             }
@@ -179,22 +214,27 @@ namespace Rhycol.OpenApiCodeGen.Test.Core
 
         sealed class RecordingProvider : IGenerationProvider
         {
+            readonly GenerationResult _result;
+
             public GenerationProviderDescriptor Descriptor { get; }
             public int GenerateAsyncCallCount { get; private set; }
             public GenerationRequest? LastRequest { get; private set; }
 
-            public RecordingProvider(GenerateProvider provider)
+            public RecordingProvider(
+                GenerateProvider provider,
+                GenerationResult? result = null)
             {
                 Descriptor = new GenerationProviderDescriptor(
                     provider,
                     $"Test {provider}",
                     GenerationProviderAvailability.Available());
+                _result = result ?? GenerationResult.Success();
             }
 
             public GenerationResult Generate(GenerationRequest request)
             {
                 LastRequest = request;
-                return GenerationResult.Success();
+                return _result;
             }
 
             public Task<GenerationResult> GenerateAsync(
@@ -203,7 +243,7 @@ namespace Rhycol.OpenApiCodeGen.Test.Core
             {
                 GenerateAsyncCallCount++;
                 LastRequest = request;
-                return Task.FromResult(GenerationResult.Success());
+                return Task.FromResult(_result);
             }
         }
 

@@ -11,14 +11,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
     {
         private readonly OpenApiSemanticDocument _document;
         private readonly GeneratorOptions _options;
-        private readonly Dictionary<string, string> _componentTypeNames =
-            new Dictionary<string, string>(StringComparer.Ordinal);
-        private readonly Dictionary<string, string> _schemaTypeNames =
-            new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly Dictionary<NormalizedSpecNodeIdentity, string> _componentTypeNames =
+            new Dictionary<NormalizedSpecNodeIdentity, string>();
+        private readonly Dictionary<NormalizedSpecNodeIdentity, string> _schemaTypeNames =
+            new Dictionary<NormalizedSpecNodeIdentity, string>();
         private readonly HashSet<string> _usedTypeNames = new HashSet<string>(StringComparer.Ordinal);
         private readonly List<GeneratedDtoModel> _dtos = new List<GeneratedDtoModel>();
         private readonly List<GeneratedEnumModel> _enums = new List<GeneratedEnumModel>();
-        private readonly HashSet<string> _buildingSchemas = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<NormalizedSpecNodeIdentity> _buildingSchemas =
+            new HashSet<NormalizedSpecNodeIdentity>();
 
         private OpenApiGenerationModelBuilder(OpenApiSemanticDocument document, GeneratorOptions options)
         {
@@ -44,8 +45,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private OpenApiGenerationModel BuildCore()
         {
             AllocateComponentTypeNames();
-            foreach (KeyValuePair<string, OpenApiSemanticSchema> pair in _document.Schemas
-                         .OrderBy(static value => value.Key, StringComparer.Ordinal))
+            foreach (KeyValuePair<NormalizedSpecNodeIdentity, OpenApiSemanticSchema> pair in _document.Schemas
+                         .OrderBy(static value => value.Key.DocumentId, StringComparer.Ordinal)
+                         .ThenBy(static value => value.Key.Pointer, StringComparer.Ordinal))
             {
                 EnsureDeclaration(pair.Value, _componentTypeNames[pair.Key]);
             }
@@ -62,13 +64,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private void AllocateComponentTypeNames()
         {
-            foreach (string componentName in _document.Schemas.Keys.OrderBy(
-                         static value => value,
-                         StringComparer.Ordinal))
+            foreach (KeyValuePair<NormalizedSpecNodeIdentity, OpenApiSemanticSchema> schema in _document.Schemas
+                         .OrderBy(static value => string.Equals(
+                             value.Value.Location.DocumentId,
+                             "root",
+                             StringComparison.Ordinal)
+                             ? 0
+                             : 1)
+                         .ThenBy(static value => value.Key.DocumentId, StringComparer.Ordinal)
+                         .ThenBy(static value => value.Key.Pointer, StringComparer.Ordinal))
             {
                 _componentTypeNames.Add(
-                    componentName,
-                    AllocateUniqueTypeName(ToIdentifier(componentName, pascalCase: true)));
+                    schema.Key,
+                    AllocateUniqueTypeName(ToIdentifier(schema.Value.SuggestedName, pascalCase: true)));
             }
         }
 
@@ -170,9 +178,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         schema.Nullable,
                         itemType: ResolveType(schema.ItemSchema!));
                 case OpenApiSemanticSchemaKind.Reference:
-                    if (!_document.Schemas.TryGetValue(
-                            schema.ReferenceName,
-                            out OpenApiSemanticSchema? referencedSchema))
+                    NormalizedSpecNodeIdentity referenceIdentity = schema.ReferenceIdentity;
+                    if (referenceIdentity.IsEmpty)
+                    {
+                        referenceIdentity = new NormalizedSpecNodeIdentity(
+                            schema.Location.DocumentId,
+                            "/components/schemas/" + schema.ReferenceName);
+                    }
+
+                    if (!_document.Schemas.TryGetValue(referenceIdentity, out OpenApiSemanticSchema? referencedSchema))
                     {
                         throw new InvalidOperationException(
                             "Semantic model is missing referenced schema '" + schema.ReferenceName + "'.");
@@ -186,7 +200,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                                 ? GeneratedTypeKind.NamedEnum
                                 : GeneratedTypeKind.Named,
                             schema.Nullable,
-                            _componentTypeNames[schema.ReferenceName]);
+                            _componentTypeNames[referenceIdentity]);
                     }
 
                     return ResolveType(referencedSchema).WithNullable(
@@ -246,7 +260,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private void EnsureDeclaration(OpenApiSemanticSchema schema, string typeName)
         {
-            string key = GetSchemaKey(schema);
+            NormalizedSpecNodeIdentity key = GetSchemaKey(schema);
             if (!_buildingSchemas.Add(key))
             {
                 return;
@@ -319,7 +333,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private string GetOrAllocateSchemaTypeName(OpenApiSemanticSchema schema)
         {
-            string key = GetSchemaKey(schema);
+            NormalizedSpecNodeIdentity key = GetSchemaKey(schema);
             if (_schemaTypeNames.TryGetValue(key, out string? existing))
             {
                 return existing;
@@ -330,11 +344,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return name;
         }
 
-        private static string GetSchemaKey(OpenApiSemanticSchema schema)
+        private static NormalizedSpecNodeIdentity GetSchemaKey(OpenApiSemanticSchema schema)
         {
-            return string.IsNullOrEmpty(schema.Location.LogicalPath)
-                ? schema.SuggestedName
-                : schema.Location.LogicalPath;
+            return schema.Identity.IsEmpty
+                ? new NormalizedSpecNodeIdentity(schema.Location.DocumentId, schema.Location.LogicalPath)
+                : schema.Identity;
         }
 
         private string AllocateUniqueTypeName(string name)

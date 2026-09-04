@@ -161,7 +161,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         }
 
         [Fact]
-        public void UnsupportedBundleVersionReportsOacg002ErrorWithoutCascadingMissingError()
+        public void MalformedV2BundleReportsOacg001ErrorWithoutCascadingMissingError()
         {
             CSharpCompilation compilation = CreateCompilation(
                 CreateDefinition(TestBundleFactory.SpecId, "Api", "Generated", "Api"));
@@ -169,6 +169,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             Diagnostic diagnostic = Assert.Single(RunSingleBundle(
                 compilation,
                 TestBundleFactory.Create("{}", formatVersion: 2)).Diagnostics);
+
+            Assert.Equal("OACG001", diagnostic.Id);
+            Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+        }
+
+        [Fact]
+        public void UnsupportedBundleVersionReportsOacg002ErrorWithoutCascadingMissingError()
+        {
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, "Api", "Generated", "Api"));
+
+            Diagnostic diagnostic = Assert.Single(RunSingleBundle(
+                compilation,
+                TestBundleFactory.Create("{}", formatVersion: 3)).Diagnostics);
 
             Assert.Equal("OACG002", diagnostic.Id);
             Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);

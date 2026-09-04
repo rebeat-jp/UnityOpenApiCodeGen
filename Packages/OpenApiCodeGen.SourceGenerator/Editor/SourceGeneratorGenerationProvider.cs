@@ -58,7 +58,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 throw new ArgumentNullException(nameof(request));
             }
 
-            return GenerateCore(request);
+            return GenerateSyncCore(request);
         }
 
         public Task<GenerationResult> GenerateAsync(
@@ -71,35 +71,36 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(GenerateCore(request));
+            // Keep the caller's Unity SynchronizationContext. The cache service performs the
+            // network/parse portion asynchronously, then this continuation publishes Assets and
+            // requests compilation on the Editor thread.
+            return GenerateAsyncCore(request, cancellationToken);
         }
 
-        private GenerationResult GenerateCore(GenerationRequest request)
+        private async Task<GenerationResult> GenerateAsyncCore(
+            GenerationRequest request,
+            CancellationToken cancellationToken)
         {
             try
             {
-                OpenApiDocumentFormat documentFormat = DetectLocalDocumentFormat(request.ApiDocumentFilePathOrUrl);
+                cancellationToken.ThrowIfCancellationRequested();
+                OpenApiDocumentFormat requestedDocumentFormat = DetectLocalDocumentFormat(
+                    request.ApiDocumentFilePathOrUrl);
                 OpenApiClientDefinitionPlan definitionPlan = definitionWriter.Prepare(
                     request.OutputFolderPath,
                     request.ApiName,
                     request.GeneratedNamespace,
-                    documentFormat);
-                NormalizedSpecCacheResult cacheResult = cacheService.NormalizeAndCache(
+                    requestedDocumentFormat);
+                bool definitionChanged = false;
+                NormalizedSpecCacheResult cacheResult = await cacheService.NormalizeAndCacheAsync(
                     request.ApiDocumentFilePathOrUrl,
                     definitionPlan.SpecId,
-                    documentFormat);
-                bool definitionChanged = definitionWriter.Publish(definitionPlan);
-                bool compilerInputChanged = cacheResult.MirrorChanged || definitionChanged;
-                if (compilerInputChanged)
-                {
-                    requestScriptCompilation();
-                }
+                    cancellationToken,
+                    definitionPlan.DefinitionPath,
+                    definitionPlan.DefinitionAssetPath,
+                    format => PublishDefinition(definitionPlan, request, format, ref definitionChanged));
 
-                return GenerationResult.Success(
-                    (compilerInputChanged
-                        ? GenerationSucceededMessage
-                        : GenerationAlreadyCurrentMessage) + Environment.NewLine +
-                    "Spec ID: " + cacheResult.SpecId);
+                return CompleteGeneration(cacheResult, definitionChanged);
             }
             catch (OperationCanceledException)
             {
@@ -107,8 +108,88 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
             catch (Exception exception)
             {
-                return GenerationResult.Failure(exception.Message);
+                return GenerationResult.Failure(SanitizeFailureMessage(exception));
             }
+        }
+
+        private GenerationResult GenerateSyncCore(GenerationRequest request)
+        {
+            try
+            {
+                OpenApiDocumentFormat requestedDocumentFormat = DetectLocalDocumentFormat(
+                    request.ApiDocumentFilePathOrUrl);
+                OpenApiClientDefinitionPlan definitionPlan = definitionWriter.Prepare(
+                    request.OutputFolderPath,
+                    request.ApiName,
+                    request.GeneratedNamespace,
+                    requestedDocumentFormat);
+                cacheService.RepairPendingPublicationForSpec(
+                    definitionPlan.SpecId,
+                    definitionPlan.DefinitionPath,
+                    definitionPlan.DefinitionAssetPath);
+                // Match the Docker provider's synchronous boundary for fetch/parse, then publish
+                // Unity assets on this caller thread after the worker has returned.
+                NormalizedSpecGraph graph = Task.Run(
+                        () => cacheService.LoadGraphAsync(
+                            request.ApiDocumentFilePathOrUrl,
+                            definitionPlan.SpecId,
+                            CancellationToken.None),
+                    CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
+                bool definitionChanged = false;
+                NormalizedSpecCacheResult cacheResult = cacheService.PublishGraph(
+                    graph,
+                    definitionPlan.DefinitionPath,
+                    definitionPlan.DefinitionAssetPath,
+                    format => PublishDefinition(definitionPlan, request, format, ref definitionChanged));
+
+                return CompleteGeneration(cacheResult, definitionChanged);
+            }
+            catch (Exception exception)
+            {
+                return GenerationResult.Failure(SanitizeFailureMessage(exception));
+            }
+        }
+
+        private Action PublishDefinition(
+            OpenApiClientDefinitionPlan definitionPlan,
+            GenerationRequest request,
+            OpenApiDocumentFormat format,
+            ref bool definitionChanged)
+        {
+            if (definitionPlan.DocumentFormat != format)
+            {
+                definitionPlan = definitionWriter.Prepare(
+                    request.OutputFolderPath,
+                    request.ApiName,
+                    request.GeneratedNamespace,
+                    format);
+            }
+
+            DefinitionPublication publication = definitionWriter.PublishTransactional(definitionPlan);
+            definitionChanged = publication.Changed;
+            return publication.Rollback;
+        }
+
+        private GenerationResult CompleteGeneration(
+            NormalizedSpecCacheResult cacheResult,
+            bool definitionChanged)
+        {
+            bool compilerInputChanged = cacheResult.MirrorChanged || definitionChanged;
+            if (compilerInputChanged)
+            {
+                requestScriptCompilation();
+            }
+
+            return GenerationResult.Success(
+                (compilerInputChanged
+                    ? GenerationSucceededMessage
+                    : GenerationAlreadyCurrentMessage) + Environment.NewLine +
+                "Spec ID: " + cacheResult.SpecId +
+                (string.IsNullOrEmpty(cacheResult.WarningMessage)
+                    ? string.Empty
+                    : Environment.NewLine + "Warning: " + cacheResult.WarningMessage));
         }
 
         private static OpenApiDocumentFormat DetectLocalDocumentFormat(string documentPath)
@@ -122,8 +203,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             if (!Path.IsPathRooted(documentPath) &&
                 Uri.TryCreate(documentPath, UriKind.Absolute, out absoluteUri))
             {
+                if (absoluteUri.Scheme == Uri.UriSchemeHttp ||
+                    absoluteUri.Scheme == Uri.UriSchemeHttps)
+                {
+                    // URL content type/final URL extension is authoritative and is resolved by
+                    // ExternalSpecGraphLoader after the request has been fetched. Json is only the
+                    // temporary definition-plan format used to calculate the stable spec ID.
+                    return OpenApiDocumentFormat.Json;
+                }
+
                 throw new NotSupportedException(
-                    "Source Generator generation supports local files only; URLs are not supported.");
+                    "Source Generator generation supports local paths and HTTP(S) URLs only.");
             }
 
             string extension = Path.GetExtension(documentPath);
@@ -139,7 +229,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
 
             throw new NotSupportedException(
-                "Source Generator generation supports local .json, .yaml, and .yml documents only; URLs are not supported.");
+                "Source Generator generation supports local .json, .yaml, and .yml documents, or HTTP(S) URLs.");
+        }
+
+        private static string SanitizeFailureMessage(Exception exception)
+        {
+            string message = exception == null ? string.Empty : exception.Message;
+            if (string.IsNullOrEmpty(message))
+            {
+                return "Source Generator generation failed.";
+            }
+
+            return message;
         }
     }
 }

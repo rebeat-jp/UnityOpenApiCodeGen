@@ -123,8 +123,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(File.GetLastWriteTimeUtc(definitionPath), Is.EqualTo(definitionTimestamp));
         }
 
-        [TestCase("https://example.test/openapi.json", "URLs are not supported")]
-        [TestCase("Assets/Specs/openapi.txt", "supports local .json, .yaml, and .yml documents only")]
+        [TestCase("ftp://example.test/openapi.json", "local paths and HTTP(S) URLs only")]
+        [TestCase("Assets/Specs/openapi.txt", "supports local .json, .yaml, and .yml documents, or HTTP(S) URLs")]
         public void GenerateRejectsInputsOutsideLocalSupportedScope(
             string input,
             string expectedMessage)
@@ -242,7 +242,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Test]
-        public void InvalidUtf8YamlReportsDiagnosticAndDoesNotPublishOrRequestCompilation()
+        public void InvalidUtf8YamlReportsFailureAndDoesNotPublishOrRequestCompilation()
         {
             string yamlPath = Path.Combine(projectRoot, "Assets", "Specs", "petstore.yaml");
             File.WriteAllBytes(yamlPath, new byte[] { 0x80 });
@@ -257,14 +257,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
             Assert.That(result.IsSuccess, Is.False);
             Assert.That(result.Message, Does.Contain("not valid UTF-8"));
-            string sourcePath = "Assets/Specs/petstore.yaml";
             Assert.That(
-                CountOccurrences(result.Message, "YAML001"),
-                Is.EqualTo(1),
-                "Actual message: " + result.Message);
-            Assert.That(
-                CountOccurrences(result.Message, sourcePath + ":1:1"),
-                Is.EqualTo(1),
+                result.Message,
+                Does.Contain("JSON Pointer ''"),
                 "Actual message: " + result.Message);
             Assert.That(
                 File.Exists(Path.Combine(outputFolder, "PetStoreApi.OpenApiDefinition.cs")),
@@ -364,19 +359,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Path.Combine(directory, assemblyName + ".asmdef"),
                 json,
                 new UTF8Encoding(false));
-        }
-
-        static int CountOccurrences(string value, string substring)
-        {
-            int count = 0;
-            int offset = 0;
-            while ((offset = value.IndexOf(substring, offset, StringComparison.Ordinal)) >= 0)
-            {
-                count++;
-                offset += substring.Length;
-            }
-
-            return count;
         }
 
         sealed class RecordingMirrorImporter : ICompilerMirrorImporter

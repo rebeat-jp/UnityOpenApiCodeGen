@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -8,6 +10,56 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     {
         internal const string SpecId = "0123456789abcdef0123456789abcdef";
         internal const string SourcePath = "Assets/Specs/openapi.json";
+
+        internal sealed class V2DocumentSpec
+        {
+            internal V2DocumentSpec(
+                string documentId,
+                string sourcePath,
+                string format,
+                string rootJson,
+                string? rawSha256 = null)
+            {
+                DocumentId = documentId;
+                SourcePath = sourcePath;
+                Format = format;
+                RootJson = rootJson;
+                RawSha256 = rawSha256 ?? ComputeSha256(rootJson);
+            }
+
+            internal string DocumentId { get; }
+
+            internal string SourcePath { get; }
+
+            internal string Format { get; }
+
+            internal string RootJson { get; }
+
+            internal string RawSha256 { get; }
+        }
+
+        internal sealed class V2ReferenceSpec
+        {
+            internal V2ReferenceSpec(
+                string sourceDocumentId,
+                string sourcePointer,
+                string targetDocumentId,
+                string targetPointer)
+            {
+                SourceDocumentId = sourceDocumentId;
+                SourcePointer = sourcePointer;
+                TargetDocumentId = targetDocumentId;
+                TargetPointer = targetPointer;
+            }
+
+            internal string SourceDocumentId { get; }
+
+            internal string SourcePointer { get; }
+
+            internal string TargetDocumentId { get; }
+
+            internal string TargetPointer { get; }
+        }
 
         internal static SpecNode ReadRoot(string rawJson)
         {
@@ -46,6 +98,114 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             builder.Append(encodedRoot);
             builder.Append("}]}");
             return builder.ToString();
+        }
+
+        internal static string CreateV2(
+            string rootJson,
+            IReadOnlyList<V2DocumentSpec> externalDocuments,
+            IReadOnlyList<V2ReferenceSpec> referenceEdges,
+            string sourcePath = SourcePath,
+            string specId = SpecId,
+            string? topRawSha256 = null)
+        {
+            using JsonDocument rootDocument = JsonDocument.Parse(rootJson);
+            var builder = new StringBuilder();
+            builder.Append("{\n");
+            builder.Append("  \"formatVersion\": 2,\n");
+            builder.Append("  \"specId\": ");
+            AppendString(builder, specId);
+            builder.Append(",\n  \"rawSha256\": ");
+            AppendString(builder, topRawSha256 ?? ComputeSha256(rootJson));
+            builder.Append(",\n  \"rootDocumentId\": \"root\",\n");
+            builder.Append("  \"documents\": [\n");
+            AppendV2Document(
+                builder,
+                "root",
+                sourcePath,
+                "json",
+                ComputeSha256(rootJson),
+                rootDocument.RootElement,
+                2);
+
+            for (int index = 0; index < externalDocuments.Count; index++)
+            {
+                builder.Append(",\n");
+                V2DocumentSpec document = externalDocuments[index];
+                using JsonDocument externalRoot = JsonDocument.Parse(document.RootJson);
+                AppendV2Document(
+                    builder,
+                    document.DocumentId,
+                    document.SourcePath,
+                    document.Format,
+                    document.RawSha256,
+                    externalRoot.RootElement,
+                    2);
+            }
+
+            builder.Append("\n  ],\n  \"referenceEdges\": [");
+            if (referenceEdges.Count == 0)
+            {
+                builder.Append("]\n");
+            }
+            else
+            {
+                builder.Append('\n');
+                for (int index = 0; index < referenceEdges.Count; index++)
+                {
+                    V2ReferenceSpec edge = referenceEdges[index];
+                    builder.Append("    {\n");
+                    builder.Append("      \"sourceDocumentId\": ");
+                    AppendString(builder, edge.SourceDocumentId);
+                    builder.Append(",\n      \"sourcePointer\": ");
+                    AppendString(builder, edge.SourcePointer);
+                    builder.Append(",\n      \"targetDocumentId\": ");
+                    AppendString(builder, edge.TargetDocumentId);
+                    builder.Append(",\n      \"targetPointer\": ");
+                    AppendString(builder, edge.TargetPointer);
+                    builder.Append("\n    }");
+                    builder.Append(index + 1 == referenceEdges.Count ? "\n" : ",\n");
+                }
+
+                builder.Append("  ]\n");
+            }
+
+            builder.Append("}\n");
+            return builder.ToString();
+        }
+
+        private static void AppendV2Document(
+            StringBuilder builder,
+            string documentId,
+            string sourcePath,
+            string format,
+            string rawSha256,
+            JsonElement root,
+            int indent)
+        {
+            builder.Append(new string(' ', indent * 2));
+            builder.Append("{\n");
+            builder.Append(new string(' ', (indent + 1) * 2));
+            builder.Append("\"documentId\": ");
+            AppendString(builder, documentId);
+            builder.Append(",\n");
+            builder.Append(new string(' ', (indent + 1) * 2));
+            builder.Append("\"sourcePath\": ");
+            AppendString(builder, sourcePath);
+            builder.Append(",\n");
+            builder.Append(new string(' ', (indent + 1) * 2));
+            builder.Append("\"format\": ");
+            AppendString(builder, format);
+            builder.Append(",\n");
+            builder.Append(new string(' ', (indent + 1) * 2));
+            builder.Append("\"rawSha256\": ");
+            AppendString(builder, rawSha256);
+            builder.Append(",\n");
+            builder.Append(new string(' ', (indent + 1) * 2));
+            builder.Append("\"root\": ");
+            AppendNode(builder, root);
+            builder.Append('\n');
+            builder.Append(new string(' ', indent * 2));
+            builder.Append('}');
         }
 
         private static void AppendNode(StringBuilder builder, JsonElement element)
@@ -120,6 +280,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             }
 
             builder.Append('}');
+        }
+
+        private static string ComputeSha256(string value)
+        {
+            using SHA256 sha256 = SHA256.Create();
+            byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(value));
+            var builder = new StringBuilder(hash.Length * 2);
+            foreach (byte valueByte in hash)
+            {
+                builder.Append(valueByte.ToString("x2"));
+            }
+
+            return builder.ToString();
         }
 
         private static void AppendCommon(StringBuilder builder, string kind)

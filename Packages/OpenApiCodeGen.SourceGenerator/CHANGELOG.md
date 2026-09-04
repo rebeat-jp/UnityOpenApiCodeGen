@@ -2,8 +2,18 @@
 
 ## Unreleased
 
+## [0.5.0] - 2026-08-18
+
 ### Added
 
+- Add Phase 6 URL loading and multi-document Bundle v2 support for Issues
+  #50–#52. The Editor resolves the complete graph and publishes one Bundle
+  v2 AdditionalFile per `specId`; the analyzer consumes the edge map without
+  network or filesystem access.
+- Add deterministic URL policy, format detection, graph limits, redacted
+  manifest metadata, atomic publication, and bare Schema external documents.
+- Add the four UPM samples (local JSON, local YAML, URL, and external
+  reference) and the `0.5.0` release/rollback documentation.
 - Add Phase 5 YAML input support for Issues #46–#49: a BCL-only lexer/parser
   accepts local `.yaml` and `.yml` documents and lowers the supported YAML 1.2
   subset directly to the shared `SpecNode` tree. No YamlDotNet dependency or
@@ -30,11 +40,17 @@
 
 ### Changed
 
+- Accept local and HTTP(S) Source Generator inputs. `Generate` is the explicit
+  fetch/refresh operation; URL queries are used for the current request and
+  are not persisted in plain text.
+- Read Bundle v1 for compatibility while the Editor writes Bundle v2. Resolve
+  document identities as `(documentId, JSON Pointer)` and report unresolved
+  targets and cycles with stable diagnostics.
 - Treat unsupported wire-affecting OpenAPI features as generation diagnostics instead of silently ignoring them.
-- Generate from local `.json`, `.yaml`, or `.yml` through the normalized cache and
-  compiler mirror without Docker fallback. The canonical bundle remains JSON
-  for both raw formats, and JSON/YAML semantic and generated-source parity is
-  verified for the shared MVP surface.
+- Generate from local `.json`, `.yaml`, or `.yml` and HTTP(S) inputs through the
+  normalized cache and compiler mirror without Docker fallback. The canonical
+  Bundle remains JSON for both raw formats, and JSON/YAML semantic and
+  generated-source parity is verified for the shared MVP surface.
 - Avoid rewriting unchanged cache and definition inputs or requesting unnecessary script compilation.
 
 ## [0.1.0]

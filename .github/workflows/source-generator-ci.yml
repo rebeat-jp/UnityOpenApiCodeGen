@@ -30,3 +30,10 @@ jobs:
       - name: Verify source generator
         shell: bash
         run: SourceGenerators/scripts/verify.sh
+
+      - name: Upload UPM release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-codegen-upm-release-candidate
+          path: artifacts/upm/0.5.0
+          if-no-files-found: error

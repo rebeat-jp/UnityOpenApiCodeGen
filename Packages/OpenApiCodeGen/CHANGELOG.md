@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-## unreleased
+## Unreleased
+
+## [0.5.0] - 2026-08-18
 
 ### Added
 
@@ -14,11 +16,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Synchronize `OPENAPI_CODEGEN_SOURCE_GENERATOR` for the active build target.
 - Remove the Source Generator provider and define before package transitions.
 - Pass the configured API name and namespace through the provider-neutral generation request.
+- Document the `0.5.0` Git installation, provider transition, and rollback procedure.
 
 ### Changed
 
 - Make the Setup window Docker-specific and route Generate through the saved provider.
 - Keep an open Generator window synchronized with the saved provider.
+- Keep the base package usable without the optional Source Generator add-on.
 
 ### Fixed
 

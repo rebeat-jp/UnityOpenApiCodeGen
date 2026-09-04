@@ -1,0 +1,29 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Items API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/items": {
+      "get": {
+        "operationId": "getItems",
+        "responses": {
+          "200": {
+            "description": "Items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "./models.yaml"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

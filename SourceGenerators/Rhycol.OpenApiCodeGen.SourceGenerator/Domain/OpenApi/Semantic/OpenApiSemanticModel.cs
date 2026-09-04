@@ -6,11 +6,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
     internal readonly struct OpenApiSourceLocation : IEquatable<OpenApiSourceLocation>
     {
         internal OpenApiSourceLocation(int line, int column, string logicalPath)
+            : this(string.Empty, "root", line, column, logicalPath)
         {
+        }
+
+        internal OpenApiSourceLocation(
+            string sourcePath,
+            string documentId,
+            int line,
+            int column,
+            string logicalPath)
+        {
+            SourcePath = sourcePath ?? string.Empty;
+            DocumentId = documentId ?? "root";
             Line = line;
             Column = column;
             LogicalPath = logicalPath ?? string.Empty;
         }
+
+        internal string SourcePath { get; }
+
+        internal string DocumentId { get; }
 
         internal int Line { get; }
 
@@ -28,10 +44,30 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return new OpenApiSourceLocation(node.Line, node.Column, node.LogicalPath);
         }
 
+        internal static OpenApiSourceLocation FromNode(
+            SpecNode node,
+            string sourcePath,
+            string documentId)
+        {
+            if (node is null)
+            {
+                throw new ArgumentNullException(nameof(node));
+            }
+
+            return new OpenApiSourceLocation(
+                sourcePath,
+                documentId,
+                node.Line,
+                node.Column,
+                node.LogicalPath);
+        }
+
         public bool Equals(OpenApiSourceLocation other)
         {
             return Line == other.Line &&
                    Column == other.Column &&
+                   string.Equals(SourcePath, other.SourcePath, StringComparison.Ordinal) &&
+                   string.Equals(DocumentId, other.DocumentId, StringComparison.Ordinal) &&
                    string.Equals(LogicalPath, other.LogicalPath, StringComparison.Ordinal);
         }
 
@@ -46,6 +82,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 int hashCode = Line;
                 hashCode = (hashCode * 397) ^ Column;
+                hashCode = (hashCode * 397) ^ StringComparer.Ordinal.GetHashCode(SourcePath);
+                hashCode = (hashCode * 397) ^ StringComparer.Ordinal.GetHashCode(DocumentId);
                 hashCode = (hashCode * 397) ^ StringComparer.Ordinal.GetHashCode(LogicalPath);
                 return hashCode;
             }
@@ -57,7 +95,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal OpenApiSemanticDocument(
             int minorVersion,
             string baseUrl,
-            IReadOnlyDictionary<string, OpenApiSemanticSchema> schemas,
+            IReadOnlyDictionary<NormalizedSpecNodeIdentity, OpenApiSemanticSchema> schemas,
             IReadOnlyList<OpenApiSemanticOperation> operations,
             OpenApiSourceLocation location)
         {
@@ -72,7 +110,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         internal string BaseUrl { get; }
 
-        internal IReadOnlyDictionary<string, OpenApiSemanticSchema> Schemas { get; }
+        internal IReadOnlyDictionary<NormalizedSpecNodeIdentity, OpenApiSemanticSchema> Schemas { get; }
 
         internal IReadOnlyList<OpenApiSemanticOperation> Operations { get; }
 
@@ -197,7 +235,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<OpenApiSemanticProperty> properties,
             OpenApiSemanticSchema? itemSchema,
             IReadOnlyList<string> enumValues,
-            OpenApiSourceLocation location)
+            OpenApiSourceLocation location,
+            NormalizedSpecNodeIdentity identity = default,
+            NormalizedSpecNodeIdentity referenceIdentity = default)
         {
             Kind = kind;
             SuggestedName = suggestedName ?? string.Empty;
@@ -208,6 +248,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             ItemSchema = itemSchema;
             EnumValues = enumValues ?? Array.Empty<string>();
             Location = location;
+            Identity = identity;
+            ReferenceIdentity = referenceIdentity;
         }
 
         internal OpenApiSemanticSchemaKind Kind { get; }
@@ -227,6 +269,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal IReadOnlyList<string> EnumValues { get; }
 
         internal OpenApiSourceLocation Location { get; }
+
+        internal NormalizedSpecNodeIdentity Identity { get; }
+
+        internal NormalizedSpecNodeIdentity ReferenceIdentity { get; }
     }
 
     internal sealed class OpenApiSemanticProperty

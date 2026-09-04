@@ -56,7 +56,7 @@ namespace Rhycol.OpenApiCodeGen.Lib
                 return new ProjectSettingJson
                 {
                     GenerateProvider = value.GenerateProvider,
-                    ApiDocumentFilePathOrUrl = value.ApiDocumentFilePathOrUrl,
+                    ApiDocumentFilePathOrUrl = StripRemoteQuery(value.ApiDocumentFilePathOrUrl),
                     ApiClientOutputFolderPath = value.ApiClientOutputFolderPath,
                 };
             }
@@ -65,9 +65,33 @@ namespace Rhycol.OpenApiCodeGen.Lib
             {
                 return new ProjectSetting(
                     generateProvider: GenerateProvider,
-                    apiDocumentFilePathOrUrl: ApiDocumentFilePathOrUrl,
+                    apiDocumentFilePathOrUrl: StripRemoteQuery(ApiDocumentFilePathOrUrl),
                     apiClientOutputFolderPath: ApiClientOutputFolderPath
                 );
+            }
+
+            private static string StripRemoteQuery(string value)
+            {
+                if (string.IsNullOrEmpty(value))
+                {
+                    return value ?? string.Empty;
+                }
+
+                Uri uri;
+                if (!Uri.TryCreate(value, UriKind.Absolute, out uri) ||
+                    (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+                {
+                    return value;
+                }
+
+                var builder = new UriBuilder(uri)
+                {
+                    Query = string.Empty,
+                    Fragment = string.Empty,
+                    UserName = string.Empty,
+                    Password = string.Empty,
+                };
+                return builder.Uri.AbsoluteUri;
             }
         }
 

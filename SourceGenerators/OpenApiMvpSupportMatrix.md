@@ -5,8 +5,9 @@
 この文書は、`Rhycol.OpenApiCodeGen.SourceGenerator`で生成できるOpenAPI documentの
 MVP範囲を、API仕様の作成者とUnity利用者が判断するためのmatrixです。
 対象はSource Generator providerで選択したlocal `.json`、`.yaml`、`.yml`
-document（extension case-insensitive）です。canonical Normalized Spec Bundle v1
-はraw形式に関係なくJSONです。
+document（extension case-insensitive）とHTTP(S) URLです。Editorは参照グラフ全体を
+canonical Normalized Spec Bundle v2へ正規化し、Analyzerは1 specIdにつき1 AdditionalFile
+だけを読みます。Bundle v1はAnalyzerの後方互換入力として読み込めます。
 
 生成器は、wire formatに影響する未対応要素を黙って省略または推測しません。
 Unsupportedに分類された要素と、Partialの制約外へ出た要素は診断を報告し、生成を完了しません。
@@ -23,13 +24,39 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 
 | 項目 | Status | 条件・制約 |
 | --- | --- | --- |
-| 入力document | Supported | localの単一`.json`、`.yaml`、`.yml` file。extensionはcase-insensitive。 |
+| 入力document | Supported | localの`.json`、`.yaml`、`.yml` file、またはHTTP(S) URL。local extensionはcase-insensitive。 |
 | OpenAPI version | Partial | `3.0.*`と`3.1.*`のみ。 |
 | OpenAPI 3.2 / Swagger 2 | Unsupported | document versionは受け付けません。 |
-| URL入力 | Unsupported | Source Generator providerはlocal fileだけを受け付け、Dockerへfallbackしません。 |
+| URL入力 | Supported | public/private/loopback、cross-host redirectを許可。userinfo、空白、非HTTP(S)、HTTPS-to-HTTP direct/redirectは拒否。Generateが明示的なfetch/refresh操作で、Docker fallbackはありません。 |
 | JSON/YAML semantic parity | Supported | 各normalizerがshared `SpecNode`へ正規化し、同じsemantic/generation pipelineを通ります。 |
-| `$ref` | Partial | `components/schemas`、`parameters`、`requestBodies`、`responses`へのdirect internal referenceのみ。 |
-| external / unresolved / cyclic `$ref` | Unsupported | それぞれ`OACG104`、`OACG102`、`OACG103`を報告します。 |
+| `$ref` | Partial | internal reference、またはEditorがBundle v2のreference edgeへ解決したexternal reference。fragmentはemptyまたはJSON Pointer。 |
+| external `$ref` | Partial | local external fileはreal/symbolic-link解決後もUnity project内。remote documentからlocal fileは不可。bare Schemaは可。 |
+| unresolved / cyclic `$ref` | Unsupported | それぞれ`OACG102`、`OACG103`を報告します。`OACG104`はBundle v1のexternal-reference互換診断です。 |
+| URL query / fragment | Partial | queryはfetch identityに使いますが平文永続化しません。root URL fragment、userinfo、explicit `file:`は拒否。 |
+| URL format detection | Supported | final URL extensionとContent-Typeが既知なら一致必須。片方だけ既知は可、両方不明・競合は拒否。content sniffing/hintはなし。 |
+
+### External graph limits
+
+| Limit | Value |
+| --- | ---: |
+| Request timeout | 30 seconds |
+| Graph timeout | 120 seconds |
+| Maximum document size | 4 MiB |
+| Maximum graph size | 32 MiB |
+| Maximum documents | 64 |
+| Maximum redirects | 5 |
+| Maximum reference depth | 256 |
+
+Editorはfetch、filesystem read/write、format parsing、reference resolutionを担当します。
+AnalyzerはAdditionalFile内のBundleとedge mapだけを読みます。Bundleは次のtop-level field順を
+持つstrict UTF-8/LF/2-space JSONです。
+
+```text
+formatVersion, specId, rawSha256, rootDocumentId, documents, referenceEdges
+```
+
+詳細なfield、ordering、manifest、publication failureの扱いは
+[Normalized Spec Bundle v2](NormalizedSpecBundleV2.md)を参照してください。
 
 ## YAML subset
 
@@ -144,18 +171,22 @@ namespace-levelのため、同じnamespaceには共存できません。
 | ID | 意味 |
 | --- | --- |
 | `OACG100` | InvalidDocument |
-| `OACG101` | UnsupportedElement |
-| `OACG102` | UnresolvedReference |
-| `OACG103` | CyclicReference |
-| `OACG104` | ExternalReference |
+| `OACG101` | UnsupportedElement（bare non-Schema、`$id`/`$anchor`/`$dynamicAnchor`/`$dynamicRef`など） |
+| `OACG102` | Unresolved document or JSON Pointer target |
+| `OACG103` | Cyclic reference |
+| `OACG104` | ExternalReference（Bundle v1 compatibility） |
 | `OACG105` | InconsistentResponse |
 | `OACG106` | InvalidIdentifier |
 
 ## 検証済み環境
 
-現在の検証では、.NET testsは79/79、analyzer出力はdeterministicでbyte-identical、packaged
-analyzer sync SHA256 prefixは`78b18d5f`、UPM dependency/reference checksは成功しています。
-base packageはUnity 2021.3.19f1で33/33、Source Generator add-onはUnity 6000.0.23f1で157/157、
-6000.3.2f1で157/157を検証済みです。regeneration/without-addonも通過し、`CS8785`は発生して
-いません。Source Generator add-onのminimum Unity versionは6000.0です。未検証のUnity versionへ
-この結果を拡張してはなりません。
+現在の検証では、.NET testsは101/101、analyzer reproducibility・sync・package inspection・
+tarball reproducibility・checksum verificationはpassです。base Unity `2021.3.19f1`のtarball
+EditMode gateは36/36でした。Unity `6000.0.23f1`はinitial 185/185、regeneration 185/185、
+without-addon 36/36、Unity `6000.3.2f1`もinitial 185/185、regeneration 185/185、
+without-addon 36/36で、両方のSource Generator full flowがpassしています。aggregate gateは
+`artifacts/upm/0.5.0/unity-gate.json`に`passed`として保存されています。
+
+これはmanual Unity gateの結果であり、GitHub ActionsのUnity jobが実装されたことを意味しません。
+そのjobを意図的に追加していないため、#54とPhase 7全体はopenのままで、release-readyとは扱いません。
+公開前にはcleanなcommit済みtreeで再pack・再検証し、tarballとmanifestのprovenanceを確定してください。

@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 
 using Xunit;
 
@@ -120,16 +122,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void Read_ReportsUnsupportedVersionTokenLocationAfterWhitespace()
+        public void Read_ReportsMalformedV2TokenAfterWhitespace()
         {
             const string Bundle = "{\r\n  \"formatVersion\":\r\n    2";
 
-            UnsupportedNormalizedSpecVersionException exception =
-                Assert.Throws<UnsupportedNormalizedSpecVersionException>(
+            NormalizedSpecBundleFormatException exception =
+                Assert.Throws<NormalizedSpecBundleFormatException>(
                     () => NormalizedSpecBundleReader.Read(Bundle));
 
             Assert.Equal(3, exception.Line);
-            Assert.Equal(5, exception.Column);
+            Assert.Equal(6, exception.Column);
         }
 
         [Fact]
@@ -142,6 +144,208 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                     () => NormalizedSpecBundleReader.Read(Bundle));
 
             Assert.Equal(3, exception.Line);
+        }
+
+        [Fact]
+        public void Read_AcceptsStrictV2BundleWithExternalDocumentAndReferenceEdge()
+        {
+            const string ExternalDocumentId = "Assets/Specs/pet.json";
+            const string ReferencePointer =
+                "/paths/~1pets/get/responses/200/content/application~1json/schema/$ref";
+            string root = CreateExternalReferenceRoot("pet.json#/components/schemas/Pet");
+            string external = "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Pet\",\"version\":\"1\"},\"paths\":{},\"components\":{\"schemas\":{\"Pet\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}}}}}}";
+            string content = TestBundleFactory.CreateV2(
+                root,
+                new[]
+                {
+                    new TestBundleFactory.V2DocumentSpec(
+                        ExternalDocumentId,
+                        "Assets/Specs/pet.json",
+                        "json",
+                        external),
+                },
+                new[]
+                {
+                    new TestBundleFactory.V2ReferenceSpec(
+                        "root",
+                        ReferencePointer,
+                        ExternalDocumentId,
+                        "/components/schemas/Pet"),
+                });
+
+            NormalizedSpecBundle bundle = NormalizedSpecBundleReader.Read(content);
+
+            Assert.Equal(2, bundle.FormatVersion);
+            Assert.Equal(2, bundle.Documents.Count);
+            Assert.Equal("root", bundle.Documents[0].DocumentId);
+            Assert.Equal(ExternalDocumentId, bundle.Documents[1].DocumentId);
+            Assert.Equal("json", bundle.Documents[1].Format);
+            Assert.Single(bundle.ReferenceEdges);
+            Assert.Equal(ReferencePointer, bundle.ReferenceEdges[0].SourcePointer);
+            Assert.Equal("/components/schemas/Pet", bundle.ReferenceEdges[0].TargetPointer);
+        }
+
+        [Fact]
+        public void Read_RejectsV2WhenTopRawSha256DoesNotMatchRootDocument()
+        {
+            string content = TestBundleFactory.CreateV2(
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Sample\",\"version\":\"1\"},\"paths\":{}}",
+                Array.Empty<TestBundleFactory.V2DocumentSpec>(),
+                Array.Empty<TestBundleFactory.V2ReferenceSpec>(),
+                topRawSha256: "0000000000000000000000000000000000000000000000000000000000000000");
+
+            NormalizedSpecBundleFormatException exception = Assert.Throws<NormalizedSpecBundleFormatException>(
+                () => NormalizedSpecBundleReader.Read(content));
+
+            Assert.Contains("top-level 'rawSha256' must match", exception.Message);
+        }
+
+        [Fact]
+        public void Read_RejectsV2BundleWithUnknownTopLevelField()
+        {
+            string content = TestBundleFactory.CreateV2(
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Sample\",\"version\":\"1\"},\"paths\":{}}",
+                Array.Empty<TestBundleFactory.V2DocumentSpec>(),
+                Array.Empty<TestBundleFactory.V2ReferenceSpec>());
+            content = content.Replace(
+                "\"specId\":",
+                "\"unexpected\":0,\"specId\":");
+
+            NormalizedSpecBundleFormatException exception = Assert.Throws<NormalizedSpecBundleFormatException>(
+                () => NormalizedSpecBundleReader.Read(content));
+
+            Assert.Contains("Expected field 'specId'", exception.Message);
+        }
+
+        [Fact]
+        public void Read_RejectsV2ExternalDocumentsThatAreNotSortedByDocumentId()
+        {
+            const string FirstDocumentId = "Assets/Specs/b.json";
+            const string SecondDocumentId = "Assets/Specs/a.json";
+            string content = TestBundleFactory.CreateV2(
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Sample\",\"version\":\"1\"},\"paths\":{}}",
+                new[]
+                {
+                    new TestBundleFactory.V2DocumentSpec(
+                        FirstDocumentId,
+                        "Assets/Specs/b.json",
+                        "json",
+                        "{\"type\":\"string\"}"),
+                    new TestBundleFactory.V2DocumentSpec(
+                        SecondDocumentId,
+                        "Assets/Specs/a.json",
+                        "json",
+                        "{\"type\":\"string\"}"),
+                },
+                Array.Empty<TestBundleFactory.V2ReferenceSpec>());
+
+            NormalizedSpecBundleFormatException exception = Assert.Throws<NormalizedSpecBundleFormatException>(
+                () => NormalizedSpecBundleReader.Read(content));
+
+            Assert.Contains("sorted by documentId", exception.Message);
+        }
+
+        [Fact]
+        public void Read_RejectsV2ReferenceWithoutAnEdge()
+        {
+            string content = TestBundleFactory.CreateV2(
+                CreateExternalReferenceRoot("pet.json#/components/schemas/Pet"),
+                Array.Empty<TestBundleFactory.V2DocumentSpec>(),
+                Array.Empty<TestBundleFactory.V2ReferenceSpec>());
+
+            NormalizedSpecBundleFormatException exception = Assert.Throws<NormalizedSpecBundleFormatException>(
+                () => NormalizedSpecBundleReader.Read(content));
+
+            Assert.Contains("has no reference edge", exception.Message);
+        }
+
+        [Fact]
+        public void Read_RejectsRemoteDocumentWithLocalPathDocumentId()
+        {
+            string content = TestBundleFactory.CreateV2(
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Sample\",\"version\":\"1\"},\"paths\":{}}",
+                new[]
+                {
+                    new TestBundleFactory.V2DocumentSpec(
+                        "Assets/Specs/pet.json",
+                        "https://example.com/pet.json",
+                        "json",
+                        "{\"type\":\"string\"}"),
+                },
+                Array.Empty<TestBundleFactory.V2ReferenceSpec>());
+
+            NormalizedSpecBundleFormatException exception = Assert.Throws<NormalizedSpecBundleFormatException>(
+                () => NormalizedSpecBundleReader.Read(content));
+
+            Assert.Contains("remote external document", exception.Message);
+        }
+
+        [Theory]
+        [InlineData("/Users/example/pet.json")]
+        [InlineData("//server/share/pet.json")]
+        [InlineData("C:/Specs/pet.json")]
+        public void Read_RejectsAbsoluteLocalExternalSourcePath(string sourcePath)
+        {
+            string content = TestBundleFactory.CreateV2(
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Sample\",\"version\":\"1\"},\"paths\":{}}",
+                new[]
+                {
+                    new TestBundleFactory.V2DocumentSpec(
+                        sourcePath,
+                        sourcePath,
+                        "json",
+                        "{\"type\":\"string\"}"),
+                },
+                Array.Empty<TestBundleFactory.V2ReferenceSpec>());
+
+            NormalizedSpecBundleFormatException exception = Assert.Throws<NormalizedSpecBundleFormatException>(
+                () => NormalizedSpecBundleReader.Read(content));
+
+            Assert.Contains("project-relative", exception.Message);
+        }
+
+        [Fact]
+        public void Read_UsesDocumentAndPointerTupleForPrefixCollidingEdges()
+        {
+            string content = TestBundleFactory.CreateV2(
+                "{\"type\":\"object\"}",
+                new[]
+                {
+                    new TestBundleFactory.V2DocumentSpec(
+                        "Assets/a",
+                        "Assets/a",
+                        "json",
+                        "{\"b\":{\"$ref\":\"Assets/a/b\"}}"),
+                    new TestBundleFactory.V2DocumentSpec(
+                        "Assets/a/b",
+                        "Assets/a/b",
+                        "json",
+                        "{\"$ref\":\"Assets/a\"}"),
+                },
+                new[]
+                {
+                    new TestBundleFactory.V2ReferenceSpec(
+                        "Assets/a",
+                        "/b/$ref",
+                        "Assets/a/b",
+                        string.Empty),
+                    new TestBundleFactory.V2ReferenceSpec(
+                        "Assets/a/b",
+                        "/$ref",
+                        "Assets/a",
+                        string.Empty),
+                });
+
+            NormalizedSpecBundle bundle = NormalizedSpecBundleReader.Read(content);
+
+            Assert.Equal(2, bundle.ReferenceEdges.Count);
+        }
+
+        private static string CreateExternalReferenceRoot(string reference)
+        {
+            return "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Sample\",\"version\":\"1\"},\"paths\":{\"/pets\":{\"get\":{\"operationId\":\"getPet\",\"responses\":{\"200\":{\"description\":\"OK\",\"content\":{\"application/json\":{\"schema\":{\"$ref\":" +
+                   JsonSerializer.Serialize(reference) +
+                   "}}}}}}}},\"components\":{}}";
         }
 
         private static SpecNode GetProperty(SpecNode node, string name)

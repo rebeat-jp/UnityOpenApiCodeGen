@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator
@@ -44,6 +45,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (!IsIntegerLexeme(formatVersion))
             {
                 throw CreateFormatException("'formatVersion' must be a JSON integer.");
+            }
+
+            if (string.Equals(formatVersion, "2", StringComparison.Ordinal))
+            {
+                return ReadBundleV2();
             }
 
             if (!string.Equals(formatVersion, "1", StringComparison.Ordinal))
@@ -93,6 +99,449 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             return new NormalizedSpecBundle(specId, rawSha256, document.SourcePath, document.Root);
+        }
+
+        private NormalizedSpecBundle ReadBundleV2()
+        {
+            ReadPropertyName("specId", false);
+            string specId = ReadString();
+            if (!IsLowerHex(specId, 32))
+            {
+                throw CreateFormatException("'specId' must be a lower-case Guid N value.");
+            }
+
+            ReadPropertyName("rawSha256", false);
+            string rawSha256 = ReadString();
+            if (!IsLowerHex(rawSha256, 64))
+            {
+                throw CreateFormatException("'rawSha256' must be a 64-character lower-case hexadecimal value.");
+            }
+
+            ReadPropertyName("rootDocumentId", false);
+            string rootDocumentId = ReadString();
+            if (!string.Equals(rootDocumentId, "root", StringComparison.Ordinal))
+            {
+                throw CreateFormatException("'rootDocumentId' must be 'root' in format v2.");
+            }
+
+            ReadPropertyName("documents", false);
+            ReadStartArray();
+            var documents = new List<NormalizedSpecDocument>();
+            string previousDocumentId = string.Empty;
+            if (TryConsume(']'))
+            {
+                throw CreateFormatException("'documents' must contain a root document in format v2.");
+            }
+
+            while (true)
+            {
+                if (documents.Count >= 64)
+                {
+                    throw CreateFormatException("A normalized spec bundle may contain at most 64 documents.");
+                }
+
+                NormalizedSpecDocument document = ReadDocumentV2();
+                if (documents.Count == 0 && !string.Equals(document.DocumentId, "root", StringComparison.Ordinal))
+                {
+                    throw CreateFormatException("The root document must be the first document in format v2.");
+                }
+
+                if (documents.Count > 0 &&
+                    string.Equals(document.DocumentId, "root", StringComparison.Ordinal))
+                {
+                    throw CreateFormatException("The root document may appear only once and must be first.");
+                }
+
+                if (documents.Count > 1 &&
+                    StringComparer.Ordinal.Compare(previousDocumentId, document.DocumentId) >= 0)
+                {
+                    throw CreateFormatException("External documents must be sorted by documentId in format v2.");
+                }
+
+                documents.Add(document);
+                previousDocumentId = document.DocumentId;
+                if (TryConsume(']'))
+                {
+                    break;
+                }
+
+                Expect(',');
+                if (Peek(']'))
+                {
+                    throw CreateFormatException("Trailing commas are not allowed.");
+                }
+            }
+
+            if (documents.Count == 0)
+            {
+                throw CreateFormatException("'documents' must contain a root document in format v2.");
+            }
+
+            if (!string.Equals(rawSha256, documents[0].RawSha256, StringComparison.Ordinal))
+            {
+                throw CreateFormatException(
+                    "The top-level 'rawSha256' must match the root document 'rawSha256' in format v2.");
+            }
+
+            ReadPropertyName("referenceEdges", false);
+            ReadStartArray();
+            var referenceEdges = new List<NormalizedSpecReferenceEdge>();
+            string previousSourceDocumentId = string.Empty;
+            string previousSourcePointer = string.Empty;
+            bool hasPreviousEdge = false;
+            if (TryConsume(']'))
+            {
+                referenceEdges = new List<NormalizedSpecReferenceEdge>();
+            }
+            else
+            {
+                while (true)
+                {
+                    NormalizedSpecReferenceEdge edge = ReadReferenceEdgeV2();
+                    if (hasPreviousEdge &&
+                        (StringComparer.Ordinal.Compare(previousSourceDocumentId, edge.SourceDocumentId) > 0 ||
+                         (string.Equals(previousSourceDocumentId, edge.SourceDocumentId, StringComparison.Ordinal) &&
+                          StringComparer.Ordinal.Compare(previousSourcePointer, edge.SourcePointer) >= 0)))
+                    {
+                        throw CreateFormatException("Reference edges must be sorted by sourceDocumentId/sourcePointer.");
+                    }
+
+                    referenceEdges.Add(edge);
+                    previousSourceDocumentId = edge.SourceDocumentId;
+                    previousSourcePointer = edge.SourcePointer;
+                    hasPreviousEdge = true;
+                    if (TryConsume(']'))
+                    {
+                        break;
+                    }
+
+                    Expect(',');
+                    if (Peek(']'))
+                    {
+                        throw CreateFormatException("Trailing commas are not allowed.");
+                    }
+                }
+            }
+
+            ReadEndObject();
+            SkipWhitespace();
+            if (!IsAtEnd)
+            {
+                throw CreateFormatException("Unexpected content follows the bundle root object.");
+            }
+
+            ValidateV2References(documents, referenceEdges);
+            return new NormalizedSpecBundle(2, specId, rawSha256, documents, referenceEdges);
+        }
+
+        private NormalizedSpecDocument ReadDocumentV2()
+        {
+            ReadStartObject();
+            ReadPropertyName("documentId", true);
+            string documentId = ReadString();
+            if (!IsValidV2DocumentId(documentId))
+            {
+                throw CreateFormatException(
+                    "'documentId' must be 'root', a local normalized path, or 'doc-' followed by 64 lower-case hexadecimal characters.");
+            }
+
+            ReadPropertyName("sourcePath", false);
+            string sourcePath = ReadString();
+            if (string.IsNullOrWhiteSpace(sourcePath) || !IsNormalizedSourcePath(sourcePath))
+            {
+                throw CreateFormatException(
+                    "'sourcePath' must be a normalized project-relative, absolute, or HTTP(S) URI using '/' separators.");
+            }
+
+            if (!string.Equals(documentId, "root", StringComparison.Ordinal))
+            {
+                if (IsHttpSourcePath(sourcePath))
+                {
+                    if (!IsRemoteDocumentId(documentId))
+                    {
+                        throw CreateFormatException(
+                            "A remote external document must use a 'doc-' plus 64 lower-case hexadecimal documentId.");
+                    }
+                }
+                else if (!IsProjectRelativeSourcePath(sourcePath))
+                {
+                    throw CreateFormatException(
+                        "A local external sourcePath must be a normalized project-relative path.");
+                }
+                else if (!string.Equals(documentId, sourcePath, StringComparison.Ordinal))
+                {
+                    throw CreateFormatException(
+                        "A local external documentId must equal its canonical project-relative sourcePath.");
+                }
+            }
+
+            ReadPropertyName("format", false);
+            string format = ReadString();
+            if (!string.Equals(format, "json", StringComparison.Ordinal) &&
+                !string.Equals(format, "yaml", StringComparison.Ordinal))
+            {
+                throw CreateFormatException("'format' must be 'json' or 'yaml'.");
+            }
+
+            ReadPropertyName("rawSha256", false);
+            string rawSha256 = ReadString();
+            if (!IsLowerHex(rawSha256, 64))
+            {
+                throw CreateFormatException("Document 'rawSha256' must be a 64-character lower-case hexadecimal value.");
+            }
+
+            ReadPropertyName("root", false);
+            SpecNode root = ReadNode(0, string.Empty);
+            ReadEndObject();
+            return new NormalizedSpecDocument(documentId, sourcePath, format, rawSha256, root);
+        }
+
+        private NormalizedSpecReferenceEdge ReadReferenceEdgeV2()
+        {
+            ReadStartObject();
+            ReadPropertyName("sourceDocumentId", true);
+            string sourceDocumentId = ReadString();
+            if (!IsValidV2DocumentId(sourceDocumentId))
+            {
+                throw CreateFormatException("Reference edge sourceDocumentId is invalid.");
+            }
+
+            ReadPropertyName("sourcePointer", false);
+            string sourcePointer = ReadString();
+            ValidatePointer(sourcePointer, "sourcePointer");
+            if (sourcePointer.Length == 0)
+            {
+                throw CreateFormatException("Reference edge sourcePointer must identify a $ref value.");
+            }
+
+            ReadPropertyName("targetDocumentId", false);
+            string targetDocumentId = ReadString();
+            if (!IsValidV2DocumentId(targetDocumentId))
+            {
+                throw CreateFormatException("Reference edge targetDocumentId is invalid.");
+            }
+
+            ReadPropertyName("targetPointer", false);
+            string targetPointer = ReadString();
+            ValidatePointer(targetPointer, "targetPointer");
+            ReadEndObject();
+            return new NormalizedSpecReferenceEdge(
+                sourceDocumentId,
+                sourcePointer,
+                targetDocumentId,
+                targetPointer);
+        }
+
+        private void ValidateV2References(
+            IReadOnlyList<NormalizedSpecDocument> documents,
+            IReadOnlyList<NormalizedSpecReferenceEdge> referenceEdges)
+        {
+            var documentMap = new Dictionary<string, NormalizedSpecDocument>(StringComparer.Ordinal);
+            foreach (NormalizedSpecDocument document in documents)
+            {
+                if (documentMap.ContainsKey(document.DocumentId))
+                {
+                    throw CreateFormatException("Duplicate documentId '" + document.DocumentId + "'.");
+                }
+
+                documentMap.Add(document.DocumentId, document);
+            }
+
+            var edgeMap = new Dictionary<NormalizedSpecNodeIdentity, NormalizedSpecReferenceEdge>();
+            foreach (NormalizedSpecReferenceEdge edge in referenceEdges)
+            {
+                if (!documentMap.TryGetValue(edge.SourceDocumentId, out NormalizedSpecDocument? sourceDocument) ||
+                    !documentMap.TryGetValue(edge.TargetDocumentId, out NormalizedSpecDocument? targetDocument))
+                {
+                    throw CreateFormatException("Reference edges must point to documents declared in the bundle.");
+                }
+
+                if (edgeMap.ContainsKey(edge.SourceIdentity))
+                {
+                    throw CreateFormatException("Each $ref value must have exactly one reference edge.");
+                }
+
+                edgeMap.Add(edge.SourceIdentity, edge);
+
+                if (!TryResolvePointer(sourceDocument.Root, edge.SourcePointer, out SpecNode? sourceNode) ||
+                    sourceNode is null ||
+                    sourceNode.ValueKind != SpecValueKind.String ||
+                    !edge.SourcePointer.EndsWith("/$ref", StringComparison.Ordinal))
+                {
+                    throw CreateFormatException(
+                        "Reference edge sourcePointer does not identify a string $ref value: '" +
+                        edge.SourcePointer + "'.");
+                }
+
+            }
+
+            foreach (NormalizedSpecDocument document in documents)
+            {
+                foreach ((string Pointer, SpecNode Node) reference in EnumerateReferenceValues(document.Root))
+                {
+                    if (!edgeMap.ContainsKey(new NormalizedSpecNodeIdentity(document.DocumentId, reference.Pointer)))
+                    {
+                        throw CreateFormatException(
+                            "The $ref at '" + document.DocumentId + reference.Pointer + "' has no reference edge.");
+                    }
+                }
+            }
+        }
+
+        private IEnumerable<(string Pointer, SpecNode Node)> EnumerateReferenceValues(SpecNode node)
+        {
+            if (node.ValueKind == SpecValueKind.Object)
+            {
+                foreach (SpecProperty property in node.EnumerateObject())
+                {
+                    if (string.Equals(property.Name, "$ref", StringComparison.Ordinal))
+                    {
+                        if (property.Value.ValueKind != SpecValueKind.String)
+                        {
+                            throw CreateFormatException("Every $ref value must be a string.");
+                        }
+
+                        yield return (property.Value.LogicalPath, property.Value);
+                    }
+
+                    foreach ((string Pointer, SpecNode Node) child in EnumerateReferenceValues(property.Value))
+                    {
+                        yield return child;
+                    }
+                }
+
+                yield break;
+            }
+
+            if (node.ValueKind != SpecValueKind.Array)
+            {
+                yield break;
+            }
+
+            foreach (SpecNode item in node.EnumerateArray())
+            {
+                foreach ((string Pointer, SpecNode Node) child in EnumerateReferenceValues(item))
+                {
+                    yield return child;
+                }
+            }
+        }
+
+        private static bool TryResolvePointer(SpecNode root, string pointer, out SpecNode? result)
+        {
+            result = root;
+            if (pointer.Length == 0)
+            {
+                return true;
+            }
+
+            if (pointer[0] != '/')
+            {
+                result = null;
+                return false;
+            }
+
+            string[] tokens = pointer.Substring(1).Split(new[] { '/' }, StringSplitOptions.None);
+            foreach (string encodedToken in tokens)
+            {
+                if (!TryDecodePointerToken(encodedToken, out string token))
+                {
+                    result = null;
+                    return false;
+                }
+
+                if (result is null)
+                {
+                    return false;
+                }
+
+                if (result.ValueKind == SpecValueKind.Object)
+                {
+                    if (!result.TryGetProperty(token, out SpecNode child))
+                    {
+                        result = null;
+                        return false;
+                    }
+
+                    result = child;
+                    continue;
+                }
+
+                if (result.ValueKind == SpecValueKind.Array &&
+                    int.TryParse(token, NumberStyles.None, CultureInfo.InvariantCulture, out int index) &&
+                    index >= 0)
+                {
+                    SpecNode[] items = result.EnumerateArray().ToArray();
+                    if (index < items.Length)
+                    {
+                        result = items[index];
+                        continue;
+                    }
+                }
+
+                result = null;
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryDecodePointerToken(string token, out string decoded)
+        {
+            var builder = new StringBuilder(token.Length);
+            for (int index = 0; index < token.Length; index++)
+            {
+                if (token[index] != '~')
+                {
+                    builder.Append(token[index]);
+                    continue;
+                }
+
+                if (index + 1 >= token.Length || (token[index + 1] != '0' && token[index + 1] != '1'))
+                {
+                    decoded = string.Empty;
+                    return false;
+                }
+
+                builder.Append(token[++index] == '0' ? '~' : '/');
+            }
+
+            decoded = builder.ToString();
+            return true;
+        }
+
+        private void ValidatePointer(string pointer, string fieldName)
+        {
+            if (pointer.Length > 0 && pointer[0] != '/')
+            {
+                throw CreateFormatException("'" + fieldName + "' must be an RFC 6901 JSON Pointer.");
+            }
+
+            foreach (string token in pointer.Split(new[] { '/' }, StringSplitOptions.None).Skip(1))
+            {
+                if (!TryDecodePointerToken(token, out _))
+                {
+                    throw CreateFormatException("'" + fieldName + "' contains an invalid RFC 6901 escape.");
+                }
+            }
+        }
+
+        private static bool IsValidV2DocumentId(string value)
+        {
+            if (string.Equals(value, "root", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return IsRemoteDocumentId(value) ||
+                   IsNormalizedSourcePath(value);
+        }
+
+        private static bool IsRemoteDocumentId(string value)
+        {
+            return value.Length == 68 &&
+                   value.StartsWith("doc-", StringComparison.Ordinal) &&
+                   IsLowerHex(value.Substring(4), 64);
         }
 
         private (string SourcePath, SpecNode Root) ReadDocument()
@@ -694,6 +1143,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private static bool IsNormalizedSourcePath(string value)
         {
+            if (IsHttpSourcePath(value))
+            {
+                Uri sourceUri = new Uri(value, UriKind.Absolute);
+                return string.IsNullOrEmpty(sourceUri.UserInfo) &&
+                       string.IsNullOrEmpty(sourceUri.Fragment) &&
+                       string.IsNullOrEmpty(sourceUri.Query) &&
+                       sourceUri.AbsolutePath.IndexOf('\\') < 0;
+            }
+
             if (value.IndexOf('\\') >= 0 || value.EndsWith("/", StringComparison.Ordinal))
             {
                 return false;
@@ -743,6 +1201,28 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             return true;
+        }
+
+        private static bool IsHttpSourcePath(string value)
+        {
+            return Uri.TryCreate(value, UriKind.Absolute, out Uri? sourceUri) &&
+                   (string.Equals(sourceUri.Scheme, Uri.UriSchemeHttp, StringComparison.Ordinal) ||
+                    string.Equals(sourceUri.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal));
+        }
+
+        private static bool IsProjectRelativeSourcePath(string value)
+        {
+            if (IsHttpSourcePath(value) ||
+                value.StartsWith("/", StringComparison.Ordinal) ||
+                (value.Length >= 3 &&
+                 IsAsciiLetter(value[0]) &&
+                 value[1] == ':' &&
+                 value[2] == '/'))
+            {
+                return false;
+            }
+
+            return IsNormalizedSourcePath(value);
         }
 
         private static bool IsDigit(char character)

@@ -71,6 +71,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return files.OrderBy(static file => file.FileName, StringComparer.Ordinal).ToArray();
         }
 
+        internal IReadOnlyList<GeneratedFile> GenerateMvpFromOpenApiBundle(
+            NormalizedSpecBundle bundle,
+            GeneratorOptions options)
+        {
+            if (bundle is null)
+            {
+                throw new ArgumentNullException(nameof(bundle));
+            }
+
+            OpenApiSemanticDocument document = OpenApiSemanticParser.Parse(bundle);
+            OpenApiGenerationModel model = OpenApiGenerationModelBuilder.Build(document, options);
+            var files = new List<GeneratedFile>();
+            files.AddRange(new NewtonsoftDtoSourceEmitter().Emit(model));
+            files.Add(new HttpClientSourceEmitter().Emit(model));
+            return files.OrderBy(static file => file.FileName, StringComparer.Ordinal).ToArray();
+        }
+
         /// <summary>
         /// 正規化済み OpenAPI または Swagger node からコードを生成する。
         /// Generates code from a normalized OpenAPI or Swagger node.

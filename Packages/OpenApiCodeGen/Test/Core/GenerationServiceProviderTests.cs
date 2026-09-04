@@ -6,8 +6,10 @@ using System.Threading.Tasks;
 
 using NUnit.Framework;
 
+using Rhycol.OpenApiCodeGen;
 using Rhycol.OpenApiCodeGen.Core;
 using Rhycol.OpenApiCodeGen.Editor.Generation;
+using Rhycol.OpenApiCodeGen.Lib;
 using Rhycol.OpenApiCodeGen.UI;
 
 internal sealed class GenerationServiceProviderTests
@@ -116,6 +118,75 @@ internal sealed class GenerationServiceProviderTests
         Assert.That(exception.Message, Does.Contain(failureMessage));
         Assert.That(failedProvider.GenerateAsyncCallCount, Is.EqualTo(1));
         Assert.That(dockerProvider.GenerateAsyncCallCount, Is.Zero);
+    }
+
+    [Test]
+    public void SuccessfulProviderMessageIsReturnedUnchanged()
+    {
+        const string successMessage = "Source Generator cache and definition were published.";
+        var projectSettingRepository = new MutableProjectSettingRepository(
+            new ProjectSetting(generateProvider: GenerateProvider.SourceGenerator));
+        var provider = new RecordingProvider(
+            GenerateProvider.SourceGenerator,
+            result: GenerationResult.Success(successMessage));
+        var service = new GenerationService(
+            projectSettingRepository,
+            CreateRegistry(provider));
+
+        GenerationResult result = service.GenerateApiClientAsync(CreateDto()).GetAwaiter().GetResult();
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Message, Is.EqualTo(successMessage));
+    }
+
+    [Test]
+    public void ProjectSettingsDoNotPersistRemoteCredentialsQueryOrFragment()
+    {
+        string settingsPath = Path.Combine(
+            ApplicationConstant.PROJECT_FOLDER_PATH,
+            "projectSettings.json");
+        bool hadExistingSettings = File.Exists(settingsPath);
+        byte[] existingSettings = hadExistingSettings
+            ? File.ReadAllBytes(settingsPath)
+            : new byte[0];
+
+        try
+        {
+            var repository = new ProjectSettingJsonRepository();
+            ProjectSetting restored = Task.Run(async () =>
+                {
+                    await repository.SaveAsync(
+                        new ProjectSetting(
+                            GenerateProvider.SourceGenerator,
+                            "http://user:password@127.0.0.1/openapi.json?token=secret#fragment",
+                            "Assets/Generated"));
+                    return await repository.ReadAsync();
+                })
+                .GetAwaiter()
+                .GetResult()!;
+
+            string persisted = File.ReadAllText(settingsPath);
+
+            Assert.That(persisted, Does.Not.Contain("user"));
+            Assert.That(persisted, Does.Not.Contain("password"));
+            Assert.That(persisted, Does.Not.Contain("token"));
+            Assert.That(persisted, Does.Not.Contain("secret"));
+            Assert.That(persisted, Does.Not.Contain("fragment"));
+            Assert.That(
+                restored.ApiDocumentFilePathOrUrl,
+                Is.EqualTo("http://127.0.0.1/openapi.json"));
+        }
+        finally
+        {
+            if (hadExistingSettings)
+            {
+                File.WriteAllBytes(settingsPath, existingSettings);
+            }
+            else if (File.Exists(settingsPath))
+            {
+                File.Delete(settingsPath);
+            }
+        }
     }
 
     static GenerateApiClientDto CreateDto()

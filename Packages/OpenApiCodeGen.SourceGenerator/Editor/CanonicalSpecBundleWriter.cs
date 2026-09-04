@@ -51,6 +51,133 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             return StrictUtf8.GetBytes(builder.ToString());
         }
 
+        internal static byte[] Write(
+            string specId,
+            string rawSha256,
+            IReadOnlyList<GraphDocument> documents,
+            IReadOnlyList<ReferenceEdge> referenceEdges)
+        {
+            if (string.IsNullOrEmpty(specId))
+            {
+                throw new ArgumentException("A spec ID is required.", nameof(specId));
+            }
+
+            if (string.IsNullOrEmpty(rawSha256))
+            {
+                throw new ArgumentException("A raw SHA-256 value is required.", nameof(rawSha256));
+            }
+
+            if (documents == null || documents.Count == 0)
+            {
+                throw new ArgumentException("A Bundle v2 requires at least one document.", nameof(documents));
+            }
+
+            if (referenceEdges == null)
+            {
+                throw new ArgumentNullException(nameof(referenceEdges));
+            }
+
+            var builder = new StringBuilder();
+            builder.Append("{\n");
+            AppendIndent(builder, 1);
+            builder.Append("\"formatVersion\": 2,\n");
+            AppendIndent(builder, 1);
+            builder.Append("\"specId\": ");
+            AppendString(builder, specId);
+            builder.Append(",\n");
+            AppendIndent(builder, 1);
+            builder.Append("\"rawSha256\": ");
+            AppendString(builder, rawSha256);
+            builder.Append(",\n");
+            AppendIndent(builder, 1);
+            builder.Append("\"rootDocumentId\": \"root\",\n");
+            AppendIndent(builder, 1);
+            builder.Append("\"documents\": [");
+            builder.Append('\n');
+            for (int index = 0; index < documents.Count; index++)
+            {
+                AppendDocument(builder, documents[index], 2);
+                builder.Append(index + 1 == documents.Count ? "\n" : ",\n");
+            }
+
+            AppendIndent(builder, 1);
+            builder.Append("],\n");
+
+            AppendIndent(builder, 1);
+            builder.Append("\"referenceEdges\": [");
+            if (referenceEdges.Count == 0)
+            {
+                builder.Append("]\n");
+            }
+            else
+            {
+                builder.Append('\n');
+                for (int index = 0; index < referenceEdges.Count; index++)
+                {
+                    AppendReferenceEdge(builder, referenceEdges[index], 2);
+                    builder.Append(index + 1 == referenceEdges.Count ? "\n" : ",\n");
+                }
+
+                AppendIndent(builder, 1);
+                builder.Append("]\n");
+            }
+
+            builder.Append("}\n");
+            return StrictUtf8.GetBytes(builder.ToString());
+        }
+
+        private static void AppendDocument(StringBuilder builder, GraphDocument document, int indent)
+        {
+            AppendIndent(builder, indent);
+            builder.Append("{\n");
+            AppendIndent(builder, indent + 1);
+            builder.Append("\"documentId\": ");
+            AppendString(builder, document.DocumentId);
+            builder.Append(",\n");
+            AppendIndent(builder, indent + 1);
+            builder.Append("\"sourcePath\": ");
+            AppendString(builder, document.SourcePath);
+            builder.Append(",\n");
+            AppendIndent(builder, indent + 1);
+            builder.Append("\"format\": ");
+            AppendString(builder, document.Format);
+            builder.Append(",\n");
+            AppendIndent(builder, indent + 1);
+            builder.Append("\"rawSha256\": ");
+            AppendString(builder, document.RawSha256);
+            builder.Append(",\n");
+            AppendIndent(builder, indent + 1);
+            builder.Append("\"root\": ");
+            AppendNode(builder, document.Root, indent + 1);
+            builder.Append('\n');
+            AppendIndent(builder, indent);
+            builder.Append('}');
+        }
+
+        private static void AppendReferenceEdge(StringBuilder builder, ReferenceEdge edge, int indent)
+        {
+            AppendIndent(builder, indent);
+            builder.Append("{\n");
+            AppendIndent(builder, indent + 1);
+            builder.Append("\"sourceDocumentId\": ");
+            AppendString(builder, edge.SourceDocumentId);
+            builder.Append(",\n");
+            AppendIndent(builder, indent + 1);
+            builder.Append("\"sourcePointer\": ");
+            AppendString(builder, edge.SourcePointer);
+            builder.Append(",\n");
+            AppendIndent(builder, indent + 1);
+            builder.Append("\"targetDocumentId\": ");
+            AppendString(builder, edge.TargetDocumentId);
+            builder.Append(",\n");
+            AppendIndent(builder, indent + 1);
+            builder.Append("\"targetPointer\": ");
+            AppendString(builder, edge.TargetPointer);
+            builder.Append('\n');
+            AppendIndent(builder, indent);
+            builder.Append('}');
+        }
+
         private static void AppendNode(StringBuilder builder, SpecNode node, int indent)
         {
             var objectNode = node as SpecObjectNode;
@@ -305,5 +432,122 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         {
             builder.Append(value.ToString(CultureInfo.InvariantCulture));
         }
+    }
+
+    internal sealed class NormalizedSpecGraph
+    {
+        internal NormalizedSpecGraph(
+            string specId,
+            string rawSha256,
+            string sourcePath,
+            string format,
+            IReadOnlyList<GraphDocument> documents,
+            IReadOnlyList<ReferenceEdge> edges,
+            string requestedSource,
+            string effectiveSource,
+            string sourceKeySha256,
+            string retrievalKind,
+            int httpStatus,
+            int redirectCount,
+            bool queryStripped)
+        {
+            SpecId = specId;
+            RawSha256 = rawSha256;
+            SourcePath = sourcePath;
+            Format = format;
+            Documents = documents;
+            Edges = edges;
+            RequestedSource = requestedSource;
+            EffectiveSource = effectiveSource;
+            SourceKeySha256 = sourceKeySha256;
+            RetrievalKind = retrievalKind;
+            HttpStatus = httpStatus;
+            RedirectCount = redirectCount;
+            QueryStripped = queryStripped;
+        }
+
+        internal string SpecId { get; }
+        internal string RawSha256 { get; }
+        internal string SourcePath { get; }
+        internal string Format { get; }
+        internal IReadOnlyList<GraphDocument> Documents { get; }
+        internal IReadOnlyList<ReferenceEdge> Edges { get; }
+        internal string RequestedSource { get; }
+        internal string EffectiveSource { get; }
+        internal string SourceKeySha256 { get; }
+        internal string RetrievalKind { get; }
+        internal int HttpStatus { get; }
+        internal int RedirectCount { get; }
+        internal bool QueryStripped { get; }
+    }
+
+    internal sealed class GraphDocument
+    {
+        internal GraphDocument(
+            string documentId,
+            string sourcePath,
+            string format,
+            string rawSha256,
+            SpecNode root,
+            string fetchKey,
+            string effectiveUri,
+            bool isRemote,
+            string requestedSource,
+            string effectiveSource,
+            string sourceKeySha256,
+            string retrievalKind,
+            int httpStatus,
+            int redirectCount)
+        {
+            DocumentId = documentId;
+            SourcePath = sourcePath;
+            Format = format;
+            RawSha256 = rawSha256;
+            Root = root;
+            FetchKey = fetchKey;
+            EffectiveUri = effectiveUri;
+            IsRemote = isRemote;
+            RequestedSource = requestedSource;
+            EffectiveSource = effectiveSource;
+            SourceKeySha256 = sourceKeySha256;
+            RetrievalKind = retrievalKind;
+            HttpStatus = httpStatus;
+            RedirectCount = redirectCount;
+        }
+
+        internal string DocumentId { get; }
+        internal string SourcePath { get; }
+        internal string Format { get; }
+        internal string RawSha256 { get; }
+        internal SpecNode Root { get; set; }
+        internal string FetchKey { get; }
+        internal string EffectiveUri { get; }
+        internal bool IsRemote { get; }
+        internal string RequestedSource { get; }
+        internal string EffectiveSource { get; }
+        internal string SourceKeySha256 { get; }
+        internal string RetrievalKind { get; }
+        internal int HttpStatus { get; }
+        internal int RedirectCount { get; }
+    }
+
+    internal sealed class ReferenceEdge
+    {
+        internal ReferenceEdge(
+            string sourceDocumentId,
+            string sourcePointer,
+            string targetDocumentId,
+            string targetPointer)
+        {
+            SourceDocumentId = sourceDocumentId;
+            SourcePointer = sourcePointer;
+            TargetDocumentId = targetDocumentId;
+            TargetPointer = targetPointer;
+        }
+
+        internal string SourceDocumentId { get; }
+        internal string SourcePointer { get; }
+        internal string TargetDocumentId { get; }
+        internal string TargetPointer { get; }
     }
 }
