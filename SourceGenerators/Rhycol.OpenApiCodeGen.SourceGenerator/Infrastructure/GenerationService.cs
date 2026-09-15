@@ -63,12 +63,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 throw new ArgumentNullException(nameof(root));
             }
 
-            OpenApiSemanticDocument document = OpenApiSemanticParser.Parse(root);
-            OpenApiGenerationModel model = OpenApiGenerationModelBuilder.Build(document, options);
-            var files = new List<GeneratedFile>();
-            files.AddRange(new NewtonsoftDtoSourceEmitter().Emit(model));
-            files.Add(new HttpClientSourceEmitter().Emit(model));
-            return files.OrderBy(static file => file.FileName, StringComparer.Ordinal).ToArray();
+            OpenApiGenerationModel model = BuildMvpModelFromOpenApiNode(root, options);
+            return EmitMvpModel(model);
         }
 
         internal IReadOnlyList<GeneratedFile> GenerateMvpFromOpenApiBundle(
@@ -80,8 +76,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 throw new ArgumentNullException(nameof(bundle));
             }
 
-            OpenApiSemanticDocument document = OpenApiSemanticParser.Parse(bundle);
-            OpenApiGenerationModel model = OpenApiGenerationModelBuilder.Build(document, options);
+            OpenApiGenerationModel model = BuildMvpModelFromOpenApiBundle(bundle, options);
+            return EmitMvpModel(model);
+        }
+
+        internal OpenApiGenerationModel BuildMvpModelFromOpenApiNode(SpecNode root, GeneratorOptions options)
+        {
+            return OpenApiGenerationModelBuilder.Build(OpenApiSemanticParser.Parse(root), options);
+        }
+
+        internal OpenApiGenerationModel BuildMvpModelFromOpenApiBundle(NormalizedSpecBundle bundle, GeneratorOptions options)
+        {
+            return OpenApiGenerationModelBuilder.Build(OpenApiSemanticParser.Parse(bundle), options);
+        }
+
+        internal IReadOnlyList<GeneratedFile> EmitMvpModel(OpenApiGenerationModel model)
+        {
+            if (model is null)
+            {
+                throw new ArgumentNullException(nameof(model));
+            }
+
             var files = new List<GeneratedFile>();
             files.AddRange(new NewtonsoftDtoSourceEmitter().Emit(model));
             files.Add(new HttpClientSourceEmitter().Emit(model));

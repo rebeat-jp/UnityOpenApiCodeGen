@@ -56,7 +56,9 @@ namespace Rhycol.OpenApiCodeGen.Lib
                 return new ProjectSettingJson
                 {
                     GenerateProvider = value.GenerateProvider,
-                    ApiDocumentFilePathOrUrl = StripRemoteQuery(value.ApiDocumentFilePathOrUrl),
+                    ApiDocumentFilePathOrUrl = SanitizeSourceGeneratorUrl(
+                        value.GenerateProvider,
+                        value.ApiDocumentFilePathOrUrl),
                     ApiClientOutputFolderPath = value.ApiClientOutputFolderPath,
                 };
             }
@@ -65,13 +67,21 @@ namespace Rhycol.OpenApiCodeGen.Lib
             {
                 return new ProjectSetting(
                     generateProvider: GenerateProvider,
-                    apiDocumentFilePathOrUrl: StripRemoteQuery(ApiDocumentFilePathOrUrl),
+                    apiDocumentFilePathOrUrl: SanitizeSourceGeneratorUrl(
+                        GenerateProvider,
+                        ApiDocumentFilePathOrUrl),
                     apiClientOutputFolderPath: ApiClientOutputFolderPath
                 );
             }
 
-            private static string StripRemoteQuery(string value)
+            private static string SanitizeSourceGeneratorUrl(GenerateProvider provider, string value)
             {
+                // Docker is an existing provider and must preserve its configured URL verbatim.
+                if (provider != GenerateProvider.SourceGenerator)
+                {
+                    return value ?? string.Empty;
+                }
+
                 if (string.IsNullOrEmpty(value))
                 {
                     return value ?? string.Empty;

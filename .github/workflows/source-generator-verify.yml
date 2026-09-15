@@ -1,0 +1,224 @@
+name: Source Generator verification pipeline
+
+on:
+  workflow_call:
+    inputs:
+      commit:
+        type: string
+        required: true
+      version:
+        type: string
+        default: ''
+      unity:
+        type: boolean
+        default: true
+    outputs:
+      commit:
+        value: ${{ jobs.candidate.outputs.commit }}
+      version:
+        value: ${{ jobs.candidate.outputs.version }}
+      artifact:
+        value: ${{ jobs.candidate.outputs.verified-artifact }}
+      attempt:
+        value: ${{ jobs.candidate.outputs.attempt }}
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    name: Build, test, and pack exact commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      commit: ${{ steps.metadata.outputs.commit }}
+      version: ${{ steps.metadata.outputs.version }}
+      candidate-artifact: ${{ steps.metadata.outputs.candidate-artifact }}
+      verified-artifact: ${{ steps.metadata.outputs.verified-artifact }}
+      attempt: ${{ steps.metadata.outputs.attempt }}
+    env:
+      SOURCE_GENERATOR_CI: '1'
+      SOURCE_GENERATOR_CI_COMMIT: ${{ inputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.301
+          cache: true
+          cache-dependency-path: SourceGenerators/**/*.csproj
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Pin npm and XML parser
+        run: |
+          npm install --global npm@11.19.0
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+      - name: Validate release contract
+        id: metadata
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          node SourceGenerators/scripts/release-contract.js
+          {
+            printf 'commit=%s\n' "$SOURCE_GENERATOR_CI_COMMIT"
+            printf 'version=%s\n' "$(node -p "require('./Packages/OpenApiCodeGen/package.json').version")"
+            printf 'candidate-artifact=candidate-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+            printf 'verified-artifact=verified-release-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+            printf 'attempt=%s\n' "$GITHUB_RUN_ATTEMPT"
+          } >> "$GITHUB_OUTPUT"
+      - name: Verify analyzer and script failure scenarios
+        run: SourceGenerators/scripts/verify.sh
+      - name: Pack candidate once for all Unity runs
+        run: SourceGenerators/scripts/pack-release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.metadata.outputs.candidate-artifact }}
+          path: artifacts/upm/${{ steps.metadata.outputs.version }}
+          if-no-files-found: error
+
+  unity:
+    name: Unity 2021.3 and Unity 6 cloud gates
+    needs: candidate
+    if: inputs.unity && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: UNITY_LICENSE
+    concurrency:
+      group: unity-license-${{ github.repository }}
+      cancel-in-progress: false
+    env:
+      SOURCE_GENERATOR_CI: '1'
+      SOURCE_GENERATOR_CI_COMMIT: ${{ needs.candidate.outputs.commit }}
+      SOURCE_GENERATOR_RELEASE_OUTPUT: ${{ github.workspace }}/artifacts/upm/${{ needs.candidate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.candidate.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.candidate.outputs.candidate-artifact }}
+          path: ${{ env.SOURCE_GENERATOR_RELEASE_OUTPUT }}
+      - name: Reserve disk for disposable Unity images
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+      - name: Validate downloaded candidate
+        env:
+          RELEASE_VERSION: ${{ needs.candidate.outputs.version }}
+        run: |
+          node SourceGenerators/scripts/validate-release-artifacts.js \
+            --release-output "$SOURCE_GENERATOR_RELEASE_OUTPUT" \
+            --analyzer Packages/OpenApiCodeGen.SourceGenerator/Runtime/Analyzers/Rhycol.OpenApiCodeGen.SourceGenerator.dll \
+            --expected-version "$RELEASE_VERSION" --expected-node-version "v$(cat .node-version)" \
+            --expected-npm-version 11.19.0 --expected-commit "$SOURCE_GENERATOR_CI_COMMIT" \
+            --expected-run-id "$GITHUB_RUN_ID" --expected-run-attempt "$GITHUB_RUN_ATTEMPT" --require-initial-gate
+      - name: Run all three editors serially, retaining failures
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          failed=0
+          for version in 2021.3.19f1 6000.0.23f1 6000.3.2f1; do
+            image="openapi-unity-gate:${version}"
+            digest="$(node -p "require('./SourceGenerators/BuildTools/CI/unity-images.json')['$version']")"
+            if docker build --build-arg "UNITY_VERSION=$version" --build-arg "UNITY_IMAGE_DIGEST=$digest" \
+                --build-arg "NODE_VERSION=$(cat .node-version)" \
+                --tag "$image" SourceGenerators/BuildTools/CI; then
+              docker run --rm --shm-size=2g \
+                --volume "$GITHUB_WORKSPACE:/workspace" \
+                --env UNITY_LICENSE --env UNITY_EMAIL --env UNITY_PASSWORD \
+                --env SOURCE_GENERATOR_CI --env SOURCE_GENERATOR_CI_COMMIT \
+                --env GITHUB_REPOSITORY --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
+                --env "SOURCE_GENERATOR_RELEASE_OUTPUT=/workspace/artifacts/upm/${{ needs.candidate.outputs.version }}" \
+                --env SOURCE_GENERATOR_UNITY_TIMEOUT_SECONDS=900 \
+                "$image" "$version" || failed=1
+            else
+              failed=1
+            fi
+            sudo chown -R "$(id -u):$(id -g)" "$SOURCE_GENERATOR_RELEASE_OUTPUT"
+            if [[ ! -f "$SOURCE_GENERATOR_RELEASE_OUTPUT/unity-gate/$version/gate.json" ]]; then
+              mkdir -p "$SOURCE_GENERATOR_RELEASE_OUTPUT/unity-gate/$version"
+              node SourceGenerators/scripts/ci-evidence.js write-gate \
+                "$SOURCE_GENERATOR_RELEASE_OUTPUT/unity-gate/$version/gate.json" not-run 2 "$version" \
+                'Unity image build or container execution failed before gate evidence was written' \
+                "$SOURCE_GENERATOR_RELEASE_OUTPUT/unity-gate/$version" "$SOURCE_GENERATOR_RELEASE_OUTPUT"
+            fi
+            docker image rm "$image" "unityci/editor:ubuntu-${version}-base-3@$digest" || true
+            docker builder prune --force
+          done
+          exit "$failed"
+      - name: Recover artifact ownership
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" "$SOURCE_GENERATOR_RELEASE_OUTPUT"
+      - name: Upload Unity evidence, including failed gates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.SOURCE_GENERATOR_RELEASE_OUTPUT }}/unity-gate
+          if-no-files-found: error
+
+  aggregate:
+    name: Verify release dry-run and complete Unity evidence
+    needs: [candidate, unity]
+    if: always() && needs.candidate.result == 'success' && inputs.unity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SOURCE_GENERATOR_RELEASE_OUTPUT: ${{ github.workspace }}/artifacts/upm/${{ needs.candidate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.candidate.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.candidate.outputs.candidate-artifact }}
+          path: ${{ env.SOURCE_GENERATOR_RELEASE_OUTPUT }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: unity-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.SOURCE_GENERATOR_RELEASE_OUTPUT }}/unity-gate
+      - name: Aggregate exact run, commit, and candidate
+        env:
+          RELEASE_VERSION: ${{ needs.candidate.outputs.version }}
+          TARGET_COMMIT: ${{ needs.candidate.outputs.commit }}
+        run: |
+          node SourceGenerators/scripts/aggregate-unity-evidence.js \
+            --release-output "$SOURCE_GENERATOR_RELEASE_OUTPUT" \
+            --analyzer Packages/OpenApiCodeGen.SourceGenerator/Runtime/Analyzers/Rhycol.OpenApiCodeGen.SourceGenerator.dll \
+            --expected-version "$RELEASE_VERSION" --expected-node-version "v$(cat .node-version)" \
+            --expected-npm-version 11.19.0 --expected-commit "$TARGET_COMMIT" \
+            --expected-run-id "$GITHUB_RUN_ID" --expected-run-attempt "$GITHUB_RUN_ATTEMPT" --require-passed-unity-gate
+      - name: Exercise CD dry-run without publication on this commit
+        env:
+          RELEASE_OUTPUT: ${{ env.SOURCE_GENERATOR_RELEASE_OUTPUT }}
+          TARGET_COMMIT: ${{ needs.candidate.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.candidate.outputs.version }}
+          VERIFICATION_ATTEMPT: ${{ needs.candidate.outputs.attempt }}
+          PUBLISH: 'false'
+        run: node SourceGenerators/scripts/publish-release.js
+      - name: Upload complete release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.candidate.outputs.verified-artifact }}
+          path: ${{ env.SOURCE_GENERATOR_RELEASE_OUTPUT }}
+          if-no-files-found: error

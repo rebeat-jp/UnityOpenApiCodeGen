@@ -3,37 +3,21 @@ name: Source Generator CI
 on:
   pull_request:
   push:
-    branches:
-      - main
-      - develop
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Exact 40-character commit SHA (empty uses selected ref)
+        type: string
+        default: ''
 
 permissions:
   contents: read
 
 jobs:
   verify:
-    name: Build, test, and verify analyzer
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.301
-          cache: true
-          cache-dependency-path: SourceGenerators/**/*.csproj
-
-      - name: Verify source generator
-        shell: bash
-        run: SourceGenerators/scripts/verify.sh
-
-      - name: Upload UPM release candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: openapi-codegen-upm-release-candidate
-          path: artifacts/upm/0.5.0
-          if-no-files-found: error
+    uses: ./.github/workflows/source-generator-verify.yml
+    with:
+      commit: ${{ github.event.pull_request.head.sha || inputs.commit || github.sha }}
+      # Forks receive automated package/.NET checks without Unity credentials.
+      unity: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}

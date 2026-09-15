@@ -8,15 +8,18 @@ scripts_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "${scripts_directory}/common.sh"
 
-readonly release_version="0.5.0"
-readonly release_tag="0.5.0"
-readonly release_output="${repository_root}/artifacts/upm/${release_version}"
+readonly node_version_file="${repository_root}/.node-version"
+release_version="$(node -p "require('${repository_root}/Packages/OpenApiCodeGen/package.json').version")"
+readonly release_version
+readonly release_tag="${release_version}"
+readonly release_output="${SOURCE_GENERATOR_RELEASE_OUTPUT:-${repository_root}/artifacts/upm/${release_version}}"
 readonly base_package_root="${repository_root}/Packages/OpenApiCodeGen"
 readonly source_generator_package_root="${repository_root}/Packages/OpenApiCodeGen.SourceGenerator"
 readonly base_package_name="jp.rhycol.openapicodegen"
 readonly source_generator_package_name="jp.rhycol.openapicodegen.source-generator"
 readonly base_archive_name="${base_package_name}-${release_version}.tgz"
 readonly source_generator_archive_name="${source_generator_package_name}-${release_version}.tgz"
+readonly expected_npm_version="11.19.0"
 
 require_command() {
   local command_name="$1"
@@ -106,13 +109,14 @@ assert_package_version() {
 }
 
 validate_package_manifest_metadata() {
-  node - "$1" "$2" "$3" "$4" <<'NODE'
+  node - "$1" "$2" "$3" "$4" "$5" <<'NODE'
 const fs = require('fs');
 
 const manifestPath = process.argv[2];
 const expectedName = process.argv[3];
 const expectedUnity = process.argv[4];
 const packagePath = process.argv[5];
+const expectedVersion = process.argv[6];
 
 function fail(message) {
   throw new Error(message);
@@ -126,11 +130,11 @@ function assertEqual(actual, expected, label) {
 
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 const repositoryBase = 'https://github.com/rebeat-jp/UnityOpenApiCodeGen';
-const treeUrl = `${repositoryBase}/tree/0.5.0/${packagePath}`;
-const blobUrl = fileName => `${repositoryBase}/blob/0.5.0/${packagePath}/${fileName}`;
+const treeUrl = `${repositoryBase}/tree/${expectedVersion}/${packagePath}`;
+const blobUrl = fileName => `${repositoryBase}/blob/${expectedVersion}/${packagePath}/${fileName}`;
 
 assertEqual(manifest.name, expectedName, 'package name');
-assertEqual(manifest.version, '0.5.0', 'package version');
+assertEqual(manifest.version, expectedVersion, 'package version');
 assertEqual(manifest.unity, expectedUnity, 'minimum Unity version');
 if (!manifest.repository || typeof manifest.repository !== 'object') {
   fail('package repository metadata is missing');
@@ -148,14 +152,16 @@ validate_package_contract() {
     "${base_package_root}/package.json" \
     "${base_package_name}" \
     "2021.3" \
-    "Packages/OpenApiCodeGen"
+    "Packages/OpenApiCodeGen" \
+    "${release_version}"
   validate_package_manifest_metadata \
     "${source_generator_package_root}/package.json" \
     "${source_generator_package_name}" \
     "6000.0" \
-    "Packages/OpenApiCodeGen.SourceGenerator"
+    "Packages/OpenApiCodeGen.SourceGenerator" \
+    "${release_version}"
 
-  node - "${base_package_root}/package.json" "${source_generator_package_root}/package.json" "${repository_root}/Packages/packages-lock.json" "${source_generator_package_root}" <<'NODE'
+  node - "${base_package_root}/package.json" "${source_generator_package_root}/package.json" "${repository_root}/Packages/packages-lock.json" "${source_generator_package_root}" "${release_version}" <<'NODE'
 const fs = require('fs');
 const path = require('path');
 
@@ -163,6 +169,7 @@ const baseManifestPath = process.argv[2];
 const sourceGeneratorManifestPath = process.argv[3];
 const lockPath = process.argv[4];
 const sourceGeneratorRoot = process.argv[5];
+const expectedVersion = process.argv[6];
 
 function fail(message) {
   throw new Error(message);
@@ -206,19 +213,19 @@ const base = readJson(baseManifestPath);
 const sourceGenerator = readJson(sourceGeneratorManifestPath);
 const lock = readJson(lockPath);
 assertEqual(base.name, 'jp.rhycol.openapicodegen', 'base package name');
-assertEqual(base.version, '0.5.0', 'base package version');
+assertEqual(base.version, expectedVersion, 'base package version');
 assertEqual(base.unity, '2021.3', 'base minimum Unity version');
 assertEqual(sourceGenerator.name, 'jp.rhycol.openapicodegen.source-generator', 'source-generator package name');
-assertEqual(sourceGenerator.version, '0.5.0', 'source-generator package version');
+assertEqual(sourceGenerator.version, expectedVersion, 'source-generator package version');
 assertEqual(sourceGenerator.unity, '6000.0', 'source-generator minimum Unity version');
-assertEqual(sourceGenerator.dependencies['jp.rhycol.openapicodegen'], '0.5.0', 'source-generator base dependency');
+assertEqual(sourceGenerator.dependencies['jp.rhycol.openapicodegen'], expectedVersion, 'source-generator base dependency');
 assertEqual(sourceGenerator.dependencies['com.unity.nuget.newtonsoft-json'], '3.2.2', 'Newtonsoft dependency');
 
 const lockedSourceGenerator = lock.dependencies['jp.rhycol.openapicodegen.source-generator'];
 if (!lockedSourceGenerator || !lockedSourceGenerator.dependencies) {
   fail('packages-lock is missing the source-generator dependency record');
 }
-assertEqual(lockedSourceGenerator.dependencies['jp.rhycol.openapicodegen'], '0.5.0', 'locked source-generator base dependency');
+assertEqual(lockedSourceGenerator.dependencies['jp.rhycol.openapicodegen'], expectedVersion, 'locked source-generator base dependency');
 assertEqual(lockedSourceGenerator.dependencies['com.unity.nuget.newtonsoft-json'], '3.2.2', 'locked Newtonsoft dependency');
 
 const expectedSamples = [
@@ -297,154 +304,13 @@ NODE
 }
 
 validate_release_outputs() {
-  node - "${release_manifest}" "${release_output}" "${package_analyzer}" <<'NODE'
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-
-const manifestPath = process.argv[2];
-const outputDirectory = process.argv[3];
-const analyzerPath = process.argv[4];
-
-function fail(message) {
-  throw new Error(message);
-}
-
-function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-}
-
-function assertExactKeys(value, keys, label) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    fail(`${label} must be an object`);
-  }
-  const actual = Object.keys(value).sort();
-  const expected = keys.slice().sort();
-  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
-    fail(`${label} has an unexpected field set: ${actual.join(', ')}`);
-  }
-}
-
-function assertHex(value, length, label) {
-  if (typeof value !== 'string' || !new RegExp(`^[0-9a-f]{${length}}$`).test(value)) {
-    fail(`${label} must be ${length} lowercase hexadecimal characters`);
-  }
-}
-
-function sha256(filePath) {
-  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
-}
-
-const manifest = readJson(manifestPath);
-assertExactKeys(manifest, [
-  'schemaVersion',
-  'version',
-  'tag',
-  'commit',
-  'archives',
-  'analyzerSha256',
-  'unityGate',
-  'registryPublication'
-], 'release manifest');
-if (manifest.schemaVersion !== 1 || typeof manifest.schemaVersion !== 'number') {
-  fail('release manifest schemaVersion must be numeric 1');
-}
-if (manifest.version !== '0.5.0' || manifest.tag !== '0.5.0') {
-  fail('release manifest version/tag must both be 0.5.0');
-}
-assertHex(manifest.commit, 40, 'release manifest commit');
-assertHex(manifest.analyzerSha256, 64, 'release manifest analyzerSha256');
-if (!Array.isArray(manifest.archives) || manifest.archives.length !== 2) {
-  fail('release manifest must contain exactly two archives');
-}
-
-const expectedArchives = [
-  {
-    package: 'jp.rhycol.openapicodegen',
-    version: '0.5.0',
-    path: 'Packages/OpenApiCodeGen',
-    file: 'jp.rhycol.openapicodegen-0.5.0.tgz'
-  },
-  {
-    package: 'jp.rhycol.openapicodegen.source-generator',
-    version: '0.5.0',
-    path: 'Packages/OpenApiCodeGen.SourceGenerator',
-    file: 'jp.rhycol.openapicodegen.source-generator-0.5.0.tgz'
-  }
-];
-manifest.archives.forEach((archive, index) => {
-  assertExactKeys(archive, ['package', 'version', 'path', 'file', 'root', 'size', 'sha256'], `archive ${index}`);
-  const expected = expectedArchives[index];
-  for (const field of ['package', 'version', 'path', 'file']) {
-    if (archive[field] !== expected[field]) {
-      fail(`archive ${index} ${field} mismatch`);
-    }
-  }
-  if (archive.root !== 'package/' || !Number.isSafeInteger(archive.size) || archive.size <= 0) {
-    fail(`archive ${index} root/size is invalid`);
-  }
-  assertHex(archive.sha256, 64, `archive ${index} sha256`);
-  const archivePath = path.join(outputDirectory, archive.file);
-  if (!fs.statSync(archivePath).isFile()) {
-    fail(`archive file is missing: ${archive.file}`);
-  }
-  if (fs.statSync(archivePath).size !== archive.size) {
-    fail(`archive size does not match manifest: ${archive.file}`);
-  }
-  if (sha256(archivePath) !== archive.sha256) {
-    fail(`archive SHA-256 does not match manifest: ${archive.file}`);
-  }
-});
-
-if (sha256(analyzerPath) !== manifest.analyzerSha256) {
-  fail('analyzer SHA-256 does not match release manifest');
-}
-
-assertExactKeys(manifest.unityGate, ['mode', 'status', 'versions', 'evidence'], 'unityGate');
-if (manifest.unityGate.mode !== 'manual' || manifest.unityGate.status !== 'not-run') {
-  fail('unityGate must start in manual/not-run state');
-}
-const expectedUnityVersions = ['2021.3.19f1', '6000.0.23f1', '6000.3.2f1'];
-if (JSON.stringify(manifest.unityGate.versions) !== JSON.stringify(expectedUnityVersions) ||
-    !Array.isArray(manifest.unityGate.evidence) || manifest.unityGate.evidence.length !== 0) {
-  fail('unityGate versions/evidence mismatch');
-}
-if (manifest.registryPublication !== 'not-performed') {
-  fail('registryPublication must be not-performed');
-}
-
-const checksumsPath = path.join(outputDirectory, 'SHA256SUMS');
-const checksumLines = fs.readFileSync(checksumsPath, 'utf8').trim().split(/\r?\n/);
-const expectedChecksumFiles = manifest.archives.map(archive => archive.file).concat('release-manifest.json');
-expectedChecksumFiles.sort();
-if (checksumLines.length !== expectedChecksumFiles.length) {
-  fail('SHA256SUMS must contain exactly the two archives and release manifest');
-}
-const seen = new Set();
-checksumLines.forEach((line, index) => {
-  const match = /^([0-9a-f]{64})  (\S+)$/.exec(line);
-  if (!match) {
-    fail(`invalid SHA256SUMS line ${index + 1}`);
-  }
-  const checksum = match[1];
-  const fileName = match[2];
-  if (fileName !== expectedChecksumFiles[index] || seen.has(fileName)) {
-    fail('SHA256SUMS filenames are not unique and filename-sorted');
-  }
-  seen.add(fileName);
-  const filePath = path.join(outputDirectory, fileName);
-  if (!fs.statSync(filePath).isFile() || sha256(filePath) !== checksum) {
-    fail(`SHA256SUMS checksum mismatch: ${fileName}`);
-  }
-});
-
-console.log('Verified release manifest schema, archive metadata, analyzer SHA, gate state, and SHA256SUMS.');
-NODE
-
-(
-  cd "${release_output}"
-  shasum -a 256 -c "$(basename "${checksums_file}")"
-)
+  node "${scripts_directory}/validate-release-artifacts.js" \
+    --release-output "${release_output}" \
+    --analyzer "${package_analyzer}" \
+    --expected-version "${release_version}" \
+    --expected-node-version "v${expected_node_version}" \
+    --expected-npm-version "${expected_npm_version}" \
+    --require-initial-gate
 }
 
 assert_archive_entry() {
@@ -535,7 +401,8 @@ verify_archive() {
     "${package_manifest}" \
     "${expected_package_name}" \
     "${expected_unity}" \
-    "${expected_package_path}"
+    "${expected_package_path}" \
+    "${release_version}"
 
   if LC_ALL=C grep -a -R -F -q -- "${repository_root}" "${extracted_root}/package"; then
     echo "UPM archive contains the absolute checkout path: ${repository_root}" >&2
@@ -560,6 +427,18 @@ require_command grep
 require_command stat
 require_command sort
 require_command find
+require_command tr
+
+require_file "${node_version_file}"
+expected_node_version="$(tr -d '[:space:]' < "${node_version_file}")"
+if [[ ! "${expected_node_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo ".node-version must contain a Node semantic version: ${expected_node_version}" >&2
+  exit 1
+fi
+if [[ "$(node --version)" != "v${expected_node_version}" || "$(npm --version)" != "${expected_npm_version}" ]]; then
+  echo "pack-release.sh requires Node v${expected_node_version} and npm ${expected_npm_version}." >&2
+  exit 1
+fi
 
 assert_package_version "${base_package_root}" "${base_package_name}"
 assert_package_version "${source_generator_package_root}" "${source_generator_package_name}"
@@ -571,8 +450,27 @@ if ! cmp -s "${analyzer_output}" "${package_analyzer}"; then
   exit 1
 fi
 
+allow_dirty=false
+if [[ $# -eq 0 ]]; then
+  :
+elif [[ $# -eq 1 && "${1}" == "--allow-dirty" ]]; then
+  allow_dirty=true
+else
+  echo "Usage: pack-release.sh [--allow-dirty]" >&2
+  exit 2
+fi
+
+tree_state="clean"
 commit="$(git -C "${repository_root}" rev-parse HEAD)"
-if ! printf '%s\n' "${commit}" | LC_ALL=C grep -E -q '^[0-9a-f]{40}$'; then
+if [[ -n "$(git -C "${repository_root}" status --porcelain)" ]]; then
+  if [[ "${allow_dirty}" != true ]]; then
+    echo "Release candidates require a clean worktree; use --allow-dirty only for development verification." >&2
+    exit 1
+  fi
+  tree_state="dirty"
+  commit=""
+fi
+if [[ "${tree_state}" == "clean" ]] && ! printf '%s\n' "${commit}" | LC_ALL=C grep -E -q '^[0-9a-f]{40}$'; then
   echo "git rev-parse HEAD did not return a 40-character commit: ${commit}" >&2
   exit 1
 fi
@@ -622,10 +520,15 @@ analyzer_sha256="$(sha256_hex "${package_analyzer}")"
 
 cat > "${release_manifest}" <<EOF
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "version": "${release_version}",
   "tag": "${release_tag}",
-  "commit": "${commit}",
+  "provenance": {
+    "commit": $(if [[ -n "${commit}" ]]; then printf '"%s"' "${commit}"; else printf 'null'; fi),
+    "treeState": "${tree_state}",
+    "nodeVersion": "$(node --version)",
+    "npmVersion": "$(npm --version)"
+  },
   "archives": [
     {
       "package": "${base_package_name}",
@@ -655,11 +558,15 @@ cat > "${release_manifest}" <<EOF
       "6000.0.23f1",
       "6000.3.2f1"
     ],
-    "evidence": []
+    "evidence": [],
+    "aggregateFile": null,
+    "aggregateSha256": null
   },
   "registryPublication": "not-performed"
 }
 EOF
+
+node "${scripts_directory}/ci-evidence.js" stamp-candidate "${release_output}"
 
 {
   printf '%s  %s\n' "${base_sha256}" "${base_archive_name}"

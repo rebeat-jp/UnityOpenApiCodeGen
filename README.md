@@ -30,6 +30,9 @@ The Source Generator package depends on
 `com.unity.nuget.newtonsoft-json` `3.2.2`. It does not bundle Newtonsoft.Json,
 Roslyn, or YamlDotNet DLLs.
 
+These examples target the planned `0.5.0` release. Before that tag is published,
+replace `0.5.0` with the same reviewed commit SHA in both Git URLs.
+
 ## Getting started
 
 1. Open `Window/OpenAPI Code Generator/Settings` and select `Docker` or
@@ -65,6 +68,11 @@ script compilation. Provider selection never falls back to Docker; removing
 the add-on removes its provider define before the package transition is
 applied.
 
+The Generator window reports progress, warnings, and cancellation. Cancel
+stops Source Generator work before publication; once publication begins, it
+finishes as one protected operation. Docker settings retain their existing
+URL behavior.
+
 ## Support and release documents
 
 - [Source Generator README](Packages/OpenApiCodeGen.SourceGenerator/README.md)
@@ -72,21 +80,24 @@ applied.
 - [Normalized Spec Bundle v2](SourceGenerators/NormalizedSpecBundleV2.md)
 - [Release and rollback procedure](RELEASE.md)
 
-## Current verification status
+## CI and release preparation
 
-The `0.5.0` candidate has passing automated evidence: the Source Generator
-suite is **101/101**, and analyzer reproducibility, analyzer synchronization,
-package inspection, tarball reproducibility, and checksum verification pass.
-The manual Unity tarball gate also passes: base Unity `2021.3.19f1` is
-**36/36**; Unity `6000.0.23f1` and `6000.3.2f1` each pass the Source Generator
-initial run **185/185**, regeneration **185/185**, and without-add-on run
-**36/36**. The aggregate evidence is recorded in
-`artifacts/upm/0.5.0/unity-gate.json`.
+[Source Generator CI](https://github.com/rebeat-jp/UnityOpenApiCodeGen/actions/workflows/source-generator-ci.yml)
+checks .NET tests, analyzer reproducibility/synchronization, and UPM contents.
+It verifies one clean-commit candidate on Unity `2021.3.19f1`, `6000.0.23f1`,
+and `6000.3.2f1` in serial GitHub-hosted jobs, then runs the CD dry-run.
+Fork PRs receive the .NET/package checks without Unity credentials.
 
-The repository is not release-ready yet. The Unity GitHub Actions job required
-by #54 is intentionally not implemented, so #54 and Phase 7 remain open even
-though the manual gate passed. See [RELEASE.md](RELEASE.md) for the clean-tree
-repack, publication boundary, and rollback procedure.
+Use the successful run and its `verified-release-<run-id>-<attempt>` artifact
+for the exact commit under review. The manifest binds the candidate packages
+to all three editors' logs, test XML, and checksums. Missing or failed evidence
+blocks release.
+
+Manual workflows can open DLL-only update PRs or start a release, whose
+default is dry-run. The base retains OpenUPM Git-tag tracking; the add-on uses
+the verified GitHub Release tarball after its
+[initial OpenUPM registration](SourceGenerators/OpenUPM/README.md).
+See [RELEASE.md](RELEASE.md) for inputs, retry and rollback procedures.
 
 ## License
 

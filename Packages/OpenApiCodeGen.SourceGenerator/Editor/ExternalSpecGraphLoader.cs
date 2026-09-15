@@ -12,6 +12,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Rhycol.OpenApiCodeGen.SourceGenerator;
+using Rhycol.OpenApiCodeGen.Editor.Generation;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 {
@@ -27,6 +28,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         private readonly string projectRoot;
         private readonly RawJsonNormalizer jsonNormalizer;
         private readonly RawYamlNormalizer yamlNormalizer;
+        private readonly HttpClient httpClient;
 
         internal ExternalSpecGraphLoader(
             string projectRoot,
@@ -42,12 +44,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             this.jsonNormalizer = jsonNormalizer ?? throw new ArgumentNullException(nameof(jsonNormalizer));
             this.yamlNormalizer = yamlNormalizer ?? throw new ArgumentNullException(nameof(yamlNormalizer));
+            var handler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false };
+            httpClient = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
+            httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/json, application/yaml, text/yaml, */*;q=0.1");
+            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("UnityOpenApiCodeGen/0.5.0");
         }
 
         internal async Task<NormalizedSpecGraph> LoadAsync(
             string source,
             string specId,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            IProgress<GenerationProgress>? progress = null)
         {
             if (string.IsNullOrWhiteSpace(source))
             {
@@ -59,12 +66,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             {
                 graphCancellation.CancelAfter(
                     TimeSpan.FromSeconds(NormalizedSpecBundleConstants.GraphTimeoutSeconds));
-                var graph = new GraphBuilder(this, specId, graphCancellation.Token);
-                return await graph.LoadAsync(source).ConfigureAwait(false);
+                var graph = new GraphBuilder(this, specId, graphCancellation.Token, progress);
+                try
+                {
+                    return await graph.LoadAsync(source).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new TimeoutException("The OpenAPI document graph timed out.");
+                }
             }
         }
 
-        private sealed class TrustedRemoteFetchException : InvalidOperationException
+        private sealed class TrustedRemoteFetchException : SafeGenerationException
         {
             internal TrustedRemoteFetchException(string message)
                 : base(message)
@@ -77,11 +91,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             private readonly ExternalSpecGraphLoader owner;
             private readonly string specId;
             private readonly CancellationToken cancellationToken;
+            private readonly IProgress<GenerationProgress>? progress;
             private readonly Dictionary<string, GraphDocument> documentsByKey =
                 new Dictionary<string, GraphDocument>(StringComparer.Ordinal);
             private readonly List<GraphDocument> documents = new List<GraphDocument>();
             private readonly List<ReferenceEdge> edges = new List<ReferenceEdge>();
             private long totalRawBytes;
+            private int httpRequestCount;
+            private int remoteFetchCount;
+            private readonly Dictionary<string, string> remoteFetchKeysByPersistentIdentity =
+                new Dictionary<string, string>(StringComparer.Ordinal);
             private bool rootWasUrl;
             private int rootStatusCode;
             private int rootRedirectCount;
@@ -93,11 +112,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             internal GraphBuilder(
                 ExternalSpecGraphLoader owner,
                 string specId,
-                CancellationToken cancellationToken)
+                CancellationToken cancellationToken,
+                IProgress<GenerationProgress>? progress)
             {
                 this.owner = owner;
                 this.specId = specId;
                 this.cancellationToken = cancellationToken;
+                this.progress = progress;
             }
 
             internal async Task<NormalizedSpecGraph> LoadAsync(string source)
@@ -108,6 +129,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 rootRequestedDisplay = root.DisplayUri;
                 rootFetchKey = root.FetchKey;
                 GraphDocument rootDocument = await LoadDocumentAsync(root, true, 0).ConfigureAwait(false);
+                progress?.Report(new GenerationProgress(0.35, "Root document was fetched."));
 
                 for (int index = 0; index < documents.Count; index++)
                 {
@@ -116,6 +138,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 }
 
                 ValidateEdges();
+                progress?.Report(new GenerationProgress(0.75, "References were validated."));
                 for (int index = 0; index < documents.Count; index++)
                 {
                     documents[index].Root = SanitizeReferences(documents[index].Root);
@@ -134,7 +157,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     edges,
                     rootRequestedDisplay,
                     rootEffectiveDisplay,
-                    Sha256Hex(rootFetchKey),
+                    Sha256Hex(owner.GetDocumentIdentity(rootFetchKey, rootWasUrl)),
                     rootWasUrl ? "http" : "local",
                     rootStatusCode,
                     rootRedirectCount,
@@ -173,7 +196,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                         "Source Generator generation supports local paths and HTTP(S) URLs only.");
                 }
 
-                string path = owner.ResolveLocalPath(source, false, false);
+                string path = owner.ResolveLocalPath(source, false);
                 OpenApiDocumentFormat format = DetectLocalFormat(path);
                 Uri fileUri = new Uri(path, UriKind.Absolute);
                 string key = RemoveFragment(fileUri).AbsoluteUri;
@@ -186,13 +209,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 int depth)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (depth > NormalizedSpecBundleConstants.MaximumDepth)
-                {
-                    throw new InvalidOperationException(
-                        "The external OpenAPI reference graph exceeds the maximum depth of " +
-                        NormalizedSpecBundleConstants.MaximumDepth + ".");
-                }
-
                 string key = request.FetchKey;
                 GraphDocument existing;
                 if (documentsByKey.TryGetValue(key, out existing))
@@ -200,15 +216,26 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     return existing;
                 }
 
+                if (depth > NormalizedSpecBundleConstants.MaximumDepth)
+                {
+                    throw new SafeGenerationException(
+                        "The external OpenAPI reference graph exceeds the maximum depth of " +
+                        NormalizedSpecBundleConstants.MaximumDepth + ".");
+                }
+
                 if (documents.Count >= NormalizedSpecBundleConstants.MaximumDocumentCount)
                 {
-                    throw new InvalidOperationException(
+                    throw new SafeGenerationException(
                         "The external OpenAPI reference graph exceeds the maximum document count of " +
                         NormalizedSpecBundleConstants.MaximumDocumentCount + ".");
                 }
 
+                if (request.IsRemote && !string.IsNullOrEmpty(new Uri(request.FetchKey, UriKind.Absolute).Query))
+                {
+                    rootHadQuery = true;
+                }
                 DocumentPayload payload = request.IsRemote
-                    ? await FetchRemoteAsync(request).ConfigureAwait(false)
+                    ? await FetchRemoteWithLimitAsync(request).ConfigureAwait(false)
                     : ReadLocal(request);
                 if (payload.Bytes.Length > NormalizedSpecBundleConstants.MaximumDocumentBytes)
                 {
@@ -220,16 +247,29 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 totalRawBytes += payload.Bytes.Length;
                 if (totalRawBytes > NormalizedSpecBundleConstants.MaximumGraphBytes)
                 {
-                    throw new InvalidOperationException(
+                    throw new SafeGenerationException(
                         "The external OpenAPI reference graph exceeds the maximum size of 32 MiB.");
                 }
 
                 SpecNode root = Parse(payload.Bytes, payload.Format, request.DisplayUri);
                 string effectiveKey = payload.EffectiveUri;
+                string persistentIdentity = request.IsRemote
+                    ? owner.GetDocumentIdentity(effectiveKey, true)
+                    : string.Empty;
                 GraphDocument effectiveDocument;
                 if (!isRoot &&
                     documentsByKey.TryGetValue(effectiveKey, out effectiveDocument))
                 {
+                    string firstRequestedKey;
+                    if (request.IsRemote &&
+                        remoteFetchKeysByPersistentIdentity.TryGetValue(persistentIdentity, out firstRequestedKey) &&
+                        !string.Equals(firstRequestedKey, request.FetchKey, StringComparison.Ordinal) &&
+                        (HasQuery(firstRequestedKey) || HasQuery(request.FetchKey)))
+                    {
+                        throw new InvalidOperationException(
+                            "Multiple remote OpenAPI documents resolve to the same persisted URL identity.");
+                    }
+                    if (request.IsRemote) remoteFetchKeysByPersistentIdentity[persistentIdentity] = request.FetchKey;
                     documentsByKey[key] = effectiveDocument;
                     return effectiveDocument;
                 }
@@ -237,6 +277,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 string documentIdentity = owner.GetDocumentIdentity(
                     effectiveKey,
                     request.IsRemote);
+                if (request.IsRemote)
+                {
+                    string existingFetchKey;
+                    if (remoteFetchKeysByPersistentIdentity.TryGetValue(documentIdentity, out existingFetchKey) &&
+                        !string.Equals(existingFetchKey, request.FetchKey, StringComparison.Ordinal) &&
+                        (HasQuery(existingFetchKey) || HasQuery(request.FetchKey)))
+                    {
+                        throw new InvalidOperationException(
+                            "Multiple remote OpenAPI documents resolve to the same persisted URL identity.");
+                    }
+
+                    remoteFetchKeysByPersistentIdentity[documentIdentity] = request.FetchKey;
+                }
                 string documentId = isRoot
                     ? NormalizedSpecBundleConstants.RootDocumentId
                     : request.IsRemote
@@ -268,6 +321,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     documentsByKey.Add(effectiveKey, document);
                 }
                 documents.Add(document);
+                progress?.Report(new GenerationProgress(
+                    Math.Min(0.7, 0.35 + documents.Count * 0.35 / NormalizedSpecBundleConstants.MaximumDocumentCount),
+                    "Loaded " + documents.Count.ToString(CultureInfo.InvariantCulture) + " document(s)."));
 
                 if (isRoot)
                 {
@@ -280,6 +336,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 // publishable as one complete generation unit.
                 await ResolveDocumentReferencesAsync(document, depth).ConfigureAwait(false);
                 return document;
+            }
+
+            private Task<DocumentPayload> FetchRemoteWithLimitAsync(SourceRequest request)
+            {
+                if (++remoteFetchCount > NormalizedSpecBundleConstants.MaximumDocumentCount)
+                {
+                    throw new SafeGenerationException("The external OpenAPI reference graph exceeds the maximum remote fetch count of 64.");
+                }
+                return FetchRemoteAsync(request);
             }
 
             private async Task ResolveDocumentReferencesAsync(GraphDocument document, int depth)
@@ -345,6 +410,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
                     ValidateRemoteUri(fetchUri);
                     Uri sourceUri = new Uri(sourceDocument.FetchKey, UriKind.Absolute);
+                    if (sourceDocument.IsRemote && !SameOrigin(sourceUri, fetchUri))
+                    {
+                        throw new SafeGenerationException(
+                            "Remote OpenAPI documents may reference only the same origin: " +
+                            sourceDocument.SourcePath);
+                    }
                     if (sourceDocument.IsRemote &&
                         string.Equals(sourceUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
                         string.Equals(fetchUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
@@ -372,15 +443,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     fetchUri.AbsoluteUri,
                     sourceDocument.FetchKey,
                     StringComparison.Ordinal);
-                string localPath = owner.ResolveLocalPath(
-                    fetchUri.LocalPath,
-                    !sameDocument,
-                    !sourceDocument.IsRemote);
                 if (sourceDocument.IsRemote)
                 {
                     throw new NotSupportedException(
                         "A remote document must not reference a local file: " + sourceDocument.SourcePath);
                 }
+                string localPath = owner.ResolveLocalPath(fetchUri.LocalPath, !sameDocument);
 
                 OpenApiDocumentFormat format = DetectLocalFormat(localPath);
                 return SourceRequest.Local(
@@ -442,27 +510,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 {
                     throw;
                 }
-                catch (TrustedRemoteFetchException exception)
+                catch (TrustedRemoteFetchException)
                 {
                     // Only messages created by this loader are allowed to cross the remote
                     // boundary. HttpClient/content/stream exceptions are redacted below.
-                    throw new InvalidOperationException(exception.Message);
+                    throw;
                 }
                 catch (Exception)
                 {
                     // HttpClient and stream exceptions can include the complete request URI in
                     // their message or inner exception. Remote failures must never retain that
                     // data, because query values are treated as user-provided secrets.
-                    throw new InvalidOperationException(
+                    throw new SafeGenerationException(
                         "The remote OpenAPI document could not be fetched.");
                 }
             }
 
             private async Task<DocumentPayload> FetchRemoteCoreAsync(SourceRequest request)
             {
-                using (var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }))
                 {
-                    client.Timeout = Timeout.InfiniteTimeSpan;
                     Uri current = new Uri(request.FetchKey, UriKind.Absolute);
                     int redirects = 0;
                     while (true)
@@ -474,7 +540,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                             HttpResponseMessage response;
                             try
                             {
-                                response = await client.SendAsync(
+                                if (++httpRequestCount > NormalizedSpecBundleConstants.MaximumHttpRequestCount)
+                                {
+                                    throw new TrustedRemoteFetchException(
+                                        "The external OpenAPI reference graph exceeds the maximum HTTP request count of " +
+                                        NormalizedSpecBundleConstants.MaximumHttpRequestCount + ".");
+                                }
+
+                                response = await owner.httpClient.SendAsync(
                                     requestMessage,
                                     HttpCompletionOption.ResponseHeadersRead,
                                     requestCancellation.Token).ConfigureAwait(false);
@@ -515,6 +588,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                                 }
 
                                 ValidateRemoteUri(location);
+                                if (!request.IsRoot && !SameOrigin(current, location))
+                                {
+                                    throw new TrustedRemoteFetchException(
+                                        "Remote OpenAPI redirects must remain on the same origin.");
+                                }
                                 if (string.Equals(current.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
                                     string.Equals(location.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
                                 {
@@ -577,6 +655,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 requestCancellation.CancelAfter(
                     TimeSpan.FromSeconds(NormalizedSpecBundleConstants.RequestTimeoutSeconds));
                 return requestCancellation;
+            }
+
+            private static bool SameOrigin(Uri left, Uri right)
+            {
+                return string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase) &&
+                       string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase) &&
+                       left.Port == right.Port;
+            }
+
+            private static bool HasQuery(string uri)
+            {
+                Uri parsed;
+                return Uri.TryCreate(uri, UriKind.Absolute, out parsed) && !string.IsNullOrEmpty(parsed.Query);
             }
 
             private static SpecNode SanitizeReferences(SpecNode node)
@@ -761,8 +852,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 for (int index = 0; index < edges.Count; index++)
                 {
                     ReferenceEdge edge = edges[index];
-                    string key = edge.SourceDocumentId + "\n" + edge.SourcePointer + "\n" +
-                                 edge.TargetDocumentId + "\n" + edge.TargetPointer;
+                    string key = edge.SourceDocumentId + "\n" + edge.SourcePointer;
                     if (!seen.Add(key))
                     {
                         throw new InvalidOperationException("The external reference graph contains a duplicate edge.");
@@ -986,7 +1076,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
         }
 
-        private string ResolveLocalPath(string path, bool isExternal, bool sourceIsLocal)
+        private string ResolveLocalPath(string path, bool isExternal)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -999,7 +1089,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             if (!File.Exists(fullPath))
             {
                 throw new InvalidOperationException("The local OpenAPI document does not exist: " +
-                                                    ToDisplayPath(fullPath));
+                                                    (IsSameOrDescendant(projectRoot, fullPath) ? ToDisplayPath(fullPath) : "<external-file>"));
             }
 
             if (isExternal)
@@ -1007,9 +1097,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 EnsureNoSymbolicLink(projectRoot, fullPath);
                 if (!IsSameOrDescendant(projectRoot, fullPath))
                 {
-                    throw new InvalidOperationException(
+                    throw new SafeGenerationException(
                         "Local external references must remain inside the Unity project: " +
-                        ToDisplayPath(fullPath));
+                        "<external-file>");
                 }
             }
 
@@ -1037,9 +1127,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         {
             if (isRemote)
             {
-                // The effective fetch key intentionally retains query because it is part of the
-                // remote identity. Fragments have already been removed before reaching this point.
-                return RemoveFragment(new Uri(effectiveUri, UriKind.Absolute)).AbsoluteUri;
+                return RedactUri(new Uri(effectiveUri, UriKind.Absolute));
             }
 
             // Local external documents are project-bound. Hashing this normalized project-relative
@@ -1244,7 +1332,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
                 {
                     throw new InvalidOperationException(
-                        "Local external references must not traverse a symbolic link: " + current);
+                        "Local external references must not traverse a symbolic link.");
                 }
 
                 if (PathsEqual(root, current))
@@ -1295,13 +1383,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 string localPath,
                 string fetchKey,
                 string displayUri,
-                OpenApiDocumentFormat format)
+                OpenApiDocumentFormat format,
+                bool isRoot)
             {
                 IsRemote = isRemote;
                 LocalPath = localPath;
                 FetchKey = fetchKey;
                 DisplayUri = displayUri;
                 Format = format;
+                IsRoot = isRoot;
             }
 
             internal bool IsRemote { get; }
@@ -1309,6 +1399,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             internal string FetchKey { get; }
             internal string DisplayUri { get; }
             internal OpenApiDocumentFormat Format { get; }
+            internal bool IsRoot { get; }
 
             internal static SourceRequest Local(
                 string path,
@@ -1316,7 +1407,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 OpenApiDocumentFormat format,
                 bool isRoot)
             {
-                return new SourceRequest(false, path, fetchKey, path.Replace('\\', '/'), format);
+                return new SourceRequest(false, path, fetchKey, path.Replace('\\', '/'), format, isRoot);
             }
 
             internal static SourceRequest Remote(
@@ -1325,7 +1416,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 OpenApiDocumentFormat format,
                 bool isRoot)
             {
-                return new SourceRequest(true, string.Empty, fetchKey, displayUri, format);
+                return new SourceRequest(true, string.Empty, fetchKey, displayUri, format, isRoot);
             }
         }
 

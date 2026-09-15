@@ -12,21 +12,34 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         static SourceGeneratorProviderRegistration()
         {
             EnsureRegistered();
+            // Imports are deferred until Unity has finished loading assemblies.
+            EditorApplication.delayCall += RecoverPublications;
         }
 
         internal static void EnsureRegistered()
         {
             GenerationProviderRegistry registry = GenerationProviderRegistry.Shared;
-            if (registry.Resolve(GenerateProvider.SourceGenerator).IsResolved)
+            if (!registry.Resolve(GenerateProvider.SourceGenerator).IsResolved)
             {
-                return;
+                TryRegister(
+                    registry,
+                    new SourceGeneratorAvailabilityProbe(
+                        new PackageInfoSourceGeneratorPackagePathResolver()),
+                    out _);
             }
 
-            TryRegister(
-                registry,
-                new SourceGeneratorAvailabilityProbe(
-                    new PackageInfoSourceGeneratorPackagePathResolver()),
-                out _);
+        }
+
+        private static void RecoverPublications()
+        {
+            try
+            {
+                NormalizedSpecCacheService.CreateForCurrentProject().RecoverPendingCompilations();
+            }
+            catch (Exception)
+            {
+                UnityEngine.Debug.LogError("Source Generator publication recovery could not acquire the project lock. Close the other generation process and retry Generate.");
+            }
         }
 
         internal static bool TryRegister(

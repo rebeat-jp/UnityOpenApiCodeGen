@@ -6,16 +6,31 @@ scripts_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "${scripts_directory}/common.sh"
 
-if [[ $# -gt 1 ]]; then
-  echo "Usage: $0 [unity-version]" >&2
-  exit 2
-fi
+unity_version="6000.3.2f1"
+pack_release_args=()
+for argument in "$@"; do
+  case "${argument}" in
+    --allow-dirty)
+      if [[ ${#pack_release_args[@]} -ne 0 ]]; then
+        echo "Usage: $0 [unity-version] [--allow-dirty]" >&2
+        exit 2
+      fi
+      pack_release_args=("--allow-dirty")
+      ;;
+    6000.0.23f1|6000.3.2f1|2021.3.19f1)
+      unity_version="${argument}"
+      ;;
+    *)
+      echo "Usage: $0 [unity-version] [--allow-dirty]" >&2
+      exit 2
+      ;;
+  esac
+done
 
-unity_version="${1:-6000.3.2f1}"
 unity_executable="${UNITY_EXECUTABLE:-/Applications/Unity/Hub/Editor/${unity_version}/Unity.app/Contents/MacOS/Unity}"
 verification_fixture="${source_generators_root}/BuildTools/UnityVerificationFixture"
 package_removal_fixture="${source_generators_root}/BuildTools/UnityPackageRemovalVerification"
-release_version="0.5.0"
+release_version="$(node -p "require('${repository_root}/Packages/OpenApiCodeGen/package.json').version")"
 release_output="${SOURCE_GENERATOR_RELEASE_OUTPUT:-${repository_root}/artifacts/upm/${release_version}}"
 base_archive="${release_output}/jp.rhycol.openapicodegen-${release_version}.tgz"
 source_generator_archive="${release_output}/jp.rhycol.openapicodegen.source-generator-${release_version}.tgz"
@@ -76,7 +91,11 @@ copy_evidence_file() {
   local evidence_name="$2"
 
   if [[ -f "${source_path}" ]]; then
-    cp "${source_path}" "${evidence_root}/${evidence_name}"
+    if [[ "${SOURCE_GENERATOR_CI:-0}" == "1" && ( "${evidence_name}" == *.log || "${evidence_name}" == *.xml ) ]]; then
+      node "${scripts_directory}/ci-evidence.js" sanitize-file "${source_path}" "${evidence_root}/${evidence_name}"
+    else
+      cp "${source_path}" "${evidence_root}/${evidence_name}"
+    fi
   fi
 }
 
@@ -99,50 +118,9 @@ write_gate_evidence() {
   copy_evidence_file "${published_authoritative_cache}" "normalized-v2.json"
 
   if command -v node >/dev/null 2>&1; then
-    node - "${evidence_root}/gate.json" "${gate_status}" "${exit_code}" \
-      "${unity_version}" "${gate_reason}" "${evidence_root}" "${repository_root}" <<'NODE'
-const fs = require('fs');
-const path = require('path');
-
-const [outputPath, status, exitCode, version, reason, evidenceRoot, repositoryRoot] = process.argv.slice(2);
-const relativePath = (candidate) => fs.existsSync(candidate)
-  ? path.relative(repositoryRoot, candidate).split(path.sep).join('/')
-  : null;
-const resultCandidates = [
-  'source-generator-results.xml',
-  'source-generator-regeneration-results.xml',
-  'without-addon-results.xml'
-];
-const logCandidates = [
-  'source-generator.log',
-  'source-generator-bootstrap.log',
-  'source-generator-generation.log',
-  'source-generator-unchanged-generation.log',
-  'source-generator-no-change.log',
-  'source-generator-regeneration.log',
-  'source-generator-regeneration-tests.log',
-  'without-addon.log',
-  'without-addon-bootstrap.log'
-];
-const firstExisting = names => {
-  const name = names.find(candidate => fs.existsSync(path.join(evidenceRoot, candidate)));
-  return name ? path.join(evidenceRoot, name) : null;
-};
-const resultPath = firstExisting(resultCandidates);
-const logPath = firstExisting(logCandidates);
-const summary = {
-  schemaVersion: 1,
-  status,
-  version,
-  exitCode: Number(exitCode),
-  reason,
-  resultPath: resultPath ? relativePath(resultPath) : null,
-  logPath: logPath ? relativePath(logPath) : null,
-  evidencePath: path.relative(repositoryRoot, evidenceRoot).split(path.sep).join('/'),
-  timestampUtc: new Date().toISOString()
-};
-fs.writeFileSync(outputPath, JSON.stringify(summary, null, 2) + '\n', 'utf8');
-NODE
+    node "${scripts_directory}/ci-evidence.js" write-gate \
+      "${evidence_root}/gate.json" "${gate_status}" "${exit_code}" \
+      "${unity_version}" "${gate_reason}" "${evidence_root}" "${release_output}"
   else
     printf '{\n  "schemaVersion": 1,\n  "status": "%s",\n  "version": "%s",\n  "exitCode": %s,\n  "reason": "manual evidence writer unavailable"\n}\n' \
       "${gate_status}" "${unity_version}" "${exit_code}" > "${evidence_root}/gate.json"
@@ -172,10 +150,15 @@ if ! command -v node >/dev/null 2>&1; then
   fail_not_run "node is unavailable for Bundle v2 and gate evidence"
 fi
 if [[ ! -f "${base_archive}" || ! -f "${source_generator_archive}" ]]; then
-  if ! "${scripts_directory}/pack-release.sh"; then
+  if [[ "${SOURCE_GENERATOR_CI:-0}" == "1" ]]; then
+    fail_not_run "the CI candidate tarball is missing; repacking is forbidden"
+  fi
+  if ! "${scripts_directory}/pack-release.sh" "${pack_release_args[@]}"; then
     fail_not_run "release-candidate packing failed before the Unity gate"
   fi
 fi
+
+rm -rf "${evidence_root}"
 if [[ ! -f "${base_archive}" || ! -f "${source_generator_archive}" ]]; then
   fail_not_run "base or Source Generator release-candidate tarball is missing"
 fi
@@ -312,7 +295,7 @@ run_unity_tests() {
     editor_exit_code=$?
     if [[ -f "${test_results}" ]]; then
       test_result="$(xmllint --xpath 'string(/test-run/@result)' "${test_results}" 2>/dev/null || true)"
-      if [[ "${test_result}" == "Failed" ]]; then
+      if [[ "${test_result}" == Failed* ]]; then
         fail_gate "Unity ${unity_version} EditMode assertion failure"
       fi
     fi
@@ -326,7 +309,7 @@ run_unity_tests() {
   case "${test_result}" in
     Passed)
       ;;
-    Failed)
+    Failed*)
       fail_gate "Unity ${unity_version} EditMode assertion failure"
       ;;
     *)
@@ -506,7 +489,6 @@ NODE
   then
     fail_gate "authoritative Bundle v2 structure did not pass strict Unity fixture validation"
   fi
-  published_authoritative_cache="${authoritative_cache}"
   if ! grep -Fq "${spec_id}" "${generated_definition}"; then
     fail_gate "generated partial does not reference published specId ${spec_id}"
   fi
@@ -551,6 +533,9 @@ run_source_generator \
   "${generation_log}" \
   'Source Generator cache and definition were published; script compilation was requested.'
 initial_spec_id="$(get_published_spec_id)"
+# get_published_spec_id runs in a command-substitution subshell. Retain the
+# validated cache path in the parent so the EXIT trap can preserve its evidence.
+published_authoritative_cache="${authoritative_cache_root}/${initial_spec_id}/normalized-v2.json"
 if ! grep -Fq "Spec ID: ${initial_spec_id}" "${generation_log}"; then
   fail_gate "Initial Source Generator result did not report published specId ${initial_spec_id}"
 fi

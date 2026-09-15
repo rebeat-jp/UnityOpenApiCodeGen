@@ -17,6 +17,7 @@ namespace Rhycol.OpenApiCodeGen.UI
     {
         public event Action<GenerateApiClientDto>? GenerateRequested;
         public event Action<GenerateApiClientDto>? GenerateSettingChanged;
+        public event Action? CancelRequested;
 
         [SerializeField]
         private VisualTreeAsset? _visualTreeAsset = default;
@@ -27,7 +28,9 @@ namespace Rhycol.OpenApiCodeGen.UI
         Label? _outputFolderPathComment;
         ProgressBar? _progressBar;
         TextField? _generationFailureLog;
+        TextField? _generationWarningLog;
         Button? _generateButton;
+        Button? _cancelButton;
         GenerateProvider _generateProvider = GenerateProvider.OpenApi;
 
         readonly IGenerationPresenter _presenter;
@@ -66,11 +69,18 @@ namespace Rhycol.OpenApiCodeGen.UI
             _outputFolderPathComment = root.Q<Label>("OutputPathComment");
             _progressBar = root.Q<ProgressBar>("Progress");
             _generationFailureLog = root.Q<TextField>("GenerationFailureLog");
+            _generationWarningLog = root.Q<TextField>("GenerationWarningLog");
 
             _generateButton = root.Q<Button>("GenerateButton");
             if (_generateButton != null)
             {
                 _generateButton.clicked += OnGenerate;
+            }
+            _cancelButton = root.Q<Button>("CancelButton");
+            if (_cancelButton != null)
+            {
+                _cancelButton.clicked += OnCancel;
+                _cancelButton.SetEnabled(false);
             }
 
             RegisterGenerateSettingChangeHandlers();
@@ -124,6 +134,11 @@ namespace Rhycol.OpenApiCodeGen.UI
             }
         }
 
+        void OnCancel()
+        {
+            CancelRequested?.Invoke();
+        }
+
         static string GetProviderDisplayName(GenerateProvider provider)
         {
             GenerationProviderResolution resolution = GenerationProviderRegistry.Shared.Resolve(provider);
@@ -139,15 +154,18 @@ namespace Rhycol.OpenApiCodeGen.UI
 
         public void SetGenerateStatus(IProgressStatus generateStatus)
         {
-            var (message, failureLog) = generateStatus switch
+            var (message, failureLog, warningLog) = generateStatus switch
             {
-                FailedProgressStatus failed => ("Generating was failed.", failed.Reason ?? ""),
-                PendingProgressStatus => ("Generating is pending...", ""),
-                SucceedProgressStatus succeed => ("Generating was succeeded.", succeed.Message),
-                _ => ("", "")
+                FailedProgressStatus failed => ("Generating was failed.", failed.Reason ?? "", ""),
+                PendingProgressStatus pending => (string.IsNullOrEmpty(pending.Message) ? "Generating is pending..." : pending.Message, "", ""),
+                SucceedProgressStatus succeed => (string.IsNullOrEmpty(succeed.Message) ? "Generating was succeeded." : succeed.Message, "", ""),
+                CanceledProgressStatus canceled => (canceled.Message, "", ""),
+                WarningProgressStatus warning => ("Generating was succeeded with warnings.", "", warning.Message),
+                _ => ("", "", "")
             };
             SetProgressBarValue((float)generateStatus.Progress, message);
             SetGenerationFailureLog(failureLog);
+            SetGenerationWarningLog(warningLog);
         }
 
         void OnGenerate()
@@ -219,6 +237,18 @@ namespace Rhycol.OpenApiCodeGen.UI
             _documentFilePath?.SetEnabled(isEnabled);
             _outputFolderPath?.SetEnabled(isEnabled);
             _generateButton?.SetEnabled(isEnabled);
+        }
+
+        void SetGenerationWarningLog(string log)
+        {
+            if (_generationWarningLog == null) return;
+            _generationWarningLog.SetValueWithoutNotify(log);
+            _generationWarningLog.style.display = string.IsNullOrWhiteSpace(log) ? DisplayStyle.None : DisplayStyle.Flex;
+        }
+
+        public void SetCancelEnabled(bool isEnabled)
+        {
+            _cancelButton?.SetEnabled(isEnabled);
         }
 
     }

@@ -70,6 +70,14 @@ namespace Rhycol.OpenApiCodeGen.Core
             GenerateApiClientDto generateApiClientDto,
             CancellationToken cancellationToken = default)
         {
+            return await GenerateApiClientAsync(generateApiClientDto, cancellationToken, null);
+        }
+
+        internal async Task<GenerationResult> GenerateApiClientAsync(
+            GenerateApiClientDto generateApiClientDto,
+            CancellationToken cancellationToken,
+            IProgress<GenerationProgress>? progress)
+        {
             try
             {
                 ProjectSetting savedProjectSetting =
@@ -103,6 +111,7 @@ namespace Rhycol.OpenApiCodeGen.Core
                     Path.GetFullPath(generateApiClientDto.ApiClientOutputFolderPath),
                     generationCSharpSetting.ApiName,
                     generationCSharpSetting.PackageName);
+                request.Progress = progress;
                 GenerationResult result =
                     await provider.GenerateAsync(request, cancellationToken);
 

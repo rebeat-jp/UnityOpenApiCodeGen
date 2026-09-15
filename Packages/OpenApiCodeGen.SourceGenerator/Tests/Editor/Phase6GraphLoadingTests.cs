@@ -6,6 +6,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -311,6 +312,266 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Assert.That(graph.RedirectCount, Is.EqualTo(1));
                 Assert.That(graph.SourcePath, Is.EqualTo(crossHostTarget));
                 Assert.That(targetServer.RequestTargets, Does.Contain("/root.json"));
+            }
+        }
+
+        [Test]
+        public async Task ExternalGraphAllowsSameOriginRedirectForRemoteExternalReference()
+        {
+            using (var server = new LoopbackHttpServer())
+            {
+                server.Add(
+                    "/root.json",
+                    200,
+                    "application/json",
+                    CreateRootWithReference("child.json#/components/schemas/Pet"));
+                server.AddRedirect("/child.json", "/child-final.json");
+                server.Add(
+                    "/child-final.json",
+                    200,
+                    "application/json",
+                    CreateOpenApiDocument("Child", "\"Pet\":{\"type\":\"object\"}"));
+                server.Start();
+
+                NormalizedSpecGraph graph = await CreateLoader().LoadAsync(
+                    server.Url("root.json"),
+                    SpecId,
+                    CancellationToken.None);
+
+                Assert.That(graph.Documents, Has.Count.EqualTo(2));
+                Assert.That(graph.Documents[1].SourcePath, Is.EqualTo(server.Url("child-final.json")));
+                Assert.That(graph.Documents[1].RedirectCount, Is.EqualTo(1));
+                Assert.That(graph.Edges, Has.Count.EqualTo(1));
+            }
+        }
+
+        [Test]
+        public async Task ExternalGraphRejectsCrossOriginRedirectForRemoteExternalReference()
+        {
+            using (var sourceServer = new LoopbackHttpServer())
+            using (var targetServer = new LoopbackHttpServer())
+            {
+                targetServer.Add(
+                    "/child-final.json",
+                    200,
+                    "application/json",
+                    CreateOpenApiDocument("Child", "\"Pet\":{\"type\":\"object\"}"));
+                targetServer.Start();
+                sourceServer.Add(
+                    "/root.json",
+                    200,
+                    "application/json",
+                    CreateRootWithReference("child.json#/components/schemas/Pet"));
+                sourceServer.AddRedirect("/child.json", targetServer.Url("child-final.json"));
+                sourceServer.Start();
+
+                Exception exception = await CaptureExceptionAsync<Exception>(async () =>
+                    await CreateLoader().LoadAsync(
+                        sourceServer.Url("root.json"),
+                        SpecId,
+                        CancellationToken.None));
+
+                Assert.That(exception.Message, Does.Contain("same origin"));
+                Assert.That(targetServer.RequestTargets, Is.Empty);
+            }
+        }
+
+        [Test]
+        public async Task ExternalGraphUsesQuerylessCanonicalIdentityForRemoteDocuments()
+        {
+            using (var server = new LoopbackHttpServer())
+            {
+                server.Add(
+                    "/child.json?token=secret",
+                    200,
+                    "application/json",
+                    CreateOpenApiDocument("Child", "\"Pet\":{\"type\":\"object\"}"));
+                server.Start();
+                WriteText(
+                    "Assets/Specs/root.json",
+                    CreateRootWithReference(server.Url("child.json?token=secret") + "#/components/schemas/Pet"));
+
+                NormalizedSpecGraph graph = await CreateLoader().LoadAsync(
+                    "Assets/Specs/root.json",
+                    SpecId,
+                    CancellationToken.None);
+                GraphDocument child = graph.Documents[1];
+                string persistedUri = server.Url("child.json");
+                string expectedHash = Sha256Hex(persistedUri);
+
+                Assert.That(child.DocumentId, Is.EqualTo("doc-" + expectedHash));
+                Assert.That(child.SourcePath, Is.EqualTo(persistedUri));
+                Assert.That(child.SourceKeySha256, Is.EqualTo(expectedHash));
+                Assert.That(child.FetchKey, Does.Contain("token=secret"));
+            }
+        }
+
+        [Test]
+        public async Task ExternalGraphRejectsDistinctQueryFetchesWithTheSamePersistedIdentity()
+        {
+            using (var server = new LoopbackHttpServer())
+            {
+                string child = CreateOpenApiDocument("Child", "\"Pet\":{\"type\":\"object\"}");
+                server.Add("/child.json?token=one", 200, "application/json", child);
+                server.Add("/child.json?token=two", 200, "application/json", child);
+                server.Start();
+                WriteText(
+                    "Assets/Specs/root.json",
+                    CreateRootWithTwoReferences(
+                        server.Url("child.json?token=one") + "#/components/schemas/Pet",
+                        server.Url("child.json?token=two") + "#/components/schemas/Pet"));
+
+                Exception exception = await CaptureExceptionAsync<Exception>(async () =>
+                    await CreateLoader().LoadAsync(
+                        "Assets/Specs/root.json",
+                        SpecId,
+                        CancellationToken.None));
+
+                Assert.That(exception.Message, Does.Contain("same persisted URL identity"));
+                Assert.That(exception.ToString(), Does.Not.Contain("token=one"));
+                Assert.That(exception.ToString(), Does.Not.Contain("token=two"));
+            }
+        }
+
+        [Test]
+        public async Task ExternalGraphAllows384HttpRequestsFor64RemoteFetches()
+        {
+            const int aliasCount = 64;
+            using (var server = new LoopbackHttpServer())
+            {
+                server.Add(
+                    "/shared.json",
+                    200,
+                    "application/json",
+                    CreateOpenApiDocument("Shared", "\"Pet\":{\"type\":\"object\"}"));
+                for (int alias = 0; alias < aliasCount; alias++)
+                {
+                    for (int redirect = 0; redirect < NormalizedSpecBundleConstants.MaximumRedirects; redirect++)
+                    {
+                        server.AddRedirect(
+                            "/alias" + alias + "-" + redirect,
+                            redirect + 1 == NormalizedSpecBundleConstants.MaximumRedirects
+                                ? "/shared.json"
+                                : "/alias" + alias + "-" + (redirect + 1));
+                    }
+                }
+                server.Start();
+                WriteText(
+                    "Assets/Specs/root.json",
+                    CreateRootWithRemoteReferencePaths(
+                        aliasCount,
+                        server.Url(string.Empty).TrimEnd('/')));
+
+                NormalizedSpecGraph graph = await CreateLoader().LoadAsync(
+                    "Assets/Specs/root.json",
+                    SpecId,
+                    CancellationToken.None);
+
+                Assert.That(graph.Documents, Has.Count.EqualTo(2));
+                Assert.That(server.RequestTargets, Has.Count.EqualTo(NormalizedSpecBundleConstants.MaximumHttpRequestCount));
+            }
+        }
+
+        [Test]
+        public async Task ExternalGraphStopsBeforeThe65thRemoteFetch()
+        {
+            const int aliasCount = NormalizedSpecBundleConstants.MaximumDocumentCount + 1;
+            using (var server = new LoopbackHttpServer())
+            {
+                server.Add(
+                    "/shared.json",
+                    200,
+                    "application/json",
+                    CreateOpenApiDocument("Shared", "\"Pet\":{\"type\":\"object\"}"));
+                for (int alias = 0; alias < aliasCount; alias++)
+                {
+                    server.AddRedirect("/alias" + alias + "-0", "/shared.json");
+                }
+                server.Start();
+                WriteText(
+                    "Assets/Specs/root.json",
+                    CreateRootWithRemoteReferencePaths(
+                        aliasCount,
+                        server.Url(string.Empty).TrimEnd('/')));
+
+                Exception exception = await CaptureExceptionAsync<Exception>(async () =>
+                    await CreateLoader().LoadAsync(
+                        "Assets/Specs/root.json",
+                        SpecId,
+                        CancellationToken.None));
+
+                Assert.That(exception.Message, Does.Contain("maximum remote fetch count"));
+                Assert.That(
+                    server.RequestTargets,
+                    Has.Count.EqualTo(NormalizedSpecBundleConstants.MaximumDocumentCount * 2));
+            }
+        }
+
+        [Test]
+        public async Task ExternalGraphUsesFixedAcceptAndUserAgentHeadersAndDoesNotReplayCookies()
+        {
+            using (var server = new LoopbackHttpServer())
+            {
+                server.AddWithHeader(
+                    "/root.json",
+                    200,
+                    "application/json",
+                    CreateRootWithReference("child.json#/components/schemas/Pet"),
+                    "Set-Cookie",
+                    "session=secret");
+                server.Add(
+                    "/child.json",
+                    200,
+                    "application/json",
+                    CreateOpenApiDocument("Child", "\"Pet\":{\"type\":\"object\"}"));
+                server.Start();
+
+                await CreateLoader().LoadAsync(
+                    server.Url("root.json"),
+                    SpecId,
+                    CancellationToken.None);
+
+                IReadOnlyDictionary<string, string> rootHeaders = server.RequestHeadersFor("/root.json");
+                IReadOnlyDictionary<string, string> childHeaders = server.RequestHeadersFor("/child.json");
+                Assert.That(rootHeaders["Accept"], Does.Contain("application/json"));
+                Assert.That(rootHeaders["Accept"], Does.Contain("application/yaml"));
+                Assert.That(rootHeaders["User-Agent"], Does.Contain("UnityOpenApiCodeGen/0.5.0"));
+                Assert.That(childHeaders.ContainsKey("Cookie"), Is.False);
+            }
+        }
+
+        [Test]
+        public async Task ExternalGraphFailureDoesNotExposeAbsoluteProjectOrExternalPaths()
+        {
+            string outsidePath = Path.Combine(
+                Path.GetTempPath(),
+                "OpenApiCodeGen-secret-outside-" + Guid.NewGuid().ToString("N") + ".json");
+            File.WriteAllText(
+                outsidePath,
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Outside\",\"version\":\"1\"},\"paths\":{}}",
+                new UTF8Encoding(false));
+            try
+            {
+                string rootDirectory = Path.Combine(projectRoot, "Assets", "Specs");
+                string relativeOutsidePath = Path.GetRelativePath(rootDirectory, outsidePath)
+                    .Replace(Path.DirectorySeparatorChar, '/');
+                WriteText("Assets/Specs/root.json", CreateRootWithReference(relativeOutsidePath));
+                Exception exception = await CaptureExceptionAsync<Exception>(async () =>
+                    await CreateLoader().LoadAsync(
+                        "Assets/Specs/root.json",
+                        SpecId,
+                        CancellationToken.None));
+
+                Assert.That(exception.ToString(), Does.Not.Contain(projectRoot));
+                Assert.That(exception.ToString(), Does.Not.Contain(outsidePath));
+                Assert.That(exception.ToString(), Does.Contain("<external-file>"));
+            }
+            finally
+            {
+                if (File.Exists(outsidePath))
+                {
+                    File.Delete(outsidePath);
+                }
             }
         }
 
@@ -940,7 +1201,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 NormalizedSpecBundleConstants.AuthoritativeCacheRelativePath,
                 specId,
                 NormalizedSpecBundleConstants.PublishPendingFileName)), Is.False);
-            Assert.That(compilationRequests, Is.EqualTo(1));
+            // Recovery reimports the restored inputs and durably requests their compilation.
+            Assert.That(compilationRequests, Is.EqualTo(2));
+            Assert.That(firstProvider.Generate(request).IsSuccess, Is.True);
+            Assert.That(compilationRequests, Is.EqualTo(2), "An acknowledged repair must not request compilation again.");
         }
 
         private NormalizedSpecCacheService CreateService()
@@ -1029,6 +1293,38 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                    "\"$ref\":\"" + reference + "\"}}}}}}}},\"components\":{}}";
         }
 
+        private static string CreateRootWithTwoReferences(string first, string second)
+        {
+            return "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Root\",\"version\":\"1\"}," +
+                   "\"paths\":{},\"components\":{\"schemas\":{\"A\":{\"$ref\":\"" + first +
+                   "\"},\"B\":{\"$ref\":\"" + second + "\"}}}}";
+        }
+
+        private static string CreateRootWithRemoteReferencePaths(int count, string serverBaseUrl)
+        {
+            var builder = new StringBuilder();
+            builder.Append("{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Root\",\"version\":\"1\"},");
+            builder.Append("\"paths\":{},\"components\":{\"schemas\":{");
+            for (int index = 0; index < count; index++)
+            {
+                if (index > 0)
+                {
+                    builder.Append(',');
+                }
+
+                builder.Append("\"Alias");
+                builder.Append(index);
+                builder.Append("\":{\"$ref\":\"");
+                builder.Append(serverBaseUrl);
+                builder.Append("/alias");
+                builder.Append(index);
+                builder.Append("-0#/components/schemas/Pet\"}");
+            }
+
+            builder.Append("}}}");
+            return builder.ToString();
+        }
+
         private static string CreateRootWithReferences(int count)
         {
             var builder = new StringBuilder();
@@ -1064,6 +1360,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             return "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"" + title +
                    "\",\"version\":\"1\"},\"paths\":{},\"components\":{\"schemas\":{" +
                    schemaEntry + "}}}";
+        }
+
+        private static string Sha256Hex(string value)
+        {
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(value));
+                var builder = new StringBuilder(hash.Length * 2);
+                for (int index = 0; index < hash.Length; index++)
+                {
+                    builder.Append(hash[index].ToString("x2", System.Globalization.CultureInfo.InvariantCulture));
+                }
+
+                return builder.ToString();
+            }
         }
 
         private SourceGeneratorGenerationProvider CreateProvider(
@@ -1171,6 +1482,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             private readonly TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
             private readonly Dictionary<string, Response> responses = new Dictionary<string, Response>(StringComparer.Ordinal);
             private readonly List<string> requestTargets = new List<string>();
+            private readonly Dictionary<string, Dictionary<string, string>> requestHeaders =
+                new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
             private readonly CancellationTokenSource stop = new CancellationTokenSource();
             private Task? acceptTask;
 
@@ -1186,6 +1499,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             }
 
             internal int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
+
+            internal IReadOnlyDictionary<string, string> RequestHeadersFor(string target)
+            {
+                lock (requestHeaders)
+                {
+                    Dictionary<string, string> headers;
+                    if (!requestHeaders.TryGetValue(target, out headers!))
+                    {
+                        return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    }
+
+                    return new Dictionary<string, string>(headers, StringComparer.OrdinalIgnoreCase);
+                }
+            }
 
             internal void Start()
             {
@@ -1312,9 +1639,30 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                         ? Array.Empty<string>()
                         : lines[0].Split(' ');
                     string target = requestLine.Length > 1 ? requestLine[1] : string.Empty;
+                    var requestHeaderValues = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    for (int lineIndex = 1; lineIndex < lines.Length; lineIndex++)
+                    {
+                        if (string.IsNullOrEmpty(lines[lineIndex]))
+                        {
+                            break;
+                        }
+
+                        int separator = lines[lineIndex].IndexOf(':');
+                        if (separator <= 0)
+                        {
+                            continue;
+                        }
+
+                        requestHeaderValues[lines[lineIndex].Substring(0, separator)] =
+                            lines[lineIndex].Substring(separator + 1).Trim();
+                    }
                     lock (requestTargets)
                     {
                         requestTargets.Add(target);
+                    }
+                    lock (requestHeaders)
+                    {
+                        requestHeaders[target] = requestHeaderValues;
                     }
 
                     Response response;

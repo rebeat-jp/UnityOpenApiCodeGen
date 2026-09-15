@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Unreleased
 
-## [0.5.0] - 2026-08-18
+## [0.5.0] - Unreleased
 
 ### Added
 
@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Remove the Source Generator provider and define before package transitions.
 - Pass the configured API name and namespace through the provider-neutral generation request.
 - Document the `0.5.0` Git installation, provider transition, and rollback procedure.
+- Add generation progress, cancellation, and warning states to the Generator window.
+- Add serial cloud Unity verification, release evidence, and a manually started release workflow defaulting to dry-run.
 
 ### Changed
 
@@ -29,6 +31,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Stop unknown or unavailable providers from falling back to Docker.
 - Avoid main-thread deadlocks in synchronous Docker provider generation.
 - Preserve the Dedicated Server named build target during define synchronization.
+- Preserve existing Docker URL settings while sanitizing Source Generator query data.
+- Ignore stale async generation/provider callbacks after window disposal or rebinding.
 
 ## [0.4.0]
 

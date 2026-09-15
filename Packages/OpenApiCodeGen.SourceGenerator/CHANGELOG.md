@@ -2,10 +2,13 @@
 
 ## Unreleased
 
-## [0.5.0] - 2026-08-18
+## [0.5.0] - Unreleased
 
 ### Added
 
+- Add cloud Unity verification, exact-candidate release evidence, a DLL-only update PR workflow, and manually started CD with a default dry-run.
+- Prepare OpenUPM GitHub Release asset registration for the add-on.
+- Report deterministic generated type-name disambiguation with warning `OACG107`.
 - Add Phase 6 URL loading and multi-document Bundle v2 support for Issues
   #50–#52. The Editor resolves the complete graph and publishes one Bundle
   v2 AdditionalFile per `specId`; the analyzer consumes the edge map without
@@ -52,6 +55,13 @@
   Bundle remains JSON for both raw formats, and JSON/YAML semantic and
   generated-source parity is verified for the shared MVP surface.
 - Avoid rewriting unchanged cache and definition inputs or requesting unnecessary script compilation.
+
+### Fixed
+
+- Sanitize URL reference/query display data and unexpected generation failures without changing fetch identity.
+- Preserve successful artifacts when generation is canceled after loading but before publication.
+- Exclude concurrent generation/recovery across threads and Unity processes, including failed local reentry followed by a cross-process attempt.
+- Retain durable compilation intent and recover interrupted publication without losing the compilation request.
 
 ## [0.1.0]
 

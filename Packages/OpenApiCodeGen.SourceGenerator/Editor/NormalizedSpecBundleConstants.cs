@@ -6,6 +6,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         internal const int LegacyFormatVersion = 1;
         internal const int MaximumDepth = 256;
         internal const int MaximumDocumentCount = 64;
+        internal const int MaximumHttpRequestCount = MaximumDocumentCount * (MaximumRedirects + 1);
         internal const int MaximumDocumentBytes = 4 * 1024 * 1024;
         internal const int MaximumGraphBytes = 32 * 1024 * 1024;
         internal const int MaximumRedirects = 5;

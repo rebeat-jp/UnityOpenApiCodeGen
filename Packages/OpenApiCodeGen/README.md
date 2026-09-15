@@ -25,6 +25,11 @@ The base package is also usable by itself with the Docker provider. The
 Source Generator add-on requires Unity 6000.0 or later and
 `com.unity.nuget.newtonsoft-json` `3.2.2`.
 
+These examples use the planned `0.5.0` tag. Until publication, replace it with
+the same reviewed commit SHA in both Git URLs. See the
+[Source Generator README](../OpenApiCodeGen.SourceGenerator/README.md) for
+input support, references, and generated-code requirements.
+
 ## Use the provider UI
 
 1. Select the project-wide provider in
@@ -37,6 +42,11 @@ Source Generator add-on requires Unity 6000.0 or later and
 `Generate` is the explicit fetch/refresh action for URL-based Source Generator
 inputs. Provider resolution is strict: an unknown, unavailable, or failing
 provider does not fall back to Docker.
+
+The window displays progress, warnings, and cancellation separately. Closing
+or rebinding the window cancels its outstanding generation and ignores stale
+callbacks. URL query sanitization applies to Source Generator settings;
+existing Docker URL settings retain their original value.
 
 When Source Generator is selected and available, the base package synchronizes
 `OPENAPI_CODEGEN_SOURCE_GENERATOR` for the active `NamedBuildTarget`. Removing

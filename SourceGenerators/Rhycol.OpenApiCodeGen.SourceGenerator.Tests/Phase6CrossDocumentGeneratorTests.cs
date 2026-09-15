@@ -199,7 +199,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 root,
                 bundle: bundle);
 
-            Assert.Empty(execution.RunResult.Diagnostics);
+            Diagnostic collision = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG107", collision.Id);
+            Assert.Equal(DiagnosticSeverity.Warning, collision.Severity);
+            Assert.Contains("'Pet'", collision.GetMessage());
+            Assert.Contains("'Pet2'", collision.GetMessage());
+            Assert.Equal("Assets/Specs/pet.json", collision.Location.GetLineSpan().Path);
+            Assert.Equal(0, collision.Location.GetLineSpan().StartLinePosition.Line);
+            Assert.Equal(0, collision.Location.GetLineSpan().StartLinePosition.Character);
+            Assert.Contains(
+                collision.AdditionalLocations,
+                location =>
+                    location.GetLineSpan().Path == TestBundleFactory.SourcePath &&
+                    location.GetLineSpan().StartLinePosition.Line == 0 &&
+                    location.GetLineSpan().StartLinePosition.Character == 0);
             Assert.Empty(execution.CompilationErrors);
             Assert.Contains("public sealed class Pet", execution.GeneratedSource);
             Assert.Contains("public sealed class Pet2", execution.GeneratedSource);

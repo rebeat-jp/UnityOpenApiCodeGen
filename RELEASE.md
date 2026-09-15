@@ -1,135 +1,189 @@
 # Release and rollback procedure
 
-## Purpose and audience
+## Distribution and prerequisites
 
-This runbook is for the maintainer preparing the `0.5.0` UPM release
-candidate. It separates automated .NET/package evidence from the Unity Editor
-manual gate. The repository scripts do not create Git tags, publish to a
-registry, or create a GitHub release.
+This runbook is for maintainers updating the analyzer DLL and releasing the two
+UPM packages. Publication starts manually and defaults to **dry-run**. Both
+packages use the same stable version and tag, initially `0.5.0`.
 
-## Release inputs
+| Package | Distribution |
+| --- | --- |
+| `jp.rhycol.openapicodegen` | Existing OpenUPM Git-tag tracking |
+| `jp.rhycol.openapicodegen.source-generator` | Verified GitHub Release `.tgz` asset, distributed by OpenUPM |
 
-Confirm the working tree contains the intended implementation and documentation
-changes, then verify these package contracts:
+The analyzer DLL remains committed in the add-on for Git URL installation.
+Examples target the planned `0.5.0` tag; before it exists, replace that ref with
+the reviewed commit SHA in both Git dependencies. Candidate verification does
+not establish that a version is published.
 
-- `jp.rhycol.openapicodegen` version `0.5.0`, minimum Unity `2021.3`.
-- `jp.rhycol.openapicodegen.source-generator` version `0.5.0`, minimum Unity
-  `6000.0`.
-- Source Generator dependency on base package `0.5.0` and
-  `com.unity.nuget.newtonsoft-json` `3.2.2`.
-- Both packages are installed as separate project-manifest Git dependencies:
+| Workflow | Entry point | Result |
+| --- | --- | --- |
+| `source-generator-ci.yml` | PR, main/develop push, manual SHA | .NET/package checks, Unity evidence, CD dry-run |
+| `source-generator-verify.yml` | Reused by CI and release | One candidate shared by all Unity versions |
+| `source-generator-update-dll.yml` | Manual, workflow ref `main` | DLL-only PR against `develop` or `main` |
+| `source-generator-release.yml` | Manual commit/version/publish | Dry-run, or immutable tag and Release |
+| `source-generator-openupm.yml` | Explicit dispatch at release **tag** | Base publication, add-on publication, registry byte comparison |
 
-```text
-https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.0
-https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.0
+Manual workflows become available after their definitions reach the default
+branch. Before that merge, a same-repository PR exercises the shared pipeline
+and the actual `publish-release.js` script with `PUBLISH=false`.
+
+Unity runs on GitHub-hosted Linux in GameCI containers. The three Linux/amd64
+image digests are pinned in
+[`unity-images.json`](SourceGenerators/BuildTools/CI/unity-images.json).
+The Unity job uses Environment **`UNITY_LICENSE`**, containing Secrets
+`UNITY_LICENSE`, `UNITY_EMAIL`, and `UNITY_PASSWORD`. The Personal ULF supplies
+the serial through the GameCI activation procedure. Activation and license
+return logs stay in the disposable container. Test logs/XML are redacted before
+being written to the artifact directory.
+
+All three editors run serially in one job. A repository-wide concurrency group
+also prevents overlapping Unity jobs across CI and release workflows. Fork PRs
+run .NET/package checks without the Unity job or its Secrets.
+
+## Update the committed DLL
+
+After source changes reach the selected base branch, start:
+
+```sh
+gh workflow run source-generator-update-dll.yml --ref main \
+  -f base_branch=develop
 ```
 
-Do not assume that a tag or registry package exists until a maintainer performs
-that external release action.
+The accepted bases are `develop` (default) and `main`. A read-only build job
+runs `sync-analyzer.sh` and verification. A separate job uses the trusted
+workflow controller to commit only the DLL, open a PR, and explicitly dispatch
+CI for its exact SHA. Existing `.meta`/GUID and package versions are preserved.
+An unchanged DLL produces no PR. Review and merge the PR through the normal
+repository process.
 
-## Automated candidate build
+The explicit dispatch is required because a PR created with `GITHUB_TOKEN`
+does not automatically trigger the ordinary PR workflow.
 
-Run from the repository root:
+## Candidate contract and evidence
+
+The current package contract is:
+
+- Base `0.5.0`, minimum Unity `2021.3`.
+- Add-on `0.5.0`, minimum Unity `6000.0`.
+- Add-on dependency on base `0.5.0` and
+  `com.unity.nuget.newtonsoft-json` `3.2.2`.
+- Package versions, dependency version, requested version, and tag match.
+
+The shared pipeline checks out the exact clean SHA, runs script and .NET tests,
+checks deterministic DLL builds and committed DLL synchronization, and rejects
+forbidden bundled dependencies. It then packs one candidate. The second pack
+inside `pack-release.sh` checks byte reproducibility; every editor receives
+the same candidate bytes.
+
+| Unity | Required verification |
+| --- | --- |
+| `2021.3.19f1` | Base-only tarball compilation and EditMode/Docker compatibility tests |
+| `6000.0.23f1` | Add-on tests, JSON/YAML/URL/external refs, unchanged/changed input, regeneration, removal and base-only tests |
+| `6000.3.2f1` | Same add-on and removal checks |
+
+Tests also cover cancellation, safe errors, cache exclusion and publication
+recovery. Missing editors, activation failures, missing logs/XML, failed tests,
+nonzero exits, and mismatched provenance cannot pass the release gate. Unity
+jobs cannot silently repack a missing candidate.
+
+The final `verified-release-<run-id>-<attempt>` artifact contains:
+
+```text
+jp.rhycol.openapicodegen-0.5.0.tgz
+jp.rhycol.openapicodegen.source-generator-0.5.0.tgz
+release-manifest.json
+SHA256SUMS
+unity-gate.json
+unity-gate/<editor-version>/gate.json, logs, XML, fixture evidence
+verification-evidence.tar.gz
+```
+
+The schema-2 manifest records clean commit, tool versions, CI run/attempt,
+archive and analyzer hashes, and the aggregate Unity gate. Each editor's
+evidence binds the same commit, run/attempt, and candidate fingerprint.
+`SHA256SUMS` covers both packages and the manifest; the manifest and gate
+summaries transitively cover all verification files. Use the successful
+artifact for the commit being reviewed. Older or dirty-tree evidence is for
+development only.
+
+## Dry-run and publication
+
+Start the manual release workflow with an exact 40-character SHA:
+
+```sh
+gh workflow run source-generator-release.yml --ref main \
+  -f commit=REPLACE_WITH_FULL_COMMIT_SHA -f version=0.5.0 -F publish=false
+```
+
+The default `publish=false` verifies the full candidate and executes the CD
+script without remote publication. Review the workflow result and complete
+artifact. CI and CD dry-run success are the implementation's review gate;
+registry delivery is confirmed at the first formal release.
+
+For publication, complete the add-on's
+[initial OpenUPM registration](SourceGenerators/OpenUPM/README.md), then start
+the same workflow from `main` with `-F publish=true`. The trusted workflow
+checks exact SHA, clean checkout, and membership in `origin/main` before
+running target scripts, and repeats these checks at the write boundary.
+
+After verification, the publisher creates the immutable tag and a draft
+GitHub Release, uploads both packages, manifest, checksums and evidence
+archive, downloads the assets again to verify their bytes, then publishes the
+Release. Only the publication job receives repository write permissions.
+
+The publisher dispatches `source-generator-openupm.yml` using the **tag as its
+ref**. OpenUPM's OIDC token must refer to that exact tag, so this cannot run in
+the original main-ref job. No extra OpenUPM Secret is needed. The follow-up
+verifies the Release, waits for the base package through the official OpenUPM
+action, then does the same for the add-on, and compares the registry add-on
+tarball byte-for-byte with the verified asset.
+
+## Failures and resuming
+
+- **CI/activation failure:** inspect the failed gate and sanitized logs, fix
+  the cause, and rerun verification. Missing or invalid credentials produce a
+  non-success gate.
+- **DLL/version/evidence mismatch:** correct source, committed DLL or metadata
+  in a reviewed commit and rebuild. Do not edit evidence to bypass checks.
+- **Interrupted publication:** rerun only the failed publication job in the
+  same Actions run. It reuses the original verified artifact and verification
+  attempt. Matching draft assets remain; only missing assets are uploaded.
+- **Existing tag/asset differs:** stop without overwriting. A full new
+  verification run creates different run provenance and cannot substitute for
+  the original resume artifact. Retain the original Actions run and artifact.
+- **Published Release incomplete/unexpected:** stop and investigate. The
+  publisher does not modify published assets to repair it.
+- **OpenUPM failure:** fix registration/service conditions and rerun the
+  follow-up at the same tag. A successful main release job alone does not prove
+  registry delivery. A byte mismatch requires investigation and a new version.
+
+## Local Mac verification
+
+Install the three licensed Editors, Node from `.node-version`, npm `11.19.0`,
+and .NET SDK `10.0.301`. From a clean checkout:
 
 ```sh
 SourceGenerators/scripts/verify.sh
-SourceGenerators/scripts/pack-release.sh
-```
-
-`verify.sh` checks production tests, reproducible analyzer output, analyzer
-sync, and UPM package inspection. `pack-release.sh` then creates two identical
-packs for each package, verifies their archive roots and dependency DLL policy,
-and writes:
-
-```text
-artifacts/upm/0.5.0/
-  jp.rhycol.openapicodegen-0.5.0.tgz
-  jp.rhycol.openapicodegen.source-generator-0.5.0.tgz
-  release-manifest.json
-  SHA256SUMS
-```
-
-The manifest records schema version and, for each archive, its package,
-version, `path`, file, root, `size`, and SHA-256. It also records the packaged
-analyzer SHA-256 and the manual Unity gate. It initially
-contains `"unityGate": { "mode": "manual", "status": "not-run" }`. A failed
-command is a release blocker; do not hand off the generated archives.
-
-## Manual Unity gate
-
-The Unity gate is deliberately manual and is not part of GitHub Actions. Run:
-
-```sh
 SourceGenerators/scripts/verify-unity-matrix.sh
 ```
 
-Use Unity `2021.3.19f1` for the base package and Unity `6000.0.23f1` plus
-`6000.3.2f1` for the Source Generator add-on. Install the candidate tarballs
-into temporary projects and verify:
-
-1. clean base-package compile without the add-on;
-2. local JSON and YAML generation;
-3. URL generation against the deterministic loopback fixture;
-4. local JSON with the external bare YAML Schema fixture;
-5. regeneration with unchanged input and no unnecessary compilation;
-6. changed input updates only the related generated client;
-7. add-on removal removes the provider define before recompilation;
-8. base-only project remains usable after add-on removal; and
-9. no `CS8785` or unexpected analyzer/package errors.
-
-Save version-specific logs, result XML, and `unity-gate.json` as evidence. If
-the Editor or Test Runner does not produce usable evidence, record that version
-as `not-run`; a failed or missing version keeps the release candidate
-non-releasable.
-
-Current evidence is:
-
-- Source Generator .NET tests: **101/101**.
-- Analyzer reproducibility, analyzer synchronization, package inspection,
-  tarball reproducibility, and checksum verification: **pass**.
-- Base Unity `2021.3.19f1` tarball/EditMode gate: **36/36**.
-- Unity `6000.0.23f1`: initial **185/185**, regeneration **185/185**, and
-  without-add-on **36/36**; the full Source Generator flow passed.
-- Unity `6000.3.2f1`: initial **185/185**, regeneration **185/185**, and
-  without-add-on **36/36**; the full Source Generator flow passed.
-- Aggregate manual evidence in `artifacts/upm/0.5.0/unity-gate.json`:
-  **passed**.
-
-The manual gate therefore passed, but the release boundary remains open: the
-Unity GitHub Actions job required by #54 is intentionally not implemented.
-Consequently #54 and Phase 7 are not complete and this candidate is not
-release-ready until that decision changes.
-
-## Provenance before publication
-
-`release-manifest.json` records the repository `HEAD` used to create the
-candidate archives. The current implementation worktree is dirty, so that
-commit value is not sufficient provenance for publication. Before publishing,
-commit the intended changes to a clean tree, rerun `verify.sh`,
-`pack-release.sh`, and the full Unity matrix, then review the regenerated
-manifest and `SHA256SUMS`. Do not publish archives or a tag from a dirty-tree
-candidate.
-
-## Handoff and publication
-
-Only after maintainers resolve or explicitly waive the open #54 release
-criterion and all manual evidence is `pass`, review `SHA256SUMS` and the commit
-recorded in `release-manifest.json`. A maintainer may then create the immutable
-`0.5.0` tag and publish the release through the chosen external process. Do not
-move or delete an existing tag. The repository's packaging script itself
-performs no tagging, registry publication, or release upload.
+The matrix packs once and uses the shared schema-2 aggregator. `--allow-dirty`
+is available for development and records no publishable commit.
+`UNITY_EXECUTABLE`, `SOURCE_GENERATOR_RELEASE_OUTPUT`,
+`SOURCE_GENERATOR_EVIDENCE_ROOT`, and
+`SOURCE_GENERATOR_UNITY_TIMEOUT_SECONDS` support local overrides. The CD
+evidence archive uses GNU tar and runs on Linux in Actions.
 
 ## Rollback
 
-If the Source Generator add-on must be withdrawn:
-
-1. Remove `jp.rhycol.openapicodegen.source-generator` from the project
+1. Remove `jp.rhycol.openapicodegen.source-generator` from the Unity project
    manifest and allow Unity to remove its provider define.
 2. Keep the base package and select the Docker provider in Settings.
-3. Pin the base package to `0.4.0` if the base `0.5.0` contract is also
+3. Pin the base to the existing `0.4.0` release if its `0.5.0` contract is also
    implicated.
-4. Regenerate affected clients with the Docker provider and record the
-   project/package changes.
+4. Regenerate affected clients and adjust code that depended on generated
+   types. Record the project/package changes.
 
-Never move or delete the published `0.5.0` tag. Corrective changes use a new
-`0.5.1` fix-forward release after the same automated and manual gates.
+Never move or delete a published tag or replace a published package. Fixes use
+a new patch version, such as `0.5.1`, through the same verification process.

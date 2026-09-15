@@ -8,14 +8,29 @@ scripts_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "${scripts_directory}/common.sh"
 
-if [[ $# -gt 1 ]]; then
-  echo "Usage: $0 [unity-version]" >&2
-  exit 2
-fi
+unity_version="2021.3.19f1"
+pack_release_args=()
+for argument in "$@"; do
+  case "${argument}" in
+    --allow-dirty)
+      if [[ ${#pack_release_args[@]} -ne 0 ]]; then
+        echo "Usage: $0 [unity-version] [--allow-dirty]" >&2
+        exit 2
+      fi
+      pack_release_args=("--allow-dirty")
+      ;;
+    2021.3.19f1)
+      unity_version="${argument}"
+      ;;
+    *)
+      echo "Usage: $0 [unity-version] [--allow-dirty]" >&2
+      exit 2
+      ;;
+  esac
+done
 
-unity_version="${1:-2021.3.19f1}"
 unity_executable="${UNITY_EXECUTABLE:-/Applications/Unity/Hub/Editor/${unity_version}/Unity.app/Contents/MacOS/Unity}"
-release_version="0.5.0"
+release_version="$(node -p "require('${repository_root}/Packages/OpenApiCodeGen/package.json').version")"
 release_output="${SOURCE_GENERATOR_RELEASE_OUTPUT:-${repository_root}/artifacts/upm/${release_version}}"
 base_archive="${release_output}/jp.rhycol.openapicodegen-${release_version}.tgz"
 evidence_root="${SOURCE_GENERATOR_EVIDENCE_ROOT:-${release_output}/unity-gate/${unity_version}}"
@@ -45,7 +60,11 @@ copy_evidence_file() {
   local evidence_name="$2"
 
   if [[ -f "${source_path}" ]]; then
-    cp "${source_path}" "${evidence_root}/${evidence_name}"
+    if [[ "${SOURCE_GENERATOR_CI:-0}" == "1" && ( "${evidence_name}" == *.log || "${evidence_name}" == *.xml ) ]]; then
+      node "${scripts_directory}/ci-evidence.js" sanitize-file "${source_path}" "${evidence_root}/${evidence_name}"
+    else
+      cp "${source_path}" "${evidence_root}/${evidence_name}"
+    fi
   fi
 }
 
@@ -57,30 +76,9 @@ write_gate_evidence() {
   copy_evidence_file "${log}" "base.log"
 
   if command -v node >/dev/null 2>&1; then
-    node - "${evidence_root}/gate.json" "${gate_status}" "${exit_code}" \
-      "${unity_version}" "${gate_reason}" "${evidence_root}" "${repository_root}" <<'NODE'
-const fs = require('fs');
-const path = require('path');
-
-const [outputPath, status, exitCode, version, reason, evidenceRoot, repositoryRoot] = process.argv.slice(2);
-const relativePath = candidate => fs.existsSync(candidate)
-  ? path.relative(repositoryRoot, candidate).split(path.sep).join('/')
-  : null;
-const resultPath = path.join(evidenceRoot, 'base-results.xml');
-const logPath = path.join(evidenceRoot, 'base.log');
-const summary = {
-  schemaVersion: 1,
-  status,
-  version,
-  exitCode: Number(exitCode),
-  reason,
-  resultPath: relativePath(resultPath),
-  logPath: relativePath(logPath),
-  evidencePath: path.relative(repositoryRoot, evidenceRoot).split(path.sep).join('/'),
-  timestampUtc: new Date().toISOString()
-};
-fs.writeFileSync(outputPath, JSON.stringify(summary, null, 2) + '\n', 'utf8');
-NODE
+    node "${scripts_directory}/ci-evidence.js" write-gate \
+      "${evidence_root}/gate.json" "${gate_status}" "${exit_code}" \
+      "${unity_version}" "${gate_reason}" "${evidence_root}" "${release_output}"
   else
     printf '{\n  "schemaVersion": 1,\n  "status": "%s",\n  "version": "%s",\n  "exitCode": %s,\n  "reason": "manual evidence writer unavailable"\n}\n' \
       "${gate_status}" "${unity_version}" "${exit_code}" > "${evidence_root}/gate.json"
@@ -122,10 +120,15 @@ if ! command -v node >/dev/null 2>&1; then
   fail_not_run "node is unavailable for gate evidence"
 fi
 if [[ ! -f "${base_archive}" ]]; then
-  if ! "${scripts_directory}/pack-release.sh"; then
+  if [[ "${SOURCE_GENERATOR_CI:-0}" == "1" ]]; then
+    fail_not_run "the CI candidate tarball is missing; repacking is forbidden"
+  fi
+  if ! "${scripts_directory}/pack-release.sh" "${pack_release_args[@]}"; then
     fail_not_run "release-candidate packing failed before the Unity gate"
   fi
 fi
+
+rm -rf "${evidence_root}"
 if [[ ! -f "${base_archive}" ]]; then
   fail_not_run "base release-candidate tarball is missing: ${base_archive}"
 fi
@@ -183,7 +186,7 @@ else
     fail_not_run "Unity editor timed out or did not produce test XML (exit ${unity_exit_code})"
   fi
   test_result="$(xmllint --xpath 'string(/test-run/@result)' "${results}" 2>/dev/null || true)"
-  if [[ "${test_result}" == "Failed" ]]; then
+  if [[ "${test_result}" == Failed* ]]; then
     fail_gate "base Unity EditMode assertion failure"
   fi
   fail_not_run "Unity editor exited ${unity_exit_code} despite producing non-failed test XML"
@@ -196,7 +199,7 @@ test_result="$(xmllint --xpath 'string(/test-run/@result)' "${results}" 2>/dev/n
 case "${test_result}" in
   Passed)
     ;;
-  Failed)
+  Failed*)
     fail_gate "base Unity EditMode assertion failure"
     ;;
   *)
@@ -211,6 +214,7 @@ fi
 gate_status="passed"
 gate_reason="base Unity EditMode gate passed"
 echo "Unity ${unity_version} base-package verification passed."
-echo "$(xmllint --xpath 'concat("total=",/test-run/@total," passed=",/test-run/@passed," failed=",/test-run/@failed)' "${results}")"
+xmllint --xpath 'concat("total=",/test-run/@total," passed=",/test-run/@passed," failed=",/test-run/@failed)' "${results}"
+printf '\n'
 echo "Results: ${results}"
 echo "Log: ${log}"

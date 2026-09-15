@@ -1,8 +1,12 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Unity.OpenApiCodeGen.Editor")]
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Unity.OpenApiCodeGen.SourceGenerator.Editor")]
 
 namespace Rhycol.OpenApiCodeGen.Editor.Generation
 {
@@ -72,6 +76,13 @@ namespace Rhycol.OpenApiCodeGen.Editor.Generation
         public string ApiName { get; }
         public string GeneratedNamespace { get; }
 
+        internal IProgress<GenerationProgress>? Progress { get; set; }
+
+        internal void ReportProgress(double value, string stage)
+        {
+            Progress?.Report(new GenerationProgress(value, stage));
+        }
+
         public GenerationRequest(string apiDocumentFilePathOrUrl, string outputFolderPath)
             : this(
                 apiDocumentFilePathOrUrl,
@@ -97,20 +108,41 @@ namespace Rhycol.OpenApiCodeGen.Editor.Generation
         }
     }
 
+    internal readonly struct GenerationProgress
+    {
+        internal GenerationProgress(double value, string stage)
+        {
+            Value = value < 0 ? 0 : value > 1 ? 1 : value;
+            Stage = stage ?? string.Empty;
+        }
+
+        internal double Value { get; }
+        internal string Stage { get; }
+    }
+
+
     public sealed class GenerationResult
     {
         public bool IsSuccess { get; }
         public string Message { get; }
+        public IReadOnlyList<string> Warnings { get; }
 
-        private GenerationResult(bool isSuccess, string message)
+        private GenerationResult(bool isSuccess, string message, IReadOnlyList<string>? warnings)
         {
             IsSuccess = isSuccess;
             Message = message ?? string.Empty;
+            Warnings = warnings == null ? Array.Empty<string>() : new List<string>(warnings).AsReadOnly();
         }
 
+        // Keep the original binary-compatible member for consumers compiled against 0.4.x.
         public static GenerationResult Success(string message = "")
         {
-            return new GenerationResult(true, message);
+            return new GenerationResult(true, message, Array.Empty<string>());
+        }
+
+        public static GenerationResult Success(string message, IReadOnlyList<string>? warnings)
+        {
+            return new GenerationResult(true, message, warnings);
         }
 
         public static GenerationResult Failure(string message)
@@ -120,7 +152,7 @@ namespace Rhycol.OpenApiCodeGen.Editor.Generation
                 throw new ArgumentException("A failed generation requires a message.", nameof(message));
             }
 
-            return new GenerationResult(false, message);
+            return new GenerationResult(false, message, Array.Empty<string>());
         }
     }
 

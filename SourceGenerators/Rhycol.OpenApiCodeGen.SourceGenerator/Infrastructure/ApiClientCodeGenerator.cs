@@ -155,6 +155,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
 
+        private static readonly DiagnosticDescriptor TypeNameCollisionDiagnostic = new(
+            "OACG107",
+            "Generated type name collision",
+            "OpenAPI schema type '{0}' was generated as '{1}' because an earlier emitted declaration already owns the requested name in root-first, documentId/pointer order.",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
         /// <summary>
         /// ジェネレータの初期化。
         /// Initializes the generator.
@@ -639,9 +647,28 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             try
             {
                 var service = new GenerationService();
-                IReadOnlyList<GeneratedFile> files = bundle.IsMultiDocument
-                    ? service.GenerateMvpFromOpenApiBundle(bundle, workItem.Definition.Options)
-                    : service.GenerateMvpFromOpenApiNode(bundle.Root, workItem.Definition.Options);
+                OpenApiGenerationModel model = bundle.IsMultiDocument
+                    ? service.BuildMvpModelFromOpenApiBundle(bundle, workItem.Definition.Options)
+                    : service.BuildMvpModelFromOpenApiNode(bundle.Root, workItem.Definition.Options);
+                foreach (GeneratedTypeNameCollision collision in model.TypeNameCollisions)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        TypeNameCollisionDiagnostic,
+                        CreateExternalLocation(
+                            GetCollisionSourcePath(collision.Location, bundle.SourcePath),
+                            collision.Location.Line,
+                            collision.Location.Column),
+                        new[]
+                        {
+                            CreateExternalLocation(
+                                GetCollisionSourcePath(collision.ExistingLocation, bundle.SourcePath),
+                                collision.ExistingLocation.Line,
+                                collision.ExistingLocation.Column)
+                        },
+                        collision.RequestedName,
+                        collision.GeneratedName));
+                }
+                IReadOnlyList<GeneratedFile> files = service.EmitMvpModel(model);
                 for (int index = 0; index < files.Count; index++)
                 {
                     GeneratedFile file = files[index];
@@ -716,6 +743,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 path,
                 new TextSpan(0, 0),
                 new LinePositionSpan(position, position));
+        }
+
+        private static string GetCollisionSourcePath(OpenApiSourceLocation location, string bundleSourcePath)
+        {
+            return string.IsNullOrEmpty(location.SourcePath)
+                ? bundleSourcePath
+                : location.SourcePath;
         }
 
         private static DiagnosticDescriptor GetSemanticDescriptor(OpenApiSemanticErrorKind kind)

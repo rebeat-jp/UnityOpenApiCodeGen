@@ -75,11 +75,18 @@ SourceGenerators/scripts/pack-release.sh
 ```
 
 出力先は`artifacts/upm/0.5.0/`で、base/add-onのtarball、`release-manifest.json`、
-`SHA256SUMS`を含みます。manifestのUnity gateは手動検証が完了するまで`not-run`です。
+`SHA256SUMS`を含みます。manifestのUnity gateは検証完了まで`not-run`です。
+Nodeはルートの`.node-version`、npmは`11.19.0`を使用します。clean treeが必要で、
+開発中だけ`--allow-dirty`を指定できます。dirty候補のcommitは`null`になり、公開には使えません。
 
 ## Unity verification matrix
 
-Unity Editorとlicenseが必要なmatrixはGitHub Actionsへ入れず、release前の手動gateとして実行します。
+GitHub Actionsは、cleanな同一commitから作成した同一tarballを、GitHub-hosted Linuxと
+固定digestのGameCIイメージで検証します。Unity jobはEnvironment `UNITY_LICENSE`の
+`UNITY_LICENSE`・`UNITY_EMAIL`・`UNITY_PASSWORD`を使用し、workflow間も逐次実行します。
+fork PRへはSecretsを渡さず、.NET/package検証のみ実行します。
+
+ローカルMacのEditorとlicenseでも同じmatrixを実行できます。
 
 ```sh
 SourceGenerators/scripts/verify-unity-matrix.sh
@@ -90,28 +97,27 @@ SourceGenerators/scripts/verify-unity-matrix.sh
 再Generate、without-addon、`CS8785`不在、package transition時のdefine除去を確認し、
 version別XML/logと`unity-gate.json`を保存します。
 
-### Current verification status
+### Evidence
 
-実装・追補後に確認済みなのは次の範囲です。
-
-- .NET tests: **101/101**
-- analyzer reproducibility、sync、package inspection、tarball reproducibility、
-  checksum verification: **pass**
-- Unity `2021.3.19f1` base tarball/EditMode: **36/36**
-- Unity `6000.0.23f1`: initial **185/185**、regeneration **185/185**、
-  without-addon **36/36**。Source Generator full flow: **pass**
-- Unity `6000.3.2f1`: initial **185/185**、regeneration **185/185**、
-  without-addon **36/36**。Source Generator full flow: **pass**
-- aggregate manual evidence `artifacts/upm/0.5.0/unity-gate.json`: **passed**
-
-manual gate自体は完了しています。ただし、GitHub ActionsのUnity jobは計画どおり追加して
-いないため、#54とPhase 7全体はopenのままで、release-readyとは扱いません。公開前には
-cleanなcommit済みtreeで`verify.sh`、`pack-release.sh`、Unity matrixを再実行し、
-`release-manifest.json`と`SHA256SUMS`のprovenanceを更新してください。
+CIの`verified-release-<run-id>-<attempt>` artifactに、tarball、manifest、SHA256SUMS、
+各Unityのlog/XMLと集約gateを保存します。schema 2のvalidatorはcommit、run/attempt、
+candidate fingerprint、全証拠hash、test XMLと終了コードを照合します。
+欠落・改変・失敗・未実行のgateでは公開へ進めません。過去の件数ではなく、対象commitの
+成功runとartifactを確認してください。
 
 ## CI
 
-`.github/workflows/source-generator-ci.yml`はpull request、および`main`/`develop`へのpushで
-`SourceGenerators/scripts/verify.sh`を実行します。Unity Editor licenseを必要とするmatrixはCIへ
-含めず、上記manual commandでrelease前に実行します。このため、manual gateの結果がpassでも
-GitHub Actions Unity jobを要求する#54は未完了です。
+`.github/workflows/source-generator-ci.yml`はpull request、`main`/`develop`へのpush、
+手動dispatchで共通の`source-generator-verify.yml`を呼びます。共通処理は.NET/package検証、
+Unity matrix、証拠集約の後に、実際の公開スクリプトを`PUBLISH=false`で実行します。
+これによりdefault branchへworkflowが入る前のPRでもCD dry-runを確認できます。
+
+DLL更新は`source-generator-update-dll.yml`を`main`から手動実行し、
+`base_branch=develop`または`main`を選びます。変更がある場合のみDLL専用PRと明示CIを作成し、
+version・`.meta`・GUIDは維持します。
+
+公開は`source-generator-release.yml`の`commit`・`version`・`publish`を指定します。
+既定はdry-runです。公開時はmainに含まれるcommitだけを許可し、タグ・既存assetを上書きしません。
+OpenUPM確認はOIDCのためタグrefの別workflowへ渡します。
+[リリース・再開・rollback手順](../RELEASE.md)と
+[初回OpenUPM登録](OpenUPM/README.md)を参照してください。

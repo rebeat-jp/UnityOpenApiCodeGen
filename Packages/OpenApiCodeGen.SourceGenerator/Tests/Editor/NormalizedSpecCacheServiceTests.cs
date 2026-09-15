@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -13,6 +14,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         private const string SpecId = "0123456789abcdef0123456789abcdef";
         private string projectRoot;
         private RecordingImporter importer;
+        private int compilationRequestCount;
 
         [SetUp]
         public void SetUp()
@@ -20,6 +22,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             projectRoot = Path.Combine(Path.GetTempPath(), "OpenApiCodeGenSourceGeneratorTests", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Path.Combine(projectRoot, "Assets", "Specs"));
             importer = new RecordingImporter();
+            compilationRequestCount = 0;
         }
 
         [TearDown]
@@ -113,6 +116,264 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(File.GetLastWriteTimeUtc(second.AuthoritativePath), Is.EqualTo(authoritativeTimestamp));
             Assert.That(File.GetLastWriteTimeUtc(second.MirrorPath), Is.EqualTo(mirrorTimestamp));
             Assert.That(importer.ImportedAssetPaths, Is.Empty);
+        }
+
+        [Test]
+        public void GenerationLockRejectsASecondOwnerAndCanBeReacquiredAfterRelease()
+        {
+            NormalizedSpecCacheService service = CreateService();
+            using (IDisposable first = service.AcquireGenerationLock())
+            {
+                Assert.Throws<SafeGenerationException>(
+                    () => service.AcquireGenerationLock());
+                Assert.Throws<SafeGenerationException>(
+                    () => CreateService().AcquireGenerationLock());
+                var caseAliasedService = new NormalizedSpecCacheService(projectRoot.ToUpperInvariant(),
+                    new RawJsonNormalizer(), new AtomicFileWriter(), importer);
+                Assert.Throws<SafeGenerationException>(() => caseAliasedService.AcquireGenerationLock());
+            }
+
+            using (IDisposable second = service.AcquireGenerationLock())
+            {
+                Assert.That(second, Is.Not.Null);
+            }
+        }
+
+        [Test]
+        public void DisposingAnOldGenerationLockAgainDoesNotReleaseItsReplacement()
+        {
+            IDisposable first = CreateService().AcquireGenerationLock();
+            first.Dispose();
+            using (IDisposable second = CreateService().AcquireGenerationLock())
+            {
+                first.Dispose();
+                Assert.Throws<SafeGenerationException>(() => CreateService().AcquireGenerationLock());
+            }
+            using (IDisposable third = CreateService().AcquireGenerationLock())
+                Assert.That(third, Is.Not.Null);
+        }
+
+        [Test]
+        public void ConcurrentThreadsAcquireOnlyOneGenerationLock()
+        {
+            using (var start = new ManualResetEventSlim(false))
+            {
+                var acquisitions = new System.Threading.Tasks.Task<IDisposable>[2];
+                for (int index = 0; index < acquisitions.Length; index++)
+                {
+                    acquisitions[index] = System.Threading.Tasks.Task.Run(() =>
+                    {
+                        start.Wait();
+                        try { return CreateService().AcquireGenerationLock(); }
+                        catch (SafeGenerationException) { return null; }
+                    });
+                }
+                start.Set();
+                try
+                {
+                    Assert.That(System.Threading.Tasks.Task.WaitAll(acquisitions, 30000), Is.True);
+                    int owners = 0;
+                    foreach (var acquisition in acquisitions)
+                        if (acquisition.Result != null) owners++;
+                    Assert.That(owners, Is.EqualTo(1));
+                }
+                finally
+                {
+                    foreach (var acquisition in acquisitions)
+                        if (acquisition.Status == System.Threading.Tasks.TaskStatus.RanToCompletion)
+                            acquisition.Result?.Dispose();
+                }
+            }
+            using (IDisposable generationLock = CreateService().AcquireGenerationLock())
+                Assert.That(generationLock, Is.Not.Null);
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        [UnityEngine.TestTools.UnityPlatform(UnityEngine.RuntimePlatform.OSXEditor,
+            UnityEngine.RuntimePlatform.LinuxEditor)]
+        public void GenerationLockExcludesAnotherProcessAndReleasesOnExit(bool terminateOwner)
+        {
+            string monoRoot = Path.Combine(UnityEditor.EditorApplication.applicationContentsPath,
+                "MonoBleedingEdge");
+            string monoPath = Path.Combine(monoRoot, "bin", "mono");
+            string csiPath = Path.Combine(monoRoot, "lib", "mono", "4.5", "csi.exe");
+            Assert.That(File.Exists(monoPath), Is.True, "Unity's bundled Mono runtime is required.");
+            Assert.That(File.Exists(csiPath), Is.True, "Unity's bundled C# interpreter is required.");
+            string scriptPath = Path.Combine(projectRoot, "lock-owner.csx");
+            string readyPath = Path.Combine(projectRoot, "lock-owner.ready");
+            string releasePath = Path.Combine(projectRoot, "lock-owner.release");
+            // Run the actual service method from the freshly compiled Editor assembly. Only
+            // projectRoot is used by this method, so bypass unrelated Unity-native dependencies.
+            File.WriteAllText(scriptPath, @"
+using System;
+using System.IO;
+using System.Reflection;
+using System.Runtime.Serialization;
+using System.Threading;
+var assembly = Assembly.LoadFrom(Args[0]);
+var type = assembly.GetType(""Rhycol.OpenApiCodeGen.SourceGenerator.Editor.NormalizedSpecCacheService"", true);
+var service = FormatterServices.GetUninitializedObject(type);
+type.GetField(""projectRoot"", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(service, Args[1]);
+var acquire = type.GetMethod(""AcquireGenerationLock"", BindingFlags.Instance | BindingFlags.NonPublic);
+using ((IDisposable)acquire.Invoke(service, null))
+{
+    try
+    {
+        using ((IDisposable)acquire.Invoke(service, null)) { }
+        throw new Exception(""The same-process owner was not rejected."");
+    }
+    catch (TargetInvocationException exception)
+    {
+        if (exception.InnerException.GetType().Name != ""SafeGenerationException"") throw;
+    }
+    File.WriteAllText(Args[2], ""locked"");
+    while (!File.Exists(Args[3])) Thread.Sleep(20);
+}
+", new UTF8Encoding(false));
+            string assemblyPath = typeof(NormalizedSpecCacheService).Assembly.Location;
+            var start = new System.Diagnostics.ProcessStartInfo(monoPath,
+                QuoteProcessArgument(csiPath) + " -- " + QuoteProcessArgument(scriptPath) + " " +
+                QuoteProcessArgument(assemblyPath) + " " + QuoteProcessArgument(projectRoot) + " " +
+                QuoteProcessArgument(readyPath) + " " + QuoteProcessArgument(releasePath))
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            start.EnvironmentVariables["MONO_PATH"] = Path.GetDirectoryName(assemblyPath) +
+                Path.PathSeparator + Path.Combine(UnityEditor.EditorApplication.applicationContentsPath,
+                    "Managed") + Path.PathSeparator + Path.Combine(
+                    UnityEditor.EditorApplication.applicationContentsPath, "Managed", "UnityEngine");
+            using (var owner = System.Diagnostics.Process.Start(start))
+            {
+                try
+                {
+                    var timeout = System.Diagnostics.Stopwatch.StartNew();
+                    while (!File.Exists(readyPath) && !owner.HasExited && timeout.ElapsedMilliseconds < 30000)
+                        Thread.Sleep(20);
+                    Assert.That(File.Exists(readyPath), Is.True,
+                        owner.HasExited ? owner.StandardError.ReadToEnd() : "Lock owner did not become ready.");
+                    Assert.Throws<SafeGenerationException>(() => CreateService().AcquireGenerationLock());
+                    if (terminateOwner)
+                        owner.Kill();
+                    else
+                        File.WriteAllText(releasePath, "release");
+                    Assert.That(owner.WaitForExit(10000), Is.True, "Lock owner did not exit.");
+                    if (!terminateOwner)
+                        Assert.That(owner.ExitCode, Is.Zero, owner.StandardError.ReadToEnd());
+                    using (IDisposable generationLock = CreateService().AcquireGenerationLock())
+                        Assert.That(generationLock, Is.Not.Null);
+                }
+                finally
+                {
+                    if (!owner.HasExited)
+                    {
+                        owner.Kill();
+                        owner.WaitForExit(10000);
+                    }
+                }
+            }
+        }
+
+        private static string QuoteProcessArgument(string argument)
+        {
+            return "\"" + argument.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+        }
+
+        [Test]
+        public void PublishGraphReportsCompilationRequiredAndNoOpDoesNotRequestCompilation()
+        {
+            WriteRaw("{\"openapi\":\"3.0.3\"}");
+            NormalizedSpecCacheService service = CreateService(() => compilationRequestCount++);
+            NormalizedSpecGraph graph = service.LoadGraphAsync(
+                "Assets/Specs/openapi.json",
+                SpecId,
+                CancellationToken.None).GetAwaiter().GetResult();
+
+            NormalizedSpecCacheResult first = service.PublishGraph(graph);
+
+            Assert.That(first.CompilationRequired, Is.True);
+            Assert.That(compilationRequestCount, Is.Zero);
+            string markerPath = Path.Combine(
+                Path.GetDirectoryName(first.AuthoritativePath),
+                NormalizedSpecBundleConstants.PublishPendingFileName);
+            Assert.That(File.ReadAllText(markerPath), Does.Contain("state=published-awaiting-compilation\n"));
+            service.AcknowledgeCompilationRequest(SpecId);
+
+            NormalizedSpecCacheResult second = service.PublishGraph(graph);
+
+            Assert.That(second.CompilationRequired, Is.False);
+            Assert.That(compilationRequestCount, Is.Zero);
+            Assert.That(File.Exists(markerPath), Is.False);
+        }
+
+        [Test]
+        public void RecoverPendingCompilationsPreservesAwaitingBytesAndRequestsCompilation()
+        {
+            WriteRaw("{\"openapi\":\"3.0.3\"}");
+            NormalizedSpecCacheService publishingService = CreateService();
+            NormalizedSpecGraph graph = publishingService.LoadGraphAsync(
+                "Assets/Specs/openapi.json",
+                SpecId,
+                CancellationToken.None).GetAwaiter().GetResult();
+            NormalizedSpecCacheResult published = publishingService.PublishGraph(graph);
+            byte[] authoritativeBytes = File.ReadAllBytes(published.AuthoritativePath);
+            byte[] mirrorBytes = File.ReadAllBytes(published.MirrorPath);
+
+            NormalizedSpecCacheService recoveryService = CreateService(() => compilationRequestCount++);
+            recoveryService.RecoverPendingCompilations();
+
+            string markerPath = Path.Combine(
+                Path.GetDirectoryName(published.AuthoritativePath),
+                NormalizedSpecBundleConstants.PublishPendingFileName);
+            Assert.That(compilationRequestCount, Is.EqualTo(1));
+            Assert.That(File.Exists(markerPath), Is.False);
+            Assert.That(File.ReadAllBytes(published.AuthoritativePath), Is.EqualTo(authoritativeBytes));
+            Assert.That(File.ReadAllBytes(published.MirrorPath), Is.EqualTo(mirrorBytes));
+        }
+
+        [Test]
+        public void RecoverPendingPublishingRollsBackArtifactsImportsMirrorAndRequestsCompilation()
+        {
+            WriteRaw("{\"openapi\":\"3.0.3\",\"info\":{\"version\":\"one\"}}" );
+            NormalizedSpecCacheService firstService = CreateService();
+            NormalizedSpecGraph firstGraph = firstService.LoadGraphAsync(
+                "Assets/Specs/openapi.json",
+                SpecId,
+                CancellationToken.None).GetAwaiter().GetResult();
+            NormalizedSpecCacheResult first = firstService.PublishGraph(firstGraph);
+            firstService.AcknowledgeCompilationRequest(SpecId);
+            byte[] oldAuthoritative = File.ReadAllBytes(first.AuthoritativePath);
+            byte[] oldMirror = File.ReadAllBytes(first.MirrorPath);
+
+            WriteRaw("{\"openapi\":\"3.0.3\",\"info\":{\"version\":\"two\"}}" );
+            var failingService = new NormalizedSpecCacheService(
+                projectRoot,
+                new RawJsonNormalizer(),
+                new TargetFailingWriter(first.MirrorPath),
+                importer);
+            NormalizedSpecGraph secondGraph = failingService.LoadGraphAsync(
+                "Assets/Specs/openapi.json",
+                SpecId,
+                CancellationToken.None).GetAwaiter().GetResult();
+            Assert.Throws<IOException>(() => failingService.PublishGraph(secondGraph));
+
+            string markerPath = Path.Combine(
+                Path.GetDirectoryName(first.AuthoritativePath),
+                NormalizedSpecBundleConstants.PublishPendingFileName);
+            Assert.That(File.ReadAllText(markerPath), Does.Contain("state=publishing\n"));
+            importer.ImportedAssetPaths.Clear();
+
+            NormalizedSpecCacheService recoveryService = CreateService(() => compilationRequestCount++);
+            recoveryService.RecoverPendingCompilations();
+
+            Assert.That(compilationRequestCount, Is.EqualTo(1));
+            Assert.That(File.Exists(markerPath), Is.False);
+            Assert.That(File.ReadAllBytes(first.AuthoritativePath), Is.EqualTo(oldAuthoritative));
+            Assert.That(File.ReadAllBytes(first.MirrorPath), Is.EqualTo(oldMirror));
+            Assert.That(importer.ImportedAssetPaths, Is.EqualTo(new[] { first.MirrorAssetPath }));
         }
 
         [Test]
@@ -300,13 +561,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(Directory.GetFiles(Path.GetDirectoryName(target), "*.tmp"), Is.Empty);
         }
 
-        private NormalizedSpecCacheService CreateService()
+        private NormalizedSpecCacheService CreateService(Action compilationRequester = null)
         {
-            return new NormalizedSpecCacheService(
+            NormalizedSpecCacheService service = new NormalizedSpecCacheService(
                 projectRoot,
                 new RawJsonNormalizer(),
                 new AtomicFileWriter(),
                 importer);
+            service.CompilationRequester = compilationRequester ?? (() => { });
+            return service;
         }
 
         private void WriteRaw(string json)

@@ -7,8 +7,9 @@ namespace Rhycol.OpenApiCodeGen.UI
     internal class PendingProgressStatus : IProgressStatus
     {
         public double Progress { get; }
+        public string Message { get; }
 
-        public PendingProgressStatus(double progress)
+        public PendingProgressStatus(double progress, string? message = null)
         {
             Progress = progress switch
             {
@@ -16,6 +17,7 @@ namespace Rhycol.OpenApiCodeGen.UI
                 > 1.0 => 1.0,
                 _ => progress
             };
+            Message = message ?? string.Empty;
         }
     }
 }

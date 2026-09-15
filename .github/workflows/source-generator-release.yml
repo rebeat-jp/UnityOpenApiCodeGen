@@ -1,0 +1,142 @@
+name: Release Source Generator and base UPM packages
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Exact 40-character commit SHA to validate
+        type: string
+        required: true
+      version:
+        description: Shared stable package version (for example 0.5.0)
+        type: string
+        required: true
+      publish:
+        description: Create tag/Release and start OpenUPM publication (false is dry-run)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: source-generator-release-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate literal publication inputs before checkout
+        env:
+          TARGET_COMMIT: ${{ inputs.commit }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'Exact commit SHA required.' >&2; exit 1; }
+          if [[ "$PUBLISH" == true && "$GITHUB_REF" != refs/heads/main ]]; then
+            echo 'Publication workflow must run from main.' >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enforce trusted checkout and main ancestry before target scripts
+        env:
+          TARGET_COMMIT: ${{ inputs.commit }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$(git rev-parse HEAD)" == "$TARGET_COMMIT" ]] || exit 1
+          [[ -z "$(git status --porcelain)" ]] || exit 1
+          if [[ "$PUBLISH" == true ]]; then
+            [[ "$GITHUB_REF" == refs/heads/main ]] || exit 1
+            git merge-base --is-ancestor "$TARGET_COMMIT" origin/main
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Validate version, checkout, and publication ancestry
+        env:
+          TARGET_COMMIT: ${{ inputs.commit }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          if [[ "$PUBLISH" == true && "$GITHUB_REF" != refs/heads/main ]]; then
+            echo 'Publication workflow must run from main.' >&2
+            exit 1
+          fi
+          node SourceGenerators/scripts/release-contract.js
+  verify:
+    needs: preflight
+    uses: ./.github/workflows/source-generator-verify.yml
+    with:
+      commit: ${{ inputs.commit }}
+      version: ${{ inputs.version }}
+      unity: true
+  dry-run:
+    name: Validate CD dry-run
+    needs: verify
+    if: '!inputs.publish'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.verify.outputs.artifact }}
+          path: artifacts/release
+      - env:
+          RELEASE_OUTPUT: artifacts/release
+          TARGET_COMMIT: ${{ needs.verify.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.verify.outputs.version }}
+          VERIFICATION_ATTEMPT: ${{ needs.verify.outputs.attempt }}
+          PUBLISH: 'false'
+        run: node SourceGenerators/scripts/publish-release.js
+  publish:
+    name: Publish verified immutable assets
+    needs: verify
+    if: inputs.publish && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enforce trusted publication boundary before target scripts
+        env:
+          TARGET_COMMIT: ${{ inputs.commit }}
+        run: |
+          [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$GITHUB_REF" == refs/heads/main ]] || exit 1
+          [[ "$(git rev-parse HEAD)" == "$TARGET_COMMIT" ]] || exit 1
+          [[ -z "$(git status --porcelain)" ]] || exit 1
+          git merge-base --is-ancestor "$TARGET_COMMIT" origin/main
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.verify.outputs.artifact }}
+          path: artifacts/release
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_OUTPUT: artifacts/release
+          TARGET_COMMIT: ${{ needs.verify.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.verify.outputs.version }}
+          VERIFICATION_ATTEMPT: ${{ needs.verify.outputs.attempt }}
+          PUBLISH: 'true'
+        run: node SourceGenerators/scripts/publish-release.js

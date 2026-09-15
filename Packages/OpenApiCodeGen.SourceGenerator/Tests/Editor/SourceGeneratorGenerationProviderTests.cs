@@ -90,6 +90,44 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Test]
+        public void PublicationJournalRemainsAwaitingCompilationUntilTheCompilationRequestReturns()
+        {
+            string markerAtCompilationRequest = string.Empty;
+            var cacheRoot = Path.Combine(
+                projectRoot,
+                NormalizedSpecBundleConstants.AuthoritativeCacheRelativePath);
+            SourceGeneratorGenerationProvider provider = CreateProvider(
+                requestCompilation: () =>
+                {
+                    compilationRequestCount++;
+                    string[] markers = Directory.Exists(cacheRoot)
+                        ? Directory.GetFiles(
+                            cacheRoot,
+                            NormalizedSpecBundleConstants.PublishPendingFileName,
+                            SearchOption.AllDirectories)
+                        : Array.Empty<string>();
+                    Assert.That(markers, Has.Length.EqualTo(1));
+                    markerAtCompilationRequest = File.ReadAllText(markers[0]);
+                });
+
+            GenerationResult result = provider.Generate(CreateRequest());
+
+            Assert.That(result.IsSuccess, Is.True, result.Message);
+            Assert.That(
+                markerAtCompilationRequest,
+                Does.Contain("state=published-awaiting-compilation\n"));
+            Assert.That(
+                Directory.Exists(cacheRoot),
+                Is.True);
+            Assert.That(
+                Directory.GetFiles(
+                    cacheRoot,
+                    NormalizedSpecBundleConstants.PublishPendingFileName,
+                    SearchOption.AllDirectories),
+                Is.Empty);
+        }
+
+        [Test]
         public void ByteIdenticalRerunDoesNotRewriteImportOrRequestCompilation()
         {
             SourceGeneratorGenerationProvider provider = CreateProvider();
@@ -312,7 +350,83 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(definitionImports, Is.Empty);
         }
 
-        SourceGeneratorGenerationProvider CreateProvider()
+        [Test]
+        public void GenerateAsyncCancellationAfterGraphLoadingPreservesPublishedArtifacts()
+        {
+            SourceGeneratorGenerationProvider provider = CreateProvider();
+            GenerationResult first = provider.Generate(CreateRequest());
+            Assert.That(first.IsSuccess, Is.True, first.Message);
+            File.WriteAllText(rawSpecPath,
+                "{\"openapi\":\"3.0.3\",\"info\":{\"version\":\"changed\"}}",
+                new UTF8Encoding(false));
+            var publishedFiles = new Dictionary<string, byte[]>();
+            foreach (string path in Directory.GetFiles(projectRoot, "*", SearchOption.AllDirectories))
+                publishedFiles.Add(path, File.ReadAllBytes(path));
+            mirrorImporter.ImportedAssetPaths.Clear();
+            definitionImports.Clear();
+            compilationRequestCount = 0;
+            using var cancellation = new CancellationTokenSource();
+            bool reachedPostLoadProgress = false;
+            GenerationRequest request = CreateRequest();
+            // Progress is an internal contract in a different assembly. Close the generic
+            // synchronous test reporter over that contract without widening production access.
+            var progressProperty = typeof(GenerationRequest).GetProperty("Progress",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Type progressType = progressProperty.PropertyType.GetGenericArguments()[0];
+            Action<object> onProgress = progress =>
+            {
+                double value = (double)progressType.GetProperty("Value",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                    .GetValue(progress);
+                if (value == 0.75)
+                {
+                    reachedPostLoadProgress = true;
+                    cancellation.Cancel();
+                }
+            };
+            object reporter = Activator.CreateInstance(typeof(ImmediateProgress<>).MakeGenericType(progressType),
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
+                System.Reflection.BindingFlags.NonPublic, null, new object[] { onProgress }, null);
+            progressProperty.SetValue(request, reporter);
+
+            Assert.CatchAsync<OperationCanceledException>(
+                async () => await provider.GenerateAsync(request, cancellation.Token));
+
+            Assert.That(reachedPostLoadProgress, Is.True);
+            Assert.That(Directory.GetFiles(projectRoot, "*", SearchOption.AllDirectories),
+                Is.EquivalentTo(publishedFiles.Keys));
+            foreach (KeyValuePair<string, byte[]> file in publishedFiles)
+                Assert.That(File.ReadAllBytes(file.Key), Is.EqualTo(file.Value), file.Key);
+            Assert.That(mirrorImporter.ImportedAssetPaths, Is.Empty);
+            Assert.That(definitionImports, Is.Empty);
+            Assert.That(compilationRequestCount, Is.Zero);
+        }
+
+        [Test]
+        public void ConcurrentGenerationReportsSafeLockFailureWithoutProjectPath()
+        {
+            var cache = new NormalizedSpecCacheService(projectRoot, new RawJsonNormalizer(),
+                new AtomicFileWriter(), mirrorImporter);
+            using (cache.AcquireGenerationLock())
+            {
+                GenerationResult result = CreateProvider().Generate(CreateRequest());
+                Assert.That(result.IsSuccess, Is.False);
+                Assert.That(result.Message, Does.Contain("Another Unity process"));
+                Assert.That(result.Message, Does.Not.Contain(projectRoot));
+            }
+        }
+
+        [Test]
+        public void UnexpectedCompilationFailureDoesNotExposeExceptionDetails()
+        {
+            GenerationResult result = CreateProvider(() =>
+                throw new InvalidOperationException("secret-token " + projectRoot)).Generate(CreateRequest());
+            Assert.That(result.IsSuccess, Is.False);
+            Assert.That(result.Message, Is.EqualTo("Source Generator generation failed."));
+        }
+
+        SourceGeneratorGenerationProvider CreateProvider(
+            Action? requestCompilation = null)
         {
             var cacheService = new NormalizedSpecCacheService(
                 projectRoot,
@@ -327,7 +441,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 GenerationProviderAvailability.Available(),
                 cacheService,
                 definitionWriter,
-                () => compilationRequestCount++);
+                requestCompilation ?? (() => compilationRequestCount++));
         }
 
         GenerationRequest CreateRequest()
@@ -369,6 +483,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             {
                 ImportedAssetPaths.Add(mirrorAssetPath);
             }
+        }
+
+        sealed class ImmediateProgress<T> : IProgress<T>
+        {
+            readonly Action<object> report;
+
+            internal ImmediateProgress(Action<object> report)
+            {
+                this.report = report;
+            }
+
+            public void Report(T value) => report(value!);
         }
     }
 }

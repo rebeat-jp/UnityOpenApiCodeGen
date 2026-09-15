@@ -11,7 +11,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string baseUrl,
             IReadOnlyList<GeneratedDtoModel> dtos,
             IReadOnlyList<GeneratedEnumModel> enums,
-            IReadOnlyList<GeneratedOperationModel> operations)
+            IReadOnlyList<GeneratedOperationModel> operations,
+            IReadOnlyList<GeneratedTypeNameCollision> typeNameCollisions)
         {
             ApiName = apiName;
             GeneratedNamespace = generatedNamespace;
@@ -19,6 +20,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             Dtos = dtos;
             Enums = enums;
             Operations = operations;
+            TypeNameCollisions = typeNameCollisions;
         }
 
         internal string ApiName { get; }
@@ -32,6 +34,26 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal IReadOnlyList<GeneratedEnumModel> Enums { get; }
 
         internal IReadOnlyList<GeneratedOperationModel> Operations { get; }
+        internal IReadOnlyList<GeneratedTypeNameCollision> TypeNameCollisions { get; }
+    }
+
+    internal sealed class GeneratedTypeNameCollision
+    {
+        internal GeneratedTypeNameCollision(
+            string requestedName,
+            string generatedName,
+            OpenApiSourceLocation location,
+            OpenApiSourceLocation existingLocation)
+        {
+            RequestedName = requestedName;
+            GeneratedName = generatedName;
+            Location = location;
+            ExistingLocation = existingLocation;
+        }
+        internal string RequestedName { get; }
+        internal string GeneratedName { get; }
+        internal OpenApiSourceLocation Location { get; }
+        internal OpenApiSourceLocation ExistingLocation { get; }
     }
 
     internal sealed class GeneratedDtoModel

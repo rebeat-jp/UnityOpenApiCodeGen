@@ -140,6 +140,27 @@ internal sealed class GenerationServiceProviderTests
     }
 
     [Test]
+    public void SuccessfulProviderWarningsAreReturnedWithoutChangingTheMessage()
+    {
+        const string successMessage = "Source Generator cache and definition were published.";
+        string[] warnings = { "The URL query was not persisted." };
+        var projectSettingRepository = new MutableProjectSettingRepository(
+            new ProjectSetting(generateProvider: GenerateProvider.SourceGenerator));
+        var provider = new RecordingProvider(
+            GenerateProvider.SourceGenerator,
+            result: GenerationResult.Success(successMessage, warnings));
+        var service = new GenerationService(
+            projectSettingRepository,
+            CreateRegistry(provider));
+
+        GenerationResult result = service.GenerateApiClientAsync(CreateDto()).GetAwaiter().GetResult();
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Message, Is.EqualTo(successMessage));
+        Assert.That(result.Warnings, Is.EqualTo(warnings));
+    }
+
+    [Test]
     public void ProjectSettingsDoNotPersistRemoteCredentialsQueryOrFragment()
     {
         string settingsPath = Path.Combine(
@@ -175,6 +196,50 @@ internal sealed class GenerationServiceProviderTests
             Assert.That(
                 restored.ApiDocumentFilePathOrUrl,
                 Is.EqualTo("http://127.0.0.1/openapi.json"));
+        }
+        finally
+        {
+            if (hadExistingSettings)
+            {
+                File.WriteAllBytes(settingsPath, existingSettings);
+            }
+            else if (File.Exists(settingsPath))
+            {
+                File.Delete(settingsPath);
+            }
+        }
+    }
+
+    [Test]
+    public void DockerProjectSettingsRoundTripPreservesRemoteCredentialsQueryAndFragment()
+    {
+        string settingsPath = Path.Combine(
+            ApplicationConstant.PROJECT_FOLDER_PATH,
+            "projectSettings.json");
+        bool hadExistingSettings = File.Exists(settingsPath);
+        byte[] existingSettings = hadExistingSettings
+            ? File.ReadAllBytes(settingsPath)
+            : new byte[0];
+        const string configuredSource =
+            "http://user:password@127.0.0.1/openapi.json?token=secret#fragment";
+
+        try
+        {
+            var repository = new ProjectSettingJsonRepository();
+            ProjectSetting restored = Task.Run(async () =>
+                {
+                    await repository.SaveAsync(
+                        new ProjectSetting(
+                            GenerateProvider.OpenApi,
+                            configuredSource,
+                            "Assets/Generated"));
+                    return await repository.ReadAsync();
+                })
+                .GetAwaiter()
+                .GetResult()!;
+
+            Assert.That(restored.GenerateProvider, Is.EqualTo(GenerateProvider.OpenApi));
+            Assert.That(restored.ApiDocumentFilePathOrUrl, Is.EqualTo(configuredSource));
         }
         finally
         {

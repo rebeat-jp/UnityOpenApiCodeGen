@@ -155,7 +155,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             const string ForeignSource = "public class UserOwnedClient {}";
             File.WriteAllText(definitionPath, ForeignSource, new UTF8Encoding(false));
 
-            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            InvalidOperationException exception = Assert.Throws<SafeGenerationException>(
                 () => writer.Prepare(
                     outputFolder,
                     "PetStoreApi",

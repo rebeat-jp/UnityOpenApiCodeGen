@@ -486,8 +486,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Phase4GeneratorExecution first = Phase4GeneratorTestHarness.GenerateAndCompile(DocumentA);
             Phase4GeneratorExecution second = Phase4GeneratorTestHarness.GenerateAndCompile(DocumentB);
 
-            Assert.Empty(first.RunResult.Diagnostics);
-            Assert.Empty(second.RunResult.Diagnostics);
+            AssertCollisionWarning(first, "FooBar", "FooBar2");
+            AssertCollisionWarning(second, "FooBar", "FooBar2");
             Assert.Empty(first.CompilationErrors);
             Assert.Empty(second.CompilationErrors);
             Assert.Equal(GetHintedSources(first), GetHintedSources(second));
@@ -497,6 +497,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Contains("string? @event2", first.GeneratedSource);
             Assert.Contains("public sealed class FooBar", first.GeneratedSource);
             Assert.Contains("public sealed class FooBar2", first.GeneratedSource);
+        }
+
+        private static void AssertCollisionWarning(
+            Phase4GeneratorExecution execution,
+            string requestedName,
+            string generatedName)
+        {
+            Diagnostic collision = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG107", collision.Id);
+            Assert.Equal(DiagnosticSeverity.Warning, collision.Severity);
+            Assert.Contains("'" + requestedName + "'", collision.GetMessage());
+            Assert.Contains("'" + generatedName + "'", collision.GetMessage());
+            Assert.Equal(LocationKind.ExternalFile, collision.Location.Kind);
+            Assert.Equal(0, collision.Location.GetLineSpan().StartLinePosition.Line);
+            Assert.Equal(0, collision.Location.GetLineSpan().StartLinePosition.Character);
+            Location existing = Assert.Single(collision.AdditionalLocations);
+            Assert.Equal(LocationKind.ExternalFile, existing.Kind);
+            Assert.Equal(0, existing.GetLineSpan().StartLinePosition.Line);
+            Assert.Equal(0, existing.GetLineSpan().StartLinePosition.Character);
         }
 
         [Fact]

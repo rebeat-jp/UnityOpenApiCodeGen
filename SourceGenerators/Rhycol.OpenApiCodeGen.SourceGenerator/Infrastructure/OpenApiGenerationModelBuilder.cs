@@ -20,13 +20,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private readonly List<GeneratedEnumModel> _enums = new List<GeneratedEnumModel>();
         private readonly HashSet<NormalizedSpecNodeIdentity> _buildingSchemas =
             new HashSet<NormalizedSpecNodeIdentity>();
+        private readonly List<GeneratedTypeNameCollision> _typeNameCollisions = new List<GeneratedTypeNameCollision>();
+        private readonly Dictionary<string, TypeNameAllocation> _typeNameAllocations =
+            new Dictionary<string, TypeNameAllocation>(StringComparer.Ordinal);
 
         private OpenApiGenerationModelBuilder(OpenApiSemanticDocument document, GeneratorOptions options)
         {
             _document = document;
             _options = options;
-            _usedTypeNames.Add(options.ApiName);
-            _usedTypeNames.Add(options.ApiName + "Exception");
+            ReserveTypeName(options.ApiName, document.Location, emitsDeclaration: true);
+            ReserveTypeName(options.ApiName + "Exception", document.Location, emitsDeclaration: true);
         }
 
         internal static OpenApiGenerationModel Build(
@@ -59,7 +62,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 _document.BaseUrl,
                 _dtos.OrderBy(static value => value.Name, StringComparer.Ordinal).ToArray(),
                 _enums.OrderBy(static value => value.Name, StringComparer.Ordinal).ToArray(),
-                operations);
+                operations,
+                _typeNameCollisions.ToArray());
         }
 
         private void AllocateComponentTypeNames()
@@ -74,9 +78,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                          .ThenBy(static value => value.Key.DocumentId, StringComparer.Ordinal)
                          .ThenBy(static value => value.Key.Pointer, StringComparer.Ordinal))
             {
-                _componentTypeNames.Add(
-                    schema.Key,
-                    AllocateUniqueTypeName(ToIdentifier(schema.Value.SuggestedName, pascalCase: true)));
+                string requestedName = ToIdentifier(schema.Value.SuggestedName, pascalCase: true);
+                string allocatedName = AllocateSchemaTypeName(
+                    requestedName,
+                    schema.Value.Location,
+                    EmitsDeclaration(schema.Value));
+                _componentTypeNames.Add(schema.Key, allocatedName);
             }
         }
 
@@ -339,7 +346,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 return existing;
             }
 
-            string name = AllocateUniqueTypeName(ToIdentifier(schema.SuggestedName, pascalCase: true));
+            string name = AllocateSchemaTypeName(
+                ToIdentifier(schema.SuggestedName, pascalCase: true),
+                schema.Location,
+                emitsDeclaration: true);
             _schemaTypeNames.Add(key, name);
             return name;
         }
@@ -351,9 +361,41 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 : schema.Identity;
         }
 
-        private string AllocateUniqueTypeName(string name)
+        private string AllocateSchemaTypeName(
+            string requestedName,
+            OpenApiSourceLocation location,
+            bool emitsDeclaration)
         {
-            return AllocateUniqueName(name, _usedTypeNames);
+            string allocatedName = AllocateUniqueName(requestedName, _usedTypeNames);
+            if (!string.Equals(requestedName, allocatedName, StringComparison.Ordinal) &&
+                emitsDeclaration &&
+                _typeNameAllocations.TryGetValue(requestedName, out TypeNameAllocation? owner) &&
+                owner.EmitsDeclaration)
+            {
+                _typeNameCollisions.Add(new GeneratedTypeNameCollision(
+                    requestedName,
+                    allocatedName,
+                    location,
+                    owner.Location));
+            }
+
+            _typeNameAllocations.Add(allocatedName, new TypeNameAllocation(location, emitsDeclaration));
+            return allocatedName;
+        }
+
+        private void ReserveTypeName(
+            string name,
+            OpenApiSourceLocation location,
+            bool emitsDeclaration)
+        {
+            _usedTypeNames.Add(name);
+            _typeNameAllocations.Add(name, new TypeNameAllocation(location, emitsDeclaration));
+        }
+
+        private static bool EmitsDeclaration(OpenApiSemanticSchema schema)
+        {
+            return schema.Kind == OpenApiSemanticSchemaKind.Object ||
+                   schema.Kind == OpenApiSemanticSchemaKind.Enum;
         }
 
         private static string AllocateUniqueName(string name, HashSet<string> usedNames)
@@ -371,6 +413,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             return baseName + suffix;
+        }
+
+        private sealed class TypeNameAllocation
+        {
+            internal TypeNameAllocation(OpenApiSourceLocation location, bool emitsDeclaration)
+            {
+                Location = location;
+                EmitsDeclaration = emitsDeclaration;
+            }
+
+            internal OpenApiSourceLocation Location { get; }
+
+            internal bool EmitsDeclaration { get; }
         }
 
         internal static string ToIdentifier(string value, bool pascalCase)

@@ -25,6 +25,9 @@ The add-on requires Unity `6000.0` or later, base package `0.5.0`, and
 `Window/OpenAPI Code Generator/Settings`, then use
 `Window/OpenAPI Code Generator/Generator`.
 
+The examples target the planned `0.5.0` tag. Until it is published, use the
+same reviewed commit SHA in both Git URLs.
+
 The target assembly definition must directly reference
 `Unity.OpenApiCodeGen.SourceGenerator`. Generated output must be under
 `Assets`. `Generate` is the explicit fetch/refresh operation; the provider
@@ -95,6 +98,13 @@ compiler input unchanged and does not request script compilation. A fetch,
 parse, reference, or publication failure leaves the last successful cache and
 mirror intact but returns failure; the failed input is not published.
 
+The window reports progress and supports Cancel before publication. Generation
+and startup recovery use process-local and OS file locks. A durable publication
+journal retains compilation intent until the compilation request succeeds;
+startup recovery retries that request or restores interrupted publication.
+Cancellation after loading and before publication preserves the previous
+artifacts and does not request compilation.
+
 When a URL query is stripped from persisted display data, the result includes a
 warning that the complete URL must be entered again. The manifest stores only
 redacted source display values, source-key hashes, format, raw hashes, retrieval
@@ -120,6 +130,7 @@ Bundle and semantic failures use stable diagnostics including:
 | `OACG104` | Legacy v1 external-reference diagnostic |
 | `OACG105` | Inconsistent response |
 | `OACG106` | Invalid identifier |
+| `OACG107` | Warning: a generated type name was disambiguated with a deterministic suffix |
 
 The analyzer reads both Bundle v1 and v2. Bundle v1 remains available for
 backward compatibility; the Editor always writes Bundle v2. The complete

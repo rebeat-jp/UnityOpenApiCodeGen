@@ -9,6 +9,11 @@ namespace Rhycol.OpenApiCodeGen.UI
     {
         event Action<GenerateApiClientDto>? GenerateRequested;
         event Action<GenerateApiClientDto>? GenerateSettingChanged;
+        event Action? CancelRequested
+        {
+            add { }
+            remove { }
+        }
 
         void SetFormValue(GenerateApiClientDto generateMenuDto);
         void SetGenerateProvider(GenerateProvider generateProvider);
@@ -16,6 +21,7 @@ namespace Rhycol.OpenApiCodeGen.UI
         void SetDocumentFilePathComment(string comment);
         void SetOutputPathComment(string comment);
         void SetInputEnabled(bool isEnabled);
+        void SetCancelEnabled(bool isEnabled) { }
     }
 
 }

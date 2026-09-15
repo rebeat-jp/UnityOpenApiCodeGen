@@ -382,9 +382,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             string normalizedContent = content.Replace("\r\n", "\n");
             if (!normalizedContent.StartsWith(OwnedFileHeader + "\n", StringComparison.Ordinal))
             {
-                throw new InvalidOperationException(
-                    "Refusing to overwrite a definition file not owned by UnityOpenApiCodeGen: " +
-                    definitionPath);
+                throw new SafeGenerationException(
+                    "Refusing to overwrite a definition file not owned by UnityOpenApiCodeGen.");
             }
 
             string existingIdentity = ReadHeaderValue(normalizedContent, ClientIdentityPrefix);

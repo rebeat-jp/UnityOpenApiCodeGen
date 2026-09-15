@@ -6,7 +6,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Rhycol.OpenApiCodeGen.SourceGenerator;
+using Rhycol.OpenApiCodeGen.Editor.Generation;
 using UnityEditor;
+using UnityEditor.Compilation;
 using UnityEngine;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
@@ -18,10 +20,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
     internal sealed class NormalizedSpecCacheService
     {
         private static readonly Encoding StrictUtf8 = new UTF8Encoding(false, true);
+        private static readonly object GenerationLocksSync = new object();
+        // Conservatively fold case so aliases on Windows and default macOS filesystems
+        // cannot open a second descriptor and drop an existing Unix lock.
+        private static readonly HashSet<string> GenerationLocks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private const string GenerationLockFailureMessage =
+            "Another Unity process is already generating OpenAPI source. Wait for it to finish and retry Generate.";
 
-        private const string PublicationMarkerVersion = "1";
-        private const string PublicationMarkerPendingState = "pending";
+        private const string PublicationMarkerVersion = "2";
+        private const string PublicationMarkerPendingState = "publishing";
         private const string PublicationMarkerCompleteState = "complete";
+        private const string PublicationMarkerAwaitingCompilationState = "published-awaiting-compilation";
         private const string PublicationMarkerTargetPrefix = "target=";
         private const string PublicationBackupFilePrefix = "artifact-";
 
@@ -31,6 +40,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         private readonly IAtomicFileWriter fileWriter;
         private readonly ICompilerMirrorImporter importer;
         private readonly ExternalSpecGraphLoader graphLoader;
+
+        internal Action CompilationRequester { get; set; } = CompilationPipeline.RequestScriptCompilation;
 
         internal NormalizedSpecCacheService(
             string projectRoot,
@@ -194,13 +205,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             CancellationToken cancellationToken,
             string definitionPath,
             string definitionAssetPath,
-            Func<OpenApiDocumentFormat, Action> publishDefinition)
+            Func<OpenApiDocumentFormat, Action> publishDefinition,
+            IProgress<GenerationProgress>? progress = null)
         {
             RepairPendingPublicationForSpec(specId, definitionPath, definitionAssetPath);
             NormalizedSpecGraph graph = await LoadGraphAsync(
                 rawSpecPathOrUrl,
                 specId,
-                cancellationToken);
+                cancellationToken,
+                progress);
             return PublishGraph(
                 graph,
                 definitionPath,
@@ -211,9 +224,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         internal Task<NormalizedSpecGraph> LoadGraphAsync(
             string rawSpecPathOrUrl,
             string specId,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            IProgress<GenerationProgress>? progress = null)
         {
-            return graphLoader.LoadAsync(rawSpecPathOrUrl, specId, cancellationToken);
+            return graphLoader.LoadAsync(rawSpecPathOrUrl, specId, cancellationToken, progress);
         }
 
         internal void RepairPendingPublicationForSpec(string specId)
@@ -273,6 +287,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 authoritativePath,
                 manifestPath,
                 mirrorPath);
+            if (marker.IsAwaitingCompilation)
+            {
+                CompilationRequester();
+                AcknowledgeCompilationRequest(specId);
+                return;
+            }
             PublicationArtifact[] artifacts;
             if (marker.IsLegacy)
             {
@@ -306,7 +326,123 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 definitionPath,
                 definitionAssetPath,
                 marker.IsComplete,
-                marker.IsLegacy);
+                marker.IsLegacy,
+                marker.CompilationRequired);
+        }
+
+        // The marker survives until the provider has requested compilation.  This closes the
+        // crash window where AdditionalFiles were replaced but Unity was never told to compile.
+        internal void MarkCompilationRequested(string specId)
+        {
+            // Kept as an internal compatibility shim. Publication itself now durably records
+            // compilation intent before it returns to the provider.
+        }
+
+        internal void AcknowledgeCompilationRequest(string specId)
+        {
+            string directory = Path.Combine(projectRoot, NormalizedSpecBundleConstants.AuthoritativeCacheRelativePath, specId);
+            // Remove the journal first after the request succeeds. A crash during backup
+            // cleanup then leaves harmless orphan backups, not a broken rollback journal.
+            DeleteFileOrThrow(Path.Combine(directory, NormalizedSpecBundleConstants.PublishPendingFileName));
+            TryDeleteDirectory(Path.Combine(directory, NormalizedSpecBundleConstants.PublishBackupDirectoryName));
+        }
+
+        internal void RecoverPendingCompilations()
+        {
+            using (AcquireGenerationLock())
+            {
+            string root = Path.Combine(projectRoot, NormalizedSpecBundleConstants.AuthoritativeCacheRelativePath);
+            if (!Directory.Exists(root)) return;
+            EnsureNoSymbolicLink(projectRoot, root);
+            foreach (string directory in Directory.GetDirectories(root))
+            {
+                string specId = Path.GetFileName(directory);
+                Guid parsed;
+                if (!Guid.TryParseExact(specId, "N", out parsed) || parsed.ToString("N") != specId)
+                    continue;
+                try
+                {
+                    EnsureNoSymbolicLink(projectRoot, directory);
+                    RepairPendingPublicationForSpec(specId);
+                }
+                catch (Exception)
+                {
+                    Debug.LogError("Source Generator publication recovery marker is invalid and was retained.");
+                }
+            }
+            }
+        }
+
+        internal IDisposable AcquireGenerationLock()
+        {
+            string directory = Path.Combine(projectRoot, "Library", "OpenApiCodeGen", "SourceGenerator");
+            string lockPath = Path.GetFullPath(Path.Combine(directory, ".generation.lock"));
+            // Reject a local owner before opening any descriptor. On Unix, even closing a
+            // failed FileShare.None open can release this process's existing byte-range lock.
+            lock (GenerationLocksSync)
+            {
+                if (!GenerationLocks.Add(lockPath))
+                    throw new SafeGenerationException(GenerationLockFailureMessage);
+            }
+            FileStream generationLock = null;
+            try
+            {
+                EnsureNoSymbolicLink(projectRoot, lockPath);
+                Directory.CreateDirectory(directory);
+                generationLock = new FileStream(lockPath, FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite, FileShare.None);
+                // Unity's Unix Mono does not enforce FileShare.None across processes.
+                generationLock.Lock(0, 1);
+                return new GenerationLock(lockPath, generationLock);
+            }
+            catch (IOException)
+            {
+                ReleaseGenerationLock(lockPath, generationLock);
+                throw new SafeGenerationException(GenerationLockFailureMessage);
+            }
+            catch
+            {
+                ReleaseGenerationLock(lockPath, generationLock);
+                throw;
+            }
+        }
+
+        private static void ReleaseGenerationLock(string lockPath, FileStream stream)
+        {
+            lock (GenerationLocksSync)
+            {
+                try
+                {
+                    stream?.Dispose();
+                }
+                finally
+                {
+                    GenerationLocks.Remove(lockPath);
+                }
+            }
+        }
+
+        private sealed class GenerationLock : IDisposable
+        {
+            private readonly string lockPath;
+            private readonly FileStream stream;
+            private bool disposed;
+
+            internal GenerationLock(string lockPath, FileStream stream)
+            {
+                this.lockPath = lockPath;
+                this.stream = stream;
+            }
+
+            public void Dispose()
+            {
+                lock (GenerationLocksSync)
+                {
+                    if (disposed) return;
+                    disposed = true;
+                    ReleaseGenerationLock(lockPath, stream);
+                }
+            }
         }
 
         internal NormalizedSpecCacheResult PublishGraph(NormalizedSpecGraph graph)
@@ -318,7 +454,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             NormalizedSpecGraph graph,
             string definitionPath,
             string definitionAssetPath,
-            Func<OpenApiDocumentFormat, Action> publishDefinition)
+            Func<OpenApiDocumentFormat, Action> publishDefinition,
+            byte[] definitionContent = null)
         {
             RepairPendingPublicationForSpec(
                 graph.SpecId,
@@ -331,7 +468,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 graph.Edges);
             if (bundleBytes.Length > NormalizedSpecBundleConstants.MaximumGraphBytes)
             {
-                throw new InvalidOperationException(
+                throw new SafeGenerationException(
                     "The normalized OpenAPI Bundle exceeds the maximum size of 32 MiB.");
             }
 
@@ -375,13 +512,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             bool mirrorChanged = !FileContentEquals(mirrorPath, bundleBytes);
             bool mirrorImportPending = File.Exists(mirrorImportPendingPath);
             bool mirrorPublicationRequired = mirrorChanged || mirrorImportPending;
-            bool definitionPublicationRequired = publishDefinition != null;
+            bool definitionPublicationRequired = publishDefinition != null &&
+                (definitionContent == null || !FileContentEquals(definitionPath, definitionContent));
+            bool compilationRequired = authoritativeChanged || mirrorPublicationRequired || definitionPublicationRequired;
+
+            // Retrieval metadata is not a compiler input. Its single-file atomic update does
+            // not need a multi-artifact journal and must not schedule compilation.
+            if (!compilationRequired && manifestChanged)
+            {
+                fileWriter.WriteAllBytesAtomically(manifestPath, manifestBytes);
+            }
 
             // All parsing, reference resolution, and canonicalization completed before this
             // publication phase. Snapshot and durable backups make a failed multi-file publish
             // recoverable without exposing a mixed Bundle/manifest/mirror generation.
-            if (authoritativeChanged || manifestChanged || mirrorChanged || mirrorImportPending ||
-                definitionPublicationRequired)
+            if (compilationRequired)
             {
                 ValidateDefinitionPath(definitionPath);
                 PublicationArtifact[] artifacts = CreatePublicationArtifacts(
@@ -399,7 +544,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     WritePublicationMarker(
                         publishPendingPath,
                         PublicationMarkerPendingState,
-                        artifacts);
+                        artifacts,
+                        true);
 
                     if (authoritativeChanged)
                     {
@@ -424,7 +570,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                         File.Delete(mirrorImportPendingPath);
                     }
 
-                    if (publishDefinition != null)
+                    if (definitionPublicationRequired)
                     {
                         rollbackDefinition = publishDefinition(
                             string.Equals(graph.Format, "yaml", StringComparison.Ordinal)
@@ -432,12 +578,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                                 : OpenApiDocumentFormat.Json);
                     }
 
-                    // A complete marker tells a later invocation that publication finished and
-                    // only backup cleanup remains; it must not restore the previous generation.
+                    bool definitionActuallyChanged = artifacts.Length > 3 &&
+                        !SnapshotMatchesFile(artifacts[3]);
+                    compilationRequired = authoritativeChanged || mirrorPublicationRequired || definitionActuallyChanged;
+                    // There is no interval between completed publication and durable compile
+                    // intent: a crash before this write rolls back, after it requests compile.
                     WritePublicationMarker(
                         publishPendingPath,
-                        PublicationMarkerCompleteState,
-                        artifacts);
+                        compilationRequired ? PublicationMarkerAwaitingCompilationState : PublicationMarkerCompleteState,
+                        artifacts,
+                        compilationRequired);
                 }
                 catch
                 {
@@ -473,11 +623,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     throw;
                 }
 
-                // Cleanup is deliberately best effort. If the Editor exits here, the complete
-                // marker lets the next Generate remove stale backups without rolling back good
-                // bytes.
-                TryDeleteDirectory(publishBackupDirectory);
-                TryDeleteFile(publishPendingPath);
+                if (!compilationRequired)
+                    AcknowledgeCompilationRequest(graph.SpecId);
             }
 
             return new NormalizedSpecCacheResult(
@@ -496,7 +643,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 graph.QueryStripped
                     ? "The URL query was used only for this Generate operation and was not persisted. " +
                       "Re-enter the complete URL, including its query, for the next Generate."
-                      : string.Empty);
+                      : string.Empty,
+                compilationRequired);
+        }
+
+        private static bool SnapshotMatchesFile(PublicationArtifact artifact)
+        {
+            return artifact.Snapshot.Exists
+                ? FileContentEquals(artifact.TargetPath, artifact.Snapshot.Bytes)
+                : !File.Exists(artifact.TargetPath);
         }
 
         private static PublicationArtifact[] CreatePublicationArtifacts(
@@ -620,10 +775,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         private void WritePublicationMarker(
             string path,
             string state,
-            IReadOnlyList<PublicationArtifact> artifacts)
+            IReadOnlyList<PublicationArtifact> artifacts,
+            bool compilationRequired = false)
         {
             if (!string.Equals(state, PublicationMarkerPendingState, StringComparison.Ordinal) &&
-                !string.Equals(state, PublicationMarkerCompleteState, StringComparison.Ordinal))
+                !string.Equals(state, PublicationMarkerCompleteState, StringComparison.Ordinal) &&
+                !string.Equals(state, PublicationMarkerAwaitingCompilationState, StringComparison.Ordinal))
             {
                 throw new ArgumentException("An invalid publication marker state was requested.", nameof(state));
             }
@@ -638,6 +795,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             builder.Append("state=").Append(state).Append('\n');
             builder.Append("count=").Append(artifacts.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
             builder.Append('\n');
+            builder.Append("compilationRequired=").Append(compilationRequired ? "true" : "false").Append('\n');
             for (int index = 0; index < artifacts.Count; index++)
             {
                 EnsureNoSymbolicLink(projectRoot, artifacts[index].TargetPath);
@@ -684,7 +842,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             // These exact legacy forms are retained for projects interrupted by the pre-v2
             // marker implementation. Anything else must use the structured format below.
             if (string.Equals(marker, "pending\n", StringComparison.Ordinal) ||
-                string.Equals(marker, "pending", StringComparison.Ordinal))
+                string.Equals(marker, "pending", StringComparison.Ordinal) ||
+                string.Equals(marker, "publishing\n", StringComparison.Ordinal))
             {
                 return PublicationMarker.LegacyPending();
             }
@@ -702,18 +861,24 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
             string[] lines = marker.Split(new[] { '\n' }, StringSplitOptions.None);
             if (lines.Length < 4 || lines[lines.Length - 1].Length != 0 ||
-                !string.Equals(lines[0], "version=" + PublicationMarkerVersion, StringComparison.Ordinal))
+                (!string.Equals(lines[0], "version=1", StringComparison.Ordinal) &&
+                 !string.Equals(lines[0], "version=" + PublicationMarkerVersion, StringComparison.Ordinal)))
             {
                 throw new IOException("The Source Generator publication marker is malformed.");
             }
 
             string state = ReadMarkerField(lines[1], "state=");
             bool isComplete;
-            if (string.Equals(state, PublicationMarkerPendingState, StringComparison.Ordinal))
+            if (string.Equals(state, PublicationMarkerPendingState, StringComparison.Ordinal) ||
+                (lines[0] == "version=1" && state == "pending"))
             {
                 isComplete = false;
             }
             else if (string.Equals(state, PublicationMarkerCompleteState, StringComparison.Ordinal))
+            {
+                isComplete = true;
+            }
+            else if (string.Equals(state, PublicationMarkerAwaitingCompilationState, StringComparison.Ordinal))
             {
                 isComplete = true;
             }
@@ -722,6 +887,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 throw new IOException("The Source Generator publication marker has an invalid state.");
             }
 
+            bool hasCompilationField = lines.Length > 3 && lines[3].StartsWith("compilationRequired=", StringComparison.Ordinal);
+            bool compilationRequired = !isComplete;
+            if (hasCompilationField)
+            {
+                string flag = ReadMarkerField(lines[3], "compilationRequired=");
+                if (flag != "true" && flag != "false")
+                    throw new IOException("The Source Generator publication marker has an invalid compilation flag.");
+                compilationRequired = flag == "true";
+            }
+            bool isAwaiting = state == PublicationMarkerAwaitingCompilationState;
+            if (isAwaiting && hasCompilationField && !compilationRequired)
+                throw new IOException("The Source Generator publication marker has contradictory compilation state.");
+            compilationRequired |= isAwaiting;
+            int targetOffset = hasCompilationField ? 4 : 3;
             string countValue = ReadMarkerField(lines[2], "count=");
             int count;
             if (!int.TryParse(
@@ -730,7 +909,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     System.Globalization.CultureInfo.InvariantCulture,
                     out count) ||
                 (count != 3 && count != 4) ||
-                lines.Length != count + 4)
+                lines.Length != count + targetOffset + 1)
             {
                 throw new IOException("The Source Generator publication marker has an invalid artifact count.");
             }
@@ -739,7 +918,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             for (int index = 0; index < count; index++)
             {
                 string encodedPath = ReadMarkerField(
-                    lines[index + 3],
+                    lines[index + targetOffset],
                     PublicationMarkerTargetPrefix,
                     true);
                 if (encodedPath.Length == 0)
@@ -792,7 +971,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 authoritativePath,
                 manifestPath,
                 mirrorPath);
-            return new PublicationMarker(isComplete, targetPaths);
+            return new PublicationMarker(isComplete, targetPaths, isAwaiting, compilationRequired);
         }
 
         private static string ReadMarkerField(string line, string prefix, bool allowEquals = false)
@@ -961,7 +1140,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             string definitionPath,
             string definitionAssetPath,
             bool markerComplete,
-            bool markerIsLegacy)
+            bool markerIsLegacy,
+            bool compilationRequired)
         {
             if (!File.Exists(publishPendingPath))
             {
@@ -976,12 +1156,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             if (markerComplete)
             {
                 // The new generation is authoritative; only cleanup was interrupted.
+                DeleteFileOrThrow(publishPendingPath);
                 if (!TryDeleteDirectory(backupDirectory))
                 {
                     throw new IOException("The completed Source Generator publication backup could not be cleared.");
                 }
 
-                DeleteFileOrThrow(publishPendingPath);
                 return;
             }
 
@@ -993,7 +1173,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             bool definitionWasPresent = artifacts.Count > 3 &&
                 File.Exists(artifacts[3].BackupPath);
             RestorePublicationBackups(artifacts);
-            if (File.Exists(mirrorImportPendingPath))
+            if (compilationRequired || File.Exists(mirrorImportPendingPath))
             {
                 importer.Import(mirrorRelativePath);
                 DeleteFileOrThrow(mirrorImportPendingPath);
@@ -1012,12 +1192,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 importer.Import(restoredDefinitionAssetPath);
             }
 
+            if (compilationRequired)
+            {
+                // Persist restored compiler inputs as the new good state before asking Unity.
+                // If the request fails or the Editor exits, startup safely requests it again.
+                WritePublicationMarker(publishPendingPath, PublicationMarkerAwaitingCompilationState, artifacts, true);
+                CompilationRequester();
+            }
+            DeleteFileOrThrow(publishPendingPath);
             if (!TryDeleteDirectory(backupDirectory))
             {
                 throw new IOException("The repaired Source Generator publication backup could not be cleared.");
             }
 
-            DeleteFileOrThrow(publishPendingPath);
         }
 
         private static void ValidateRecoveryBackups(
@@ -1260,11 +1447,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
         private sealed class PublicationMarker
         {
-            internal PublicationMarker(bool isComplete, IReadOnlyList<string> targetPaths)
+            internal PublicationMarker(bool isComplete, IReadOnlyList<string> targetPaths,
+                bool isAwaitingCompilation = false, bool compilationRequired = false)
             {
                 IsComplete = isComplete;
                 IsLegacy = false;
                 TargetPaths = targetPaths;
+                IsAwaitingCompilation = isAwaitingCompilation;
+                CompilationRequired = compilationRequired;
             }
 
             private PublicationMarker(bool isComplete)
@@ -1275,6 +1465,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
 
             internal bool IsComplete { get; }
+            internal bool IsAwaitingCompilation { get; }
+            internal bool CompilationRequired { get; }
             internal bool IsLegacy { get; }
             internal IReadOnlyList<string> TargetPaths { get; }
 
@@ -1360,7 +1552,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             bool authoritativeChanged,
             bool mirrorChanged,
             bool manifestChanged,
-            string warningMessage)
+            string warningMessage,
+            bool compilationRequired = false)
         {
             SpecId = specId;
             RawSha256 = rawSha256;
@@ -1373,6 +1566,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             MirrorChanged = mirrorChanged;
             ManifestChanged = manifestChanged;
             WarningMessage = warningMessage ?? string.Empty;
+            CompilationRequired = compilationRequired;
         }
 
         internal string SpecId { get; }
@@ -1394,6 +1588,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         internal bool MirrorChanged { get; }
 
         internal bool ManifestChanged { get; }
+
+        internal bool CompilationRequired { get; }
 
         internal string WarningMessage { get; }
     }
