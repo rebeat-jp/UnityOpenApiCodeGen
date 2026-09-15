@@ -67,6 +67,9 @@ jobs:
   verify:
     needs: preflight
     uses: ./.github/workflows/source-generator-verify.yml
+    # Environment secrets in reusable workflows require caller inheritance:
+    # https://github.com/actions/runner/issues/4453
+    secrets: inherit
     with:
       commit: ${{ inputs.commit }}
       version: ${{ inputs.version }}

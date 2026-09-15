@@ -128,6 +128,22 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         run: |
+          missing_secret=false
+          for secret_name in UNITY_LICENSE UNITY_EMAIL UNITY_PASSWORD; do
+            if [[ -z "${!secret_name:-}" ]]; then missing_secret=true; fi
+          done
+          if [[ "$missing_secret" == true ]]; then
+            for version in 2021.3.19f1 6000.0.23f1 6000.3.2f1; do
+              evidence_root="$SOURCE_GENERATOR_RELEASE_OUTPUT/unity-gate/$version"
+              mkdir -p "$evidence_root"
+              node SourceGenerators/scripts/ci-evidence.js write-gate \
+                "$evidence_root/gate.json" not-run 2 "$version" \
+                'Unity authentication Secrets are unavailable; check Environment UNITY_LICENSE and caller secret inheritance' \
+                "$evidence_root" "$SOURCE_GENERATOR_RELEASE_OUTPUT"
+            done
+            echo '::error::Required Unity authentication Secrets are unavailable; no Unity images were downloaded.'
+            exit 2
+          fi
           failed=0
           for version in 2021.3.19f1 6000.0.23f1 6000.3.2f1; do
             image="openapi-unity-gate:${version}"

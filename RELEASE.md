@@ -32,7 +32,10 @@ Unity runs on GitHub-hosted Linux in GameCI containers. The three Linux/amd64
 image digests are pinned in
 [`unity-images.json`](SourceGenerators/BuildTools/CI/unity-images.json).
 The Unity job uses Environment **`UNITY_LICENSE`**, containing Secrets
-`UNITY_LICENSE`, `UNITY_EMAIL`, and `UNITY_PASSWORD`. The Personal ULF supplies
+`UNITY_LICENSE`, `UNITY_EMAIL`, and `UNITY_PASSWORD`. Reusable-workflow callers
+retain `secrets: inherit` so these Environment secrets resolve in the called
+job; a host check stops before image downloads if any are unavailable.
+The Personal ULF supplies
 the serial through the GameCI activation procedure. Activation and license
 return logs stay in the disposable container. Test logs/XML are redacted before
 being written to the artifact directory.

@@ -17,6 +17,9 @@ permissions:
 jobs:
   verify:
     uses: ./.github/workflows/source-generator-verify.yml
+    # Environment secrets in reusable workflows require caller inheritance:
+    # https://github.com/actions/runner/issues/4453
+    secrets: inherit
     with:
       commit: ${{ github.event.pull_request.head.sha || inputs.commit || github.sha }}
       # Forks receive automated package/.NET checks without Unity credentials.
