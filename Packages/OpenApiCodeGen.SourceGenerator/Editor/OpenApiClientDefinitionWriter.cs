@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
@@ -108,6 +109,28 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 generatedNamespace,
                 clientIdentitySha256,
                 deterministicSpecId);
+            string migrationSourcePath = string.Empty;
+            if (!existingDefinition.Exists)
+            {
+                MigrationCandidate candidate = FindMigrationCandidate(
+                    targetAssembly,
+                    definitionPath,
+                    apiName,
+                    generatedNamespace,
+                    clientIdentitySha256);
+                if (candidate != null)
+                {
+                    migrationSourcePath = candidate.Path;
+                    existingDefinition = candidate.Definition;
+                    EnsureDefinitionFileIsSafe(definitionPath + ".meta");
+                    EnsureDefinitionFileIsSafe(migrationSourcePath + ".meta");
+                    if (File.Exists(definitionPath + ".meta"))
+                    {
+                        throw new SafeGenerationException(
+                            "Refusing to migrate an owned definition over an occupied destination metadata file.");
+                    }
+                }
+            }
             string specId = existingDefinition.SpecId;
             string definitionAssetPath = ToAssetPath(definitionPath);
             byte[] content = StrictUtf8.GetBytes(
@@ -128,8 +151,26 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 generatedNamespace,
                 documentFormat,
                 content,
-                existingDefinition.Exists,
-                existingDefinition.ContentSha256);
+                existingDefinition.Exists && string.IsNullOrEmpty(migrationSourcePath),
+                string.IsNullOrEmpty(migrationSourcePath)
+                    ? existingDefinition.ContentSha256
+                    : string.Empty,
+                migrationSourcePath,
+                string.IsNullOrEmpty(migrationSourcePath)
+                    ? string.Empty
+                    : ToAssetPath(migrationSourcePath),
+                File.Exists(definitionPath + ".meta"),
+                ComputeFileSha256(definitionPath + ".meta"),
+                string.IsNullOrEmpty(migrationSourcePath)
+                    ? string.Empty
+                    : existingDefinition.ContentSha256,
+                !string.IsNullOrEmpty(migrationSourcePath) && File.Exists(migrationSourcePath + ".meta"),
+                string.IsNullOrEmpty(migrationSourcePath)
+                    ? string.Empty
+                    : ComputeFileSha256(migrationSourcePath + ".meta"),
+                !string.IsNullOrEmpty(migrationSourcePath) && File.Exists(migrationSourcePath + ".meta")
+                    ? File.ReadAllBytes(migrationSourcePath + ".meta")
+                    : new byte[0]);
         }
 
         internal bool Publish(OpenApiClientDefinitionPlan plan)
@@ -193,12 +234,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     plan.DefinitionPath);
             }
 
+            ValidateMigrationState(plan, targetAssembly);
+
             if (FileContentEquals(plan.DefinitionPath, plan.Content))
             {
                 return false;
             }
 
-            fileWriter.WriteAllBytesAtomically(plan.DefinitionPath, plan.Content);
+            if (plan.IsFolderMigration)
+            {
+                PublishFolderMigration(plan);
+            }
+            else
+            {
+                fileWriter.WriteAllBytesAtomically(plan.DefinitionPath, plan.Content);
+            }
             importAsset(plan.DefinitionAssetPath);
             return true;
         }
@@ -240,7 +290,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 documentFormat,
                 content,
                 plan.PreparedDefinitionExists,
-                plan.PreparedDefinitionSha256);
+                plan.PreparedDefinitionSha256,
+                plan.MigrationSourcePath,
+                plan.MigrationSourceAssetPath,
+                plan.PreparedDestinationMetaExists,
+                plan.PreparedDestinationMetaSha256,
+                plan.PreparedMigrationSourceSha256,
+                plan.PreparedMigrationSourceMetaExists,
+                plan.PreparedMigrationSourceMetaSha256,
+                plan.PreparedMigrationSourceMetaBytes);
         }
 
         internal DefinitionPublication PublishTransactional(OpenApiClientDefinitionPlan plan)
@@ -250,65 +308,74 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 throw new ArgumentNullException(nameof(plan));
             }
 
-            EnsureDefinitionFileIsSafe(plan.DefinitionPath);
-            DefinitionFileSnapshot snapshot = CaptureDefinitionSnapshot(plan.DefinitionPath);
+            DefinitionFileSnapshot[] snapshots = CaptureDefinitionSnapshots(plan.DefinitionArtifactPaths);
             try
             {
                 bool changed = Publish(plan);
                 return new DefinitionPublication(
                     changed,
                     changed
-                        ? () => TryRestoreDefinitionSnapshot(plan, snapshot)
+                        ? () => TryRestoreDefinitionSnapshots(plan, snapshots)
                         : EmptyRollback);
             }
             catch
             {
-                TryRestoreDefinitionSnapshot(plan, snapshot);
+                TryRestoreDefinitionSnapshots(plan, snapshots);
                 throw;
             }
         }
 
-        private static DefinitionFileSnapshot CaptureDefinitionSnapshot(string path)
+        private static DefinitionFileSnapshot[] CaptureDefinitionSnapshots(string[] paths)
         {
-            if (!File.Exists(path))
+            var snapshots = new DefinitionFileSnapshot[paths.Length];
+            for (int index = 0; index < paths.Length; index++)
             {
-                return new DefinitionFileSnapshot(false, new byte[0]);
+                string path = paths[index];
+                EnsureDefinitionFileIsSafe(path);
+                snapshots[index] = File.Exists(path)
+                    ? new DefinitionFileSnapshot(path, true, File.ReadAllBytes(path))
+                    : new DefinitionFileSnapshot(path, false, new byte[0]);
             }
 
-            return new DefinitionFileSnapshot(true, File.ReadAllBytes(path));
+            return snapshots;
         }
 
-        private void TryRestoreDefinitionSnapshot(
+        private void TryRestoreDefinitionSnapshots(
             OpenApiClientDefinitionPlan plan,
-            DefinitionFileSnapshot snapshot)
+            DefinitionFileSnapshot[] snapshots)
         {
             try
             {
-                bool alreadyMatchesSnapshot = snapshot.Exists
-                    ? FileContentEquals(plan.DefinitionPath, snapshot.Bytes)
-                    : !File.Exists(plan.DefinitionPath);
-                if (alreadyMatchesSnapshot)
+                FileSnapshotState[] outputs = CaptureExpectedPublishedState(plan, snapshots);
+                for (int index = 0; index < snapshots.Length; index++)
                 {
-                    return;
+                    if (!SnapshotMatches(snapshots[index]) && !SnapshotMatches(outputs[index]))
+                    {
+                        return;
+                    }
                 }
 
-                // Restore only bytes published by this plan. If an importer or another owner
-                // changed the file afterwards, preserving that edit is safer than clobbering it.
-                if (!FileContentEquals(plan.DefinitionPath, plan.Content))
+                // Remove the destination side first so a migrated .meta GUID never exists at
+                // both paths while the original snapshot is restored.
+                for (int index = 0; index < snapshots.Length; index++)
                 {
-                    return;
+                    if (!snapshots[index].Exists && File.Exists(snapshots[index].Path))
+                    {
+                        File.Delete(snapshots[index].Path);
+                    }
                 }
 
-                if (snapshot.Exists)
+                for (int index = 0; index < snapshots.Length; index++)
                 {
-                    fileWriter.WriteAllBytesAtomically(plan.DefinitionPath, snapshot.Bytes);
-                }
-                else if (File.Exists(plan.DefinitionPath))
-                {
-                    File.Delete(plan.DefinitionPath);
+                    if (snapshots[index].Exists)
+                    {
+                        fileWriter.WriteAllBytesAtomically(snapshots[index].Path, snapshots[index].Bytes);
+                    }
                 }
 
-                importAsset(plan.DefinitionAssetPath);
+                importAsset(plan.IsFolderMigration
+                    ? plan.MigrationSourceAssetPath
+                    : plan.DefinitionAssetPath);
             }
             catch (Exception)
             {
@@ -319,6 +386,267 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
         private static void EmptyRollback()
         {
+        }
+
+        private void PublishFolderMigration(OpenApiClientDefinitionPlan plan)
+        {
+            fileWriter.WriteAllBytesAtomically(plan.DefinitionPath, plan.Content);
+            File.Delete(plan.MigrationSourcePath);
+            if (File.Exists(plan.MigrationSourcePath + ".meta"))
+            {
+                File.Delete(plan.MigrationSourcePath + ".meta");
+            }
+
+            if (plan.PreparedMigrationSourceMetaExists)
+            {
+                fileWriter.WriteAllBytesAtomically(
+                    plan.DefinitionPath + ".meta",
+                    plan.PreparedMigrationSourceMetaBytes);
+            }
+        }
+
+        private void ValidateMigrationState(
+            OpenApiClientDefinitionPlan plan,
+            AsmdefInfo targetAssembly)
+        {
+            ValidateFileSnapshot(
+                plan.DefinitionPath + ".meta",
+                plan.PreparedDestinationMetaExists,
+                plan.PreparedDestinationMetaSha256,
+                "The destination definition metadata changed after generation was prepared.");
+            if (!plan.IsFolderMigration)
+            {
+                return;
+            }
+
+            AsmdefInfo sourceAssembly = ResolveTargetAssembly(
+                Path.GetDirectoryName(plan.MigrationSourcePath));
+            if (!PathsEqual(sourceAssembly.DirectoryPath, targetAssembly.DirectoryPath))
+            {
+                throw new InvalidOperationException(
+                    "The definition migration source crossed an assembly boundary after generation was prepared.");
+            }
+
+            ExistingDefinitionInfo source = InspectExistingDefinition(
+                plan.MigrationSourcePath,
+                targetAssembly.Name,
+                plan.ApiName,
+                plan.GeneratedNamespace,
+                plan.ClientIdentitySha256,
+                plan.SpecId);
+            if (!source.Exists ||
+                !string.Equals(source.SpecId, plan.SpecId, StringComparison.Ordinal) ||
+                !string.Equals(
+                    source.ContentSha256,
+                    plan.PreparedMigrationSourceSha256,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The definition migration source changed after generation was prepared.");
+            }
+
+            ValidateFileSnapshot(
+                plan.MigrationSourcePath + ".meta",
+                plan.PreparedMigrationSourceMetaExists,
+                plan.PreparedMigrationSourceMetaSha256,
+                "The definition migration source metadata changed after generation was prepared.");
+
+            MigrationCandidate currentCandidate = FindMigrationCandidate(
+                targetAssembly,
+                plan.DefinitionPath,
+                plan.ApiName,
+                plan.GeneratedNamespace,
+                plan.ClientIdentitySha256);
+            if (currentCandidate == null ||
+                !PathsEqual(currentCandidate.Path, plan.MigrationSourcePath))
+            {
+                throw new InvalidOperationException(
+                    "The owned definition migration set changed after generation was prepared.");
+            }
+        }
+
+        private static void ValidateFileSnapshot(
+            string path,
+            bool expectedExists,
+            string expectedSha256,
+            string message)
+        {
+            EnsureDefinitionFileIsSafe(path);
+            bool exists = File.Exists(path);
+            if (exists != expectedExists ||
+                (exists && !string.Equals(
+                    ComputeFileSha256(path),
+                    expectedSha256,
+                    StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException(message + " " + path);
+            }
+        }
+
+        private MigrationCandidate FindMigrationCandidate(
+            AsmdefInfo targetAssembly,
+            string destinationPath,
+            string apiName,
+            string generatedNamespace,
+            string clientIdentitySha256)
+        {
+            var matches = new List<MigrationCandidate>();
+            bool foundDifferentNamespace = false;
+            FindMigrationCandidatesInDirectory(
+                targetAssembly.DirectoryPath,
+                targetAssembly.DirectoryPath,
+                destinationPath,
+                targetAssembly.Name,
+                apiName,
+                generatedNamespace,
+                clientIdentitySha256,
+                matches,
+                ref foundDifferentNamespace);
+            if (matches.Count > 1)
+            {
+                throw new SafeGenerationException(
+                    "Multiple owned definitions match this client. Move or remove the duplicates before generating.");
+            }
+
+            if (matches.Count == 0 && foundDifferentNamespace)
+            {
+                throw new SafeGenerationException(
+                    "Change the generated namespace at the existing definition location before moving its output folder.");
+            }
+
+            return matches.Count == 1 ? matches[0] : null;
+        }
+
+        private void FindMigrationCandidatesInDirectory(
+            string directory,
+            string assemblyRoot,
+            string destinationPath,
+            string targetAssemblyName,
+            string apiName,
+            string generatedNamespace,
+            string clientIdentitySha256,
+            List<MigrationCandidate> matches,
+            ref bool foundDifferentNamespace)
+        {
+            if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new SafeGenerationException(
+                    "The target assembly contains a symbolic-link boundary that prevents safe definition migration: " +
+                    directory);
+            }
+
+            if (!PathsEqual(directory, assemblyRoot) &&
+                (Directory.GetFiles(directory, "*.asmdef", SearchOption.TopDirectoryOnly).Length != 0 ||
+                 Directory.GetFiles(directory, "*.asmref", SearchOption.TopDirectoryOnly).Length != 0))
+            {
+                return;
+            }
+
+            string candidatePath = Path.Combine(directory, apiName + DefinitionFileSuffix);
+            if (!PathsEqual(candidatePath, destinationPath) && File.Exists(candidatePath))
+            {
+                EnsureDefinitionFileIsSafe(candidatePath);
+                byte[] bytes = File.ReadAllBytes(candidatePath);
+                string normalized;
+                try
+                {
+                    normalized = NormalizeLineEndings(StrictUtf8.GetString(bytes));
+                }
+                catch (DecoderFallbackException exception)
+                {
+                    throw new InvalidOperationException(
+                        "An owned definition candidate is not strict UTF-8: " + candidatePath,
+                        exception);
+                }
+
+                if (normalized.StartsWith(OwnedFileHeader + "\n", StringComparison.Ordinal))
+                {
+                    ParsedOwnedDefinition parsed = ParseOwnedDefinitionSource(normalized, candidatePath);
+                    if (string.Equals(parsed.ApiName, apiName, StringComparison.Ordinal))
+                    {
+                        string parsedIdentity = ComputeClientIdentitySha256(
+                            targetAssemblyName,
+                            parsed.GeneratedNamespace,
+                            apiName);
+                        ExistingDefinitionInfo inspected = InspectExistingDefinition(
+                            candidatePath,
+                            targetAssemblyName,
+                            apiName,
+                            parsed.GeneratedNamespace,
+                            parsedIdentity,
+                            parsedIdentity.Substring(0, 32));
+                        if (string.Equals(
+                                parsed.GeneratedNamespace,
+                                generatedNamespace,
+                                StringComparison.Ordinal) &&
+                            string.Equals(
+                                parsedIdentity,
+                                clientIdentitySha256,
+                                StringComparison.Ordinal))
+                        {
+                            matches.Add(new MigrationCandidate(candidatePath, inspected));
+                        }
+                        else
+                        {
+                            foundDifferentNamespace = true;
+                        }
+                    }
+                }
+            }
+
+            string[] childDirectories = Directory.GetDirectories(directory);
+            Array.Sort(childDirectories, StringComparer.Ordinal);
+            for (int index = 0; index < childDirectories.Length; index++)
+            {
+                FindMigrationCandidatesInDirectory(
+                    childDirectories[index],
+                    assemblyRoot,
+                    destinationPath,
+                    targetAssemblyName,
+                    apiName,
+                    generatedNamespace,
+                    clientIdentitySha256,
+                    matches,
+                    ref foundDifferentNamespace);
+            }
+        }
+
+        private static FileSnapshotState[] CaptureExpectedPublishedState(
+            OpenApiClientDefinitionPlan plan,
+            DefinitionFileSnapshot[] snapshots)
+        {
+            if (!plan.IsFolderMigration)
+            {
+                return new[]
+                {
+                    new FileSnapshotState(plan.DefinitionPath, true, plan.Content),
+                };
+            }
+
+            return new[]
+            {
+                new FileSnapshotState(plan.DefinitionPath, true, plan.Content),
+                new FileSnapshotState(
+                    plan.DefinitionPath + ".meta",
+                    snapshots[3].Exists,
+                    snapshots[3].Bytes),
+                new FileSnapshotState(plan.MigrationSourcePath, false, new byte[0]),
+                new FileSnapshotState(plan.MigrationSourcePath + ".meta", false, new byte[0]),
+            };
+        }
+
+        private static bool SnapshotMatches(DefinitionFileSnapshot snapshot)
+        {
+            return snapshot.Exists
+                ? FileContentEquals(snapshot.Path, snapshot.Bytes)
+                : !File.Exists(snapshot.Path);
+        }
+
+        private static bool SnapshotMatches(FileSnapshotState snapshot)
+        {
+            return snapshot.Exists
+                ? FileContentEquals(snapshot.Path, snapshot.Bytes)
+                : !File.Exists(snapshot.Path);
         }
 
         private string ResolveOutputFolder(string outputFolderPath)
@@ -359,6 +687,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             {
                 if (Directory.Exists(currentDirectory))
                 {
+                    string[] asmrefPaths = Directory.GetFiles(
+                        currentDirectory,
+                        "*.asmref",
+                        SearchOption.TopDirectoryOnly);
+                    if (asmrefPaths.Length != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "The definition output folder must not cross an asmref boundary: " +
+                            currentDirectory);
+                    }
+
                     string[] asmdefPaths = Directory.GetFiles(
                         currentDirectory,
                         "*.asmdef",
@@ -451,7 +790,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 }
             }
 
-            return new AsmdefInfo(name, referencesRuntime);
+            return new AsmdefInfo(
+                name,
+                referencesRuntime,
+                Path.GetDirectoryName(Path.GetFullPath(asmdefPath)));
         }
 
         private static ExistingDefinitionInfo InspectExistingDefinition(
@@ -869,6 +1211,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
         }
 
+        private static string ComputeFileSha256(string path)
+        {
+            return File.Exists(path)
+                ? ToLowerHex(ComputeSha256(File.ReadAllBytes(path)), 32)
+                : string.Empty;
+        }
+
         private static string ToLowerHex(byte[] bytes, int count)
         {
             var builder = new StringBuilder(count * 2);
@@ -937,28 +1286,66 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
         private sealed class AsmdefInfo
         {
-            internal AsmdefInfo(string name, bool referencesSourceGeneratorRuntime)
+            internal AsmdefInfo(
+                string name,
+                bool referencesSourceGeneratorRuntime,
+                string directoryPath)
             {
                 Name = name;
                 ReferencesSourceGeneratorRuntime = referencesSourceGeneratorRuntime;
+                DirectoryPath = directoryPath;
             }
 
             internal string Name { get; }
 
             internal bool ReferencesSourceGeneratorRuntime { get; }
+
+            internal string DirectoryPath { get; }
         }
 
         private sealed class DefinitionFileSnapshot
         {
-            internal DefinitionFileSnapshot(bool exists, byte[] bytes)
+            internal DefinitionFileSnapshot(string path, bool exists, byte[] bytes)
             {
+                Path = path;
                 Exists = exists;
                 Bytes = bytes;
             }
 
+            internal string Path { get; }
+
             internal bool Exists { get; }
 
             internal byte[] Bytes { get; }
+        }
+
+        private sealed class FileSnapshotState
+        {
+            internal FileSnapshotState(string path, bool exists, byte[] bytes)
+            {
+                Path = path;
+                Exists = exists;
+                Bytes = bytes;
+            }
+
+            internal string Path { get; }
+
+            internal bool Exists { get; }
+
+            internal byte[] Bytes { get; }
+        }
+
+        private sealed class MigrationCandidate
+        {
+            internal MigrationCandidate(string path, ExistingDefinitionInfo definition)
+            {
+                Path = path;
+                Definition = definition;
+            }
+
+            internal string Path { get; }
+
+            internal ExistingDefinitionInfo Definition { get; }
         }
 
         private sealed class ExistingDefinitionInfo

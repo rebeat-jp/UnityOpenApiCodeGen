@@ -41,7 +41,8 @@ cleanup() {
 trap cleanup EXIT
 emit_gate_console() {
   if [[ -f "${private_directory}/gate-console.log" ]]; then
-    node - "${private_directory}/gate-console.log" "${scripts_directory}/ci-evidence.js" <<'NODE'
+    perl "${scripts_directory}/run-with-timeout.pl" "${CI_EVIDENCE_TIMEOUT_SECONDS}" \
+      node - "${private_directory}/gate-console.log" "${scripts_directory}/ci-evidence.js" <<'NODE'
 const fs = require('fs');
 const { redact } = require(process.argv[3]);
 process.stdout.write(redact(fs.readFileSync(process.argv[2], 'utf8')));
@@ -53,9 +54,17 @@ terminate_gate() {
   trap - TERM INT
   if [[ -n "${gate_pid}" ]]; then
     kill -TERM -- "-${gate_pid}" 2>/dev/null || kill -TERM "${gate_pid}" 2>/dev/null || true
+    gate_stop_deadline=$(( $(ci_now_epoch) + CI_GATE_STOP_TIMEOUT_SECONDS ))
+    while kill -0 "${gate_pid}" 2>/dev/null &&
+          (( $(ci_remaining_seconds "${gate_stop_deadline}") > 0 )); do
+      sleep 1
+    done
+    if kill -0 "${gate_pid}" 2>/dev/null; then
+      kill -KILL -- "-${gate_pid}" 2>/dev/null || kill -KILL "${gate_pid}" 2>/dev/null || true
+    fi
     wait "${gate_pid}" 2>/dev/null || true
   fi
-  emit_gate_console
+  emit_gate_console || echo '::warning::Partial Unity gate console evidence could not be emitted within its time limit.'
   exit 143
 }
 trap terminate_gate TERM INT

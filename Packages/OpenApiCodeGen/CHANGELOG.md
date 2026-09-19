@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Fixed
 
+- Open the package-bundled offline Support Matrix instead of a feature-branch URL; verify its relative links in both tarballs.
+- Exercise actual settings persistence from externally launched Unity consumers and detect cwd-dependent initialization with the production path definition.
 - Resolve project settings from `Application.dataPath`, independent of the Editor process working directory.
 - Keep API name and package name editable for Source Generator while disabling Docker-specific fields.
 - Verify consumer compilation both without Test Framework and with Test Framework but without package testables.

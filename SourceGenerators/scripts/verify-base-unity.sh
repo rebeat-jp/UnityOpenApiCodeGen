@@ -51,6 +51,7 @@ esac
 
 temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/UnityOpenApiCodeGen-Base-${unity_version}.XXXXXX")"
 project_path="${temporary_root}/UnityProject"
+launch_directory="${temporary_root}/Unity Launch 日本語"
 local_packages="${temporary_root}/LocalPackages"
 results="${temporary_root}/base-results.xml"
 log="${temporary_root}/base.log"
@@ -143,6 +144,7 @@ mkdir -p \
   "${project_path}/Assets" \
   "${project_path}/Packages" \
   "${project_path}/ProjectSettings" \
+  "${launch_directory}" \
   "${local_packages}"
 base_archive_name="$(basename "${base_archive}")"
 cp "${base_archive}" "${local_packages}/${base_archive_name}"
@@ -159,8 +161,10 @@ printf 'm_EditorVersion: %s\nm_EditorVersionWithRevision: %s (%s)\n' \
   "${unity_version}" "${unity_version}" "${unity_revision}" \
   > "${project_path}/ProjectSettings/ProjectVersion.txt"
 
-# Keep fixture-relative shell operations inside the disposable project.
-cd "${project_path}"
+# Launch from outside the project so a regression to Environment.CurrentDirectory
+# cannot accidentally write project settings beside the controller process.
+cd "${launch_directory}"
+export SOURCE_GENERATOR_VERIFY_LAUNCH_DIRECTORY="${launch_directory}"
 
 run_editor() {
   local output_log="$1"
@@ -282,6 +286,12 @@ case "${test_result}" in
     fail_not_run "Unity test XML did not contain a usable result"
     ;;
 esac
+cwd_test_result="$(xmllint --xpath \
+  "string(//test-case[@fullname='Rhycol.OpenApiCodeGen.Test.Core.SettingMenuProviderFieldsTests.ProjectSettingsPersistenceUsesUnityAssetsDirectoryFromExternalWorkingDirectory']/@result)" \
+  "${results}" 2>/dev/null || true)"
+if [[ "${cwd_test_result}" != "Passed" ]]; then
+  fail_gate "base Unity cwd-independent project settings test did not pass (${cwd_test_result:-missing})"
+fi
 
 if grep -q 'CS8785' "${log}"; then
   fail_gate "Unity reported CS8785 while loading the base package"

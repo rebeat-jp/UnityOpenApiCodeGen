@@ -119,6 +119,125 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Equal("https://override.example/root/pets/one", handler.RequestUri!.AbsoluteUri);
         }
 
+        [Theory]
+        [InlineData(".")]
+        [InlineData("..")]
+        public async Task DotOnlyPathParameterSegmentsAreRejectedBeforeSending(string value)
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(HttpDocument);
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = execution.EmitAssembly();
+            var handler = new RecordingHandler(static (_, _) => Task.FromResult(
+                new HttpResponseMessage(HttpStatusCode.Created)
+                {
+                    Content = new StringContent("{\"id\":1,\"name\":\"ok\"}")
+                }));
+            using var httpClient = new HttpClient(handler);
+            object client = CreateClient(assembly, httpClient);
+            object body = CreateRequestBody(assembly, "client");
+
+            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+                InvokeSendPet(client, "trace", value, null, body, CancellationToken.None));
+
+            Assert.Contains("'.' or '..' path segments", exception.Message);
+            Assert.Equal(0, handler.SendCount);
+        }
+
+        [Theory]
+        [InlineData(".hidden", ".hidden")]
+        [InlineData("a.b", "a.b")]
+        [InlineData("...", "...")]
+        [InlineData("prefix..suffix", "prefix..suffix")]
+        public async Task OrdinaryPathParameterSegmentsRemainSupported(
+            string value,
+            string expectedSegment)
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(HttpDocument);
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = execution.EmitAssembly();
+            var handler = new RecordingHandler(static (_, _) => Task.FromResult(
+                new HttpResponseMessage(HttpStatusCode.Created)
+                {
+                    Content = new StringContent("{\"id\":1,\"name\":\"ok\"}")
+                }));
+            using var httpClient = new HttpClient(handler);
+            object client = CreateClient(assembly, httpClient);
+            object body = CreateRequestBody(assembly, "client");
+
+            await InvokeSendPet(client, "trace", value, null, body, CancellationToken.None);
+
+            Assert.Equal(1, handler.SendCount);
+            Assert.Equal(
+                "https://api.example.test/v1/pets/" + expectedSegment,
+                handler.RequestUri!.AbsoluteUri);
+        }
+
+        [Theory]
+        [InlineData("/files/%2{suffix}", "e")]
+        [InlineData("/files/.%2{suffix}", "E")]
+        public async Task PercentEncodedDotSegmentsFormedByPathParametersAreRejectedBeforeSending(
+            string path,
+            string suffix)
+        {
+            string document = CreateParameterDocument(path, "suffix", "path");
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = execution.EmitAssembly();
+            var handler = new RecordingHandler(static (_, _) => Task.FromResult(
+                new HttpResponseMessage(HttpStatusCode.NoContent)));
+            using var httpClient = new HttpClient(handler);
+            object client = CreateClient(assembly, httpClient);
+
+            ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+                Invoke(client, "getFile", suffix, CancellationToken.None));
+
+            Assert.Contains("'.' or '..' path segments", exception.Message);
+            Assert.Equal(0, handler.SendCount);
+        }
+
+        [Fact]
+        public async Task DotOnlyQueryValueRemainsSupported()
+        {
+            string document = CreateParameterDocument("/files", "value", "query");
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = execution.EmitAssembly();
+            var handler = new RecordingHandler(static (_, _) => Task.FromResult(
+                new HttpResponseMessage(HttpStatusCode.NoContent)));
+            using var httpClient = new HttpClient(handler);
+            object client = CreateClient(assembly, httpClient);
+
+            await Invoke(client, "getFile", ".", CancellationToken.None);
+
+            Assert.Equal(1, handler.SendCount);
+            Assert.Equal("?value=.", handler.RequestUri!.Query);
+        }
+
+        [Fact]
+        public async Task PercentEncodedDotLiteralInPathParameterRemainsDoubleEscaped()
+        {
+            string document = CreateParameterDocument("/files/{value}", "value", "path");
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = execution.EmitAssembly();
+            var handler = new RecordingHandler(static (_, _) => Task.FromResult(
+                new HttpResponseMessage(HttpStatusCode.NoContent)));
+            using var httpClient = new HttpClient(handler);
+            object client = CreateClient(assembly, httpClient);
+
+            await Invoke(client, "getFile", "%2e", CancellationToken.None);
+
+            Assert.Equal(1, handler.SendCount);
+            Assert.Equal(
+                "https://api.example.test/v1/files/%252e",
+                handler.RequestUri!.AbsoluteUri);
+        }
+
         [Fact]
         public async Task UnexpectedStatusThrowsGeneratedExceptionWithResponseBody()
         {
@@ -238,6 +357,37 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             return body;
         }
 
+        private static string CreateParameterDocument(
+            string path,
+            string parameterName,
+            string location)
+        {
+            return @"{
+  ""openapi"": ""3.1.0"",
+  ""info"": { ""title"": ""Path validation"", ""version"": ""1"" },
+  ""servers"": [ { ""url"": ""https://api.example.test/v1/"" } ],
+  ""paths"": { """ + path + @""": { ""get"": {
+    ""operationId"": ""getFile"",
+    ""parameters"": [ {
+      ""name"": """ + parameterName + @""",
+      ""in"": """ + location + @""",
+      ""required"": true,
+      ""schema"": { ""type"": ""string"" }
+    } ],
+    ""responses"": { ""204"": { ""description"": ""No Content"" } }
+  } } }
+}";
+        }
+
+        private static async Task Invoke(
+            object client,
+            string methodName,
+            params object[] arguments)
+        {
+            var task = (Task)client.GetType().GetMethod(methodName)!.Invoke(client, arguments)!;
+            await task.ConfigureAwait(false);
+        }
+
         private static async Task<object?> InvokeSendPet(
             object client,
             string trace,
@@ -276,10 +426,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
             internal CancellationToken CancellationToken { get; private set; }
 
+            internal int SendCount { get; private set; }
+
             protected override async Task<HttpResponseMessage> SendAsync(
                 HttpRequestMessage request,
                 CancellationToken cancellationToken)
             {
+                SendCount++;
                 Method = request.Method;
                 RequestUri = request.RequestUri;
                 TraceHeader = request.Headers.Contains("X-Trace")

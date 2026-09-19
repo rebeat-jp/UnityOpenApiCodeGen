@@ -236,7 +236,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void ReferencedScalarEnumAndNullableParameterSchemasRemainSupported()
+        public void OptionalReferencedScalarEnumAndNullableParameterSchemasRemainSupported()
         {
             const string Document = @"{
   ""openapi"": ""3.1.0"",
@@ -244,9 +244,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
   ""paths"": { ""/values"": { ""get"": {
     ""operationId"": ""getValues"",
     ""parameters"": [
-      { ""name"": ""count"", ""in"": ""query"", ""required"": true,
+      { ""name"": ""count"", ""in"": ""query"",
         ""schema"": { ""$ref"": ""#/components/schemas/CountAlias"" } },
-      { ""name"": ""state"", ""in"": ""query"", ""required"": true,
+      { ""name"": ""state"", ""in"": ""query"",
         ""schema"": { ""$ref"": ""#/components/schemas/StateAlias"" } }
     ],
     ""responses"": { ""204"": { ""description"": ""OK"" } }
@@ -273,6 +273,150 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 .ToArray();
             Assert.Contains("int?", types);
             Assert.Contains("NullableState?", types);
+        }
+
+        [Theory]
+        [InlineData("path", "{\"type\":[\"string\",\"null\"]}")]
+        [InlineData("query", "{\"type\":[\"integer\",\"null\"],\"format\":\"int32\"}")]
+        [InlineData("header", "{\"type\":[\"string\",\"null\"],\"enum\":[\"ready\",\"done\"]}")]
+        public void RequiredNullableParameterSchemasAreRejected(string location, string schema)
+        {
+            string path = location == "path" ? "/values/{value}" : "/values";
+            string document = @"{
+  ""openapi"": ""3.1.0"",
+  ""info"": { ""title"": ""Parameters"", ""version"": ""1"" },
+  ""paths"": { """ + path + @""": { ""get"": {
+    ""operationId"": ""getValues"",
+    ""parameters"": [ {
+      ""name"": ""value"", ""in"": """ + location + @""", ""required"": true,
+      ""schema"": " + schema + @"
+    } ],
+    ""responses"": { ""204"": { ""description"": ""OK"" } }
+  } } }
+}";
+
+            Diagnostic diagnostic = Assert.Single(
+                Phase4GeneratorTestHarness.GenerateAndCompile(document).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("Required " + location + " parameter 'value'", diagnostic.GetMessage());
+            Assert.Contains("cannot use a nullable schema", diagnostic.GetMessage());
+            Assert.Contains("/parameters/0/schema", diagnostic.GetMessage());
+        }
+
+        [Theory]
+        [InlineData("NullableScalar")]
+        [InlineData("NullableEnum")]
+        public void RequiredNullableParameterFollowsTheCompleteReferenceChain(string target)
+        {
+            string document = @"{
+  ""openapi"": ""3.1.0"",
+  ""info"": { ""title"": ""Parameters"", ""version"": ""1"" },
+  ""paths"": { ""/values"": { ""get"": {
+    ""operationId"": ""getValues"",
+    ""parameters"": [ {
+      ""name"": ""value"", ""in"": ""query"", ""required"": true,
+      ""schema"": { ""$ref"": ""#/components/schemas/Alias"" }
+    } ],
+    ""responses"": { ""204"": { ""description"": ""OK"" } }
+  } } },
+  ""components"": { ""schemas"": {
+    ""Alias"": { ""$ref"": ""#/components/schemas/SecondAlias"" },
+    ""SecondAlias"": { ""$ref"": ""#/components/schemas/" + target + @""" },
+    ""NullableScalar"": { ""type"": [""integer"", ""null""], ""format"": ""int32"" },
+    ""NullableEnum"": { ""type"": [""string"", ""null""], ""enum"": [""ready"", ""done""] }
+  } }
+}";
+
+            Diagnostic diagnostic = Assert.Single(
+                Phase4GeneratorTestHarness.GenerateAndCompile(document).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("cannot use a nullable schema", diagnostic.GetMessage());
+        }
+
+        [Theory]
+        [InlineData("{\"type\":[\"integer\",\"null\"],\"format\":\"int32\"}")]
+        [InlineData("{\"type\":[\"string\",\"null\"],\"enum\":[\"ready\",\"done\"]}")]
+        public void RequiredNullableParameterFollowsExternalYamlReferenceChain(string valueSchema)
+        {
+            const string Root = @"{
+  ""openapi"": ""3.1.0"",
+  ""info"": { ""title"": ""External parameters"", ""version"": ""1"" },
+  ""paths"": { ""/values"": { ""get"": {
+    ""operationId"": ""getValues"",
+    ""parameters"": [ {
+      ""name"": ""value"", ""in"": ""query"", ""required"": true,
+      ""schema"": { ""$ref"": ""alias.yaml"" }
+    } ],
+    ""responses"": { ""204"": { ""description"": ""OK"" } }
+  } } }
+}";
+            const string Alias = "{\"$ref\":\"value.yaml\"}";
+            const string RootPointer = "/paths/~1values/get/parameters/0/schema/$ref";
+            const string AliasPointer = "/$ref";
+            string bundle = TestBundleFactory.CreateV2(
+                Root,
+                new[]
+                {
+                    new TestBundleFactory.V2DocumentSpec(
+                        "Assets/Specs/alias.yaml",
+                        "Assets/Specs/alias.yaml",
+                        "yaml",
+                        Alias),
+                    new TestBundleFactory.V2DocumentSpec(
+                        "Assets/Specs/value.yaml",
+                        "Assets/Specs/value.yaml",
+                        "yaml",
+                        valueSchema),
+                },
+                new[]
+                {
+                    new TestBundleFactory.V2ReferenceSpec(
+                        "Assets/Specs/alias.yaml",
+                        AliasPointer,
+                        "Assets/Specs/value.yaml",
+                        string.Empty),
+                    new TestBundleFactory.V2ReferenceSpec(
+                        "root",
+                        RootPointer,
+                        "Assets/Specs/alias.yaml",
+                        string.Empty),
+                });
+
+            Diagnostic diagnostic = Assert.Single(
+                Phase4GeneratorTestHarness.GenerateAndCompile(Root, bundle: bundle).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("Required query parameter 'value'", diagnostic.GetMessage());
+            Assert.Contains("cannot use a nullable schema", diagnostic.GetMessage());
+        }
+
+        [Fact]
+        public void OpenApi30NullableReferenceSiblingRemainsSupportedForOptionalParameter()
+        {
+            const string Document = @"{
+  ""openapi"": ""3.0.3"",
+  ""info"": { ""title"": ""Parameters"", ""version"": ""1"" },
+  ""paths"": { ""/values"": { ""get"": {
+    ""operationId"": ""getValues"",
+    ""parameters"": [ {
+      ""name"": ""value"", ""in"": ""query"",
+      ""schema"": { ""$ref"": ""#/components/schemas/Value"", ""nullable"": true }
+    } ],
+    ""responses"": { ""204"": { ""description"": ""OK"" } }
+  } } },
+  ""components"": { ""schemas"": {
+    ""Value"": { ""type"": ""string"" }
+  } }
+}";
+
+            Phase4GeneratorExecution execution =
+                Phase4GeneratorTestHarness.GenerateAndCompile(Document);
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.Contains("string? value", execution.GeneratedSource);
         }
 
         [Fact]
@@ -313,6 +457,133 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Theory]
+        [InlineData("type", "\"object\"")]
+        [InlineData("properties", "{\"name\":{\"type\":\"string\"}}")]
+        [InlineData("required", "[\"name\"]")]
+        public void MeaningfulReferenceSchemaSiblingsReportTheirSourcePosition(
+            string keyword,
+            string value)
+        {
+            string document = @"{
+  ""openapi"": ""3.1.0"",
+  ""info"": { ""title"": ""Reference siblings"", ""version"": ""1"" },
+  ""paths"": { ""/values"": { ""get"": {
+    ""operationId"": ""getValue"",
+    ""responses"": { ""200"": { ""description"": ""OK"", ""content"": {
+      ""application/json"": { ""schema"": {
+        ""$ref"": ""#/components/schemas/Base"",
+        """ + keyword + @""": " + value + @"
+      } }
+    } } }
+  } } },
+  ""components"": { ""schemas"": {
+    ""Base"": { ""type"": ""object"", ""properties"": {
+      ""id"": { ""type"": ""integer"" }
+    } }
+  } }
+}";
+
+            Diagnostic diagnostic = Assert.Single(
+                Phase4GeneratorTestHarness.GenerateAndCompile(document).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("Schema keyword '" + keyword + "' cannot be combined with $ref", diagnostic.GetMessage());
+            Assert.Contains("/schema/" + keyword, diagnostic.GetMessage());
+        }
+
+        [Fact]
+        public void ReferenceSchemaAnnotationsAndLiteralExamplesRemainAllowed()
+        {
+            const string Document = @"{
+  ""openapi"": ""3.1.0"",
+  ""info"": { ""title"": ""Reference annotations"", ""version"": ""1"" },
+  ""paths"": { ""/values"": { ""get"": {
+    ""operationId"": ""getValue"",
+    ""responses"": { ""200"": { ""description"": ""OK"", ""content"": {
+      ""application/json"": { ""schema"": {
+        ""$ref"": ""#/components/schemas/Value"",
+        ""title"": ""Annotated value"",
+        ""summary"": ""Summary"",
+        ""description"": ""Description"",
+        ""default"": ""fallback"",
+        ""example"": { ""$ref"": ""literal-example.json"" },
+        ""examples"": [ { ""$ref"": ""literal-array-example.json"" } ],
+        ""deprecated"": false,
+        ""$comment"": ""comment"",
+        ""externalDocs"": { ""url"": ""https://example.test/docs"" },
+        ""xml"": { ""name"": ""value"" },
+        ""x-meta"": { ""$ref"": ""literal-extension.json"" }
+      } }
+    } } }
+  } } },
+  ""components"": { ""schemas"": {
+    ""Value"": { ""type"": ""string"" }
+  } }
+}";
+
+            Phase4GeneratorExecution execution =
+                Phase4GeneratorTestHarness.GenerateAndCompile(Document);
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+        }
+
+        [Fact]
+        public void MeaningfulReferenceSiblingInExternalYamlSchemaIsRejected()
+        {
+            const string Root = @"{
+  ""openapi"": ""3.1.0"",
+  ""info"": { ""title"": ""External reference siblings"", ""version"": ""1"" },
+  ""paths"": { ""/values"": { ""get"": {
+    ""operationId"": ""getValue"",
+    ""responses"": { ""200"": { ""description"": ""OK"", ""content"": {
+      ""application/json"": { ""schema"": { ""$ref"": ""alias.yaml"" } }
+    } } }
+  } } }
+}";
+            const string Alias = "{\"$ref\":\"value.yaml\",\"type\":\"string\"}";
+            const string Value = "{\"type\":\"string\"}";
+            const string RootPointer = "/paths/~1values/get/responses/200/content/application~1json/schema/$ref";
+            const string AliasPointer = "/$ref";
+            string bundle = TestBundleFactory.CreateV2(
+                Root,
+                new[]
+                {
+                    new TestBundleFactory.V2DocumentSpec(
+                        "Assets/Specs/alias.yaml",
+                        "Assets/Specs/alias.yaml",
+                        "yaml",
+                        Alias),
+                    new TestBundleFactory.V2DocumentSpec(
+                        "Assets/Specs/value.yaml",
+                        "Assets/Specs/value.yaml",
+                        "yaml",
+                        Value),
+                },
+                new[]
+                {
+                    new TestBundleFactory.V2ReferenceSpec(
+                        "Assets/Specs/alias.yaml",
+                        AliasPointer,
+                        "Assets/Specs/value.yaml",
+                        string.Empty),
+                    new TestBundleFactory.V2ReferenceSpec(
+                        "root",
+                        RootPointer,
+                        "Assets/Specs/alias.yaml",
+                        string.Empty),
+                });
+
+            Diagnostic diagnostic = Assert.Single(
+                Phase4GeneratorTestHarness.GenerateAndCompile(Root, bundle: bundle).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("Schema keyword 'type' cannot be combined with $ref", diagnostic.GetMessage());
+            Assert.Contains("Assets/Specs/alias.yaml", diagnostic.GetMessage());
+            Assert.Contains("logical path '/type'", diagnostic.GetMessage());
+        }
+
+        [Theory]
         [InlineData(
             "400",
             "application/octet-stream",
@@ -340,6 +611,38 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
   } } }
 }";
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+        }
+
+        [Fact]
+        public void ErrorResponseReferenceSiblingsAreStructurallyValidatedWithoutGenerationLimits()
+        {
+            const string Document = @"{
+  ""openapi"": ""3.1.0"",
+  ""info"": { ""title"": ""Error reference siblings"", ""version"": ""1"" },
+  ""paths"": { ""/values"": { ""get"": {
+    ""operationId"": ""getValue"",
+    ""responses"": {
+      ""204"": { ""description"": ""OK"" },
+      ""400"": { ""description"": ""Bad"", ""content"": {
+        ""application/json"": { ""schema"": {
+          ""$ref"": ""#/components/schemas/ErrorBase"",
+          ""allOf"": [ { ""type"": ""object"", ""properties"": {
+            ""detail"": { ""type"": ""string"" }
+          } } ]
+        } }
+      } }
+    }
+  } } },
+  ""components"": { ""schemas"": {
+    ""ErrorBase"": { ""type"": ""string"" }
+  } }
+}";
+
+            Phase4GeneratorExecution execution =
+                Phase4GeneratorTestHarness.GenerateAndCompile(Document);
 
             Assert.Empty(execution.RunResult.Diagnostics);
             Assert.Empty(execution.CompilationErrors);

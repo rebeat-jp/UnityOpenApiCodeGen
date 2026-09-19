@@ -60,6 +60,11 @@
 
 ### Fixed
 
+- Move uniquely owned definitions between output folders in the same asmdef/API/namespace while preserving SpecId and GUID; recover interrupted moves and preserve concurrent edits as a definition/meta group.
+- Diagnose unsupported `$ref` siblings and required nullable path/query/header parameters with `OACG101` instead of silently dropping schema constraints or failing on null at runtime.
+- Reject dot-only path segments, including percent-encoded forms, before HTTP transmission.
+- Bundle the offline Support Matrix and its relative references in both packages.
+- Reserve container termination time independently of cleanup so license return retains its full allowance, and surface sanitized gate failure reasons without workflow-command injection.
 - Normalize and validate parameterized JSON media types and request charsets before generation.
 - Separate error-response schema validation from successful JSON body generation; preserve response extensions and error bodies.
 - Preserve nullable through multi-hop references, reject complex referenced parameters, merge headers case-insensitively, and diagnose generic definitions and non-ASCII status codes.

@@ -114,6 +114,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 .AppendLine(";");
             AppendPathParameters(source, operation);
             AppendQueryParameters(source, operation);
+            source.AppendLine("            ValidatePathSegments(relativePath);");
             source.AppendLine("            var requestUri = CreateRequestUri(relativePath);");
             source.Append("            using (var request = new global::System.Net.Http.HttpRequestMessage(")
                 .Append(GetHttpMethod(operation.HttpMethod))
@@ -388,6 +389,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine();
             source.AppendLine("            path = value.Substring(0, separator);");
             source.AppendLine("            query = value.Substring(separator + 1);");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        private static void ValidatePathSegments(string relativePath)");
+            source.AppendLine("        {");
+            source.AppendLine("            SplitPathAndQuery(relativePath, out string path, out _);");
+            source.AppendLine("            string[] segments = path.Split('/');");
+            source.AppendLine("            foreach (string segment in segments)");
+            source.AppendLine("            {");
+            source.AppendLine("                string decodedSegment = global::System.Uri.UnescapeDataString(segment);");
+            source.AppendLine("                if (decodedSegment == \".\" || decodedSegment == \"..\")");
+            source.AppendLine("                {");
+            source.AppendLine("                    throw new global::System.ArgumentException(");
+            source.AppendLine("                        \"Path parameter values must not produce '.' or '..' path segments.\",");
+            source.AppendLine("                        nameof(relativePath));");
+            source.AppendLine("                }");
+            source.AppendLine("            }");
             source.AppendLine("        }");
             source.AppendLine();
             source.AppendLine("        private static global::System.Net.Http.HttpContent CreateJsonContent(string requestJson, string mediaType)");

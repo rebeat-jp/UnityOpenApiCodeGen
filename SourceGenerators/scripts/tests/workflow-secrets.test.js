@@ -7,6 +7,12 @@ const { spawnSync } = require('child_process');
 const { fixture, commit } = require('./release-fixture');
 const { expectedGateVersions, validateGateSummary } = require('../validate-release-artifacts');
 const repository = path.resolve(__dirname, '../../..');
+const shortTerminationBudget = {
+  SOURCE_GENERATOR_CI_GATE_STOP_TIMEOUT_SECONDS: '1',
+  SOURCE_GENERATOR_CI_EVIDENCE_TIMEOUT_SECONDS: '1',
+  SOURCE_GENERATOR_CI_LICENSE_RETURN_TIMEOUT_SECONDS: '1',
+  SOURCE_GENERATOR_CI_HOST_TERMINATION_MARGIN_SECONDS: '2'
+};
 function workflow(name) { return fs.readFileSync(path.join(repository, '.github/workflows', name), 'utf8'); }
 function workflowStep(name, stepName) {
   const text = workflow(name);
@@ -63,7 +69,8 @@ test('Unity workflow and scripts consume one bounded time-budget contract', () =
   assert.match(workflowText, /timeout-minutes: 240/);
   assert.match(workflowText, /Start the bounded Unity work deadline/);
   assert.match(workflowText, /run-with-timeout\.pl "\$CI_CLEANUP_TIMEOUT_SECONDS"/);
-  for (const [name, value] of [['CI_TOTAL_BUDGET_SECONDS', '12600'], ['CI_EDITOR_TIMEOUT_SECONDS', '300'], ['CI_DOCKER_BUILD_TIMEOUT_SECONDS', '600'], ['CI_ACTIVATION_TIMEOUT_SECONDS', '300'], ['CI_LICENSE_RETURN_TIMEOUT_SECONDS', '120'], ['CI_CLEANUP_TIMEOUT_SECONDS', '120'], ['CI_MAX_CONTAINER_STARTS', '3']]) assert.match(budget, new RegExp(`${name}=.*${value}`));
+  for (const [name, value] of [['CI_TOTAL_BUDGET_SECONDS', '12600'], ['CI_EDITOR_TIMEOUT_SECONDS', '300'], ['CI_DOCKER_BUILD_TIMEOUT_SECONDS', '600'], ['CI_ACTIVATION_TIMEOUT_SECONDS', '300'], ['CI_LICENSE_RETURN_TIMEOUT_SECONDS', '120'], ['CI_CLEANUP_TIMEOUT_SECONDS', '120'], ['CI_GATE_STOP_TIMEOUT_SECONDS', '30'], ['CI_EVIDENCE_TIMEOUT_SECONDS', '30'], ['CI_HOST_TERMINATION_MARGIN_SECONDS', '30'], ['CI_MAX_CONTAINER_STARTS', '3']]) assert.match(budget, new RegExp(`${name}=.*${value}`));
+  assert.match(budget, /CI_CONTAINER_TERMINATION_GRACE_SECONDS=\$\(\(/);
   assert.match(host, /source .*ci-time-budget\.sh/); assert.match(entrypoint, /source .*ci-time-budget\.sh/);
   assert.match(entrypoint, /CI_ACTIVATION_TIMEOUT_SECONDS/); assert.match(entrypoint, /CI_LICENSE_RETURN_TIMEOUT_SECONDS/); assert.match(entrypoint, /CI_EDITOR_TIMEOUT_SECONDS/);
   assert.doesNotMatch(`${workflowText}\n${host}\n${entrypoint}`, /alarm shift; exec @ARGV|\btimeout "?\$\{?CI_/);
@@ -104,6 +111,16 @@ test('Unity consumer phases install Test Framework before testables and reject p
   assert.ok(addonDependency >= 0 && addonConsumer > addonDependency && addonTestables > addonConsumer,
     'Unity 6 gates must compile with Test Framework before adding testables');
   assert.match(addon, /unexpectedly compiled .* without testables/);
+});
+test('Unity gates launch outside projectPath and require the cwd persistence regression test', () => {
+  for (const name of ['verify-base-unity.sh', 'verify-unity.sh']) {
+    const script = fs.readFileSync(path.join(repository, 'SourceGenerators/scripts', name), 'utf8');
+    assert.match(script, /launch_directory=.*Unity Launch 日本語/);
+    assert.match(script, /cd "\$\{launch_directory\}"/);
+    assert.match(script, /export SOURCE_GENERATOR_VERIFY_LAUNCH_DIRECTORY="\$\{launch_directory\}"/);
+    assert.match(script, /-projectPath "\$\{project_path\}"/);
+    assert.match(script, /ProjectSettingsPersistenceUsesUnityAssetsDirectoryFromExternalWorkingDirectory/);
+  }
 });
 test('write-capable manual workflows fail unsupported refs in read-only preflight jobs', () => {
   const dll = workflow('source-generator-update-dll.yml');
@@ -200,6 +217,7 @@ test('host fails before any Docker call for missing Secrets, preserving all thre
       const summary = validateGateSummary(f.output, version, file, undefined, f.manifest);
       assert.equal(summary.status, 'not-run');
       const json = JSON.parse(fs.readFileSync(file)); assert.equal(json.exitCode, 2); assert.match(json.reason, /Secrets are unavailable/);
+      assert.match(result.stdout, new RegExp(`Unity gate ${version.replaceAll('.', '\\.')}\\: not-run \\(exit 2\\)`));
     }
   }
 });
@@ -235,6 +253,70 @@ esac
     assert.equal(gate.status, 'failed'); assert.match(gate.reason, /container exited 9/);
   }
 });
+test('container failure reason is preserved, redacted, and safely reported to console and summary', t => {
+  const summary = path.join(require('os').tmpdir(), `unity-gate-summary-${process.pid}-${Date.now()}.md`);
+  t.after(() => fs.rmSync(summary, { force: true }));
+  const docker = `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$DOCKER_MARKER"
+case "$1" in
+  build) exit 0 ;;
+  run)
+    version="\${!#}"
+    evidence="$SOURCE_GENERATOR_RELEASE_OUTPUT/unity-gate/$version"
+    mkdir -p "$evidence"
+    reason="container reason $UNITY_PASSWORD%25
+::error::forged command|table"
+    node SourceGenerators/scripts/ci-evidence.js write-gate \
+      "$evidence/gate.json" failed 7 "$version" "$reason" "$evidence" "$SOURCE_GENERATOR_RELEASE_OUTPUT"
+    exit 7
+    ;;
+  rm|image|builder) exit 0 ;;
+esac
+`;
+  const { f, result } = runHost(t, [], { docker, env: { GITHUB_STEP_SUMMARY: summary } });
+  assert.equal(result.status, 1, result.stderr);
+  assert.doesNotMatch(result.stdout + result.stderr, /fixture-password/);
+  assert.doesNotMatch(result.stdout + result.stderr, /\n::error::forged command/);
+  assert.match(result.stdout, /Unity gate 2021\.3\.19f1: failed \(exit 7\): container reason \[REDACTED\]/);
+  assert.match(result.stdout, /%2525/);
+  const first = JSON.parse(fs.readFileSync(path.join(f.output, 'unity-gate/2021.3.19f1/gate.json')));
+  assert.equal(first.exitCode, 7); assert.match(first.reason, /container reason \[REDACTED\]/);
+  const summaryText = fs.readFileSync(summary, 'utf8');
+  assert.match(summaryText, /## Unity gate results/);
+  assert.match(summaryText, /container reason \[REDACTED\]/);
+  assert.match(summaryText, /\\\|table/);
+  assert.doesNotMatch(summaryText, /fixture-password/);
+});
+test('gate reporter neutralizes version commands and summary HTML markup', t => {
+  const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'gate-report-injection-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const gate = path.join(root, 'gate.json');
+  const summary = path.join(root, 'summary.md');
+  fs.writeFileSync(gate, JSON.stringify({
+    status: 'failed',
+    exitCode: 1,
+    version: '6000.0\n::error::forged-version ##[add-mask]FORGED_VERSION',
+    reason: 'unsafe <img src=x onerror=alert(1)> | row\n::warning::forged-reason ##[add-mask]FORGED_REASON %'
+  }));
+
+  const result = spawnSync(process.execPath, [
+    path.join(repository, 'SourceGenerators/scripts/ci-evidence.js'),
+    'report-gate', gate, summary
+  ], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim().split('\n').length, 1);
+  assert.match(result.stdout, /^::error title=/);
+  assert.doesNotMatch(result.stdout, /\n::error::forged-version/);
+  assert.doesNotMatch(result.stdout, /\n::warning::forged-reason/);
+  assert.match(result.stdout, /Unity gate 6000\.0 ::error::forged-version ##\[add-mask\]FORGED_VERSION: failed/);
+  assert.match(result.stdout, /##\[add-mask\]FORGED_VERSION/);
+  assert.match(result.stdout, /##\[add-mask\]FORGED_REASON/);
+  assert.match(result.stdout, /%25$/m);
+  const summaryText = fs.readFileSync(summary, 'utf8');
+  assert.doesNotMatch(summaryText, /<img/);
+  assert.match(summaryText, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.match(summaryText, /\\\| row/);
+});
 test('expired work deadline starts no containers and records all gates as not-run', t => {
   const started = Math.floor(Date.now() / 1000) - 5;
   const { f, result, marker } = runHost(t, [], { env: { SOURCE_GENERATOR_CI_TOTAL_BUDGET_SECONDS: '1', SOURCE_GENERATOR_CI_STARTED_AT_EPOCH: String(started) } });
@@ -254,7 +336,7 @@ case "$1" in
 esac
 `;
   const started = Date.now();
-  const { f, result, marker } = runHost(t, [], { docker, env: { SOURCE_GENERATOR_CI_TOTAL_BUDGET_SECONDS: '2', SOURCE_GENERATOR_CI_CLEANUP_TIMEOUT_SECONDS: '3' } });
+  const { f, result, marker } = runHost(t, [], { docker, env: { SOURCE_GENERATOR_CI_TOTAL_BUDGET_SECONDS: '2', SOURCE_GENERATOR_CI_CLEANUP_TIMEOUT_SECONDS: '3', ...shortTerminationBudget } });
   assert.equal(result.status, 1, result.stderr); assert.ok(Date.now() - started < 15000, 'deadline test must remain bounded');
   const commands = fs.readFileSync(marker, 'utf8'); assert.match(commands, /kill --signal TERM/); assert.match(commands, /kill --signal KILL/);
   const current = JSON.parse(fs.readFileSync(path.join(f.output, 'unity-gate/2021.3.19f1/gate.json')));
@@ -280,7 +362,7 @@ case "$1" in
 esac
 `;
   const started = Date.now();
-  const { f, result, marker } = runHost(t, [], { docker, env: { SOURCE_GENERATOR_CI_TOTAL_BUDGET_SECONDS: '2', SOURCE_GENERATOR_CI_CLEANUP_TIMEOUT_SECONDS: '3', DOCKER_CHILD_MARKER: childMarker } });
+  const { f, result, marker } = runHost(t, [], { docker, env: { SOURCE_GENERATOR_CI_TOTAL_BUDGET_SECONDS: '2', SOURCE_GENERATOR_CI_CLEANUP_TIMEOUT_SECONDS: '3', DOCKER_CHILD_MARKER: childMarker, ...shortTerminationBudget } });
   assert.equal(result.status, 1, result.stderr); assert.ok(Date.now() - started < 15000, 'Docker control timeout must remain bounded');
   const commands = fs.readFileSync(marker, 'utf8'); assert.match(commands, /kill --signal TERM/); assert.match(commands, /kill --signal KILL/);
   const children = fs.readFileSync(childMarker, 'utf8').trim().split('\n').map(Number); assert.equal(children.length, 2);
@@ -293,6 +375,48 @@ esac
   }
   const current = JSON.parse(fs.readFileSync(path.join(f.output, 'unity-gate/2021.3.19f1/gate.json')));
   assert.equal(current.status, 'failed'); assert.match(current.reason, /deadline.*terminated/);
+});
+test('nonzero Docker TERM acknowledgment still allows near-bound license return to finish', t => {
+  const processRoot = fs.mkdtempSync(path.join(require('os').tmpdir(), 'docker-return-grace-'));
+  t.after(() => fs.rmSync(processRoot, { recursive: true, force: true }));
+  const runPid = path.join(processRoot, 'run-pid');
+  const returnMarker = path.join(processRoot, 'return-marker');
+  const docker = `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$DOCKER_MARKER"
+case "$1" in
+  build) exit 0 ;;
+  run)
+    printf '%s\\n' "$$" > "$DOCKER_RUN_PID"
+    trap 'printf "return-started\\n" >> "$DOCKER_RETURN_MARKER"; sleep 2; printf "return-complete\\n" >> "$DOCKER_RETURN_MARKER"; exit 143' TERM
+    while true; do sleep 1; done
+    ;;
+  kill)
+    if [[ "$3" == TERM ]]; then kill -TERM "$(cat "$DOCKER_RUN_PID")"; exit 9; fi
+    exit 0
+    ;;
+  rm|image|builder) exit 0 ;;
+esac
+`;
+  const started = Date.now();
+  const { f, result, marker } = runHost(t, [], { docker, env: {
+    SOURCE_GENERATOR_CI_TOTAL_BUDGET_SECONDS: '2',
+    SOURCE_GENERATOR_CI_CLEANUP_TIMEOUT_SECONDS: '1',
+    SOURCE_GENERATOR_CI_GATE_STOP_TIMEOUT_SECONDS: '1',
+    SOURCE_GENERATOR_CI_EVIDENCE_TIMEOUT_SECONDS: '1',
+    SOURCE_GENERATOR_CI_LICENSE_RETURN_TIMEOUT_SECONDS: '3',
+    SOURCE_GENERATOR_CI_HOST_TERMINATION_MARGIN_SECONDS: '2',
+    DOCKER_RUN_PID: runPid,
+    DOCKER_RETURN_MARKER: returnMarker
+  } });
+  assert.equal(result.status, 1, result.stderr);
+  assert.ok(Date.now() - started < 15000, 'near-bound license return must remain bounded');
+  assert.equal(fs.readFileSync(returnMarker, 'utf8'), 'return-started\nreturn-complete\n');
+  const commands = fs.readFileSync(marker, 'utf8');
+  assert.match(commands, /kill --signal TERM/);
+  assert.doesNotMatch(commands, /kill --signal KILL/);
+  const hostLog = fs.readFileSync(path.join(
+    f.output, 'unity-gate/2021.3.19f1/ci-host.log'), 'utf8');
+  assert.match(hostLog, /Docker TERM request exited 9; waiting for the container/);
 });
 test('hanging Docker build stops at its short production timeout and preserves evidence', t => {
   const docker = `#!/usr/bin/env bash

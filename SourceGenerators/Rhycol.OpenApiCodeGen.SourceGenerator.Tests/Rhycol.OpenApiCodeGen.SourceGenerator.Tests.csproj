@@ -58,5 +58,7 @@
              Link="LinkedProduction/OpenApiDocumentFormat.cs" />
     <Compile Include="../../Packages/OpenApiCodeGen/Editor/Contracts/GenerationProviderContracts.cs"
              Link="LinkedProduction/GenerationProviderContracts.cs" />
+    <Compile Include="../../Packages/OpenApiCodeGen/Editor/ApplicationConstant.cs"
+             Link="LinkedProduction/ApplicationConstant.cs" />
   </ItemGroup>
 </Project>

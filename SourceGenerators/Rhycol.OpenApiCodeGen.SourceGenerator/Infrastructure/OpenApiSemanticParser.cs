@@ -15,6 +15,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private static readonly HashSet<string> HttpMethodSet =
             new HashSet<string>(HttpMethods, StringComparer.Ordinal);
 
+        private static readonly HashSet<string> AllowedReferenceSchemaSiblings =
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "$comment",
+                "default",
+                "deprecated",
+                "description",
+                "example",
+                "examples",
+                "externalDocs",
+                "summary",
+                "title",
+                "xml"
+            };
+
         private readonly SpecNode _root;
         private readonly JsonPointerResolver _resolver;
         private readonly int _minorVersion;
@@ -467,8 +482,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             ValidateParameterSerialization(node, locationName);
+            SpecNode schemaNode = RequireProperty(node, "schema");
             OpenApiSemanticSchema schema = ParseSchema(
-                RequireProperty(node, "schema"),
+                schemaNode,
                 name + "Parameter",
                 new HashSet<NormalizedSpecNodeIdentity>());
             OpenApiSemanticSchema effectiveSchema = GetEffectiveSchema(schema);
@@ -476,6 +492,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 effectiveSchema.Kind == OpenApiSemanticSchemaKind.Object)
             {
                 throw Unsupported(node, "Array and object parameters require style/explode support and are outside the Phase 4 MVP.");
+            }
+
+            if (required && IsSchemaNullable(schema))
+            {
+                throw Unsupported(
+                    schemaNode,
+                    "Required " + locationName + " parameter '" + name +
+                    "' cannot use a nullable schema in the Phase 4 MVP.");
             }
 
             return new OpenApiSemanticParameter(
@@ -835,23 +859,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         new[] { CreateLocation(resolved.Node, resolved.DocumentId) });
                 }
 
-                if (_validatedResponseSchemas.Contains(resolved.Identity))
+                if (!_validatedResponseSchemas.Contains(resolved.Identity))
                 {
-                    return;
+                    ParseResolvedReferenced(
+                        reference,
+                        referenceNode,
+                        referenceStack,
+                        resolved,
+                        target =>
+                        {
+                            ValidateResponseSchemaReferences(target, referenceStack);
+                            return true;
+                        });
+                    _validatedResponseSchemas.Add(resolved.Identity);
                 }
-
-                ParseResolvedReferenced(
-                    reference,
-                    referenceNode,
-                    referenceStack,
-                    resolved,
-                    target =>
-                    {
-                        ValidateResponseSchemaReferences(target, referenceStack);
-                        return true;
-                    });
-                _validatedResponseSchemas.Add(resolved.Identity);
-                return;
             }
 
             ValidateResponseSchemaProperty(node, "items", referenceStack);
@@ -1058,6 +1079,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
+                ValidateReferenceSchemaSiblings(node);
                 string referenceName;
                 ResolvedSpecReference resolved;
                 if (_bundle is null)
@@ -1298,6 +1320,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
+        private void ValidateReferenceSchemaSiblings(SpecNode node)
+        {
+            foreach (SpecProperty property in node.EnumerateObject())
+            {
+                if (property.Name == "$ref" ||
+                    property.Name.StartsWith("x-", StringComparison.Ordinal) ||
+                    AllowedReferenceSchemaSiblings.Contains(property.Name) ||
+                    (_minorVersion == 0 && property.Name == "nullable"))
+                {
+                    continue;
+                }
+
+                throw Unsupported(
+                    property.Value,
+                    "Schema keyword '" + property.Name +
+                    "' cannot be combined with $ref by the Phase 4 MVP.");
+            }
+        }
+
         private bool ParseNullable(SpecNode node)
         {
             SpecNode? nullableNode = GetProperty(node, "nullable");
@@ -1431,6 +1472,34 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             return current;
+        }
+
+        private bool IsSchemaNullable(OpenApiSemanticSchema schema)
+        {
+            var visited = new HashSet<NormalizedSpecNodeIdentity>();
+            OpenApiSemanticSchema current = schema;
+            while (true)
+            {
+                if (current.Nullable)
+                {
+                    return true;
+                }
+
+                if (current.Kind != OpenApiSemanticSchemaKind.Reference)
+                {
+                    return false;
+                }
+
+                NormalizedSpecNodeIdentity identity = current.ReferenceIdentity;
+                if (identity.IsEmpty ||
+                    !visited.Add(identity) ||
+                    !_schemas.TryGetValue(identity, out OpenApiSemanticSchema? referenced))
+                {
+                    return false;
+                }
+
+                current = referenced;
+            }
         }
 
         private static void ValidateResponseStatusCode(SpecProperty property)

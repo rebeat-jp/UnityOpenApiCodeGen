@@ -49,6 +49,8 @@ record_gate() {
   node "${scripts_directory}/ci-evidence.js" finalize-gate \
     "${host_log}" "${evidence_root}" "${release_output}" "${version}" \
     "${policy}" "${status}" "${exit_code}" "${reason}"
+  node "${scripts_directory}/ci-evidence.js" report-gate \
+    "${evidence_root}/gate.json" "${GITHUB_STEP_SUMMARY:-}"
 }
 
 mark_not_started() {
@@ -100,27 +102,37 @@ terminate_container() {
   local container_name="$1"
   local docker_pid="$2"
   local output_log="$3"
-  local cleanup_deadline=$(( $(ci_now_epoch) + CI_CLEANUP_TIMEOUT_SECONDS ))
+  local termination_deadline=$(( $(ci_now_epoch) + CI_CONTAINER_TERMINATION_GRACE_SECONDS ))
   local remaining
-  local term_limit
+  local term_limit=$(( CI_HOST_TERMINATION_MARGIN_SECONDS / 2 ))
+  local kill_reserve
   local term_status=0
 
+  if (( term_limit < 1 )); then term_limit=1; fi
+  kill_reserve=$(( CI_HOST_TERMINATION_MARGIN_SECONDS - term_limit ))
+
+  printf 'Work deadline reached; allowing %s seconds for bounded container termination.\n' \
+    "${CI_CONTAINER_TERMINATION_GRACE_SECONDS}" >> "${output_log}"
   printf 'Work deadline reached; sending TERM to container %s.\n' "${container_name}" >> "${output_log}"
-  remaining="$(ci_remaining_seconds "${cleanup_deadline}")"
-  if (( remaining > 1 )); then term_limit=$(( remaining / 2 )); else term_limit=1; fi
-  run_with_alarm "${term_limit}" "${output_log}" docker kill --signal TERM "${container_name}" || term_status=$?
-  while (( term_status == 0 )) && kill -0 "${docker_pid}" 2>/dev/null; do
-    remaining="$(ci_remaining_seconds "${cleanup_deadline}")"
-    if (( remaining <= 2 )); then break; fi
+  remaining="$(ci_remaining_seconds "${termination_deadline}")"
+  run_with_alarm "$(ci_min_seconds "${term_limit}" "${remaining}")" \
+    "${output_log}" docker kill --signal TERM "${container_name}" || term_status=$?
+  if (( term_status != 0 )); then
+    printf 'Docker TERM request exited %s; waiting for the container through its remaining termination grace.\n' \
+      "${term_status}" >> "${output_log}"
+  fi
+  while kill -0 "${docker_pid}" 2>/dev/null; do
+    remaining="$(ci_remaining_seconds "${termination_deadline}")"
+    if (( remaining <= kill_reserve )); then break; fi
     sleep 1
   done
   if kill -0 "${docker_pid}" 2>/dev/null; then
     printf 'Container did not stop after TERM; sending KILL.\n' >> "${output_log}"
-    remaining="$(ci_remaining_seconds "${cleanup_deadline}")"
+    remaining="$(ci_remaining_seconds "${termination_deadline}")"
     if (( remaining > 0 )); then
       run_with_alarm "${remaining}" "${output_log}" docker kill --signal KILL "${container_name}" || true
     else
-      printf 'Cleanup deadline reached before the Docker KILL command completed.\n' >> "${output_log}"
+      printf 'Container termination grace expired before the Docker KILL command completed.\n' >> "${output_log}"
     fi
     kill -KILL "${docker_pid}" 2>/dev/null || true
   fi
@@ -224,7 +236,7 @@ for ((index = 0; index < ${#versions[@]}; index += 1)); do
       "Unity ${version} container exceeded the matrix work deadline and was terminated" "${host_log}"
     failed=1
   elif (( container_status != 0 )); then
-    record_gate "${version}" replace failed 1 \
+    record_gate "${version}" preserve-failure failed 1 \
       "Unity ${version} container exited ${container_status} before writing usable gate evidence" "${host_log}"
   else
     record_gate "${version}" preserve failed 1 \

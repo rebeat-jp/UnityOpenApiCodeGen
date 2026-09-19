@@ -112,7 +112,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     definitionPlan.DefinitionPath,
                     definitionPlan.DefinitionAssetPath,
                     format => PublishDefinition(definitionPlan, format, ref definitionChanged),
-                    definitionPlan.Content);
+                    definitionPlan.Content,
+                    definitionPlan.DefinitionArtifactPaths,
+                    definitionPlan.DefinitionArtifactOutputs,
+                    definitionPlan.RequiresPublication);
 
                 request.ReportProgress(0.9, "Publishing generated inputs.");
                 return CompleteGeneration(cacheResult, definitionChanged, request);
@@ -163,7 +166,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     definitionPlan.DefinitionPath,
                     definitionPlan.DefinitionAssetPath,
                     format => PublishDefinition(definitionPlan, format, ref definitionChanged),
-                    definitionPlan.Content);
+                    definitionPlan.Content,
+                    definitionPlan.DefinitionArtifactPaths,
+                    definitionPlan.DefinitionArtifactOutputs,
+                    definitionPlan.RequiresPublication);
 
                 return CompleteGeneration(cacheResult, definitionChanged, request);
                 }

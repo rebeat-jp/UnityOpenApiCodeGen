@@ -206,6 +206,138 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Test]
+        public void OutputFolderChangeMovesDefinitionAndMetaWithStableSpecId()
+        {
+            SourceGeneratorGenerationProvider provider = CreateProvider();
+            GenerationResult first = provider.Generate(CreateRequest());
+            Assert.That(first.IsSuccess, Is.True, first.Message);
+            string specId = ReadSpecId(first.Message);
+            string originalDefinition = Path.Combine(
+                outputFolder,
+                "PetStoreApi.OpenApiDefinition.cs");
+            byte[] metaBytes = new UTF8Encoding(false).GetBytes(
+                "fileFormatVersion: 2\nguid: 0123456789abcdef0123456789abcdef\n");
+            File.WriteAllBytes(originalDefinition + ".meta", metaBytes);
+            string movedOutput = Path.Combine(projectRoot, "Assets", "Clients", "Moved");
+            definitionImports.Clear();
+            mirrorImporter.ImportedAssetPaths.Clear();
+            string migrationMarker = string.Empty;
+            provider = CreateProvider(requestCompilation: () =>
+            {
+                compilationRequestCount++;
+                string cacheDirectory = Path.Combine(
+                    projectRoot,
+                    NormalizedSpecBundleConstants.AuthoritativeCacheRelativePath,
+                    specId);
+                migrationMarker = File.ReadAllText(Path.Combine(
+                    cacheDirectory,
+                    NormalizedSpecBundleConstants.PublishPendingFileName));
+            });
+
+            GenerationResult moved = provider.Generate(CreateRequest(
+                generatedNamespace: "Example.Generated.PetStore",
+                outputFolderOverride: movedOutput));
+
+            string movedDefinition = Path.Combine(
+                movedOutput,
+                "PetStoreApi.OpenApiDefinition.cs");
+            Assert.That(moved.IsSuccess, Is.True, moved.Message);
+            Assert.That(ReadSpecId(moved.Message), Is.EqualTo(specId));
+            Assert.That(File.Exists(originalDefinition), Is.False);
+            Assert.That(File.Exists(originalDefinition + ".meta"), Is.False);
+            Assert.That(File.Exists(movedDefinition), Is.True);
+            Assert.That(File.ReadAllBytes(movedDefinition + ".meta"), Is.EqualTo(metaBytes));
+            Assert.That(mirrorImporter.ImportedAssetPaths, Is.Empty);
+            Assert.That(definitionImports, Is.EqualTo(new[]
+            {
+                "Assets/Clients/Moved/PetStoreApi.OpenApiDefinition.cs",
+            }));
+            Assert.That(migrationMarker, Does.Contain("version=3\n"));
+            Assert.That(migrationMarker, Does.Contain("count=7\n"));
+            Assert.That(compilationRequestCount, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void OutputFolderMigrationImportFailureRestoresOldPathAndMeta()
+        {
+            SourceGeneratorGenerationProvider initialProvider = CreateProvider();
+            GenerationResult first = initialProvider.Generate(CreateRequest());
+            Assert.That(first.IsSuccess, Is.True, first.Message);
+            string originalDefinition = Path.Combine(
+                outputFolder,
+                "PetStoreApi.OpenApiDefinition.cs");
+            byte[] definitionBefore = File.ReadAllBytes(originalDefinition);
+            byte[] metaBefore = new UTF8Encoding(false).GetBytes(
+                "fileFormatVersion: 2\nguid: abcdef0123456789abcdef0123456789\n");
+            File.WriteAllBytes(originalDefinition + ".meta", metaBefore);
+            string movedOutput = Path.Combine(projectRoot, "Assets", "Clients", "Moved");
+            string movedDefinition = Path.Combine(
+                movedOutput,
+                "PetStoreApi.OpenApiDefinition.cs");
+            SourceGeneratorGenerationProvider failingProvider = CreateProvider(
+                importDefinition: _ => throw new IOException("Simulated definition import failure."));
+
+            GenerationResult failed = failingProvider.Generate(CreateRequest(
+                outputFolderOverride: movedOutput));
+
+            Assert.That(failed.IsSuccess, Is.False);
+            Assert.That(File.ReadAllBytes(originalDefinition), Is.EqualTo(definitionBefore));
+            Assert.That(File.ReadAllBytes(originalDefinition + ".meta"), Is.EqualTo(metaBefore));
+            Assert.That(File.Exists(movedDefinition), Is.False);
+            Assert.That(File.Exists(movedDefinition + ".meta"), Is.False);
+        }
+
+        [Test]
+        public void OutputFolderMigrationImportEditThenThrowPreservesMovedDefinitionGroup()
+        {
+            GenerationResult first = CreateProvider().Generate(CreateRequest());
+            Assert.That(first.IsSuccess, Is.True, first.Message);
+            string specId = ReadSpecId(first.Message);
+            string originalDefinition = Path.Combine(
+                outputFolder,
+                "PetStoreApi.OpenApiDefinition.cs");
+            byte[] metaBytes = new UTF8Encoding(false).GetBytes(
+                "fileFormatVersion: 2\nguid: abcdef0123456789abcdef0123456789\n");
+            File.WriteAllBytes(originalDefinition + ".meta", metaBytes);
+            string movedOutput = Path.Combine(projectRoot, "Assets", "Clients", "Moved");
+            string movedDefinition = Path.Combine(
+                movedOutput,
+                "PetStoreApi.OpenApiDefinition.cs");
+            byte[] concurrentBytes = new UTF8Encoding(false).GetBytes("// concurrent user edit\n");
+            SourceGeneratorGenerationProvider failingProvider = CreateProvider(
+                importDefinition: _ =>
+                {
+                    File.WriteAllBytes(movedDefinition, concurrentBytes);
+                    throw new IOException("Simulated import-time external edit.");
+                });
+
+            GenerationResult failed = failingProvider.Generate(CreateRequest(
+                outputFolderOverride: movedOutput));
+
+            Assert.That(failed.IsSuccess, Is.False);
+            Assert.That(File.Exists(originalDefinition), Is.False);
+            Assert.That(File.Exists(originalDefinition + ".meta"), Is.False);
+            Assert.That(File.ReadAllBytes(movedDefinition), Is.EqualTo(concurrentBytes));
+            Assert.That(File.ReadAllBytes(movedDefinition + ".meta"), Is.EqualTo(metaBytes));
+
+            var recovery = new NormalizedSpecCacheService(
+                projectRoot,
+                new RawJsonNormalizer(),
+                new AtomicFileWriter(),
+                mirrorImporter);
+            recovery.CompilationRequester = () => { };
+            recovery.RepairPendingPublicationForSpec(
+                specId,
+                movedDefinition,
+                "Assets/Clients/Moved/PetStoreApi.OpenApiDefinition.cs");
+
+            Assert.That(File.Exists(originalDefinition), Is.False);
+            Assert.That(File.Exists(originalDefinition + ".meta"), Is.False);
+            Assert.That(File.ReadAllBytes(movedDefinition), Is.EqualTo(concurrentBytes));
+            Assert.That(File.ReadAllBytes(movedDefinition + ".meta"), Is.EqualTo(metaBytes));
+        }
+
+        [Test]
         public void NamespaceChangeFailureRestoresDefinitionCacheAndMirror()
         {
             SourceGeneratorGenerationProvider initialProvider = CreateProvider();
@@ -643,11 +775,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         GenerationRequest CreateRequest(
-            string generatedNamespace = "Example.Generated.PetStore")
+            string generatedNamespace = "Example.Generated.PetStore",
+            string? outputFolderOverride = null)
         {
             return new GenerationRequest(
                 rawSpecPath,
-                outputFolder,
+                outputFolderOverride ?? outputFolder,
                 "PetStoreApi",
                 generatedNamespace);
         }

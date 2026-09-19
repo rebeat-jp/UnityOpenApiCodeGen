@@ -28,6 +28,22 @@ function redact(text) {
   for (const value of values) text = text.split(value).join('[REDACTED]');
   return text;
 }
+function oneLine(text) {
+  return redact(String(text)).replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function escapeWorkflowCommand(text, property = false) {
+  let value = oneLine(text).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  if (property) value = value.replace(/:/g, '%3A').replace(/,/g, '%2C');
+  return value;
+}
+function escapeMarkdownCell(text) {
+  return oneLine(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|');
+}
 function sanitizeFile(source, destination) {
   const temporary = `${destination}.redacted-${process.pid}`;
   try {
@@ -60,24 +76,47 @@ function writeGate([outputPath, status, exitCode, version, reason, evidenceRoot,
   fs.writeFileSync(outputPath, JSON.stringify(summary, null, 2) + '\n');
 }
 function finalizeGate([hostLog, evidenceRoot, releaseOutput, version, policy, fallbackStatus, fallbackExitCode, fallbackReason]) {
-  if (!['preserve', 'replace'].includes(policy)) throw new Error('Gate finalization policy must be preserve or replace');
+  if (!['preserve', 'preserve-failure', 'replace'].includes(policy)) throw new Error('Gate finalization policy must be preserve, preserve-failure, or replace');
   fs.mkdirSync(evidenceRoot, { recursive: true });
   const gatePath = path.join(evidenceRoot, 'gate.json');
   let status = fallbackStatus;
   let exitCode = Number(fallbackExitCode);
   let reason = fallbackReason;
-  if (policy === 'preserve' && fs.existsSync(gatePath)) {
+  if (policy !== 'replace' && fs.existsSync(gatePath)) {
     try {
       const existing = JSON.parse(fs.readFileSync(gatePath, 'utf8'));
       if (!['passed', 'failed', 'not-run'].includes(existing.status) || !Number.isInteger(existing.exitCode) ||
         typeof existing.reason !== 'string' || existing.version !== version) throw new Error('invalid existing gate');
-      ({ status, exitCode, reason } = existing);
+      // A non-zero container exit may still have written the precise gate
+      // failure. Preserve it, but never allow a stale passed gate to survive.
+      if (policy === 'preserve' || existing.status !== 'passed') ({ status, exitCode, reason } = existing);
     } catch {
       status = fallbackStatus; exitCode = Number(fallbackExitCode); reason = fallbackReason;
     }
   }
   if (fs.existsSync(hostLog)) sanitizeFile(hostLog, path.join(evidenceRoot, 'ci-host.log'));
   writeGate([gatePath, status, String(exitCode), version, reason, evidenceRoot, releaseOutput]);
+}
+function reportGate([gatePath, summaryPath = '']) {
+  const gate = JSON.parse(fs.readFileSync(gatePath, 'utf8'));
+  if (!['passed', 'failed', 'not-run'].includes(gate.status) ||
+      !Number.isInteger(gate.exitCode) || typeof gate.reason !== 'string' ||
+      typeof gate.version !== 'string') throw new Error('Cannot report an invalid gate summary');
+  const reason = oneLine(gate.reason) || 'No failure reason was recorded.';
+  const version = oneLine(gate.version) || 'unknown';
+  const level = gate.status === 'passed' ? 'notice' : gate.status === 'failed' ? 'error' : 'warning';
+  const title = `Unity ${version} gate ${gate.status}`;
+  const detail = `Unity gate ${version}: ${gate.status} (exit ${gate.exitCode}): ${reason}`;
+  // Emit only a recognized V2 workflow command. GitHub's legacy parser scans
+  // for ##[command] anywhere in ordinary output, even after a safe prefix.
+  console.log(`::${level} title=${escapeWorkflowCommand(title, true)}::${escapeWorkflowCommand(detail)}`);
+  if (summaryPath) {
+    const marker = '<!-- openapi-codegen-unity-gates -->';
+    const existing = fs.existsSync(summaryPath) ? fs.readFileSync(summaryPath, 'utf8') : '';
+    const heading = existing.includes(marker) ? '' : `\n${marker}\n## Unity gate results\n\n| Version | Status | Exit | Reason |\n| --- | --- | ---: | --- |\n`;
+    fs.appendFileSync(summaryPath,
+      `${heading}| ${escapeMarkdownCell(version)} | ${escapeMarkdownCell(gate.status)} | ${gate.exitCode} | ${escapeMarkdownCell(reason)} |\n`);
+  }
 }
 function writeChecksums(output, manifest) {
   const files = manifest.archives.map(archive => archive.file).concat('release-manifest.json').sort();
@@ -94,7 +133,7 @@ function stampCandidate(output) {
     fs.writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n');
   }
 }
-module.exports = { ciContext, gateContext, redact, writeGate, finalizeGate, writeChecksums, stampCandidate, sanitizeFile, sanitizeEvidence };
+module.exports = { ciContext, gateContext, redact, oneLine, escapeWorkflowCommand, writeGate, finalizeGate, reportGate, writeChecksums, stampCandidate, sanitizeFile, sanitizeEvidence };
 if (require.main === module) {
   try {
     const [command, ...args] = process.argv.slice(2);
@@ -102,6 +141,7 @@ if (require.main === module) {
     else if (command === 'sanitize-file' && args.length === 2) sanitizeFile(args[0], args[1]);
     else if (command === 'write-gate' && args.length === 7) writeGate(args);
     else if (command === 'finalize-gate' && args.length === 8) finalizeGate(args);
-    else throw new Error('Usage: ci-evidence.js stamp-candidate <output> | write-gate <path> <status> <exit> <version> <reason> <evidence-root> <output> | finalize-gate <host-log> <evidence-root> <output> <version> <preserve|replace> <status> <exit> <reason>');
+    else if (command === 'report-gate' && (args.length === 1 || args.length === 2)) reportGate(args);
+    else throw new Error('Usage: ci-evidence.js stamp-candidate <output> | write-gate <path> <status> <exit> <version> <reason> <evidence-root> <output> | finalize-gate <host-log> <evidence-root> <output> <version> <preserve|preserve-failure|replace> <status> <exit> <reason> | report-gate <gate> [step-summary]');
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

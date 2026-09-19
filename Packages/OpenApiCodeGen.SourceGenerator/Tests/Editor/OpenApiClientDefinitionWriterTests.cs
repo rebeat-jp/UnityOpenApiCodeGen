@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using NUnit.Framework;
@@ -120,6 +121,187 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
             Assert.That(second.SpecId, Is.EqualTo(first.SpecId));
             Assert.That(second.ClientIdentitySha256, Is.EqualTo(first.ClientIdentitySha256));
+        }
+
+        [Test]
+        public void PublishMovesOwnedDefinitionAndMetaWithinTheSameAssembly()
+        {
+            OpenApiClientDefinitionPlan initial = PublishInitialDefinition();
+            const string Meta = "fileFormatVersion: 2\nguid: 0123456789abcdef0123456789abcdef\n";
+            File.WriteAllText(initial.DefinitionPath + ".meta", Meta, new UTF8Encoding(false));
+            string movedOutput = Path.Combine(
+                projectRoot,
+                "Assets",
+                "Clients",
+                "Moved",
+                "PetStore");
+            importedAssetPaths.Clear();
+
+            OpenApiClientDefinitionPlan moved = writer.Prepare(
+                movedOutput,
+                "PetStoreApi",
+                "Example.Generated.PetStore");
+            bool changed = writer.Publish(moved);
+
+            Assert.That(changed, Is.True);
+            Assert.That(moved.IsFolderMigration, Is.True);
+            Assert.That(moved.SpecId, Is.EqualTo(initial.SpecId));
+            Assert.That(File.Exists(initial.DefinitionPath), Is.False);
+            Assert.That(File.Exists(initial.DefinitionPath + ".meta"), Is.False);
+            Assert.That(File.Exists(moved.DefinitionPath), Is.True);
+            Assert.That(File.ReadAllText(moved.DefinitionPath + ".meta"), Is.EqualTo(Meta));
+            Assert.That(importedAssetPaths, Is.EqualTo(new[] { moved.DefinitionAssetPath }));
+        }
+
+        [Test]
+        public void FolderMigrationCompletesAllFilesystemChangesBeforeImport()
+        {
+            OpenApiClientDefinitionPlan initial = PublishInitialDefinition();
+            byte[] metaBytes = new UTF8Encoding(false).GetBytes(
+                "fileFormatVersion: 2\nguid: fedcba9876543210fedcba9876543210\n");
+            File.WriteAllBytes(initial.DefinitionPath + ".meta", metaBytes);
+            string movedOutput = Path.Combine(projectRoot, "Assets", "Clients", "Moved");
+            OpenApiClientDefinitionPlan moved = writer.Prepare(
+                movedOutput,
+                "PetStoreApi",
+                "Example.Generated.PetStore");
+            bool importObservedFinalState = false;
+            writer = new OpenApiClientDefinitionWriter(
+                projectRoot,
+                new AtomicFileWriter(),
+                _ =>
+                {
+                    importObservedFinalState =
+                        !File.Exists(initial.DefinitionPath) &&
+                        !File.Exists(initial.DefinitionPath + ".meta") &&
+                        File.Exists(moved.DefinitionPath) &&
+                        File.ReadAllBytes(moved.DefinitionPath + ".meta").SequenceEqual(metaBytes);
+                });
+
+            writer.Publish(moved);
+
+            Assert.That(importObservedFinalState, Is.True);
+        }
+
+        [Test]
+        public void PrepareRejectsOccupiedMigrationDestinationMetadata()
+        {
+            PublishInitialDefinition();
+            string movedOutput = Path.Combine(projectRoot, "Assets", "Clients", "Moved");
+            Directory.CreateDirectory(movedOutput);
+            string destinationMeta = Path.Combine(
+                movedOutput,
+                "PetStoreApi.OpenApiDefinition.cs.meta");
+            File.WriteAllText(destinationMeta, "foreign", new UTF8Encoding(false));
+
+            SafeGenerationException exception = Assert.Throws<SafeGenerationException>(
+                () => writer.Prepare(
+                    movedOutput,
+                    "PetStoreApi",
+                    "Example.Generated.PetStore"))!;
+
+            Assert.That(exception.Message, Does.Contain("occupied"));
+            Assert.That(File.ReadAllText(destinationMeta), Is.EqualTo("foreign"));
+        }
+
+        [Test]
+        public void PrepareRejectsAmbiguousOwnedMigrationSources()
+        {
+            OpenApiClientDefinitionPlan initial = PublishInitialDefinition();
+            string duplicateFolder = Path.Combine(projectRoot, "Assets", "Clients", "Duplicate");
+            Directory.CreateDirectory(duplicateFolder);
+            File.Copy(
+                initial.DefinitionPath,
+                Path.Combine(duplicateFolder, Path.GetFileName(initial.DefinitionPath)));
+            string movedOutput = Path.Combine(projectRoot, "Assets", "Clients", "Moved");
+
+            SafeGenerationException exception = Assert.Throws<SafeGenerationException>(
+                () => writer.Prepare(
+                    movedOutput,
+                    "PetStoreApi",
+                    "Example.Generated.PetStore"))!;
+
+            Assert.That(exception.Message, Does.Contain("Multiple owned definitions"));
+        }
+
+        [Test]
+        public void PrepareRejectsSimultaneousNamespaceAndFolderChange()
+        {
+            PublishInitialDefinition();
+            string movedOutput = Path.Combine(projectRoot, "Assets", "Clients", "Moved");
+
+            SafeGenerationException exception = Assert.Throws<SafeGenerationException>(
+                () => writer.Prepare(
+                    movedOutput,
+                    "PetStoreApi",
+                    "Example.Renamed.PetStore"))!;
+
+            Assert.That(exception.Message, Does.Contain("namespace"));
+            Assert.That(exception.Message, Does.Contain("before moving"));
+        }
+
+        [Test]
+        public void PublishRejectsMigrationSourceChangedAfterPrepare()
+        {
+            OpenApiClientDefinitionPlan initial = PublishInitialDefinition();
+            string movedOutput = Path.Combine(projectRoot, "Assets", "Clients", "Moved");
+            OpenApiClientDefinitionPlan moved = writer.Prepare(
+                movedOutput,
+                "PetStoreApi",
+                "Example.Generated.PetStore");
+            File.AppendAllText(initial.DefinitionPath, "// user edit\n", new UTF8Encoding(false));
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+                () => writer.Publish(moved))!;
+
+            Assert.That(exception.Message, Does.Contain("modified outside"));
+            Assert.That(File.Exists(moved.DefinitionPath), Is.False);
+        }
+
+        [Test]
+        public void MigrationRollbackDoesNotOverwriteConcurrentDestinationEdit()
+        {
+            OpenApiClientDefinitionPlan initial = PublishInitialDefinition();
+            File.WriteAllText(
+                initial.DefinitionPath + ".meta",
+                "fileFormatVersion: 2\nguid: 0123456789abcdef0123456789abcdef\n",
+                new UTF8Encoding(false));
+            string movedOutput = Path.Combine(projectRoot, "Assets", "Clients", "Moved");
+            OpenApiClientDefinitionPlan moved = writer.Prepare(
+                movedOutput,
+                "PetStoreApi",
+                "Example.Generated.PetStore");
+            DefinitionPublication publication = writer.PublishTransactional(moved);
+            byte[] concurrentBytes = new UTF8Encoding(false).GetBytes("// concurrent user edit\n");
+            File.WriteAllBytes(moved.DefinitionPath, concurrentBytes);
+
+            publication.Rollback();
+
+            Assert.That(File.ReadAllBytes(moved.DefinitionPath), Is.EqualTo(concurrentBytes));
+            Assert.That(File.Exists(initial.DefinitionPath), Is.False);
+        }
+
+        [Test]
+        public void MigrationRollbackPreservesConcurrentlyCreatedPreviouslyMissingMeta()
+        {
+            OpenApiClientDefinitionPlan initial = PublishInitialDefinition();
+            Assert.That(File.Exists(initial.DefinitionPath + ".meta"), Is.False);
+            string movedOutput = Path.Combine(projectRoot, "Assets", "Clients", "Moved");
+            OpenApiClientDefinitionPlan moved = writer.Prepare(
+                movedOutput,
+                "PetStoreApi",
+                "Example.Generated.PetStore");
+            DefinitionPublication publication = writer.PublishTransactional(moved);
+            byte[] concurrentMeta = new UTF8Encoding(false).GetBytes(
+                "fileFormatVersion: 2\nguid: ffffffffffffffffffffffffffffffff\n");
+            File.WriteAllBytes(initial.DefinitionPath + ".meta", concurrentMeta);
+
+            publication.Rollback();
+
+            Assert.That(
+                File.ReadAllBytes(initial.DefinitionPath + ".meta"),
+                Is.EqualTo(concurrentMeta));
+            Assert.That(File.Exists(moved.DefinitionPath), Is.True);
         }
 
         [Test]

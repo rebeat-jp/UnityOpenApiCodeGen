@@ -60,6 +60,7 @@ esac
 
 temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/UnityOpenApiCodeGen-SourceGenerator-${unity_version}.XXXXXX")"
 project_path="${temporary_root}/UnityProject"
+launch_directory="${temporary_root}/Unity Launch 日本語"
 results="${temporary_root}/source-generator-results.xml"
 log="${temporary_root}/source-generator.log"
 bootstrap_log="${temporary_root}/source-generator-bootstrap.log"
@@ -186,7 +187,7 @@ if [[ "${SOURCE_GENERATOR_SKIP_DOTNET_VERIFY:-0}" != "1" ]]; then
   fi
 fi
 
-mkdir -p "${project_path}"
+mkdir -p "${project_path}" "${launch_directory}"
 rsync -a \
   --exclude '.git' \
   --exclude 'Library' \
@@ -233,8 +234,10 @@ printf '%s\n' \
   > "${project_path}/Packages/manifest.json"
 rm -f "${project_path}/Packages/packages-lock.json"
 
-# Keep fixture-relative shell operations inside the disposable project.
-cd "${project_path}"
+# Launch from outside the project so a regression to Environment.CurrentDirectory
+# cannot accidentally write project settings beside the controller process.
+cd "${launch_directory}"
+export SOURCE_GENERATOR_VERIFY_LAUNCH_DIRECTORY="${launch_directory}"
 
 run_editor() {
   local output_log="$1"
@@ -595,6 +598,9 @@ assert_test_passed \
 assert_test_passed \
   "${results}" \
   'Rhycol.OpenApiCodeGen.SourceGenerator.Verification.Tests.SourceGeneratorUnityVerificationTests.AnalyzerAndAdditionalFileFollowAsmdefReferenceScope'
+assert_test_passed \
+  "${results}" \
+  'Rhycol.OpenApiCodeGen.Test.Core.SettingMenuProviderFieldsTests.ProjectSettingsPersistenceUsesUnityAssetsDirectoryFromExternalWorkingDirectory'
 assert_test_class_ran "${results}" 'RawJsonNormalizerTests'
 assert_test_class_ran "${results}" 'NormalizedSpecCacheServiceTests'
 

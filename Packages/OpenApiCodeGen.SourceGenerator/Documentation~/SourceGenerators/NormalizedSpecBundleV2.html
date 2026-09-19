@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<title>Normalized Spec Bundle v2</title>
+<style>body{font:16px/1.7 system-ui,sans-serif;color:#20242c;background:#fff;max-width:1080px;margin:0 auto;padding:32px 24px;overflow-wrap:anywhere}a{color:#0756a5}h1,h2,h3{line-height:1.3}h2{margin-top:2em}table{display:block;overflow:auto;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #ccd2da;padding:9px 12px;text-align:left;vertical-align:top}th{background:#f1f4f8}pre{padding:16px;background:#f1f4f8;overflow:auto}code{font-family:ui-monospace,monospace}blockquote{border-left:4px solid #ccd2da;margin-left:0;padding-left:16px}img{max-width:100%}</style>
+</head><body><main>
+<h1 id="normalized-spec-bundle-v2">Normalized Spec Bundle v2</h1>
+<h2 id="purpose-and-audience">Purpose and audience</h2>
+<p>This document defines the compiler input exchanged between the Editor-side
+Source Generator provider and the Roslyn analyzer. It is for maintainers who
+change the normalizer, cache publication, or analyzer reader. The Bundle is an
+internal deterministic format; users normally encounter it through the
+<code>AdditionalFile</code> generated for one client definition.</p>
+<p>The boundary is deliberate:</p>
+<ul>
+<li>The Editor performs network access, filesystem access, raw JSON/YAML parsing,
+reference resolution, and Bundle publication.</li>
+<li>The analyzer reads only the Bundle AdditionalFile. It does not fetch URLs or
+read external files.</li>
+<li>One <code>specId</code> produces one multi-document Bundle v2 and one AdditionalFile.</li>
+</ul>
+<h2 id="envelope">Envelope</h2>
+<p>Bundle v2 is strict UTF-8 JSON without a BOM, with LF line endings, two-space
+indentation, fixed property order, no unknown or duplicate properties, and no
+trailing commas. The top-level properties appear exactly in this order:</p>
+<pre><code class="language-text">formatVersion, specId, rawSha256, rootDocumentId, documents, referenceEdges
+</code></pre>
+<p>The envelope has the following shape:</p>
+<pre><code class="language-json">{
+  &quot;formatVersion&quot;: 2,
+  &quot;specId&quot;: &quot;&lt;32 lower-case hexadecimal characters&gt;&quot;,
+  &quot;rawSha256&quot;: &quot;&lt;64 lower-case hexadecimal characters&gt;&quot;,
+  &quot;rootDocumentId&quot;: &quot;root&quot;,
+  &quot;documents&quot;: [],
+  &quot;referenceEdges&quot;: []
+}
+</code></pre>
+<p><code>rawSha256</code> is the raw-byte SHA-256 of the root document and must match the
+root document entry. <code>specId</code> remains the stable client-definition identity;
+it is not a hash of the generated C# source.</p>
+<h2 id="documents">Documents</h2>
+<p>Each <code>documents</code> entry has properties in this order:</p>
+<pre><code class="language-text">documentId, sourcePath, format, rawSha256, root
+</code></pre>
+<p>The values are:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Rule</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>documentId</code></td>
+<td><code>root</code> for the root document; local external documents use their canonical project-relative path; remote external documents use <code>doc-</code> followed by 64 lower-case hexadecimal characters.</td>
+</tr>
+<tr>
+<td><code>sourcePath</code></td>
+<td>The root may use a normalized project-relative path, absolute path, or HTTP(S) URI. Local external documents are project-relative; remote display URIs are redacted. All path separators are <code>/</code>.</td>
+</tr>
+<tr>
+<td><code>format</code></td>
+<td>Exactly <code>json</code> or <code>yaml</code>.</td>
+</tr>
+<tr>
+<td><code>rawSha256</code></td>
+<td>SHA-256 of that document&#39;s raw bytes, lower-case hexadecimal.</td>
+</tr>
+<tr>
+<td><code>root</code></td>
+<td>The existing normalized <code>SpecNode</code> tree, including source line/column data and sanitized semantic <code>$ref</code> values.</td>
+</tr>
+</tbody></table>
+<p>The root document is first. External documents are sorted by <code>documentId</code> in
+ordinal order. There are at most 64 documents. A local external document ID
+is its project-relative path after path and symbolic-link checks. Remote identity uses
+the canonical final fetch key, retaining query for fetch identity while
+excluding fragments; the persisted display path does not expose the query.</p>
+<p>The <code>SpecNode</code> representation is the same normalized node shape used by Bundle
+v1. Changes to node field order or node validation are format changes and must
+be reflected in both writer and reader tests.</p>
+<h2 id="reference-edges">Reference edges</h2>
+<p>Each <code>referenceEdges</code> entry has properties in this order:</p>
+<pre><code class="language-text">sourceDocumentId, sourcePointer, targetDocumentId, targetPointer
+</code></pre>
+<p>An edge maps the source document&#39;s string <code>$ref</code> node at <code>sourcePointer</code> to the
+target document node at <code>targetPointer</code>. Pointers are RFC 6901 JSON Pointers;
+<code>sourcePointer</code> must identify a <code>$ref</code> string and <code>targetPointer</code> may be empty
+to identify the target document root. Every semantic <code>$ref</code> in every document
+must have exactly one edge. Both document IDs must be declared in <code>documents</code>,
+and both pointer targets must exist.</p>
+<p>Reference collection, URI sanitization, and analyzer edge coverage follow the
+OpenAPI object or Schema context. Literal payloads in <code>example</code>, Schema
+<code>default</code>/<code>enum</code>, Example Object <code>value</code>, and specification extensions are
+preserved as data, even when they contain a string or non-string <code>$ref</code>.
+They do not trigger document retrieval or require edges. A Schema property
+named <code>example</code>, <code>x-meta</code>, or <code>$ref</code> still contains a Schema and is traversed.
+Similarly, <code>responses.x-*</code> inside an operation is extension data, while a
+component response named <code>x-*</code> is a Response or Reference Object. Bare Schema
+roots follow the same Schema rules.</p>
+<p>Edges are sorted by <code>sourceDocumentId</code>, then <code>sourcePointer</code> in ordinal order.
+Duplicate source identities, missing edges, invalid pointers, missing target
+documents, and unresolved targets are invalid Bundle structure. The analyzer
+uses the pair <code>(documentId, JSON Pointer)</code> as node identity for semantic
+resolution and cycle detection. Successfully parsed schemas are reused by this
+identity; each reference retains its own source location and nullable wrapper.
+The Editor caches each document&#39;s first semantic reference scan and reuses it
+for resolution, empty-reference checks, and redaction. Pointer strings are
+created for semantic reference positions rather than every literal node.
+JSON/YAML loader-to-reader integration tests include aliases used in both
+Schema and literal contexts. These optimizations do not change Bundle v2
+serialization or Bundle v1 reader compatibility.</p>
+<h2 id="editor-graph-and-url-policy">Editor graph and URL policy</h2>
+<p>The Editor resolves relative references against the referring document&#39;s final
+effective URI. It deduplicates a fetch key once, excludes fragments from fetch
+identity, and retains query in remote identity. Root URL fragments, userinfo,
+whitespace, non-HTTP(S) schemes, explicit <code>file:</code> references, remote-to-local
+references, and HTTPS-to-HTTP direct or redirected transitions are rejected.
+Local external files must remain within the Unity project after real-path and
+symbolic-link checks.</p>
+<p>Remote format is determined from the final URL extension and response
+<code>Content-Type</code>: recognized values must agree, one recognized value is
+sufficient, and neither recognized value is an error. Content sniffing and a
+caller-supplied format hint are not used.</p>
+<p>The hard limits are 30 seconds per request, 120 seconds per graph, 4 MiB per
+document, 32 MiB per graph, 64 documents, five redirects, and reference depth
+256. Automatic retry and ETag revalidation are not performed.</p>
+<p>The supported external graph includes bare Schema documents. Bare non-Schema
+documents and <code>$id</code>, <code>$anchor</code>, <code>$dynamicAnchor</code>, and <code>$dynamicRef</code> are
+unsupported. Unresolved targets report <code>OACG102</code>; cycles report <code>OACG103</code>.
+Bundle v1 external-reference input retains <code>OACG104</code> for compatibility.</p>
+<h2 id="publication-and-manifest">Publication and manifest</h2>
+<p>The Editor stages the complete graph before publication. It publishes bundle,
+manifest, compiler mirror, and generated definition in that order under one
+recoverable transaction. Publication failure restores artifacts still owned by
+that transaction. Concurrent definition edits are retained and excluded from
+subsequent journal recovery; the operation reports failure rather than
+overwriting them. Script compilation is requested only after the complete
+marker is committed.</p>
+<p>Output-folder moves within the same asmdef/API/namespace preserve the owned
+definition&#39;s SpecId and <code>.meta</code> GUID. Publication journal v3 records both old and
+planned output states for the cache, manifest, mirror, and four definition/meta
+paths. Recovery loads the durable snapshots before comparing current files;
+deleted source paths are restored after an interrupted move. A concurrent edit
+to any moved definition/meta path protects all four paths as one group. File
+restoration finishes before any surviving definition is imported. Journal v1/v2
+recovery remains supported; the normalized Bundle itself is still format v2.</p>
+<pre><code class="language-text">Library/OpenApiCodeGen/SourceGenerator/SpecCache/&lt;specId&gt;/normalized-v2.json
+Library/OpenApiCodeGen/SourceGenerator/SpecCache/&lt;specId&gt;/manifest-v1.json
+Assets/OpenApiCodeGen/Generated/SpecCache/
+  &lt;specId&gt;.Rhycol.OpenApiCodeGen.SourceGenerator.additionalfile
+</code></pre>
+<p><code>manifest-v1.json</code> is Editor metadata, not analyzer input. It records the
+bundle format/version, spec ID, bundle path and hash, then per-document
+redacted source metadata: source display, source-key hash, format, raw hash,
+retrieval kind, HTTP status, and redirect count. Query strings, userinfo,
+response headers, and raw remote bodies are not persisted as retrieval metadata.
+These redaction rules apply to source/reference URIs; literal document payloads
+remain in the normalized tree unchanged. If the input query
+was stripped from persisted display data, Generate reports a warning asking
+the user to re-enter the complete URL.</p>
+<p>Fetch, parse, reference, or publication failure keeps the last successful cache
+and mirror intact but returns generation failure; the failed graph is not
+published. A byte-identical Bundle and definition do not request script
+compilation.</p>
+<h2 id="backward-compatibility">Backward compatibility</h2>
+<p>The analyzer reader accepts Bundle v1 envelopes containing exactly one root
+document and no reference edges. Bundle v1 uses the existing single-document
+schema and remains useful for existing generated AdditionalFiles. The Editor
+always writes Bundle v2 once a new Generate succeeds. An unsupported bundle
+format is reported as a format diagnostic rather than interpreted heuristically.</p>
+</main></body></html>

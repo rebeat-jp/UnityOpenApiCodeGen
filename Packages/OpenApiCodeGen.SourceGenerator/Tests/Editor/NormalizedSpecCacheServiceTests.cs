@@ -404,6 +404,246 @@ using ((IDisposable)acquire.Invoke(service, null))
         }
 
         [Test]
+        public void RecoveryDoesNotOverwriteConcurrentArtifactEdit()
+        {
+            WriteRaw("{\"openapi\":\"3.0.3\",\"info\":{\"version\":\"one\"}}");
+            NormalizedSpecCacheService firstService = CreateService();
+            NormalizedSpecGraph firstGraph = firstService.LoadGraphAsync(
+                "Assets/Specs/openapi.json",
+                SpecId,
+                CancellationToken.None).GetAwaiter().GetResult();
+            NormalizedSpecCacheResult first = firstService.PublishGraph(firstGraph);
+            firstService.AcknowledgeCompilationRequest(SpecId);
+
+            WriteRaw("{\"openapi\":\"3.0.3\",\"info\":{\"version\":\"two\"}}");
+            var failingService = new NormalizedSpecCacheService(
+                projectRoot,
+                new RawJsonNormalizer(),
+                new TargetFailingWriter(first.MirrorPath),
+                importer);
+            NormalizedSpecGraph secondGraph = failingService.LoadGraphAsync(
+                "Assets/Specs/openapi.json",
+                SpecId,
+                CancellationToken.None).GetAwaiter().GetResult();
+            Assert.Throws<IOException>(() => failingService.PublishGraph(secondGraph));
+            byte[] concurrentBytes = new UTF8Encoding(false).GetBytes("concurrent user state");
+            File.WriteAllBytes(first.AuthoritativePath, concurrentBytes);
+
+            NormalizedSpecCacheService recoveryService = CreateService(() => compilationRequestCount++);
+            recoveryService.RecoverPendingCompilations();
+
+            Assert.That(File.ReadAllBytes(first.AuthoritativePath), Is.EqualTo(concurrentBytes));
+            Assert.That(compilationRequestCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void RecoveryReadsVersionTwoThreeArtifactJournalWithoutOutputSnapshots()
+        {
+            WriteRaw("{\"openapi\":\"3.0.3\",\"info\":{\"version\":\"one\"}}");
+            NormalizedSpecCacheService firstService = CreateService();
+            NormalizedSpecGraph firstGraph = firstService.LoadGraphAsync(
+                "Assets/Specs/openapi.json",
+                SpecId,
+                CancellationToken.None).GetAwaiter().GetResult();
+            NormalizedSpecCacheResult first = firstService.PublishGraph(firstGraph);
+            firstService.AcknowledgeCompilationRequest(SpecId);
+            byte[] oldAuthoritative = File.ReadAllBytes(first.AuthoritativePath);
+
+            WriteRaw("{\"openapi\":\"3.0.3\",\"info\":{\"version\":\"two\"}}");
+            var failingService = new NormalizedSpecCacheService(
+                projectRoot,
+                new RawJsonNormalizer(),
+                new TargetFailingWriter(first.MirrorPath),
+                importer);
+            NormalizedSpecGraph secondGraph = failingService.LoadGraphAsync(
+                "Assets/Specs/openapi.json",
+                SpecId,
+                CancellationToken.None).GetAwaiter().GetResult();
+            Assert.Throws<IOException>(() => failingService.PublishGraph(secondGraph));
+            string cacheDirectory = Path.GetDirectoryName(first.AuthoritativePath);
+            string markerPath = Path.Combine(
+                cacheDirectory,
+                NormalizedSpecBundleConstants.PublishPendingFileName);
+            string marker = File.ReadAllText(markerPath, new UTF8Encoding(false));
+            File.WriteAllText(
+                markerPath,
+                marker.Replace("version=3\n", "version=2\n"),
+                new UTF8Encoding(false));
+            string backupDirectory = Path.Combine(
+                cacheDirectory,
+                NormalizedSpecBundleConstants.PublishBackupDirectoryName);
+            foreach (string outputSnapshot in Directory.GetFiles(
+                         backupDirectory,
+                         "*.output.*",
+                         SearchOption.TopDirectoryOnly))
+            {
+                File.Delete(outputSnapshot);
+            }
+
+            CreateService(() => compilationRequestCount++).RecoverPendingCompilations();
+
+            Assert.That(File.ReadAllBytes(first.AuthoritativePath), Is.EqualTo(oldAuthoritative));
+            Assert.That(compilationRequestCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void RecoveryReadsVersionTwoFourArtifactJournalWithoutOutputSnapshots()
+        {
+            WriteRaw("{\"openapi\":\"3.0.3\"}");
+            NormalizedSpecCacheService service = CreateService();
+            NormalizedSpecGraph graph = service.LoadGraphAsync(
+                "Assets/Specs/openapi.json",
+                SpecId,
+                CancellationToken.None).GetAwaiter().GetResult();
+            NormalizedSpecCacheResult published = service.PublishGraph(graph);
+            service.AcknowledgeCompilationRequest(SpecId);
+            string cacheDirectory = Path.GetDirectoryName(published.AuthoritativePath);
+            string manifestPath = Path.Combine(
+                cacheDirectory,
+                NormalizedSpecBundleConstants.ManifestFileName);
+            string definitionPath = Path.Combine(
+                projectRoot,
+                "Assets",
+                "Clients",
+                "PetStoreApi.OpenApiDefinition.cs");
+            Directory.CreateDirectory(Path.GetDirectoryName(definitionPath));
+            File.WriteAllText(definitionPath, "old definition", new UTF8Encoding(false));
+            string[] targets =
+            {
+                published.AuthoritativePath,
+                manifestPath,
+                published.MirrorPath,
+                definitionPath,
+            };
+            var oldBytes = new byte[targets.Length][];
+            string backupDirectory = Path.Combine(
+                cacheDirectory,
+                NormalizedSpecBundleConstants.PublishBackupDirectoryName);
+            Directory.CreateDirectory(backupDirectory);
+            for (int index = 0; index < targets.Length; index++)
+            {
+                oldBytes[index] = File.ReadAllBytes(targets[index]);
+                File.WriteAllBytes(
+                    Path.Combine(backupDirectory, "artifact-" + index.ToString("D3") + ".bytes"),
+                    oldBytes[index]);
+                File.WriteAllText(targets[index], "new " + index, new UTF8Encoding(false));
+            }
+
+            var marker = new StringBuilder();
+            marker.Append("version=2\nstate=publishing\ncount=4\ncompilationRequired=true\n");
+            for (int index = 0; index < targets.Length; index++)
+            {
+                string relativePath = targets[index].Substring(projectRoot.Length + 1).Replace('\\', '/');
+                marker.Append("target=")
+                    .Append(Convert.ToBase64String(Encoding.UTF8.GetBytes(relativePath)))
+                    .Append('\n');
+            }
+
+            File.WriteAllText(
+                Path.Combine(cacheDirectory, NormalizedSpecBundleConstants.PublishPendingFileName),
+                marker.ToString(),
+                new UTF8Encoding(false));
+            importer.ImportedAssetPaths.Clear();
+            NormalizedSpecCacheService recovery = CreateService(() => compilationRequestCount++);
+
+            recovery.RepairPendingPublicationForSpec(
+                SpecId,
+                definitionPath,
+                "Assets/Clients/PetStoreApi.OpenApiDefinition.cs");
+
+            for (int index = 0; index < targets.Length; index++)
+            {
+                Assert.That(File.ReadAllBytes(targets[index]), Is.EqualTo(oldBytes[index]));
+            }
+            Assert.That(compilationRequestCount, Is.EqualTo(1));
+            Assert.That(importer.ImportedAssetPaths, Does.Contain(published.MirrorAssetPath));
+            Assert.That(
+                importer.ImportedAssetPaths,
+                Does.Contain("Assets/Clients/PetStoreApi.OpenApiDefinition.cs"));
+        }
+
+        [Test]
+        public void RestartRecoveryRestoresMovedDefinitionAndMetaFromDurableSnapshots()
+        {
+            InterruptedMigration migration = CreateInterruptedMigrationJournal(withMeta: true);
+            importer.ImportedAssetPaths.Clear();
+            NormalizedSpecCacheService recovery = CreateService(() => compilationRequestCount++);
+
+            recovery.RepairPendingPublicationForSpec(
+                SpecId,
+                migration.NewDefinitionPath,
+                migration.NewDefinitionAssetPath);
+
+            Assert.That(
+                File.ReadAllBytes(migration.OldDefinitionPath),
+                Is.EqualTo(migration.DefinitionBytes));
+            Assert.That(
+                File.ReadAllBytes(migration.OldDefinitionPath + ".meta"),
+                Is.EqualTo(migration.MetaBytes));
+            Assert.That(File.Exists(migration.NewDefinitionPath), Is.False);
+            Assert.That(File.Exists(migration.NewDefinitionPath + ".meta"), Is.False);
+            Assert.That(compilationRequestCount, Is.EqualTo(1));
+            Assert.That(
+                importer.ImportedAssetPaths,
+                Does.Contain(migration.OldDefinitionAssetPath));
+            Assert.That(
+                importer.ImportedAssetPaths,
+                Does.Not.Contain(migration.NewDefinitionAssetPath));
+        }
+
+        [Test]
+        public void RestartRecoveryPreservesConcurrentlyCreatedPreviouslyMissingOldMeta()
+        {
+            InterruptedMigration migration = CreateInterruptedMigrationJournal(withMeta: false);
+            byte[] concurrentMeta = new UTF8Encoding(false).GetBytes(
+                "fileFormatVersion: 2\nguid: ffffffffffffffffffffffffffffffff\n");
+            File.WriteAllBytes(migration.OldDefinitionPath + ".meta", concurrentMeta);
+            NormalizedSpecCacheService recovery = CreateService(() => compilationRequestCount++);
+
+            recovery.RepairPendingPublicationForSpec(
+                SpecId,
+                migration.NewDefinitionPath,
+                migration.NewDefinitionAssetPath);
+
+            Assert.That(
+                File.ReadAllBytes(migration.OldDefinitionPath + ".meta"),
+                Is.EqualTo(concurrentMeta));
+            Assert.That(File.Exists(migration.OldDefinitionPath), Is.False);
+            Assert.That(
+                File.ReadAllBytes(migration.NewDefinitionPath),
+                Is.EqualTo(migration.DefinitionBytes));
+        }
+
+        [Test]
+        public void RestartRecoveryPreservesEntireMovedGroupAfterDestinationEdit()
+        {
+            InterruptedMigration migration = CreateInterruptedMigrationJournal(withMeta: true);
+            byte[] concurrentBytes = new UTF8Encoding(false).GetBytes("// user destination edit\n");
+            File.WriteAllBytes(migration.NewDefinitionPath, concurrentBytes);
+            NormalizedSpecCacheService recovery = CreateService(() => compilationRequestCount++);
+
+            recovery.RepairPendingPublicationForSpec(
+                SpecId,
+                migration.NewDefinitionPath,
+                migration.NewDefinitionAssetPath);
+
+            Assert.That(
+                File.ReadAllBytes(migration.NewDefinitionPath),
+                Is.EqualTo(concurrentBytes));
+            Assert.That(
+                File.ReadAllBytes(migration.NewDefinitionPath + ".meta"),
+                Is.EqualTo(migration.MetaBytes));
+            Assert.That(File.Exists(migration.OldDefinitionPath), Is.False);
+            Assert.That(File.Exists(migration.OldDefinitionPath + ".meta"), Is.False);
+            for (int index = 0; index < migration.CachePaths.Length; index++)
+            {
+                Assert.That(
+                    File.ReadAllBytes(migration.CachePaths[index]),
+                    Is.EqualTo(migration.CacheBytes[index]));
+            }
+        }
+
+        [Test]
         public void RawContentChangeUpdatesBothFiles()
         {
             WriteRaw("{\"version\":1}");
@@ -588,6 +828,142 @@ using ((IDisposable)acquire.Invoke(service, null))
             Assert.That(Directory.GetFiles(Path.GetDirectoryName(target), "*.tmp"), Is.Empty);
         }
 
+        private InterruptedMigration CreateInterruptedMigrationJournal(bool withMeta)
+        {
+            WriteRaw("{\"openapi\":\"3.0.3\"}");
+            NormalizedSpecCacheService service = CreateService();
+            NormalizedSpecGraph graph = service.LoadGraphAsync(
+                "Assets/Specs/openapi.json",
+                SpecId,
+                CancellationToken.None).GetAwaiter().GetResult();
+            NormalizedSpecCacheResult published = service.PublishGraph(graph);
+            service.AcknowledgeCompilationRequest(SpecId);
+            string cacheDirectory = Path.GetDirectoryName(published.AuthoritativePath);
+            string manifestPath = Path.Combine(
+                cacheDirectory,
+                NormalizedSpecBundleConstants.ManifestFileName);
+            string oldDefinitionPath = Path.Combine(
+                projectRoot,
+                "Assets",
+                "Clients",
+                "Old",
+                "PetStoreApi.OpenApiDefinition.cs");
+            string newDefinitionPath = Path.Combine(
+                projectRoot,
+                "Assets",
+                "Clients",
+                "New",
+                "PetStoreApi.OpenApiDefinition.cs");
+            Directory.CreateDirectory(Path.GetDirectoryName(oldDefinitionPath));
+            Directory.CreateDirectory(Path.GetDirectoryName(newDefinitionPath));
+            byte[] definitionBytes = new UTF8Encoding(false).GetBytes("owned definition\n");
+            byte[] metaBytes = new UTF8Encoding(false).GetBytes(
+                "fileFormatVersion: 2\nguid: 0123456789abcdef0123456789abcdef\n");
+            File.WriteAllBytes(oldDefinitionPath, definitionBytes);
+            if (withMeta)
+            {
+                File.WriteAllBytes(oldDefinitionPath + ".meta", metaBytes);
+            }
+
+            string[] targets =
+            {
+                published.AuthoritativePath,
+                manifestPath,
+                published.MirrorPath,
+                newDefinitionPath,
+                newDefinitionPath + ".meta",
+                oldDefinitionPath,
+                oldDefinitionPath + ".meta",
+            };
+            var before = new TestFileState[targets.Length];
+            for (int index = 0; index < targets.Length; index++)
+            {
+                before[index] = CaptureTestFileState(targets[index]);
+            }
+
+            File.WriteAllBytes(newDefinitionPath, definitionBytes);
+            if (withMeta)
+            {
+                File.WriteAllBytes(newDefinitionPath + ".meta", metaBytes);
+            }
+            File.Delete(oldDefinitionPath);
+            File.Delete(oldDefinitionPath + ".meta");
+            for (int index = 0; index < 3; index++)
+            {
+                File.WriteAllText(
+                    targets[index],
+                    "interrupted transaction output " + index,
+                    new UTF8Encoding(false));
+            }
+
+            var after = new TestFileState[targets.Length];
+            for (int index = 0; index < targets.Length; index++)
+            {
+                after[index] = CaptureTestFileState(targets[index]);
+            }
+
+            string backupDirectory = Path.Combine(
+                cacheDirectory,
+                NormalizedSpecBundleConstants.PublishBackupDirectoryName);
+            Directory.CreateDirectory(backupDirectory);
+            for (int index = 0; index < targets.Length; index++)
+            {
+                WriteTestFileState(
+                    backupDirectory,
+                    "artifact-" + index.ToString("D3"),
+                    before[index],
+                    string.Empty);
+                WriteTestFileState(
+                    backupDirectory,
+                    "artifact-" + index.ToString("D3"),
+                    after[index],
+                    ".output");
+            }
+
+            var marker = new StringBuilder();
+            marker.Append("version=3\nstate=publishing\ncount=7\ncompilationRequired=true\n");
+            for (int index = 0; index < targets.Length; index++)
+            {
+                string relativePath = targets[index]
+                    .Substring(projectRoot.Length + 1)
+                    .Replace('\\', '/');
+                marker.Append("target=")
+                    .Append(Convert.ToBase64String(Encoding.UTF8.GetBytes(relativePath)))
+                    .Append('\n');
+            }
+
+            File.WriteAllText(
+                Path.Combine(cacheDirectory, NormalizedSpecBundleConstants.PublishPendingFileName),
+                marker.ToString(),
+                new UTF8Encoding(false));
+            return new InterruptedMigration(
+                oldDefinitionPath,
+                newDefinitionPath,
+                definitionBytes,
+                withMeta ? metaBytes : new byte[0],
+                new[] { targets[0], targets[1], targets[2] },
+                new[] { before[0].Bytes, before[1].Bytes, before[2].Bytes });
+        }
+
+        private static TestFileState CaptureTestFileState(string path)
+        {
+            return File.Exists(path)
+                ? new TestFileState(true, File.ReadAllBytes(path))
+                : new TestFileState(false, new byte[0]);
+        }
+
+        private static void WriteTestFileState(
+            string directory,
+            string name,
+            TestFileState state,
+            string infix)
+        {
+            string suffix = state.Exists ? ".bytes" : ".absent";
+            File.WriteAllBytes(
+                Path.Combine(directory, name + infix + suffix),
+                state.Exists ? state.Bytes : new byte[] { 1 });
+        }
+
         private NormalizedSpecCacheService CreateService(Action compilationRequester = null)
         {
             NormalizedSpecCacheService service = new NormalizedSpecCacheService(
@@ -619,6 +995,48 @@ using ((IDisposable)acquire.Invoke(service, null))
             {
                 ImportedAssetPaths.Add(mirrorAssetPath);
             }
+        }
+
+        private sealed class TestFileState
+        {
+            internal TestFileState(bool exists, byte[] bytes)
+            {
+                Exists = exists;
+                Bytes = bytes;
+            }
+
+            internal bool Exists { get; }
+            internal byte[] Bytes { get; }
+        }
+
+        private sealed class InterruptedMigration
+        {
+            internal InterruptedMigration(
+                string oldDefinitionPath,
+                string newDefinitionPath,
+                byte[] definitionBytes,
+                byte[] metaBytes,
+                string[] cachePaths,
+                byte[][] cacheBytes)
+            {
+                OldDefinitionPath = oldDefinitionPath;
+                NewDefinitionPath = newDefinitionPath;
+                DefinitionBytes = definitionBytes;
+                MetaBytes = metaBytes;
+                CachePaths = cachePaths;
+                CacheBytes = cacheBytes;
+            }
+
+            internal string OldDefinitionPath { get; }
+            internal string NewDefinitionPath { get; }
+            internal byte[] DefinitionBytes { get; }
+            internal byte[] MetaBytes { get; }
+            internal string[] CachePaths { get; }
+            internal byte[][] CacheBytes { get; }
+            internal string OldDefinitionAssetPath =>
+                "Assets/Clients/Old/PetStoreApi.OpenApiDefinition.cs";
+            internal string NewDefinitionAssetPath =>
+                "Assets/Clients/New/PetStoreApi.OpenApiDefinition.cs";
         }
 
         private class TargetFailingWriter : IAtomicFileWriter

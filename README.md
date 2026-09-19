@@ -7,6 +7,8 @@ documents).
 
 Source Generator generation is in beta. Review the supported features before use. See the
 [Support Matrix](SourceGenerators/OpenApiMvpSupportMatrix.md). The Editor provider is named **Source Generator (Beta)**.
+The Editor's **Open Support Matrix** button opens the package-bundled HTML;
+both packages include the matrix and its relative reference documents for offline use.
 
 ## Requirements
 

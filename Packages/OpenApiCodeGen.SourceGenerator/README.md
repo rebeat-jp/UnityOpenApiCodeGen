@@ -1,7 +1,7 @@
 # OpenApiCodeGen Source Generator (Beta)
 
 Source Generator generation is in beta. Review the supported features before use. See the
-[Support Matrix](../../SourceGenerators/OpenApiMvpSupportMatrix.md). The Editor provider is named **Source Generator (Beta)**.
+[Support Matrix](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.md). The Editor provider is named **Source Generator (Beta)**.
 
 ## Purpose and audience
 
@@ -79,7 +79,7 @@ containing `,`, `[`, `]`, `{`, or `}` must be quoted; URL scheme colons such as
 
 Tags, directives, merge keys, multiple documents, complex keys, and block
 scalars inside flow collections are rejected with source-located diagnostics.
-See the [OpenAPI MVP support matrix](../../SourceGenerators/OpenApiMvpSupportMatrix.md)
+See the [OpenAPI MVP support matrix](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.md)
 for the complete YAML subset and diagnostic limits.
 
 ## Published files and incremental behavior
@@ -108,6 +108,14 @@ SpecId and `.meta` GUID, and rejects edits made while generation is running.
 Publication failures restore this transaction's files without overwriting
 external definition edits, including during later journal recovery.
 
+Changing only the output folder within the same asmdef, API name and namespace
+moves the uniquely owned definition and its `.meta`, retaining SpecId and GUID.
+An occupied destination, ambiguous ownership, or an unsupported assembly boundary
+stops generation. Change namespace in the existing folder first, then move the
+output folder in a second Generate. Interrupted moves restore both paths from
+the durable journal. If either definition or metadata is edited concurrently,
+recovery preserves the entire moved definition group instead of mixing its paths.
+
 The window reports progress and supports Cancel before publication. Generation
 and startup recovery use process-local and OS file locks. A durable publication
 journal retains compilation intent until the compilation request succeeds;
@@ -127,7 +135,7 @@ mutable sealed Newtonsoft.Json DTOs, string enums with `StringEnumConverter`,
 `List<T>` collections, an async `HttpClient` client, and
 `<ApiName>Exception`. Generated source is a regenerated public contract, not a
 hand-edited file. The full operation, parameter, schema, and response surface
-is documented in the [support matrix](../../SourceGenerators/OpenApiMvpSupportMatrix.md).
+is documented in the [support matrix](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.md).
 
 Bundle and semantic failures use stable diagnostics including:
 
@@ -145,7 +153,7 @@ Bundle and semantic failures use stable diagnostics including:
 The analyzer reads both Bundle v1 and v2. Bundle v1 remains available for
 backward compatibility; the Editor always writes Bundle v2. The complete
 schema and reader rules are in
-[Normalized Spec Bundle v2](../../SourceGenerators/NormalizedSpecBundleV2.md).
+[Normalized Spec Bundle v2](Documentation~/SourceGenerators/NormalizedSpecBundleV2.md).
 
 ## Dependencies and provider transitions
 

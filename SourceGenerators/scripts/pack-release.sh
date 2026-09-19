@@ -381,6 +381,7 @@ verify_archive() {
 
   assert_archive_entry "${entries_file}" "package/package.json"
   tar -xzf "${archive}" -C "${extracted_root}"
+  node "${scripts_directory}/generate-package-docs.js" --verify-package "${extracted_root}/package"
 
   local package_manifest="${extracted_root}/package/package.json"
   local actual_name
@@ -442,6 +443,7 @@ fi
 
 assert_package_version "${base_package_root}" "${base_package_name}"
 assert_package_version "${source_generator_package_root}" "${source_generator_package_name}"
+node "${scripts_directory}/generate-package-docs.js" --check
 require_file "${analyzer_output}"
 require_file "${package_analyzer}"
 if ! cmp -s "${analyzer_output}" "${package_analyzer}"; then

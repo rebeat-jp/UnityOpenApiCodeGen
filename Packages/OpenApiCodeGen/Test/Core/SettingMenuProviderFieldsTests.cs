@@ -1,11 +1,19 @@
 #nullable enable
+using System;
+using System.Collections;
+using System.IO;
 using System.Reflection;
+using System.Threading.Tasks;
 using NUnit.Framework;
+using Rhycol.OpenApiCodeGen.Core;
 using Rhycol.OpenApiCodeGen.Editor.Generation;
+using Rhycol.OpenApiCodeGen.Lib;
 using Rhycol.OpenApiCodeGen.UI;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TestTools;
 using UnityEngine.UIElements;
+using Object = UnityEngine.Object;
 #if !UNITY_2022_1_OR_NEWER
 using PopupField = UnityEditor.UIElements.PopupField<Rhycol.OpenApiCodeGen.Editor.Generation.GenerateProvider>;
 #else
@@ -142,11 +150,85 @@ namespace Rhycol.OpenApiCodeGen.Test.Core
             finally { Object.DestroyImmediate(window); }
         }
 
-        [Test]
-        public void ProjectSettingsPathUsesUnityAssetsDirectory()
+        [UnityTest]
+        public IEnumerator ProjectSettingsPersistenceUsesUnityAssetsDirectoryFromExternalWorkingDirectory()
         {
-            Assert.That(ApplicationConstant.PROJECT_FOLDER_PATH,
-                Is.EqualTo(System.IO.Path.Combine(Application.dataPath, "OpenApiCodeGen")));
+            string settingsPath = Path.Combine(
+                Application.dataPath,
+                "OpenApiCodeGen",
+                "projectSettings.json");
+            string? launchDirectory =
+                Environment.GetEnvironmentVariable("SOURCE_GENERATOR_VERIFY_LAUNCH_DIRECTORY");
+            string? launchDirectorySettingsPath = string.IsNullOrEmpty(launchDirectory)
+                ? null
+                : Path.Combine(
+                    Path.GetFullPath(launchDirectory),
+                    "Assets",
+                    "OpenApiCodeGen",
+                    "projectSettings.json");
+            bool hadExistingSettings = File.Exists(settingsPath);
+            byte[] existingSettings = hadExistingSettings
+                ? File.ReadAllBytes(settingsPath)
+                : Array.Empty<byte>();
+            bool hadLaunchDirectorySettings =
+                launchDirectorySettingsPath != null && File.Exists(launchDirectorySettingsPath);
+            byte[] existingLaunchDirectorySettings = hadLaunchDirectorySettings
+                ? File.ReadAllBytes(launchDirectorySettingsPath!)
+                : Array.Empty<byte>();
+
+            if (launchDirectorySettingsPath != null)
+            {
+                Assert.That(Path.IsPathRooted(launchDirectory!), Is.True,
+                    "The Unity regression gate must supply an absolute launch directory.");
+            }
+            try
+            {
+                var repository = new ProjectSettingJsonRepository();
+                Task saveTask = repository.SaveAsync(new ProjectSetting(
+                    GenerateProvider.SourceGenerator,
+                    "Assets/Specs/openapi.json",
+                    "Assets/Generated"));
+                while (!saveTask.IsCompleted)
+                {
+                    yield return null;
+                }
+                saveTask.GetAwaiter().GetResult();
+
+                Assert.That(ApplicationConstant.PROJECT_FOLDER_PATH,
+                    Is.EqualTo(Path.Combine(Application.dataPath, "OpenApiCodeGen")));
+                Assert.That(File.Exists(settingsPath), Is.True,
+                    "Project settings were not saved below Application.dataPath.");
+                if (launchDirectorySettingsPath != null &&
+                    launchDirectorySettingsPath != settingsPath)
+                {
+                    Assert.That(File.Exists(launchDirectorySettingsPath), Is.False,
+                        "Project settings leaked into the Unity launch directory.");
+                }
+            }
+            finally
+            {
+                RestoreFile(settingsPath, hadExistingSettings, existingSettings);
+                if (launchDirectorySettingsPath != null)
+                {
+                    RestoreFile(
+                        launchDirectorySettingsPath,
+                        hadLaunchDirectorySettings,
+                        existingLaunchDirectorySettings);
+                }
+            }
+        }
+
+        static void RestoreFile(string path, bool existed, byte[] content)
+        {
+            if (existed)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllBytes(path, content);
+            }
+            else if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
         }
 
         static void BindField(object window, string name, object value)
