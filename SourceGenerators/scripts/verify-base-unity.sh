@@ -52,6 +52,7 @@ project_path="${temporary_root}/UnityProject"
 local_packages="${temporary_root}/LocalPackages"
 results="${temporary_root}/base-results.xml"
 log="${temporary_root}/base.log"
+consumer_log="${temporary_root}/base-consumer.log"
 gate_status="not-run"
 gate_reason="base Unity gate did not start"
 
@@ -74,6 +75,7 @@ write_gate_evidence() {
   mkdir -p "${evidence_root}"
   copy_evidence_file "${results}" "base-results.xml"
   copy_evidence_file "${log}" "base.log"
+  copy_evidence_file "${consumer_log}" "base-consumer.log"
 
   if command -v node >/dev/null 2>&1; then
     node "${scripts_directory}/ci-evidence.js" write-gate \
@@ -144,10 +146,8 @@ cp "${base_archive}" "${local_packages}/${base_archive_name}"
 printf '%s\n' \
   '{' \
   '  "dependencies": {' \
-  "    \"com.unity.test-framework\": \"${test_framework_version}\"," \
   "    \"jp.rhycol.openapicodegen\": \"file:../../LocalPackages/${base_archive_name}\"" \
-  '  },' \
-  '  "testables": ["jp.rhycol.openapicodegen"]' \
+  '  }' \
   '}' \
   > "${project_path}/Packages/manifest.json"
 
@@ -170,6 +170,41 @@ run_editor() {
     "$@" -logFile "${output_log}"
   fi
 }
+
+# A normal package consumer does not need the Unity Test Framework. Compile the
+# exact candidate in that configuration before explicitly enabling package tests.
+if run_editor "${consumer_log}" \
+    "${unity_executable}" \
+    -batchmode \
+    -nographics \
+    -projectPath "${project_path}" \
+    -quit; then
+  :
+else
+  unity_exit_code=$?
+  if [[ "${unity_exit_code}" == "142" || "${unity_exit_code}" == "124" || ! -f "${consumer_log}" ]]; then
+    fail_not_run "Unity consumer compilation timed out or produced no log (exit ${unity_exit_code})"
+  fi
+  fail_gate "base package failed to compile without the Unity Test Framework"
+fi
+if grep -Eq 'error CS[0-9]{4}|Scripts have compiler errors' "${consumer_log}"; then
+  fail_gate "base package reported compiler errors without the Unity Test Framework"
+fi
+for assembly in Unity.OpenApiCodeGen.Editor.Contracts.dll Unity.OpenApiCodeGen.Editor.dll; do
+  if [[ ! -f "${project_path}/Library/ScriptAssemblies/${assembly}" ]]; then
+    fail_gate "base package consumer compilation did not produce ${assembly}"
+  fi
+done
+
+printf '%s\n' \
+  '{' \
+  '  "dependencies": {' \
+  "    \"com.unity.test-framework\": \"${test_framework_version}\"," \
+  "    \"jp.rhycol.openapicodegen\": \"file:../../LocalPackages/${base_archive_name}\"" \
+  '  },' \
+  '  "testables": ["jp.rhycol.openapicodegen"]' \
+  '}' \
+  > "${project_path}/Packages/manifest.json"
 
 if run_editor "${log}" \
     "${unity_executable}" \
@@ -212,9 +247,10 @@ if grep -q 'CS8785' "${log}"; then
 fi
 
 gate_status="passed"
-gate_reason="base Unity EditMode gate passed"
+gate_reason="base consumer compilation and Unity EditMode gate passed"
 echo "Unity ${unity_version} base-package verification passed."
 xmllint --xpath 'concat("total=",/test-run/@total," passed=",/test-run/@passed," failed=",/test-run/@failed)' "${results}"
 printf '\n'
 echo "Results: ${results}"
 echo "Log: ${log}"
+echo "Consumer log: ${consumer_log}"

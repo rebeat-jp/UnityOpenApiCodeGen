@@ -11,10 +11,16 @@ function ciContext() {
   return ci;
 }
 function gateContext(manifest) {
-  const ci = ciContext();
-  if (!ci) return undefined;
-  if (manifest.provenance.treeState !== 'clean' || manifest.provenance.commit !== process.env.SOURCE_GENERATOR_CI_COMMIT || JSON.stringify(manifest.provenance.ci) !== JSON.stringify(ci)) throw new Error('Candidate provenance does not match this CI execution');
-  return { ...ci, commit: manifest.provenance.commit, candidateSha256: candidateFingerprint(manifest) };
+  if (process.env.SOURCE_GENERATOR_CI !== '1') return undefined;
+  const candidateAttempt = process.env.SOURCE_GENERATOR_CANDIDATE_ATTEMPT || process.env.GITHUB_RUN_ATTEMPT;
+  const executionAttempt = process.env.GITHUB_RUN_ATTEMPT;
+  const candidate = { repository: process.env.GITHUB_REPOSITORY, runId: process.env.GITHUB_RUN_ID, runAttempt: candidateAttempt };
+  if (!/^[^/]+\/[^/]+$/.test(candidate.repository || '') || !/^[1-9][0-9]*$/.test(candidate.runId || '') ||
+    !/^[1-9][0-9]*$/.test(candidate.runAttempt || '') || !/^[1-9][0-9]*$/.test(executionAttempt || '')) {
+    throw new Error('Missing GitHub CI gate provenance');
+  }
+  if (manifest.provenance.treeState !== 'clean' || manifest.provenance.commit !== process.env.SOURCE_GENERATOR_CI_COMMIT || JSON.stringify(manifest.provenance.ci) !== JSON.stringify(candidate)) throw new Error('Candidate provenance does not match this CI execution');
+  return { ...candidate, executionAttempt, commit: manifest.provenance.commit, candidateSha256: candidateFingerprint(manifest) };
 }
 function redact(text) {
   const serial = process.env.UNITY_SERIAL;

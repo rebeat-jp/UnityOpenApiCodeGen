@@ -29,7 +29,7 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 | OpenAPI 3.2 / Swagger 2 | Unsupported | document versionは受け付けません。 |
 | URL入力 | Supported | public/private/loopback、cross-host redirectを許可。userinfo、空白、非HTTP(S)、HTTPS-to-HTTP direct/redirectは拒否。Generateが明示的なfetch/refresh操作で、Docker fallbackはありません。 |
 | JSON/YAML semantic parity | Supported | 各normalizerがshared `SpecNode`へ正規化し、同じsemantic/generation pipelineを通ります。 |
-| `$ref` | Partial | internal reference、またはEditorがBundle v2のreference edgeへ解決したexternal reference。fragmentはemptyまたはJSON Pointer。 |
+| `$ref` | Partial | OpenAPI/Schema上の参照位置にあるinternal reference、またはEditorがBundle v2のedgeへ解決したexternal reference。example/default/enum/拡張データ内の同名キーはデータとして保持。fragmentはemptyまたはJSON Pointer。 |
 | external `$ref` | Partial | local external fileはreal/symbolic-link解決後もUnity project内。remote documentからlocal fileは不可。bare Schemaは可。 |
 | unresolved / cyclic `$ref` | Unsupported | それぞれ`OACG102`、`OACG103`を報告します。`OACG104`はBundle v1のexternal-reference互換診断です。 |
 | URL query / fragment | Partial | queryはfetch identityに使いますが平文永続化しません。root URL fragment、userinfo、explicit `file:`は拒否。 |
@@ -181,13 +181,30 @@ namespace-levelのため、同じnamespaceには共存できません。
 
 ## 検証済み環境
 
-現在の検証では、.NET testsは101/101、analyzer reproducibility・sync・package inspection・
-tarball reproducibility・checksum verificationはpassです。base Unity `2021.3.19f1`のtarball
-EditMode gateは36/36でした。Unity `6000.0.23f1`はinitial 185/185、regeneration 185/185、
-without-addon 36/36、Unity `6000.3.2f1`もinitial 185/185、regeneration 185/185、
-without-addon 36/36で、両方のSource Generator full flowがpassしています。aggregate gateは
-`artifacts/upm/0.5.0/unity-gate.json`に`passed`として保存されています。
+GitHub ActionsのUnity検証とCD dry-runは実装済みです。レビュー対応前のclean commit
+`adefab2c5bf367c3ecf5971fa555f1cbb68afa24`では、
+[run 34987295723](https://github.com/rebeat-jp/UnityOpenApiCodeGen/actions/runs/34987295723)
+で3版のUnity検証とCD dry-runが成功しています。
 
-これはmanual Unity gateの結果であり、GitHub ActionsのUnity jobが実装されたことを意味しません。
-そのjobを意図的に追加していないため、#54とPhase 7全体はopenのままで、release-readyとは扱いません。
-公開前にはcleanなcommit済みtreeで再pack・再検証し、tarballとmanifestのprovenanceを確定してください。
+2026-09-19のレビュー対応後のローカル検証では、.NET 115/115、Node 34/34が成功しました。
+Analyzer再現ビルド・同梱DLL同期・package inspection・tarball再現性と、同一候補を使った
+次のUnity検証も成功しています。すべて失敗・スキップ0件です。
+
+| Unity | 初回EditMode | 再生成 | add-on除去後 |
+| --- | ---: | ---: | ---: |
+| `2021.3.19f1`（base） | 52/52 | 対象外 | 対象外 |
+| `6000.0.23f1` | 222/222 | 222/222 | 52/52 |
+| `6000.3.2f1` | 222/222 | 222/222 | 52/52 |
+
+baseはTest Framework未導入のconsumer compileも成功しています。Source Generatorの
+設定UIではApiName/PackageNameを編集でき、Docker専用項目は無効になります。
+共有`$ref`の解析完了結果はdocument ID＋pointerで再利用し、循環診断は維持します。
+比較用の深さ14のDAGでは割当量が893,361,000 bytesから254,416 bytesへ減少しました
+（ローカル測定値であり、実行時間のCI閾値には使いません）。
+
+このローカル候補は`--allow-dirty`で作成した開発用証拠です。公開に使うclean commitと
+最新のCI結果・成果物は[PR #56](https://github.com/rebeat-jp/UnityOpenApiCodeGen/pull/56)
+で確認し、[RELEASE.md](../RELEASE.md)の承認・検証手順に従ってください。
+IL2CPP/WebGLのPlayer互換性は未検証で、[#57](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/57)
+で追跡します。正式タグ・公開・OpenUPM初回登録は
+[#62](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/62)の別作業です。

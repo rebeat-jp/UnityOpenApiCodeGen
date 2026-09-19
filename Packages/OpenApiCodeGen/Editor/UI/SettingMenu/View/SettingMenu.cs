@@ -171,6 +171,7 @@ internal class SettingMenu : EditorWindow, ISettingView
         root.Add(labelFromUXML);
 
         // General
+        InitializeEnumFields(root);
         _generateProviderField = root.Q<EnumField>("GenerateProviderField");
         _generateProviderDisplayNameLabel = root.Q<Label>("GenerateProviderDisplayNameLabel");
         _generateProviderAvailabilityLabel = root.Q<Label>("GenerateProviderAvailabilityLabel");
@@ -214,6 +215,14 @@ internal class SettingMenu : EditorWindow, ISettingView
 
         _presenter.Bind(this);
 
+    }
+
+    internal static void InitializeEnumFields(VisualElement root)
+    {
+        root.Q<VisualElement>("GenerateProviderContainer").Add(
+            new EnumField("Generate Provider", GenerateProvider.OpenApi) { name = "GenerateProviderField" });
+        root.Q<VisualElement>("LibraryContainer").Add(
+            new EnumField("Library", default(OpenApiDependenceLibrary)) { name = "LibraryField" });
     }
 
     void OnDisable()
@@ -285,7 +294,15 @@ internal class SettingMenu : EditorWindow, ISettingView
 
         bool dockerSettingsEnabled = _inputEnabled && provider == GenerateProvider.OpenApi;
         _dockerPathField?.SetEnabled(dockerSettingsEnabled);
-        _cSharpGenerationSettingsFoldout?.SetEnabled(dockerSettingsEnabled);
+        _cSharpGenerationSettingsFoldout?.SetEnabled(_inputEnabled);
+        if (_cSharpGenerationSettingsFoldout != null)
+        {
+            foreach (VisualElement field in _cSharpGenerationSettingsFoldout.Children())
+            {
+                bool sharedSetting = field == _apiNameField || field == _packageNameField;
+                field.SetEnabled(_inputEnabled && (sharedSetting || dockerSettingsEnabled));
+            }
+        }
     }
 
     public void SetProjectSettingValue(ProjectSettingDisplayDto projectSetting)

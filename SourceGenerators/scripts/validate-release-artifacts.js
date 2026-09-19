@@ -19,7 +19,7 @@ function usage() {
     '--expected-version <version>',
     '--expected-node-version <vX.Y.Z>',
     '--expected-npm-version <X.Y.Z>',
-    '--require-initial-gate | --require-unity-gate | --require-passed-unity-gate [--expected-commit <sha>] [--expected-run-id <id>] [--expected-run-attempt <n>]'
+    '--require-initial-gate | --require-unity-gate | --require-passed-unity-gate [--expected-commit <sha>] [--expected-run-id <id>] [--expected-run-attempt <n>] [--expected-execution-attempt <n>]'
   ].join(' ');
 }
 
@@ -32,7 +32,7 @@ function parseArguments(argv) {
       options.gateMode = argument;
       continue;
     }
-    if (!['--release-output', '--analyzer', '--expected-version', '--expected-node-version', '--expected-npm-version', '--expected-commit', '--expected-run-id', '--expected-run-attempt'].includes(argument)) {
+    if (!['--release-output', '--analyzer', '--expected-version', '--expected-node-version', '--expected-npm-version', '--expected-commit', '--expected-run-id', '--expected-run-attempt', '--expected-execution-attempt'].includes(argument)) {
       fail(`Unknown argument: ${argument}. ${usage()}`);
     }
     const value = argv[index + 1];
@@ -90,7 +90,8 @@ const expectedGateVersions = ['2021.3.19f1', '6000.0.23f1', '6000.3.2f1'];
 const requiredEvidence = {
   '2021.3.19f1': [
     'base-results.xml',
-    'base.log'
+    'base.log',
+    'base-consumer.log'
   ],
   '6000.0.23f1': [
     'source-generator-results.xml',
@@ -149,7 +150,7 @@ function validateEvidenceFiles(releaseOutput, version, files, requireComplete) {
   return normalized;
 }
 
-function validateGateSummary(releaseOutput, version, summaryPath, expectedHash, manifest) {
+function validateGateSummary(releaseOutput, version, summaryPath, expectedHash, manifest, expectedExecutionAttempt) {
   assertFile(summaryPath, `Unity ${version} gate summary`);
   if (expectedHash !== undefined && sha256(summaryPath) !== expectedHash) {
     fail(`Unity ${version} gate summary hash mismatch`);
@@ -164,16 +165,16 @@ function validateGateSummary(releaseOutput, version, summaryPath, expectedHash, 
   }
   if (summary.status === 'passed' && summary.exitCode !== 0) fail(`Unity ${version} passed gate has nonzero exit code`);
   if (summary.status !== 'passed' && summary.exitCode === 0) fail(`Unity ${version} unsuccessful gate has zero exit code`);
-  if (manifest) validateCiGate(summary, manifest);
+  if (manifest) validateCiGate(summary, manifest, expectedExecutionAttempt);
   if (summary.evidencePath !== `unity-gate/${version}`) fail(`Unity ${version} gate summary has invalid evidencePath`);
   const files = validateEvidenceFiles(releaseOutput, version, summary.files, summary.status === 'passed');
   if (summary.status === 'passed') {
     for (const file of files.filter(entry => entry.path.endsWith('.xml'))) validateTestXml(resolveArtifactPath(releaseOutput, file.path, 'test XML'));
   }
-  return { status: summary.status, files };
+  return { status: summary.status, files, executionAttempt: summary.ci?.executionAttempt };
 }
 
-function validateUnityGate(releaseOutput, unityGate, gateMode, manifest) {
+function validateUnityGate(releaseOutput, unityGate, gateMode, manifest, expectedExecutionAttempt) {
   assertExactKeys(unityGate, ['mode', 'status', 'versions', 'evidence', 'aggregateFile', 'aggregateSha256'], 'unityGate');
   if (!['manual', 'ci'].includes(unityGate.mode) || !['passed', 'failed', 'not-run'].includes(unityGate.status)) {
     fail('unityGate mode/status is invalid');
@@ -206,6 +207,8 @@ function validateUnityGate(releaseOutput, unityGate, gateMode, manifest) {
   }
 
   const expectedSummaries = [];
+  const executionAttempts = new Set();
+  let executionAttemptCount = 0;
   aggregate.versions.forEach((entry, index) => {
     const version = expectedGateVersions[index];
     assertExactKeys(entry, ['version', 'status', 'gate', 'files'], `Unity gate aggregate version ${index}`);
@@ -217,13 +220,22 @@ function validateUnityGate(releaseOutput, unityGate, gateMode, manifest) {
     const expectedGatePath = `unity-gate/${version}/gate.json`;
     if (entry.gate.path !== expectedGatePath) fail(`Unity ${version} aggregate gate path mismatch`);
     assertHex(entry.gate.sha256, 64, `Unity ${version} gate SHA-256`);
-    const summary = validateGateSummary(releaseOutput, version, gatePath, entry.gate.sha256, manifest);
+    const summary = validateGateSummary(releaseOutput, version, gatePath, entry.gate.sha256, manifest, expectedExecutionAttempt);
     if (summary.status !== entry.status || JSON.stringify(summary.files) !== JSON.stringify(entry.files)) {
       fail(`Unity ${version} aggregate does not match its gate summary`);
     }
     validateEvidenceFiles(releaseOutput, version, entry.files, entry.status === 'passed');
     expectedSummaries.push(entry.gate.path);
+    if (summary.executionAttempt !== undefined) {
+      executionAttempts.add(summary.executionAttempt);
+      executionAttemptCount += 1;
+    }
   });
+
+  if (manifest.unityGate.mode === 'ci' &&
+    (executionAttempts.size > 1 || (executionAttemptCount !== 0 && executionAttemptCount !== expectedGateVersions.length))) {
+    fail('Unity gates must use one consistent execution attempt schema and value');
+  }
 
   if (JSON.stringify(unityGate.evidence) !== JSON.stringify(expectedSummaries)) {
     fail('unityGate evidence must list gate summaries in matrix order');
@@ -309,7 +321,7 @@ function validateRelease(options) {
   if (sha256(options.analyzer) !== manifest.analyzerSha256) fail('packaged analyzer SHA-256 mismatch');
   if (manifest.registryPublication !== 'not-performed') fail('registryPublication must be not-performed');
 
-  validateUnityGate(releaseOutput, manifest.unityGate, options.gateMode, manifest);
+  validateUnityGate(releaseOutput, manifest.unityGate, options.gateMode, manifest, options['expected-execution-attempt']);
   validateChecksums(releaseOutput, manifest);
   return manifest;
 }
@@ -318,24 +330,31 @@ function candidateFingerprint(manifest) {
   return crypto.createHash('sha256').update(JSON.stringify(manifest.archives.map(({ file, sha256 }) => ({ file, sha256 })))).digest('hex');
 }
 
-function validateCiGate(summary, manifest) {
+function validateCiGate(summary, manifest, expectedExecutionAttempt) {
   if (manifest.unityGate.mode !== 'ci') {
     if (summary.ci) fail('Manual gate contains CI provenance');
     return;
   }
-  assertExactKeys(summary.ci, ['repository', 'runId', 'runAttempt', 'commit', 'candidateSha256'], 'CI gate provenance');
+  const hasExecutionAttempt = Boolean(summary.ci && Object.prototype.hasOwnProperty.call(summary.ci, 'executionAttempt'));
+  assertExactKeys(summary.ci, ['repository', 'runId', 'runAttempt', 'commit', 'candidateSha256'].concat(hasExecutionAttempt ? ['executionAttempt'] : []), 'CI gate provenance');
   const expected = { ...manifest.provenance.ci, commit: manifest.provenance.commit, candidateSha256: candidateFingerprint(manifest) };
   for (const key of Object.keys(expected)) if (summary.ci[key] !== expected[key]) fail(`CI gate ${key} mismatch`);
+  if (hasExecutionAttempt && !/^[1-9][0-9]*$/.test(summary.ci.executionAttempt)) fail('CI gate executionAttempt is invalid');
+  if (expectedExecutionAttempt && summary.ci.executionAttempt !== expectedExecutionAttempt) fail('CI gate execution attempt mismatch');
 }
 
 function validateTestXml(filePath) {
   // Use the system XML parser; do not accept a truncated file or infer success from a substring.
-  const xpath = `concat(/test-run/@result, '|', /test-run/@total, '|', /test-run/@passed, '|', /test-run/@failed, '|', count(//test-case), '|', count(//test-case[not(@result='Passed') and not(@result='Skipped')]), '|', count(//test-case[@result='Passed']))`;
+  const xpath = `concat(/test-run/@result, '|', /test-run/@total, '|', /test-run/@passed, '|', /test-run/@failed, '|', string(/test-run/@skipped), '|', string(/test-run/@inconclusive), '|', count(//test-case), '|', count(//test-case[not(@result='Passed')]), '|', count(//test-case[@result='Passed']))`;
   let output;
   try { output = execFileSync('xmllint', ['--nonet', '--xpath', xpath, filePath], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }); }
   catch { fail(`Unity test XML is malformed or unreadable: ${filePath}`); }
-  const [result, total, passed, failed, count, bad, actualPassed] = output.trim().split('|');
-  if (result !== 'Passed' || !/^[1-9][0-9]*$/.test(total) || !/^[1-9][0-9]*$/.test(passed) || failed !== '0' || Number(count) !== Number(total) || bad !== '0' || Number(actualPassed) !== Number(passed)) fail(`Unity test XML does not prove complete passing tests: ${filePath}`);
+  const [result, total, passed, failed, skipped, inconclusive, count, bad, actualPassed] = output.trim().split('|');
+  if (result !== 'Passed' || !/^[1-9][0-9]*$/.test(total) || !/^[1-9][0-9]*$/.test(passed) ||
+    failed !== '0' || (skipped !== '' && skipped !== '0') || (inconclusive !== '' && inconclusive !== '0') ||
+    Number(count) !== Number(total) || Number(passed) !== Number(total) || bad !== '0' || Number(actualPassed) !== Number(passed)) {
+    fail(`Unity test XML does not prove complete passing tests: ${filePath}`);
+  }
 }
 
 module.exports = { parseArguments, validateRelease, validateGateSummary, candidateFingerprint, sha256, expectedGateVersions, requiredEvidence, validateTestXml };

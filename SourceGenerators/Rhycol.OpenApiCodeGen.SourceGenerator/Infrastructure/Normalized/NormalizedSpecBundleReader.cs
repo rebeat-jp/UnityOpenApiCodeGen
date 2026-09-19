@@ -390,21 +390,29 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private IEnumerable<(string Pointer, SpecNode Node)> EnumerateReferenceValues(SpecNode node)
         {
-            if (node.ValueKind == SpecValueKind.Object)
+            ReferenceContext rootContext = node.TryGetProperty("openapi", out _)
+                ? ReferenceContext.OpenApiDocument
+                : node.TryGetProperty("swagger", out _)
+                    ? ReferenceContext.SwaggerDocument
+                    : ReferenceContext.Schema;
+            return EnumerateReferenceValues(node, rootContext);
+        }
+
+        private IEnumerable<(string Pointer, SpecNode Node)> EnumerateReferenceValues(
+            SpecNode node,
+            ReferenceContext context)
+        {
+            if (node.ValueKind == SpecValueKind.Array)
             {
-                foreach (SpecProperty property in node.EnumerateObject())
+                ReferenceContext itemContext = GetArrayItemContext(context);
+                if (itemContext == ReferenceContext.Opaque)
                 {
-                    if (string.Equals(property.Name, "$ref", StringComparison.Ordinal))
-                    {
-                        if (property.Value.ValueKind != SpecValueKind.String)
-                        {
-                            throw CreateFormatException("Every $ref value must be a string.");
-                        }
+                    yield break;
+                }
 
-                        yield return (property.Value.LogicalPath, property.Value);
-                    }
-
-                    foreach ((string Pointer, SpecNode Node) child in EnumerateReferenceValues(property.Value))
+                foreach (SpecNode item in node.EnumerateArray())
+                {
+                    foreach ((string Pointer, SpecNode Node) child in EnumerateReferenceValues(item, itemContext))
                     {
                         yield return child;
                     }
@@ -413,18 +421,222 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 yield break;
             }
 
-            if (node.ValueKind != SpecValueKind.Array)
+            if (node.ValueKind != SpecValueKind.Object || context == ReferenceContext.Opaque)
             {
                 yield break;
             }
 
-            foreach (SpecNode item in node.EnumerateArray())
+            bool hasDirectReference = false;
+            if (AllowsDirectReference(context) && node.TryGetProperty("$ref", out SpecNode referenceNode))
             {
-                foreach ((string Pointer, SpecNode Node) child in EnumerateReferenceValues(item))
+                if (referenceNode.ValueKind != SpecValueKind.String)
+                {
+                    throw CreateFormatException("Every semantic $ref value must be a string.");
+                }
+
+                hasDirectReference = true;
+                yield return (referenceNode.LogicalPath, referenceNode);
+            }
+
+            if (context == ReferenceContext.ReferenceOnly ||
+                (context == ReferenceContext.Callback && hasDirectReference))
+            {
+                yield break;
+            }
+
+            foreach (SpecProperty property in node.EnumerateObject())
+            {
+                if (AllowsDirectReference(context) &&
+                    string.Equals(property.Name, "$ref", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                ReferenceContext childContext = GetChildContext(context, property.Name);
+                if (childContext == ReferenceContext.Opaque)
+                {
+                    continue;
+                }
+
+                foreach ((string Pointer, SpecNode Node) child in EnumerateReferenceValues(
+                             property.Value,
+                             childContext))
                 {
                     yield return child;
                 }
             }
+        }
+
+        private static bool AllowsDirectReference(ReferenceContext context)
+        {
+            return context == ReferenceContext.Schema ||
+                   context == ReferenceContext.PathItem ||
+                   context == ReferenceContext.Parameter ||
+                   context == ReferenceContext.Response ||
+                   context == ReferenceContext.RequestBody ||
+                   context == ReferenceContext.Callback ||
+                   context == ReferenceContext.ReferenceOnly;
+        }
+
+        private static ReferenceContext GetArrayItemContext(ReferenceContext context)
+        {
+            switch (context)
+            {
+                case ReferenceContext.ParametersArray:
+                    return ReferenceContext.Parameter;
+                case ReferenceContext.SchemaArray:
+                    return ReferenceContext.Schema;
+                default:
+                    return ReferenceContext.Opaque;
+            }
+        }
+
+        private static ReferenceContext GetChildContext(ReferenceContext context, string propertyName)
+        {
+            switch (context)
+            {
+                case ReferenceContext.OpenApiDocument:
+                    if (propertyName == "paths" || propertyName == "webhooks") return ReferenceContext.PathsMap;
+                    if (propertyName == "components") return ReferenceContext.Components;
+                    return ReferenceContext.Opaque;
+
+                case ReferenceContext.SwaggerDocument:
+                    if (propertyName == "paths") return ReferenceContext.PathsMap;
+                    if (propertyName == "definitions") return ReferenceContext.SchemaMap;
+                    if (propertyName == "parameters") return ReferenceContext.ParametersMap;
+                    if (propertyName == "responses") return ReferenceContext.ResponsesMap;
+                    return ReferenceContext.Opaque;
+
+                case ReferenceContext.Components:
+                    if (propertyName == "schemas") return ReferenceContext.SchemaMap;
+                    if (propertyName == "responses") return ReferenceContext.ResponsesMap;
+                    if (propertyName == "parameters" || propertyName == "headers") return ReferenceContext.ParametersMap;
+                    if (propertyName == "examples" || propertyName == "securitySchemes" || propertyName == "links")
+                        return ReferenceContext.ReferenceMap;
+                    if (propertyName == "requestBodies") return ReferenceContext.RequestBodiesMap;
+                    if (propertyName == "callbacks") return ReferenceContext.CallbacksMap;
+                    if (propertyName == "pathItems") return ReferenceContext.PathItemsMap;
+                    return ReferenceContext.Opaque;
+
+                case ReferenceContext.PathsMap:
+                    return propertyName.StartsWith("x-", StringComparison.Ordinal)
+                        ? ReferenceContext.Opaque
+                        : ReferenceContext.PathItem;
+                case ReferenceContext.PathItemsMap:
+                    return ReferenceContext.PathItem;
+                case ReferenceContext.ParametersMap:
+                    return ReferenceContext.Parameter;
+                case ReferenceContext.ResponsesMap:
+                    return ReferenceContext.Response;
+                case ReferenceContext.OperationResponsesMap:
+                    return propertyName.StartsWith("x-", StringComparison.Ordinal)
+                        ? ReferenceContext.Opaque
+                        : ReferenceContext.Response;
+                case ReferenceContext.RequestBodiesMap:
+                    return ReferenceContext.RequestBody;
+                case ReferenceContext.ReferenceMap:
+                    return ReferenceContext.ReferenceOnly;
+                case ReferenceContext.CallbacksMap:
+                    return ReferenceContext.Callback;
+                case ReferenceContext.ContentMap:
+                    return ReferenceContext.MediaType;
+                case ReferenceContext.EncodingsMap:
+                    return ReferenceContext.Encoding;
+                case ReferenceContext.SchemaMap:
+                    return ReferenceContext.Schema;
+
+                case ReferenceContext.PathItem:
+                    if (propertyName == "parameters") return ReferenceContext.ParametersArray;
+                    if (propertyName == "delete" || propertyName == "get" || propertyName == "head" ||
+                        propertyName == "options" || propertyName == "patch" || propertyName == "post" ||
+                        propertyName == "put" || propertyName == "trace") return ReferenceContext.Operation;
+                    return ReferenceContext.Opaque;
+
+                case ReferenceContext.Operation:
+                    if (propertyName == "parameters") return ReferenceContext.ParametersArray;
+                    if (propertyName == "requestBody") return ReferenceContext.RequestBody;
+                    if (propertyName == "responses") return ReferenceContext.OperationResponsesMap;
+                    if (propertyName == "callbacks") return ReferenceContext.CallbacksMap;
+                    return ReferenceContext.Opaque;
+
+                case ReferenceContext.Parameter:
+                    if (propertyName == "schema" || propertyName == "items") return ReferenceContext.Schema;
+                    if (propertyName == "content") return ReferenceContext.ContentMap;
+                    if (propertyName == "examples") return ReferenceContext.ReferenceMap;
+                    return ReferenceContext.Opaque;
+
+                case ReferenceContext.RequestBody:
+                    return propertyName == "content" ? ReferenceContext.ContentMap : ReferenceContext.Opaque;
+
+                case ReferenceContext.Response:
+                    if (propertyName == "schema") return ReferenceContext.Schema;
+                    if (propertyName == "content") return ReferenceContext.ContentMap;
+                    if (propertyName == "headers") return ReferenceContext.ParametersMap;
+                    if (propertyName == "links") return ReferenceContext.ReferenceMap;
+                    return ReferenceContext.Opaque;
+
+                case ReferenceContext.MediaType:
+                    if (propertyName == "schema") return ReferenceContext.Schema;
+                    if (propertyName == "examples") return ReferenceContext.ReferenceMap;
+                    if (propertyName == "encoding") return ReferenceContext.EncodingsMap;
+                    return ReferenceContext.Opaque;
+
+                case ReferenceContext.Encoding:
+                    return propertyName == "headers" ? ReferenceContext.ParametersMap : ReferenceContext.Opaque;
+
+                case ReferenceContext.Callback:
+                    return propertyName.StartsWith("x-", StringComparison.Ordinal)
+                        ? ReferenceContext.Opaque
+                        : ReferenceContext.PathItem;
+
+                case ReferenceContext.Schema:
+                    if (propertyName == "properties" || propertyName == "patternProperties" ||
+                        propertyName == "dependentSchemas" || propertyName == "$defs" ||
+                        propertyName == "definitions") return ReferenceContext.SchemaMap;
+                    if (propertyName == "prefixItems" || propertyName == "allOf" ||
+                        propertyName == "anyOf" || propertyName == "oneOf") return ReferenceContext.SchemaArray;
+                    if (propertyName == "additionalProperties" || propertyName == "unevaluatedItems" ||
+                        propertyName == "unevaluatedProperties" || propertyName == "items" ||
+                        propertyName == "additionalItems" || propertyName == "contains" ||
+                        propertyName == "propertyNames" || propertyName == "not" ||
+                        propertyName == "if" || propertyName == "then" || propertyName == "else" ||
+                        propertyName == "contentSchema") return ReferenceContext.Schema;
+                    return ReferenceContext.Opaque;
+
+                default:
+                    return ReferenceContext.Opaque;
+            }
+        }
+
+        private enum ReferenceContext
+        {
+            Opaque,
+            OpenApiDocument,
+            SwaggerDocument,
+            Components,
+            PathsMap,
+            PathItemsMap,
+            PathItem,
+            Operation,
+            ParametersMap,
+            ParametersArray,
+            Parameter,
+            ResponsesMap,
+            OperationResponsesMap,
+            Response,
+            RequestBodiesMap,
+            RequestBody,
+            ReferenceMap,
+            ReferenceOnly,
+            CallbacksMap,
+            Callback,
+            ContentMap,
+            MediaType,
+            EncodingsMap,
+            Encoding,
+            SchemaMap,
+            SchemaArray,
+            Schema
         }
 
         private static bool TryResolvePointer(SpecNode root, string pointer, out SpecNode? result)

@@ -217,8 +217,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string indent = body.Required ? "                " : "                    ";
             source.Append(indent).Append("string requestJson = global::Newtonsoft.Json.JsonConvert.SerializeObject(")
                 .Append(body.ParameterName)
-                .AppendLine(");");
-            source.Append(indent).Append("request.Content = new global::System.Net.Http.StringContent(requestJson, global::System.Text.Encoding.UTF8, ")
+                .AppendLine(", DateOnlyJsonConverterInstance);");
+            source.Append(indent).Append("request.Content = CreateJsonContent(requestJson, ")
                 .Append(GeneratedSourceEmitter.StringLiteral(body.MediaType))
                 .AppendLine(");");
             if (!body.Required)
@@ -300,22 +300,116 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private static void AppendHelpers(StringBuilder source)
         {
+            source.AppendLine("        private static readonly global::Newtonsoft.Json.JsonConverter DateOnlyJsonConverterInstance = new DateOnlyJsonConverter();");
+            source.AppendLine();
             source.AppendLine("        private global::System.Uri CreateRequestUri(string relativePath)");
             source.AppendLine("        {");
-            source.AppendLine("            string combined = string.IsNullOrEmpty(_baseUrl)");
-            source.AppendLine("                ? relativePath");
-            source.AppendLine("                : _baseUrl.TrimEnd('/') + \"/\" + relativePath.TrimStart('/');");
+            source.AppendLine("            SplitPathAndQuery(relativePath, out string operationPath, out string operationQuery);");
+            source.AppendLine("            if (global::System.Uri.TryCreate(_baseUrl, global::System.UriKind.Absolute, out var absoluteBaseUri) &&");
+            source.AppendLine("                (absoluteBaseUri.Scheme == global::System.Uri.UriSchemeHttp ||");
+            source.AppendLine("                 absoluteBaseUri.Scheme == global::System.Uri.UriSchemeHttps))");
+            source.AppendLine("            {");
+            source.AppendLine("                return CombineAbsoluteUri(absoluteBaseUri, operationPath, operationQuery);");
+            source.AppendLine("            }");
+            source.AppendLine();
+            source.AppendLine("            SplitPathAndQuery(_baseUrl, out string basePath, out string baseQuery);");
+            source.AppendLine("            string combinedPath = CombinePaths(basePath, operationPath);");
+            source.AppendLine("            string combinedQuery = CombineQueries(baseQuery, operationQuery);");
+            source.AppendLine("            if (_httpClient.BaseAddress != null)");
+            source.AppendLine("            {");
+            source.AppendLine("                var resolvedUri = new global::System.Uri(_httpClient.BaseAddress, combinedPath.TrimStart('/')); ");
+            source.AppendLine("                string resolvedQuery = CombineQueries(_httpClient.BaseAddress.Query.TrimStart('?'), combinedQuery);");
+            source.AppendLine("                return CombineAbsoluteUri(resolvedUri, string.Empty, resolvedQuery);");
+            source.AppendLine("            }");
+            source.AppendLine();
+            source.AppendLine("            string combined = AppendQuery(combinedPath, combinedQuery);");
             source.AppendLine("            if (global::System.Uri.TryCreate(combined, global::System.UriKind.Absolute, out var absoluteUri))");
             source.AppendLine("            {");
             source.AppendLine("                return absoluteUri;");
             source.AppendLine("            }");
             source.AppendLine();
-            source.AppendLine("            if (_httpClient.BaseAddress != null)");
+            source.AppendLine("            return new global::System.Uri(combined, global::System.UriKind.Relative);");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        private static global::System.Uri CombineAbsoluteUri(global::System.Uri baseUri, string operationPath, string operationQuery)");
+            source.AppendLine("        {");
+            source.AppendLine("            var builder = new global::System.UriBuilder(baseUri)");
             source.AppendLine("            {");
-            source.AppendLine("                return new global::System.Uri(_httpClient.BaseAddress, combined.TrimStart('/')); ");
+            source.AppendLine("                Path = CombinePaths(baseUri.AbsolutePath, operationPath),");
+            source.AppendLine("                Query = CombineQueries(baseUri.Query.TrimStart('?'), operationQuery)");
+            source.AppendLine("            };");
+            source.AppendLine("            return builder.Uri;");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        private static string CombinePaths(string basePath, string operationPath)");
+            source.AppendLine("        {");
+            source.AppendLine("            if (string.IsNullOrEmpty(basePath))");
+            source.AppendLine("            {");
+            source.AppendLine("                return operationPath;");
             source.AppendLine("            }");
             source.AppendLine();
-            source.AppendLine("            return new global::System.Uri(combined, global::System.UriKind.Relative);");
+            source.AppendLine("            if (string.IsNullOrEmpty(operationPath))");
+            source.AppendLine("            {");
+            source.AppendLine("                return basePath;");
+            source.AppendLine("            }");
+            source.AppendLine();
+            source.AppendLine("            return basePath.TrimEnd('/') + \"/\" + operationPath.TrimStart('/');");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        private static string CombineQueries(string baseQuery, string operationQuery)");
+            source.AppendLine("        {");
+            source.AppendLine("            if (string.IsNullOrEmpty(baseQuery))");
+            source.AppendLine("            {");
+            source.AppendLine("                return operationQuery;");
+            source.AppendLine("            }");
+            source.AppendLine();
+            source.AppendLine("            if (string.IsNullOrEmpty(operationQuery))");
+            source.AppendLine("            {");
+            source.AppendLine("                return baseQuery;");
+            source.AppendLine("            }");
+            source.AppendLine();
+            source.AppendLine("            return baseQuery.TrimEnd('&') + \"&\" + operationQuery.TrimStart('&');");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        private static string AppendQuery(string path, string query)");
+            source.AppendLine("        {");
+            source.AppendLine("            return string.IsNullOrEmpty(query) ? path : path + \"?\" + query;");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        private static void SplitPathAndQuery(string value, out string path, out string query)");
+            source.AppendLine("        {");
+            source.AppendLine("            int separator = value.IndexOf('?');");
+            source.AppendLine("            if (separator < 0)");
+            source.AppendLine("            {");
+            source.AppendLine("                path = value;");
+            source.AppendLine("                query = string.Empty;");
+            source.AppendLine("                return;");
+            source.AppendLine("            }");
+            source.AppendLine();
+            source.AppendLine("            path = value.Substring(0, separator);");
+            source.AppendLine("            query = value.Substring(separator + 1);");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        private static global::System.Net.Http.HttpContent CreateJsonContent(string requestJson, string mediaType)");
+            source.AppendLine("        {");
+            source.AppendLine("            var contentType = global::System.Net.Http.Headers.MediaTypeHeaderValue.Parse(mediaType);");
+            source.AppendLine("            global::System.Text.Encoding encoding = global::System.Text.Encoding.UTF8;");
+            source.AppendLine("            if (string.IsNullOrWhiteSpace(contentType.CharSet))");
+            source.AppendLine("            {");
+            source.AppendLine("                contentType.CharSet = encoding.WebName;");
+            source.AppendLine("            }");
+            source.AppendLine("            else");
+            source.AppendLine("            {");
+            source.AppendLine("                string charset = contentType.CharSet.Trim().Trim('\"');");
+            source.AppendLine("                encoding = global::System.Text.Encoding.GetEncoding(charset);");
+            source.AppendLine("            }");
+            source.AppendLine();
+            source.AppendLine("            var content = new global::System.Net.Http.StringContent(");
+            source.AppendLine("                requestJson,");
+            source.AppendLine("                encoding,");
+            source.AppendLine("                contentType.MediaType ?? \"application/json\");");
+            source.AppendLine("            content.Headers.ContentType = contentType;");
+            source.AppendLine("            return content;");
             source.AppendLine("        }");
             source.AppendLine();
             source.AppendLine("        private static string ConvertToString(object value)");
@@ -360,6 +454,34 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("                ? formattable.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)");
             source.AppendLine("                : value.ToString() ?? string.Empty;");
             source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        private sealed class DateOnlyJsonConverter : global::Newtonsoft.Json.JsonConverter");
+            source.AppendLine("        {");
+            source.AppendLine("            public override bool CanRead => false;");
+            source.AppendLine();
+            source.AppendLine("            public override bool CanConvert(global::System.Type objectType)");
+            source.AppendLine("            {");
+            source.AppendLine("                return objectType == typeof(global::System.DateTime) ||");
+            source.AppendLine("                       objectType == typeof(global::System.DateTime?);");
+            source.AppendLine("            }");
+            source.AppendLine();
+            source.AppendLine("            public override void WriteJson(global::Newtonsoft.Json.JsonWriter writer, object? value, global::Newtonsoft.Json.JsonSerializer serializer)");
+            source.AppendLine("            {");
+            source.AppendLine("                if (value == null)");
+            source.AppendLine("                {");
+            source.AppendLine("                    writer.WriteNull();");
+            source.AppendLine("                    return;");
+            source.AppendLine("                }");
+            source.AppendLine();
+            source.AppendLine("                var date = (global::System.DateTime)value;");
+            source.AppendLine("                writer.WriteValue(date.ToString(\"yyyy-MM-dd\", global::System.Globalization.CultureInfo.InvariantCulture));");
+            source.AppendLine("            }");
+            source.AppendLine();
+            source.AppendLine("            public override object? ReadJson(global::Newtonsoft.Json.JsonReader reader, global::System.Type objectType, object? existingValue, global::Newtonsoft.Json.JsonSerializer serializer)");
+            source.AppendLine("            {");
+            source.AppendLine("                throw new global::System.NotSupportedException();");
+            source.AppendLine("            }");
+            source.AppendLine("        }");
         }
 
         private static void AppendException(StringBuilder source, string apiName)
@@ -393,7 +515,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private static string EscapeXml(string value)
         {
-            return value.Replace("&", "&amp;")
+            var normalized = new StringBuilder(value.Length);
+            foreach (char character in value)
+            {
+                normalized.Append(char.IsControl(character) ||
+                                  character == '\u2028' ||
+                                  character == '\u2029'
+                    ? ' '
+                    : character);
+            }
+
+            return normalized.ToString().Replace("&", "&amp;")
                 .Replace("<", "&lt;")
                 .Replace(">", "&gt;")
                 .Replace("\"", "&quot;")

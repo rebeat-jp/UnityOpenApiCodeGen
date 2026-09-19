@@ -99,6 +99,96 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Test]
+        public async Task NormalizeAndCacheAsyncTreatsOnlySemanticRefLocationsAsReferences()
+        {
+            WriteText(
+                "Assets/Specs/root.json",
+                @"{
+  ""openapi"": ""3.1.0"",
+  ""info"": { ""title"": ""Root"", ""version"": ""1"" },
+  ""paths"": {
+    ""/ignored"": {
+      ""get"": {
+        ""responses"": {
+          ""204"": { ""description"": ""No content"" },
+          ""x-meta"": { ""$ref"": false }
+        }
+      }
+    }
+  },
+  ""components"": {
+    ""schemas"": {
+      ""PetAlias"": { ""$ref"": ""child.yaml#/components/schemas/Pet"" }
+    },
+    ""responses"": {
+      ""x-root-response"": { ""$ref"": ""child.yaml#/components/responses/x-shared"" }
+    },
+    ""examples"": {
+      ""Payload"": {
+        ""value"": { ""$ref"": ""missing-component-example.json?token=literal"" }
+      }
+    }
+  },
+  ""x-payload"": { ""$ref"": ""missing-extension.json?token=literal"" }
+}");
+            WriteText(
+                "Assets/Specs/child.yaml",
+                "openapi: 3.1.0\n" +
+                "info:\n" +
+                "  title: Child\n" +
+                "  version: '1'\n" +
+                "paths:\n" +
+                "  /ignored:\n" +
+                "    get:\n" +
+                "      responses:\n" +
+                "        '204':\n" +
+                "          description: No content\n" +
+                "        x-meta:\n" +
+                "          $ref: 17\n" +
+                "components:\n" +
+                "  responses:\n" +
+                "    x-shared:\n" +
+                "      description: OK\n" +
+                "    x-alias:\n" +
+                "      $ref: '#/components/responses/x-shared'\n" +
+                "  schemas:\n" +
+                "    Pet:\n" +
+                "      type: object\n" +
+                "      properties:\n" +
+                "        example:\n" +
+                "          type: string\n" +
+                "        x-meta:\n" +
+                "          type: string\n" +
+                "      example:\n" +
+                "        $ref: 'missing-example.yaml?token=literal'\n" +
+                "      default:\n" +
+                "        $ref: 'missing-default.yaml?token=literal'\n" +
+                "      enum:\n" +
+                "        - $ref: 'missing-enum.yaml?token=literal'\n" +
+                "      x-data:\n" +
+                "        $ref: 'missing-schema-extension.yaml?token=literal'\n");
+
+            NormalizedSpecCacheResult result = await CreateService().NormalizeAndCacheAsync(
+                "Assets/Specs/root.json",
+                SpecId,
+                CancellationToken.None);
+            string bundle = File.ReadAllText(result.AuthoritativePath, new UTF8Encoding(false));
+
+            Assert.That(bundle, Does.Contain("/components/schemas/PetAlias/$ref"));
+            Assert.That(bundle, Does.Contain("/components/responses/x-root-response/$ref"));
+            Assert.That(bundle, Does.Contain("/components/responses/x-alias/$ref"));
+            Assert.That(bundle, Does.Not.Contain("/paths/~1ignored/get/responses/x-meta/$ref"));
+            Assert.That(bundle, Does.Contain("missing-component-example.json?token=literal"));
+            Assert.That(bundle, Does.Contain("missing-extension.json?token=literal"));
+            Assert.That(bundle, Does.Contain("missing-example.yaml?token=literal"));
+            Assert.That(bundle, Does.Contain("missing-default.yaml?token=literal"));
+            Assert.That(bundle, Does.Contain("missing-enum.yaml?token=literal"));
+            Assert.That(bundle, Does.Contain("missing-schema-extension.yaml?token=literal"));
+            Assert.That(bundle, Does.Contain("\"name\": \"example\""));
+            Assert.That(bundle, Does.Contain("\"name\": \"x-meta\""));
+        }
+
+        [Test]
         public async Task ExternalGraphResolvesRelativeRootAgainstTheUnityProjectRoot()
         {
             WriteText(

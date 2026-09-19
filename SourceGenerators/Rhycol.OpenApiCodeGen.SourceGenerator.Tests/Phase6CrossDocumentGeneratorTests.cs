@@ -282,6 +282,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
+        public void SharedSchemaDagReusesCompletedSemanticSchemas()
+        {
+            string root = CreateSharedSchemaDag(15);
+
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(root);
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.Contains("public sealed class Node14", execution.GeneratedSource);
+            Assert.Contains("Task<Node14> getRoot", execution.GeneratedSource);
+        }
+
+        [Fact]
         public void ChangingExternalDocumentInvalidatesOnlyTheV2BundleAndGeneratedClient()
         {
             string root = CreateRootWithReference("pet.json#/components/schemas/Pet");
@@ -488,6 +501,30 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                    System.Text.Json.JsonSerializer.Serialize(title) +
                    ",\"version\":\"1\"},\"paths\":{},\"components\":{\"schemas\":{" +
                    schemaEntry + "}}}";
+        }
+
+        private static string CreateSharedSchemaDag(int depth)
+        {
+            var schemas = new System.Text.StringBuilder();
+            schemas.Append("\"Leaf\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}}}");
+            for (int index = 0; index < depth; index++)
+            {
+                string target = index == 0 ? "Leaf" : "Node" + (index - 1);
+                schemas.Append(",\"Node");
+                schemas.Append(index);
+                schemas.Append("\":{\"type\":\"object\",\"properties\":{");
+                schemas.Append("\"left\":{\"$ref\":\"#/components/schemas/");
+                schemas.Append(target);
+                schemas.Append("\"},\"right\":{\"$ref\":\"#/components/schemas/");
+                schemas.Append(target);
+                schemas.Append("\"}}}");
+            }
+
+            return "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Shared DAG\",\"version\":\"1\"}," +
+                   "\"paths\":{\"/root\":{\"get\":{\"operationId\":\"getRoot\",\"responses\":{" +
+                   "\"200\":{\"description\":\"OK\",\"content\":{\"application/json\":{\"schema\":{" +
+                   "\"$ref\":\"#/components/schemas/Node" + (depth - 1) + "\"}}}}}}}}," +
+                   "\"components\":{\"schemas\":{" + schemas + "}}}";
         }
     }
 }

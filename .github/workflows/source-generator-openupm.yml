@@ -4,8 +4,18 @@ on:
 permissions:
   contents: read
 jobs:
+  preflight:
+    name: Validate immutable tag ref
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject unsupported workflow ref before OIDC is available
+        run: |
+          [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF" == refs/tags/* ]] || {
+            echo 'OpenUPM workflow must run from an immutable tag ref.' >&2
+            exit 1
+          }
   publish:
-    if: github.ref_type == 'tag'
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:

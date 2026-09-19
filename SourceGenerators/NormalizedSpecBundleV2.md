@@ -59,7 +59,7 @@ The values are:
 | `sourcePath` | The root may use a normalized project-relative path, absolute path, or HTTP(S) URI. Local external documents are project-relative; remote display URIs are redacted. All path separators are `/`. |
 | `format` | Exactly `json` or `yaml`. |
 | `rawSha256` | SHA-256 of that document's raw bytes, lower-case hexadecimal. |
-| `root` | The existing normalized `SpecNode` tree, including source line/column data and sanitized `$ref` values. |
+| `root` | The existing normalized `SpecNode` tree, including source line/column data and sanitized semantic `$ref` values. |
 
 The root document is first. External documents are sorted by `documentId` in
 ordinal order. There are at most 64 documents. A local external document ID
@@ -82,15 +82,26 @@ sourceDocumentId, sourcePointer, targetDocumentId, targetPointer
 An edge maps the source document's string `$ref` node at `sourcePointer` to the
 target document node at `targetPointer`. Pointers are RFC 6901 JSON Pointers;
 `sourcePointer` must identify a `$ref` string and `targetPointer` may be empty
-to identify the target document root. Every `$ref` in every document must have
-exactly one edge. Both document IDs must be declared in `documents`, and both
-pointer targets must exist.
+to identify the target document root. Every semantic `$ref` in every document
+must have exactly one edge. Both document IDs must be declared in `documents`,
+and both pointer targets must exist.
+
+Reference collection, URI sanitization, and analyzer edge coverage follow the
+OpenAPI object or Schema context. Literal payloads in `example`, Schema
+`default`/`enum`, Example Object `value`, and specification extensions are
+preserved as data, even when they contain a string or non-string `$ref`.
+They do not trigger document retrieval or require edges. A Schema property
+named `example`, `x-meta`, or `$ref` still contains a Schema and is traversed.
+Similarly, `responses.x-*` inside an operation is extension data, while a
+component response named `x-*` is a Response or Reference Object. Bare Schema
+roots follow the same Schema rules.
 
 Edges are sorted by `sourceDocumentId`, then `sourcePointer` in ordinal order.
 Duplicate source identities, missing edges, invalid pointers, missing target
 documents, and unresolved targets are invalid Bundle structure. The analyzer
 uses the pair `(documentId, JSON Pointer)` as node identity for semantic
-resolution and cycle detection.
+resolution and cycle detection. Successfully parsed schemas are reused by this
+identity; each reference retains its own source location and nullable wrapper.
 
 ## Editor graph and URL policy
 
@@ -134,7 +145,9 @@ Assets/OpenApiCodeGen/Generated/SpecCache/
 bundle format/version, spec ID, bundle path and hash, then per-document
 redacted source metadata: source display, source-key hash, format, raw hash,
 retrieval kind, HTTP status, and redirect count. Query strings, userinfo,
-response headers, and raw remote bodies are not persisted. If the input query
+response headers, and raw remote bodies are not persisted as retrieval metadata.
+These redaction rules apply to source/reference URIs; literal document payloads
+remain in the normalized tree unchanged. If the input query
 was stripped from persisted display data, Generate reports a warning asking
 the user to re-enter the complete URL.
 

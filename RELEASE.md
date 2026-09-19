@@ -35,6 +35,11 @@ The Unity job uses Environment **`UNITY_LICENSE`**, containing Secrets
 `UNITY_LICENSE`, `UNITY_EMAIL`, and `UNITY_PASSWORD`. Reusable-workflow callers
 retain `secrets: inherit` so these Environment secrets resolve in the called
 job; a host check stops before image downloads if any are unavailable.
+The repository Environment requires approval by **HIROHIRO1224**. Self-review
+is allowed, and administrator bypass is disabled. Before approval, inspect the
+exact candidate commit linked by the Environment URL and candidate job summary.
+This applies to same-repository PRs and manual dry-runs as well as publication;
+repository write access alone does not grant approval.
 The Personal ULF supplies
 the serial through the GameCI activation procedure. Activation and license
 return logs stay in the disposable container. Test logs/XML are redacted before
@@ -90,7 +95,8 @@ recovery. Missing editors, activation failures, missing logs/XML, failed tests,
 nonzero exits, and mismatched provenance cannot pass the release gate. Unity
 jobs cannot silently repack a missing candidate.
 
-The final `verified-release-<run-id>-<attempt>` artifact contains:
+The final `verified-release-<run-id>-<aggregate-execution-attempt>` artifact is
+uploaded only after successful aggregation and dry-run validation. It contains:
 
 ```text
 jp.rhycol.openapicodegen-0.5.0.tgz
@@ -102,9 +108,16 @@ unity-gate/<editor-version>/gate.json, logs, XML, fixture evidence
 verification-evidence.tar.gz
 ```
 
-The schema-2 manifest records clean commit, tool versions, CI run/attempt,
-archive and analyzer hashes, and the aggregate Unity gate. Each editor's
-evidence binds the same commit, run/attempt, and candidate fingerprint.
+The schema-2 manifest records clean commit, tool versions, candidate CI
+run/attempt, archive and analyzer hashes, and the aggregate Unity gate. Each
+editor's evidence binds that same candidate identity and adds
+`ci.executionAttempt` for the Unity job that produced it. All three editors
+must use the same execution attempt. The candidate attempt remains unchanged
+when only failed jobs are rerun. The execution-attempt check accepts legacy schema-2 provenance without that
+field when no expected execution attempt is supplied; current required evidence
+files still apply. Mixed execution formats or attempts are rejected.
+The base gate also requires `base-consumer.log`: the same package is compiled
+without Test Framework before enabling Test Framework and running its tests.
 `SHA256SUMS` covers both packages and the manifest; the manifest and gate
 summaries transitively cover all verification files. Use the successful
 artifact for the commit being reviewed. Older or dirty-tree evidence is for
@@ -147,6 +160,15 @@ tarball byte-for-byte with the verified asset.
 - **CI/activation failure:** inspect the failed gate and sanitized logs, fix
   the cause, and rerun verification. Missing or invalid credentials produce a
   non-success gate.
+- **Failed Unity job:** rerun failed jobs in the same Actions run. The original
+  candidate is reused, and the new Unity job publishes a distinct evidence
+  artifact. Aggregation uses the artifact name and execution attempt returned
+  by that Unity job, rather than guessing from the current run attempt.
+- **Aggregate-only retry:** the successful Unity job's original evidence is
+  reused, and a new successful verified artifact is named for the aggregate
+  attempt. No existing artifact is overwritten.
+- **Incorrect manual ref:** DLL update requires `main`; OpenUPM requires the
+  release tag. Read-only preflight fails before write/OIDC jobs can begin.
 - **DLL/version/evidence mismatch:** correct source, committed DLL or metadata
   in a reviewed commit and rebuild. Do not edit evidence to bypass checks.
 - **Interrupted publication:** rerun only the failed publication job in the
@@ -187,6 +209,10 @@ evidence archive uses GNU tar and runs on Linux in Actions.
    implicated.
 4. Regenerate affected clients and adjust code that depended on generated
    types. Record the project/package changes.
+
+Initial formal publication and add-on OpenUPM registration are tracked in
+[#62](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/62), separately from
+PR #56's review fixes and dry-run verification.
 
 Never move or delete a published tag or replace a published package. Fixes use
 a new patch version, such as `0.5.1`, through the same verification process.

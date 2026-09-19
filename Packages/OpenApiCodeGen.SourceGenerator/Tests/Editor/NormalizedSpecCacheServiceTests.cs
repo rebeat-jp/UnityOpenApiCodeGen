@@ -194,12 +194,24 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             UnityEngine.RuntimePlatform.LinuxEditor)]
         public void GenerationLockExcludesAnotherProcessAndReleasesOnExit(bool terminateOwner)
         {
-            string monoRoot = Path.Combine(UnityEditor.EditorApplication.applicationContentsPath,
-                "MonoBleedingEdge");
+            string applicationContentsPath = UnityEditor.EditorApplication.applicationContentsPath;
+            string monoRoot = FindUnityDirectory(
+                applicationContentsPath,
+                "MonoBleedingEdge",
+                Path.Combine("Resources", "Scripting", "MonoBleedingEdge"));
             string monoPath = Path.Combine(monoRoot, "bin", "mono");
             string csiPath = Path.Combine(monoRoot, "lib", "mono", "4.5", "csi.exe");
             Assert.That(File.Exists(monoPath), Is.True, "Unity's bundled Mono runtime is required.");
             Assert.That(File.Exists(csiPath), Is.True, "Unity's bundled C# interpreter is required.");
+            string managedRoot = FindUnityDirectory(
+                applicationContentsPath,
+                "Managed",
+                Path.Combine("Resources", "Scripting", "Managed"));
+            string unityEngineManagedRoot = Path.Combine(managedRoot, "UnityEngine");
+            Assert.That(Directory.Exists(managedRoot), Is.True,
+                "Unity's bundled managed assemblies are required.");
+            Assert.That(Directory.Exists(unityEngineManagedRoot), Is.True,
+                "UnityEngine's bundled managed assemblies are required.");
             string scriptPath = Path.Combine(projectRoot, "lock-owner.csx");
             string readyPath = Path.Combine(projectRoot, "lock-owner.ready");
             string releasePath = Path.Combine(projectRoot, "lock-owner.release");
@@ -243,9 +255,8 @@ using ((IDisposable)acquire.Invoke(service, null))
                 CreateNoWindow = true,
             };
             start.EnvironmentVariables["MONO_PATH"] = Path.GetDirectoryName(assemblyPath) +
-                Path.PathSeparator + Path.Combine(UnityEditor.EditorApplication.applicationContentsPath,
-                    "Managed") + Path.PathSeparator + Path.Combine(
-                    UnityEditor.EditorApplication.applicationContentsPath, "Managed", "UnityEngine");
+                Path.PathSeparator + managedRoot +
+                Path.PathSeparator + unityEngineManagedRoot;
             using (var owner = System.Diagnostics.Process.Start(start))
             {
                 try
@@ -275,6 +286,22 @@ using ((IDisposable)acquire.Invoke(service, null))
                     }
                 }
             }
+        }
+
+        private static string FindUnityDirectory(
+            string applicationContentsPath,
+            params string[] relativePaths)
+        {
+            foreach (string relativePath in relativePaths)
+            {
+                string candidate = Path.Combine(applicationContentsPath, relativePath);
+                if (Directory.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return Path.Combine(applicationContentsPath, relativePaths[0]);
         }
 
         private static string QuoteProcessArgument(string argument)

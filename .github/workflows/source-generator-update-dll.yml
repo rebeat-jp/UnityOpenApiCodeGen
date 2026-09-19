@@ -10,9 +10,19 @@ on:
 permissions:
   contents: read
 jobs:
+  preflight:
+    name: Validate trusted workflow ref and inputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject unsupported workflow ref before write-capable jobs
+        env:
+          BASE_BRANCH: ${{ inputs.base_branch }}
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo 'DLL update workflow must run from main.' >&2; exit 1; }
+          case "$BASE_BRANCH" in develop|main) ;; *) echo 'Unsupported base branch.' >&2; exit 1 ;; esac
   build:
     name: Build DLL without repository write credentials
-    if: github.ref == 'refs/heads/main'
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
@@ -80,9 +90,7 @@ jobs:
           name: ${{ needs.build.outputs.artifact }}
           path: analyzer-artifact
       - name: Copy the sole DLL artifact preserving existing metadata
-        run: |
-          cp analyzer-artifact/Rhycol.OpenApiCodeGen.SourceGenerator.dll \
-            target/Packages/OpenApiCodeGen.SourceGenerator/Runtime/Analyzers/Rhycol.OpenApiCodeGen.SourceGenerator.dll
+        run: node controller/SourceGenerators/scripts/update-analyzer-pr.js copy-analyzer analyzer-artifact target
       - name: Create DLL-only bot PR and explicitly dispatch its CI
         working-directory: target
         env:

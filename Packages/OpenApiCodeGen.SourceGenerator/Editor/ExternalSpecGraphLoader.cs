@@ -672,14 +672,32 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
             private static SpecNode SanitizeReferences(SpecNode node)
             {
+                var semanticReferencePointers = new HashSet<string>(StringComparer.Ordinal);
+                foreach (ReferenceValue reference in EnumerateReferences(node, string.Empty))
+                {
+                    semanticReferencePointers.Add(reference.Pointer);
+                }
+
+                return SanitizeReferences(node, string.Empty, semanticReferencePointers);
+            }
+
+            private static SpecNode SanitizeReferences(
+                SpecNode node,
+                string pointer,
+                HashSet<string> semanticReferencePointers)
+            {
                 SpecObjectNode? objectNode = node as SpecObjectNode;
                 if (objectNode != null)
                 {
                     var properties = new List<SpecProperty>(objectNode.Properties.Count);
                     foreach (SpecProperty property in objectNode.Properties)
                     {
-                        SpecNode value = SanitizeReferences(property.Value);
-                        if (string.Equals(property.Name, "$ref", StringComparison.Ordinal))
+                        string propertyPointer = AppendPointer(pointer, property.Name);
+                        SpecNode value = SanitizeReferences(
+                            property.Value,
+                            propertyPointer,
+                            semanticReferencePointers);
+                        if (semanticReferencePointers.Contains(propertyPointer))
                         {
                             SpecStringNode? reference = value as SpecStringNode;
                             if (reference != null)
@@ -705,9 +723,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 if (arrayNode != null)
                 {
                     var items = new List<SpecNode>(arrayNode.Items.Count);
-                    foreach (SpecNode item in arrayNode.Items)
+                    for (int index = 0; index < arrayNode.Items.Count; index++)
                     {
-                        items.Add(SanitizeReferences(item));
+                        items.Add(SanitizeReferences(
+                            arrayNode.Items[index],
+                            AppendPointer(pointer, index.ToString(CultureInfo.InvariantCulture)),
+                            semanticReferencePointers));
                     }
 
                     return new SpecArrayNode(arrayNode.Line, arrayNode.Column, items);
@@ -887,51 +908,595 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
             private static IEnumerable<ReferenceValue> EnumerateReferences(SpecNode node, string pointer)
             {
-                SpecObjectNode? objectNode = node as SpecObjectNode;
-                if (objectNode != null)
+                SpecObjectNode? root = node as SpecObjectNode;
+                if (root == null)
                 {
-                    foreach (SpecProperty property in objectNode.Properties)
+                    yield break;
+                }
+
+                if (TryGetProperty(root, "openapi", out _))
+                {
+                    foreach (ReferenceValue reference in EnumerateOpenApiDocument(root, pointer))
                     {
-                        string propertyPointer = AppendPointer(pointer, property.Name);
-                        // JSON Schema identity keywords stay in the Bundle for analyzer semantic
-                        // validation. Only ordinary $ref values participate in the edge map.
-
-                        if (string.Equals(property.Name, "$ref", StringComparison.Ordinal))
-                        {
-                            SpecStringNode? referenceNode = property.Value as SpecStringNode;
-                            if (referenceNode == null)
-                            {
-                                throw new InvalidOperationException(
-                                    "An OpenAPI '$ref' value must be a string at " + propertyPointer + ".");
-                            }
-
-                            yield return new ReferenceValue(
-                                propertyPointer,
-                                referenceNode.Value);
-                        }
-
-                        foreach (ReferenceValue nested in EnumerateReferences(property.Value, propertyPointer))
-                        {
-                            yield return nested;
-                        }
+                        yield return reference;
                     }
 
                     yield break;
                 }
 
-                SpecArrayNode? arrayNode = node as SpecArrayNode;
-                if (arrayNode != null)
+                if (TryGetProperty(root, "swagger", out _))
                 {
-                    for (int index = 0; index < arrayNode.Items.Count; index++)
+                    foreach (ReferenceValue reference in EnumerateSwaggerDocument(root, pointer))
                     {
-                        foreach (ReferenceValue nested in EnumerateReferences(
-                                     arrayNode.Items[index],
-                                     AppendPointer(pointer, index.ToString(CultureInfo.InvariantCulture))))
+                        yield return reference;
+                    }
+
+                    yield break;
+                }
+
+                // External documents may intentionally be a bare JSON Schema.
+                foreach (ReferenceValue reference in EnumerateSchema(node, pointer))
+                {
+                    yield return reference;
+                }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumerateOpenApiDocument(
+                SpecObjectNode root,
+                string pointer)
+            {
+                foreach (ReferenceValue reference in EnumeratePathMapProperty(
+                             root, pointer, "paths", EnumeratePathItem))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumeratePathMapProperty(
+                             root, pointer, "webhooks", EnumeratePathItem))
+                {
+                    yield return reference;
+                }
+
+                if (!TryGetObjectProperty(root, "components", out SpecObjectNode? components))
+                {
+                    yield break;
+                }
+
+                string componentsPointer = AppendPointer(pointer, "components");
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             components, componentsPointer, "schemas", EnumerateSchema))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             components, componentsPointer, "responses", EnumerateResponse))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             components, componentsPointer, "parameters", EnumerateParameter))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             components, componentsPointer, "examples", EnumerateReferenceObject))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             components, componentsPointer, "requestBodies", EnumerateRequestBody))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             components, componentsPointer, "headers", EnumerateParameter))
+                {
+                    yield return reference;
+                }
+
+                foreach (string name in new[] { "securitySchemes", "links" })
+                {
+                    foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                                 components, componentsPointer, name, EnumerateReferenceObject))
+                    {
+                        yield return reference;
+                    }
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             components, componentsPointer, "callbacks", EnumerateCallback))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             components, componentsPointer, "pathItems", EnumeratePathItem))
+                {
+                    yield return reference;
+                }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumerateSwaggerDocument(
+                SpecObjectNode root,
+                string pointer)
+            {
+                foreach (ReferenceValue reference in EnumeratePathMapProperty(
+                             root, pointer, "paths", EnumeratePathItem))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             root, pointer, "definitions", EnumerateSchema))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             root, pointer, "parameters", EnumerateParameter))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             root, pointer, "responses", EnumerateResponse))
+                {
+                    yield return reference;
+                }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumeratePathItem(SpecNode node, string pointer)
+            {
+                foreach (ReferenceValue reference in EnumerateDirectReference(node, pointer))
+                {
+                    yield return reference;
+                }
+
+                SpecObjectNode? pathItem = node as SpecObjectNode;
+                if (pathItem == null)
+                {
+                    yield break;
+                }
+
+                foreach (ReferenceValue reference in EnumerateArrayProperty(
+                             pathItem, pointer, "parameters", EnumerateParameter))
+                {
+                    yield return reference;
+                }
+
+                foreach (string method in new[] { "delete", "get", "head", "options", "patch", "post", "put", "trace" })
+                {
+                    if (TryGetProperty(pathItem, method, out SpecNode? operation))
+                    {
+                        foreach (ReferenceValue reference in EnumerateOperation(
+                                     operation, AppendPointer(pointer, method)))
                         {
-                            yield return nested;
+                            yield return reference;
                         }
                     }
                 }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumerateOperation(SpecNode node, string pointer)
+            {
+                SpecObjectNode? operation = node as SpecObjectNode;
+                if (operation == null)
+                {
+                    yield break;
+                }
+
+                foreach (ReferenceValue reference in EnumerateArrayProperty(
+                             operation, pointer, "parameters", EnumerateParameter))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateProperty(
+                             operation, pointer, "requestBody", EnumerateRequestBody))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             operation,
+                             pointer,
+                             "responses",
+                             EnumerateResponse,
+                             skipExtensions: true))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             operation, pointer, "callbacks", EnumerateCallback))
+                {
+                    yield return reference;
+                }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumerateParameter(SpecNode node, string pointer)
+            {
+                foreach (ReferenceValue reference in EnumerateDirectReference(node, pointer))
+                {
+                    yield return reference;
+                }
+
+                SpecObjectNode? parameter = node as SpecObjectNode;
+                if (parameter == null)
+                {
+                    yield break;
+                }
+
+                foreach (ReferenceValue reference in EnumerateProperty(
+                             parameter, pointer, "schema", EnumerateSchema))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateContentProperty(parameter, pointer))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             parameter, pointer, "examples", EnumerateReferenceObject))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateProperty(
+                             parameter, pointer, "items", EnumerateSchema))
+                {
+                    yield return reference;
+                }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumerateRequestBody(SpecNode node, string pointer)
+            {
+                foreach (ReferenceValue reference in EnumerateDirectReference(node, pointer))
+                {
+                    yield return reference;
+                }
+
+                SpecObjectNode? requestBody = node as SpecObjectNode;
+                if (requestBody != null)
+                {
+                    foreach (ReferenceValue reference in EnumerateContentProperty(requestBody, pointer))
+                    {
+                        yield return reference;
+                    }
+                }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumerateResponse(SpecNode node, string pointer)
+            {
+                foreach (ReferenceValue reference in EnumerateDirectReference(node, pointer))
+                {
+                    yield return reference;
+                }
+
+                SpecObjectNode? response = node as SpecObjectNode;
+                if (response == null)
+                {
+                    yield break;
+                }
+
+                foreach (ReferenceValue reference in EnumerateContentProperty(response, pointer))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateProperty(response, pointer, "schema", EnumerateSchema))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             response, pointer, "headers", EnumerateParameter))
+                {
+                    yield return reference;
+                }
+
+                foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                             response, pointer, "links", EnumerateReferenceObject))
+                {
+                    yield return reference;
+                }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumerateCallback(SpecNode node, string pointer)
+            {
+                bool hadReference = false;
+                foreach (ReferenceValue reference in EnumerateDirectReference(node, pointer))
+                {
+                    hadReference = true;
+                    yield return reference;
+                }
+
+                if (hadReference)
+                {
+                    yield break;
+                }
+
+                SpecObjectNode? callback = node as SpecObjectNode;
+                if (callback == null)
+                {
+                    yield break;
+                }
+
+                foreach (SpecProperty expression in callback.Properties)
+                {
+                    if (expression.Name.StartsWith("x-", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    string expressionPointer = AppendPointer(pointer, expression.Name);
+                    foreach (ReferenceValue reference in EnumeratePathItem(expression.Value, expressionPointer))
+                    {
+                        yield return reference;
+                    }
+                }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumerateContentProperty(
+                SpecObjectNode owner,
+                string pointer)
+            {
+                if (!TryGetObjectProperty(owner, "content", out SpecObjectNode? content))
+                {
+                    yield break;
+                }
+
+                string contentPointer = AppendPointer(pointer, "content");
+                foreach (SpecProperty mediaType in content.Properties)
+                {
+                    string mediaTypePointer = AppendPointer(contentPointer, mediaType.Name);
+                    SpecObjectNode? media = mediaType.Value as SpecObjectNode;
+                    if (media == null)
+                    {
+                        continue;
+                    }
+
+                    foreach (ReferenceValue reference in EnumerateProperty(
+                                 media, mediaTypePointer, "schema", EnumerateSchema))
+                    {
+                        yield return reference;
+                    }
+
+                    foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                                 media, mediaTypePointer, "examples", EnumerateReferenceObject))
+                    {
+                        yield return reference;
+                    }
+
+                    if (!TryGetObjectProperty(media, "encoding", out SpecObjectNode? encodings))
+                    {
+                        continue;
+                    }
+
+                    string encodingPointer = AppendPointer(mediaTypePointer, "encoding");
+                    foreach (SpecProperty encoding in encodings.Properties)
+                    {
+                        SpecObjectNode? encodingObject = encoding.Value as SpecObjectNode;
+                        if (encodingObject == null)
+                        {
+                            continue;
+                        }
+
+                        foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                                     encodingObject,
+                                     AppendPointer(encodingPointer, encoding.Name),
+                                     "headers",
+                                     EnumerateParameter))
+                        {
+                            yield return reference;
+                        }
+                    }
+                }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumerateSchema(SpecNode node, string pointer)
+            {
+                foreach (ReferenceValue reference in EnumerateDirectReference(node, pointer))
+                {
+                    yield return reference;
+                }
+
+                SpecObjectNode? schema = node as SpecObjectNode;
+                if (schema == null)
+                {
+                    yield break;
+                }
+
+                foreach (string name in new[] { "properties", "patternProperties", "dependentSchemas", "$defs", "definitions" })
+                {
+                    foreach (ReferenceValue reference in EnumerateObjectMapProperty(
+                                 schema, pointer, name, EnumerateSchema))
+                    {
+                        yield return reference;
+                    }
+                }
+
+                foreach (string name in new[]
+                {
+                    "additionalProperties", "unevaluatedItems", "unevaluatedProperties", "items",
+                    "additionalItems", "contains", "propertyNames", "not", "if", "then", "else",
+                    "contentSchema"
+                })
+                {
+                    foreach (ReferenceValue reference in EnumerateProperty(schema, pointer, name, EnumerateSchema))
+                    {
+                        yield return reference;
+                    }
+                }
+
+                foreach (string name in new[] { "prefixItems", "allOf", "anyOf", "oneOf" })
+                {
+                    foreach (ReferenceValue reference in EnumerateArrayProperty(schema, pointer, name, EnumerateSchema))
+                    {
+                        yield return reference;
+                    }
+                }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumerateReferenceObject(SpecNode node, string pointer)
+            {
+                foreach (ReferenceValue reference in EnumerateDirectReference(node, pointer))
+                {
+                    yield return reference;
+                }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumerateDirectReference(SpecNode node, string pointer)
+            {
+                SpecObjectNode? objectNode = node as SpecObjectNode;
+                if (objectNode == null || !TryGetProperty(objectNode, "$ref", out SpecNode? value))
+                {
+                    yield break;
+                }
+
+                string referencePointer = AppendPointer(pointer, "$ref");
+                SpecStringNode? referenceNode = value as SpecStringNode;
+                if (referenceNode == null)
+                {
+                    throw new InvalidOperationException(
+                        "An OpenAPI '$ref' value must be a string at " + referencePointer + ".");
+                }
+
+                yield return new ReferenceValue(referencePointer, referenceNode.Value);
+            }
+
+            private static IEnumerable<ReferenceValue> EnumerateObjectMapProperty(
+                SpecObjectNode owner,
+                string pointer,
+                string propertyName,
+                Func<SpecNode, string, IEnumerable<ReferenceValue>> enumerateValue,
+                bool skipExtensions = false)
+            {
+                if (!TryGetObjectProperty(owner, propertyName, out SpecObjectNode? map))
+                {
+                    yield break;
+                }
+
+                string mapPointer = AppendPointer(pointer, propertyName);
+                foreach (SpecProperty property in map.Properties)
+                {
+                    if (skipExtensions && property.Name.StartsWith("x-", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    string valuePointer = AppendPointer(mapPointer, property.Name);
+                    foreach (ReferenceValue reference in enumerateValue(property.Value, valuePointer))
+                    {
+                        yield return reference;
+                    }
+                }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumeratePathMapProperty(
+                SpecObjectNode owner,
+                string pointer,
+                string propertyName,
+                Func<SpecNode, string, IEnumerable<ReferenceValue>> enumerateValue)
+            {
+                if (!TryGetObjectProperty(owner, propertyName, out SpecObjectNode? map))
+                {
+                    yield break;
+                }
+
+                string mapPointer = AppendPointer(pointer, propertyName);
+                foreach (SpecProperty property in map.Properties)
+                {
+                    if (property.Name.StartsWith("x-", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    string valuePointer = AppendPointer(mapPointer, property.Name);
+                    foreach (ReferenceValue reference in enumerateValue(property.Value, valuePointer))
+                    {
+                        yield return reference;
+                    }
+                }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumerateArrayProperty(
+                SpecObjectNode owner,
+                string pointer,
+                string propertyName,
+                Func<SpecNode, string, IEnumerable<ReferenceValue>> enumerateItem)
+            {
+                if (!TryGetProperty(owner, propertyName, out SpecNode? value) || !(value is SpecArrayNode array))
+                {
+                    yield break;
+                }
+
+                string arrayPointer = AppendPointer(pointer, propertyName);
+                for (int index = 0; index < array.Items.Count; index++)
+                {
+                    string itemPointer = AppendPointer(arrayPointer, index.ToString(CultureInfo.InvariantCulture));
+                    foreach (ReferenceValue reference in enumerateItem(array.Items[index], itemPointer))
+                    {
+                        yield return reference;
+                    }
+                }
+            }
+
+            private static IEnumerable<ReferenceValue> EnumerateProperty(
+                SpecObjectNode owner,
+                string pointer,
+                string propertyName,
+                Func<SpecNode, string, IEnumerable<ReferenceValue>> enumerateValue)
+            {
+                if (!TryGetProperty(owner, propertyName, out SpecNode? value))
+                {
+                    yield break;
+                }
+
+                foreach (ReferenceValue reference in enumerateValue(value, AppendPointer(pointer, propertyName)))
+                {
+                    yield return reference;
+                }
+            }
+
+            private static bool TryGetObjectProperty(
+                SpecObjectNode owner,
+                string propertyName,
+                out SpecObjectNode? value)
+            {
+                if (TryGetProperty(owner, propertyName, out SpecNode? node) && node is SpecObjectNode objectNode)
+                {
+                    value = objectNode;
+                    return true;
+                }
+
+                value = null;
+                return false;
+            }
+
+            private static bool TryGetProperty(
+                SpecObjectNode owner,
+                string propertyName,
+                out SpecNode? value)
+            {
+                foreach (SpecProperty property in owner.Properties)
+                {
+                    if (string.Equals(property.Name, propertyName, StringComparison.Ordinal))
+                    {
+                        value = property.Value;
+                        return true;
+                    }
+                }
+
+                value = null;
+                return false;
             }
 
             private static string DecodePointer(string fragment, string sourcePath)

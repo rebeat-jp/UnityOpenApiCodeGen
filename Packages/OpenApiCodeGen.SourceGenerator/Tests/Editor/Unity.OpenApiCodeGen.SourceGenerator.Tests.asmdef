@@ -16,11 +16,18 @@
   "precompiledReferences": [],
   "autoReferenced": false,
   "defineConstraints": [
-    "UNITY_INCLUDE_TESTS"
+    "UNITY_INCLUDE_TESTS",
+    "OPENAPI_CODEGEN_TEST_FRAMEWORK"
   ],
   "optionalUnityReferences": [
     "TestAssemblies"
   ],
-  "versionDefines": [],
+  "versionDefines": [
+    {
+      "name": "com.unity.test-framework",
+      "expression": "1.0.0",
+      "define": "OPENAPI_CODEGEN_TEST_FRAMEWORK"
+    }
+  ],
   "noEngineReferences": false
 }

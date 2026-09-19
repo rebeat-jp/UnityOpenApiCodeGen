@@ -502,7 +502,7 @@ NODE
     fail_gate "generated partial unexpectedly contains the operation used to prove Analyzer output"
   fi
 
-  printf '%s\n' "${spec_id}"
+  published_spec_id="${spec_id}"
 }
 
 assert_test_passed() {
@@ -532,9 +532,10 @@ bootstrap_unity_project "${bootstrap_log}"
 run_source_generator \
   "${generation_log}" \
   'Source Generator cache and definition were published; script compilation was requested.'
-initial_spec_id="$(get_published_spec_id)"
-# get_published_spec_id runs in a command-substitution subshell. Retain the
-# validated cache path in the parent so the EXIT trap can preserve its evidence.
+get_published_spec_id
+initial_spec_id="${published_spec_id}"
+# Retain the validated cache path in the parent so the EXIT trap can preserve
+# it as evidence, including when a later validation fails.
 published_authoritative_cache="${authoritative_cache_root}/${initial_spec_id}/normalized-v2.json"
 if ! grep -Fq "Spec ID: ${initial_spec_id}" "${generation_log}"; then
   fail_gate "Initial Source Generator result did not report published specId ${initial_spec_id}"
@@ -558,7 +559,8 @@ assert_test_class_ran "${results}" 'NormalizedSpecCacheServiceTests'
 run_source_generator \
   "${unchanged_generation_log}" \
   'Source Generator cache and definition are already current; no script compilation was requested.'
-unchanged_spec_id="$(get_published_spec_id)"
+get_published_spec_id
+unchanged_spec_id="${published_spec_id}"
 if [[ "${unchanged_spec_id}" != "${initial_spec_id}" ]]; then
   fail_gate "Unchanged generation replaced stable specId ${initial_spec_id} with ${unchanged_spec_id}"
 fi
@@ -606,7 +608,8 @@ fi
 run_source_generator \
   "${regeneration_log}" \
   'Source Generator cache and definition were published; script compilation was requested.'
-regenerated_spec_id="$(get_published_spec_id)"
+get_published_spec_id
+regenerated_spec_id="${published_spec_id}"
 if [[ "${regenerated_spec_id}" != "${initial_spec_id}" ]]; then
   fail_gate "Raw input regeneration replaced stable specId ${initial_spec_id} with ${regenerated_spec_id}"
 fi

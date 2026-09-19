@@ -203,6 +203,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                          .OrderBy(static value => value.Name, StringComparer.Ordinal))
             {
                 var identity = new NormalizedSpecNodeIdentity(_currentDocumentId, property.Value.LogicalPath);
+                if (_schemas.ContainsKey(identity))
+                {
+                    continue;
+                }
+
                 var stack = new HashSet<NormalizedSpecNodeIdentity> { identity };
                 OpenApiSemanticSchema schema = ParseSchema(property.Value, property.Name, stack);
                 AddSchema(identity, schema);
@@ -777,13 +782,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     }
                 }
 
-                OpenApiSemanticSchema targetSchema = ParseResolvedReferenced(
-                    reference,
-                    referenceNode,
-                    referenceStack,
-                    resolved,
-                    target => ParseSchema(target, referenceName, referenceStack));
-                AddSchema(resolved.Identity, targetSchema);
+                OpenApiSemanticSchema targetSchema;
+                if (referenceStack.Contains(resolved.Identity))
+                {
+                    throw CreateException(
+                        OpenApiSemanticErrorKind.CyclicReference,
+                        "A cyclic internal $ref was detected at '" + reference + "'.",
+                        referenceNode,
+                        new[] { CreateLocation(resolved.Node, resolved.DocumentId) });
+                }
+
+                if (!_schemas.TryGetValue(resolved.Identity, out targetSchema))
+                {
+                    targetSchema = ParseResolvedReferenced(
+                        reference,
+                        referenceNode,
+                        referenceStack,
+                        resolved,
+                        target => ParseSchema(target, referenceName, referenceStack));
+                    AddSchema(resolved.Identity, targetSchema);
+                }
+
                 return new OpenApiSemanticSchema(
                     OpenApiSemanticSchemaKind.Reference,
                     suggestedName,

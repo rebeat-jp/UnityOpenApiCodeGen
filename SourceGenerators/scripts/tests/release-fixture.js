@@ -5,7 +5,7 @@ const path = require('path');
 const { sha256, candidateFingerprint, expectedGateVersions, requiredEvidence } = require('../validate-release-artifacts');
 const { writeChecksums } = require('../ci-evidence');
 const commit = 'a'.repeat(40);
-function fixture(ci = true) {
+function fixture(ci = true, executionAttempt = '1') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'release-tests-'));
   const output = path.join(root, 'candidate'); fs.mkdirSync(output);
   const analyzer = path.join(root, 'analyzer.dll'); fs.writeFileSync(analyzer, 'deterministic analyzer');
@@ -27,7 +27,7 @@ function fixture(ci = true) {
         fs.writeFileSync(file, name.endsWith('.xml') ? '<test-run result="Passed" total="1" passed="1" failed="0"><test-suite><test-case fullname="Example.Tests.Passes" result="Passed" /></test-suite></test-run>' : 'verification evidence');
         return { path: `unity-gate/${unityVersion}/${name}`, sha256: sha256(file) };
       }).sort((a, b) => a.path.localeCompare(b.path));
-      const summary = { schemaVersion: 2, status, version: unityVersion, exitCode: status === 'passed' ? 0 : 2, reason: 'fixture', evidencePath: `unity-gate/${unityVersion}`, files, timestampUtc: new Date(0).toISOString(), ...(ci ? { ci: { ...manifest.provenance.ci, commit, candidateSha256: candidateFingerprint(manifest) } } : {}) };
+      const summary = { schemaVersion: 2, status, version: unityVersion, exitCode: status === 'passed' ? 0 : 2, reason: 'fixture', evidencePath: `unity-gate/${unityVersion}`, files, timestampUtc: new Date(0).toISOString(), ...(ci ? { ci: { ...manifest.provenance.ci, executionAttempt, commit, candidateSha256: candidateFingerprint(manifest) } } : {}) };
       fs.writeFileSync(path.join(dir, 'gate.json'), JSON.stringify(summary, null, 2) + '\n');
     }
   }

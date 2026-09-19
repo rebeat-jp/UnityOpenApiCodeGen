@@ -260,6 +260,80 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
+        public void Read_IgnoresRefShapedValuesInExamplesDefaultsEnumsAndExtensions()
+        {
+            const string ReferencePointer =
+                "/components/schemas/Container/properties/example/$ref";
+            string root =
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Sample\",\"version\":\"1\"}," +
+                "\"paths\":{\"/ignored\":{\"get\":{\"responses\":{" +
+                "\"204\":{\"description\":\"No content\"},\"x-meta\":{\"$ref\":false}}}}}," +
+                "\"components\":{\"schemas\":{\"Container\":{\"type\":\"object\"," +
+                "\"properties\":{\"example\":{\"$ref\":\"pet.json#/components/schemas/Pet\"}," +
+                "\"x-meta\":{\"$ref\":\"pet.json#/components/schemas/Pet\"}," +
+                "\"$ref\":{\"$ref\":\"pet.json#/components/schemas/Pet\"}}," +
+                "\"example\":{\"$ref\":17},\"default\":{\"$ref\":\"literal-default\"}," +
+                "\"enum\":[{\"$ref\":\"literal-enum\"}],\"x-data\":{\"$ref\":\"literal-extension\"}}}," +
+                "\"responses\":{\"x-shared\":{\"$ref\":\"pet.json#/components/responses/Shared\"}}," +
+                "\"examples\":{\"Payload\":{\"value\":{\"$ref\":\"literal-example\"}}}}," +
+                "\"x-root\":{\"$ref\":false}}";
+            string external =
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Pet\",\"version\":\"1\"}," +
+                "\"paths\":{},\"components\":{\"schemas\":{\"Pet\":{\"type\":\"string\"}}," +
+                "\"responses\":{\"Shared\":{\"description\":\"OK\"}}}}";
+            string content = TestBundleFactory.CreateV2(
+                root,
+                new[]
+                {
+                    new TestBundleFactory.V2DocumentSpec(
+                        "Assets/Specs/pet.json",
+                        "Assets/Specs/pet.json",
+                        "json",
+                        external),
+                },
+                new[]
+                {
+                    new TestBundleFactory.V2ReferenceSpec(
+                        "root",
+                        "/components/responses/x-shared/$ref",
+                        "Assets/Specs/pet.json",
+                        "/components/responses/Shared"),
+                    new TestBundleFactory.V2ReferenceSpec(
+                        "root",
+                        "/components/schemas/Container/properties/$ref/$ref",
+                        "Assets/Specs/pet.json",
+                        "/components/schemas/Pet"),
+                    new TestBundleFactory.V2ReferenceSpec(
+                        "root",
+                        ReferencePointer,
+                        "Assets/Specs/pet.json",
+                        "/components/schemas/Pet"),
+                    new TestBundleFactory.V2ReferenceSpec(
+                        "root",
+                        "/components/schemas/Container/properties/x-meta/$ref",
+                        "Assets/Specs/pet.json",
+                        "/components/schemas/Pet"),
+                });
+
+            NormalizedSpecBundle bundle = NormalizedSpecBundleReader.Read(content);
+
+            Assert.Equal(4, bundle.ReferenceEdges.Count);
+            Assert.Contains(
+                bundle.ReferenceEdges,
+                edge => edge.SourcePointer == "/components/responses/x-shared/$ref");
+            Assert.Contains(bundle.ReferenceEdges, edge => edge.SourcePointer == ReferencePointer);
+            Assert.Contains(
+                bundle.ReferenceEdges,
+                edge => edge.SourcePointer == "/components/schemas/Container/properties/x-meta/$ref");
+            Assert.Contains(
+                bundle.ReferenceEdges,
+                edge => edge.SourcePointer == "/components/schemas/Container/properties/$ref/$ref");
+            Assert.DoesNotContain(
+                bundle.ReferenceEdges,
+                edge => edge.SourcePointer == "/paths/~1ignored/get/responses/x-meta/$ref");
+        }
+
+        [Fact]
         public void Read_RejectsRemoteDocumentWithLocalPathDocumentId()
         {
             string content = TestBundleFactory.CreateV2(

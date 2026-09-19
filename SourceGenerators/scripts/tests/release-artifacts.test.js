@@ -8,9 +8,9 @@ const { fixture, commit } = require('./release-fixture');
 const { validateRelease, validateTestXml } = require('../validate-release-artifacts');
 const { aggregate } = require('../aggregate-unity-evidence');
 const { assertVersionContract } = require('../release-contract');
-const { validateUpdate, analyzer } = require('../update-analyzer-pr');
+const { validateUpdate, copyAnalyzerArtifact, analyzer } = require('../update-analyzer-pr');
 const { serialFromLicense } = require('../unity-license');
-const { redact } = require('../ci-evidence');
+const { redact, writeGate } = require('../ci-evidence');
 function use(t, ci = true) { const f = fixture(ci); t.after(f.remove); return f; }
 function mutateGate(f, version, change) {
   const file = path.join(f.output, 'unity-gate', version, 'gate.json'); const data = JSON.parse(fs.readFileSync(file)); change(data); fs.writeFileSync(file, JSON.stringify(data));
@@ -18,6 +18,29 @@ function mutateGate(f, version, change) {
 test('CI candidate and complete evidence validate and finalize checksums', t => {
   const f = use(t); validateRelease(f.options); f.gates(); aggregate({ ...f.options, gateMode: '--require-passed-unity-gate' });
   const result = validateRelease({ ...f.options, gateMode: '--require-passed-unity-gate' }); assert.equal(result.unityGate.status, 'passed');
+});
+test('Unity rerun evidence retains candidate attempt and records execution attempt', t => {
+  const f = fixture(true, '2'); t.after(f.remove); f.gates();
+  const options = { ...f.options, 'expected-execution-attempt': '2', gateMode: '--require-passed-unity-gate' };
+  aggregate(options);
+  const result = validateRelease(options);
+  assert.equal(result.provenance.ci.runAttempt, '1');
+  assert.throws(() => validateRelease({ ...options, 'expected-execution-attempt': '1' }), /execution attempt/);
+});
+test('gate writer separates a reused candidate from the current execution attempt', t => {
+  const f = use(t); const saved = { ...process.env }; t.after(() => { process.env = saved; });
+  const dir = path.join(f.output, 'unity-gate/2021.3.19f1'); fs.mkdirSync(dir, { recursive: true });
+  Object.assign(process.env, { SOURCE_GENERATOR_CI: '1', SOURCE_GENERATOR_CI_COMMIT: commit, SOURCE_GENERATOR_CANDIDATE_ATTEMPT: '1', GITHUB_REPOSITORY: 'owner/repo', GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '2' });
+  const output = path.join(dir, 'gate.json');
+  writeGate([output, 'not-run', '2', '2021.3.19f1', 'fixture', dir, f.output]);
+  const ci = JSON.parse(fs.readFileSync(output)).ci;
+  assert.equal(ci.runAttempt, '1');
+  assert.equal(ci.executionAttempt, '2');
+});
+test('completed schema v2 gates without executionAttempt remain readable', t => {
+  const f = use(t); f.gates();
+  for (const version of require('../validate-release-artifacts').expectedGateVersions) mutateGate(f, version, gate => { delete gate.ci.executionAttempt; });
+  aggregate({ ...f.options, gateMode: '--require-passed-unity-gate' });
 });
 test('manual Mac evidence remains supported', t => { const f = use(t, false); f.gates(); aggregate({ ...f.options, gateMode: '--require-passed-unity-gate' }); });
 test('reject wrong target version, commit, CI run and attempt', t => {
@@ -43,8 +66,8 @@ test('reject missing, escaped or tampered gate files', t => {
   }
 });
 test('reject passed status with failed exit code or evidence from another candidate/run', t => {
-  for (const mutation of [g => { g.exitCode = 1; }, g => { g.ci.commit = 'b'.repeat(40); }, g => { g.ci.runId = '124'; }, g => { g.ci.runAttempt = '2'; }, g => { g.ci.candidateSha256 = '0'.repeat(64); }, g => { delete g.ci; }]) {
-    const f = use(t); f.gates(); mutateGate(f, '2021.3.19f1', mutation); assert.throws(() => aggregate(f.options), /exit code|CI gate/);
+  for (const mutation of [g => { g.exitCode = 1; }, g => { g.ci.commit = 'b'.repeat(40); }, g => { g.ci.runId = '124'; }, g => { g.ci.runAttempt = '2'; }, g => { g.ci.executionAttempt = '2'; }, g => { g.ci.candidateSha256 = '0'.repeat(64); }, g => { delete g.ci; }]) {
+    const f = use(t); f.gates(); mutateGate(f, '2021.3.19f1', mutation); assert.throws(() => aggregate(f.options), /exit code|CI gate|execution attempt/);
   }
 });
 test('failed and not-run gates can be recorded but never pass release gate', t => {
@@ -52,12 +75,51 @@ test('failed and not-run gates can be recorded but never pass release gate', t =
 });
 test('strict XML rejects truncated, zero-test, failed and incomplete runs', t => {
   const f = use(t); const file = path.join(f.root, 'result.xml');
-  for (const text of ['<test-run result="Passed">', '<test-run result="Passed" total="0" passed="0" failed="0" />', '<test-run result="Passed" total="1" passed="1" failed="0" />', '<test-run result="Failed" total="1" passed="0" failed="1"><test-case result="Failed" /></test-run>', '<test-run result="Passed" total="1" passed="1" failed="0"><test-case result="Inconclusive" /></test-run>']) { fs.writeFileSync(file, text); assert.throws(() => validateTestXml(file), /XML/); }
+  for (const text of ['<test-run result="Passed">', '<test-run result="Passed" total="0" passed="0" failed="0" />', '<test-run result="Passed" total="1" passed="1" failed="0" />', '<test-run result="Failed" total="1" passed="0" failed="1"><test-case result="Failed" /></test-run>', '<test-run result="Passed" total="1" passed="1" failed="0"><test-case result="Inconclusive" /></test-run>', '<test-run result="Passed" total="2" passed="1" failed="0" skipped="1"><test-case result="Passed"/><test-case result="Skipped"/></test-run>', '<test-run result="Passed" total="2" passed="1" failed="0"><test-case result="Passed"/></test-run>']) { fs.writeFileSync(file, text); assert.throws(() => validateTestXml(file), /XML/); }
+  fs.writeFileSync(file, '<test-run result="Passed" total="1" passed="1" failed="0" skipped="0" inconclusive="0"><test-case result="Passed"/></test-run>');
+  validateTestXml(file);
 });
 test('version and DLL update allowlists preserve public package metadata', () => {
   const base = { name: 'jp.rhycol.openapicodegen', version: '0.5.0' }; const addon = { name: 'jp.rhycol.openapicodegen.source-generator', version: '0.5.0', dependencies: { [base.name]: '0.5.0' } };
   assert.equal(assertVersionContract(base, addon, '0.5.0'), '0.5.0'); assert.throws(() => assertVersionContract(base, { ...addon, version: '0.4.0' }), /mismatch/); assert.throws(() => assertVersionContract({ ...base, version: '0.5.0-rc1' }, addon), /stable/);
   validateUpdate('develop', [analyzer]); validateUpdate('main', []); assert.throws(() => validateUpdate('feature/anything', []), /base/); assert.throws(() => validateUpdate('develop', [`${analyzer}.meta`]), /only/);
+});
+test('trusted analyzer copy preserves metadata and rejects linked paths', t => {
+  function targetFixture() {
+    const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'analyzer-copy-'));
+    const target = path.join(root, 'target');
+    const destination = path.join(target, analyzer);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.writeFileSync(destination, 'old analyzer');
+    fs.writeFileSync(`${destination}.meta`, 'stable-guid');
+    execFileSync('git', ['init', '--initial-branch=main'], { cwd: target, stdio: 'ignore' });
+    execFileSync('git', ['add', '.'], { cwd: target });
+    execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-m', 'fixture'], { cwd: target, stdio: 'ignore' });
+    const artifact = path.join(root, 'artifact'); fs.mkdirSync(artifact);
+    fs.writeFileSync(path.join(artifact, path.basename(analyzer)), 'new analyzer');
+    return { root, target, destination, artifact };
+  }
+  const valid = targetFixture(); t.after(() => fs.rmSync(valid.root, { recursive: true, force: true }));
+  copyAnalyzerArtifact(valid.artifact, valid.target);
+  assert.equal(fs.readFileSync(valid.destination, 'utf8'), 'new analyzer');
+  assert.equal(fs.readFileSync(`${valid.destination}.meta`, 'utf8'), 'stable-guid');
+  assert.deepEqual(execFileSync('git', ['diff', '--name-only'], { cwd: valid.target, encoding: 'utf8' }).trim().split('\n'), [analyzer]);
+
+  const linked = targetFixture(); t.after(() => fs.rmSync(linked.root, { recursive: true, force: true }));
+  fs.rmSync(linked.destination);
+  fs.symlinkSync(path.join(linked.root, 'outside.dll'), linked.destination);
+  assert.throws(() => copyAnalyzerArtifact(linked.artifact, linked.target), /symbolic link/);
+
+  const linkedParent = targetFixture(); t.after(() => fs.rmSync(linkedParent.root, { recursive: true, force: true }));
+  const analyzerDirectory = path.dirname(linkedParent.destination);
+  const realAnalyzerDirectory = path.join(linkedParent.root, 'outside-analyzers');
+  fs.renameSync(analyzerDirectory, realAnalyzerDirectory);
+  fs.symlinkSync(realAnalyzerDirectory, analyzerDirectory);
+  assert.throws(() => copyAnalyzerArtifact(linkedParent.artifact, linkedParent.target), /symbolic link/);
+
+  const extra = targetFixture(); t.after(() => fs.rmSync(extra.root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(extra.artifact, 'unexpected.txt'), 'unexpected');
+  assert.throws(() => copyAnalyzerArtifact(extra.artifact, extra.target), /exactly one/);
 });
 test('Personal parser matches GameCI serial decoding and rejects corrupt license', () => {
   const serial = 'F4-ABCD-EFGH-IJKL-MNOP-QRST'; const data = Buffer.concat([Buffer.from([1, 0, 0, 0]), Buffer.from(serial)]).toString('base64');
