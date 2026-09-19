@@ -22,6 +22,7 @@ namespace Rhycol.OpenApiCodeGen.UI
         [SerializeField]
         private VisualTreeAsset? _visualTreeAsset = default;
         TextField? _generateProviderField;
+        VisualElement? _sourceGeneratorBetaNotice;
         TextField? _documentFilePath;
         Label? _documentFilePathComment;
         TextField? _outputFolderPath;
@@ -63,6 +64,8 @@ namespace Rhycol.OpenApiCodeGen.UI
             root.Add(labelFromUXML);
 
             _generateProviderField = root.Q<TextField>("GenerateProvider");
+            _sourceGeneratorBetaNotice = root.Q<VisualElement>("SourceGeneratorBetaNotice");
+            GenerationProviderPresentation.BindSupportLink(root);
             _documentFilePath = root.Q<TextField>("DocumentFilePath");
             _outputFolderPath = root.Q<TextField>("OutputFolderPath");
             _documentFilePathComment = root.Q<Label>("DocumentFilePathComment");
@@ -125,7 +128,8 @@ namespace Rhycol.OpenApiCodeGen.UI
         public void SetGenerateProvider(GenerateProvider generateProvider)
         {
             _generateProvider = generateProvider;
-            _generateProviderField?.SetValueWithoutNotify(GetProviderDisplayName(_generateProvider));
+            GenerationProviderPresentation.UpdateBetaNotice(_sourceGeneratorBetaNotice, generateProvider);
+            _generateProviderField?.SetValueWithoutNotify(GenerationProviderPresentation.GetDisplayName(_generateProvider));
             if (_outputFolderPath != null)
             {
                 _outputFolderPath.label = _generateProvider == GenerateProvider.SourceGenerator
@@ -137,19 +141,6 @@ namespace Rhycol.OpenApiCodeGen.UI
         void OnCancel()
         {
             CancelRequested?.Invoke();
-        }
-
-        static string GetProviderDisplayName(GenerateProvider provider)
-        {
-            GenerationProviderResolution resolution = GenerationProviderRegistry.Shared.Resolve(provider);
-            if (resolution.IsResolved)
-            {
-                return resolution.Provider!.Descriptor.DisplayName;
-            }
-
-            return Enum.IsDefined(typeof(GenerateProvider), provider)
-                ? provider.ToString()
-                : $"Unknown provider ({(int)provider})";
         }
 
         public void SetGenerateStatus(IProgressStatus generateStatus)

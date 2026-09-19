@@ -102,6 +102,12 @@ documents, and unresolved targets are invalid Bundle structure. The analyzer
 uses the pair `(documentId, JSON Pointer)` as node identity for semantic
 resolution and cycle detection. Successfully parsed schemas are reused by this
 identity; each reference retains its own source location and nullable wrapper.
+The Editor caches each document's first semantic reference scan and reuses it
+for resolution, empty-reference checks, and redaction. Pointer strings are
+created for semantic reference positions rather than every literal node.
+JSON/YAML loader-to-reader integration tests include aliases used in both
+Schema and literal contexts. These optimizations do not change Bundle v2
+serialization or Bundle v1 reader compatibility.
 
 ## Editor graph and URL policy
 
@@ -131,8 +137,11 @@ Bundle v1 external-reference input retains `OACG104` for compatibility.
 
 The Editor stages the complete graph before publication. It publishes bundle,
 manifest, compiler mirror, and generated definition in that order under one
-recoverable transaction. Any publication failure restores the previous bytes;
-script compilation is requested only after the complete marker is committed.
+recoverable transaction. Publication failure restores artifacts still owned by
+that transaction. Concurrent definition edits are retained and excluded from
+subsequent journal recovery; the operation reports failure rather than
+overwriting them. Script compilation is requested only after the complete
+marker is committed.
 
 ```text
 Library/OpenApiCodeGen/SourceGenerator/SpecCache/<specId>/normalized-v2.json

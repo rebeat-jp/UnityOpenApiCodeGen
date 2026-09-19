@@ -4,7 +4,7 @@ FROM unityci/editor:ubuntu-${UNITY_VERSION}-base-3@${UNITY_IMAGE_DIGEST}
 ARG NODE_VERSION
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl git perl rsync libxml2-utils docker.io dbus \
+      ca-certificates curl git perl rsync libxml2-utils docker.io dbus util-linux \
     && rm -rf /var/lib/apt/lists/*
 RUN test -n "$NODE_VERSION" \
     && cd /tmp \

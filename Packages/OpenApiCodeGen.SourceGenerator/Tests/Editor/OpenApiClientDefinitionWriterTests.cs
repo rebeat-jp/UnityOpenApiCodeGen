@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using NUnit.Framework;
 using Rhycol.OpenApiCodeGen.SourceGenerator.Editor;
@@ -173,14 +174,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 outputFolder,
                 "PetStoreApi",
                 "Example.Generated.PetStore");
+            Assert.That(writer.Publish(initial), Is.True);
             string reusableSpecId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
-            string ownedHeader = string.Join(
-                "\n",
-                OpenApiClientDefinitionWriter.OwnedFileHeader,
-                OpenApiClientDefinitionWriter.ClientIdentityPrefix + initial.ClientIdentitySha256,
-                OpenApiClientDefinitionWriter.SpecIdPrefix + reusableSpecId,
-                string.Empty);
-            File.WriteAllText(initial.DefinitionPath, ownedHeader, new UTF8Encoding(false));
+            string ownedSource = File.ReadAllText(initial.DefinitionPath, new UTF8Encoding(false));
+            string reusableSource = ownedSource
+                .Replace(
+                    OpenApiClientDefinitionWriter.SpecIdPrefix + initial.SpecId,
+                    OpenApiClientDefinitionWriter.SpecIdPrefix + reusableSpecId)
+                .Replace(
+                    "        \"" + initial.SpecId + "\",",
+                    "        \"" + reusableSpecId + "\",");
+            Assert.That(
+                reusableSource,
+                Does.Contain(
+                    OpenApiClientDefinitionWriter.ClientIdentityPrefix +
+                    initial.ClientIdentitySha256));
+            File.WriteAllText(
+                initial.DefinitionPath,
+                reusableSource,
+                new UTF8Encoding(false));
 
             OpenApiClientDefinitionPlan repeated = writer.Prepare(
                 outputFolder,
@@ -188,6 +200,188 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "Example.Generated.PetStore");
 
             Assert.That(repeated.SpecId, Is.EqualTo(reusableSpecId));
+        }
+
+        [Test]
+        public void PrepareReadsExistingGeneratedDefinitionWithCrLfLineEndings()
+        {
+            OpenApiClientDefinitionPlan initial = PublishInitialDefinition();
+            string source = File.ReadAllText(initial.DefinitionPath, new UTF8Encoding(false));
+            File.WriteAllText(
+                initial.DefinitionPath,
+                source.Replace("\n", "\r\n"),
+                new UTF8Encoding(false));
+
+            OpenApiClientDefinitionPlan repeated = writer.Prepare(
+                outputFolder,
+                "PetStoreApi",
+                "Example.Generated.PetStore");
+
+            Assert.That(repeated.SpecId, Is.EqualTo(initial.SpecId));
+        }
+
+        [Test]
+        public void NamespaceChangePreservesSpecIdDefinitionPathAndMetaGuid()
+        {
+            OpenApiClientDefinitionPlan initial = writer.Prepare(
+                outputFolder,
+                "PetStoreApi",
+                "Example.Generated.PetStore");
+            Assert.That(writer.Publish(initial), Is.True);
+            string metaPath = initial.DefinitionPath + ".meta";
+            const string Meta = "fileFormatVersion: 2\nguid: 0123456789abcdef0123456789abcdef\n";
+            File.WriteAllText(metaPath, Meta, new UTF8Encoding(false));
+            importedAssetPaths.Clear();
+
+            OpenApiClientDefinitionPlan renamed = writer.Prepare(
+                outputFolder,
+                "PetStoreApi",
+                "Example.Renamed.PetStore");
+            bool changed = writer.Publish(renamed);
+
+            Assert.That(changed, Is.True);
+            Assert.That(renamed.SpecId, Is.EqualTo(initial.SpecId));
+            Assert.That(renamed.DefinitionPath, Is.EqualTo(initial.DefinitionPath));
+            Assert.That(renamed.ClientIdentitySha256, Is.Not.EqualTo(initial.ClientIdentitySha256));
+            Assert.That(
+                File.ReadAllText(renamed.DefinitionPath, new UTF8Encoding(false)),
+                Does.Contain("namespace Example.Renamed.PetStore"));
+            Assert.That(File.ReadAllText(metaPath), Is.EqualTo(Meta));
+            Assert.That(importedAssetPaths, Is.EqualTo(new[] { renamed.DefinitionAssetPath }));
+        }
+
+        [Test]
+        public void PrepareRejectsOwnedDefinitionWithTamperedIdentityHeader()
+        {
+            OpenApiClientDefinitionPlan initial = PublishInitialDefinition();
+            string source = File.ReadAllText(initial.DefinitionPath, new UTF8Encoding(false));
+            File.WriteAllText(
+                initial.DefinitionPath,
+                source.Replace(
+                    initial.ClientIdentitySha256,
+                    new string('0', initial.ClientIdentitySha256.Length)),
+                new UTF8Encoding(false));
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+                () => writer.Prepare(
+                    outputFolder,
+                    "PetStoreApi",
+                    "Example.Renamed.PetStore"))!;
+
+            Assert.That(exception.Message, Does.Contain("identity"));
+        }
+
+        [Test]
+        public void PrepareRejectsOwnedDefinitionWithTamperedSourceNamespace()
+        {
+            OpenApiClientDefinitionPlan initial = PublishInitialDefinition();
+            string source = File.ReadAllText(initial.DefinitionPath, new UTF8Encoding(false));
+            File.WriteAllText(
+                initial.DefinitionPath,
+                source.Replace(
+                    "namespace Example.Generated.PetStore",
+                    "namespace Example.Tampered.PetStore"),
+                new UTF8Encoding(false));
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+                () => writer.Prepare(
+                    outputFolder,
+                    "PetStoreApi",
+                    "Example.Renamed.PetStore"))!;
+
+            Assert.That(exception.Message, Does.Contain("recognized generated format"));
+        }
+
+        [Test]
+        public void PrepareRejectsOwnedDefinitionForDifferentApiName()
+        {
+            OpenApiClientDefinitionPlan initial = PublishInitialDefinition();
+            string source = File.ReadAllText(initial.DefinitionPath, new UTF8Encoding(false));
+            File.WriteAllText(
+                initial.DefinitionPath,
+                source.Replace("PetStoreApi", "OtherApi"),
+                new UTF8Encoding(false));
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+                () => writer.Prepare(
+                    outputFolder,
+                    "PetStoreApi",
+                    "Example.Renamed.PetStore"))!;
+
+            Assert.That(exception.Message, Does.Contain("different API name"));
+        }
+
+        [Test]
+        public void PublishRejectsDefinitionChangedAfterPrepare()
+        {
+            OpenApiClientDefinitionPlan initial = PublishInitialDefinition();
+            OpenApiClientDefinitionPlan renamed = writer.Prepare(
+                outputFolder,
+                "PetStoreApi",
+                "Example.Renamed.PetStore");
+            byte[] changedBytes = new UTF8Encoding(false).GetBytes(
+                File.ReadAllText(initial.DefinitionPath, new UTF8Encoding(false)) + "// changed\n");
+            File.WriteAllBytes(initial.DefinitionPath, changedBytes);
+            importedAssetPaths.Clear();
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+                () => writer.Publish(renamed))!;
+
+            Assert.That(exception.Message, Does.Contain("modified outside"));
+            Assert.That(File.ReadAllBytes(initial.DefinitionPath), Is.EqualTo(changedBytes));
+            Assert.That(importedAssetPaths, Is.Empty);
+        }
+
+        [Test]
+        public void PublishRejectsAnotherValidNamespaceUpdateAfterPrepare()
+        {
+            OpenApiClientDefinitionPlan initial = PublishInitialDefinition();
+            OpenApiClientDefinitionPlan prepared = writer.Prepare(
+                outputFolder,
+                "PetStoreApi",
+                "Example.Prepared.PetStore");
+            OpenApiClientDefinitionPlan competing = writer.Prepare(
+                outputFolder,
+                "PetStoreApi",
+                "Example.Competing.PetStore");
+            Assert.That(writer.Publish(competing), Is.True);
+            byte[] competingBytes = File.ReadAllBytes(initial.DefinitionPath);
+            importedAssetPaths.Clear();
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+                () => writer.Publish(prepared))!;
+
+            Assert.That(exception.Message, Does.Contain("changed after generation was prepared"));
+            Assert.That(File.ReadAllBytes(initial.DefinitionPath), Is.EqualTo(competingBytes));
+            Assert.That(importedAssetPaths, Is.Empty);
+        }
+
+        [Test]
+        public void PrepareRejectsSymbolicLinkAtDefinitionPath()
+        {
+            if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+            {
+                Assert.Ignore("The symbolic-link fixture uses the Unix link API.");
+            }
+
+            string definitionPath = Path.Combine(
+                outputFolder,
+                "PetStoreApi.OpenApiDefinition.cs");
+            string linkTarget = Path.Combine(projectRoot, "owned-target.cs");
+            File.WriteAllText(linkTarget, "foreign", new UTF8Encoding(false));
+            if (CreateUnixSymbolicLink(linkTarget, definitionPath) != 0)
+            {
+                Assert.Ignore("The temporary symbolic-link fixture could not be created.");
+            }
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+                () => writer.Prepare(
+                    outputFolder,
+                    "PetStoreApi",
+                    "Example.Generated.PetStore"))!;
+
+            Assert.That(exception.Message, Does.Contain("symbolic link"));
+            Assert.That(File.ReadAllText(linkTarget), Is.EqualTo("foreign"));
         }
 
         [Test]
@@ -261,6 +455,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(exception.Message, Does.Contain("namespace"));
         }
 
+        OpenApiClientDefinitionPlan PublishInitialDefinition()
+        {
+            OpenApiClientDefinitionPlan initial = writer.Prepare(
+                outputFolder,
+                "PetStoreApi",
+                "Example.Generated.PetStore");
+            Assert.That(writer.Publish(initial), Is.True);
+            importedAssetPaths.Clear();
+            return initial;
+        }
+
         static void WriteAsmdef(string directory, string assemblyName, string reference)
         {
             Directory.CreateDirectory(directory);
@@ -274,5 +479,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 json,
                 new UTF8Encoding(false));
         }
+
+        [DllImport("libc", EntryPoint = "symlink", SetLastError = true)]
+        static extern int CreateUnixSymbolicLink(string target, string linkPath);
     }
 }

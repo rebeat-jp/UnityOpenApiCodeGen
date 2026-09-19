@@ -4,8 +4,11 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using Rhycol.OpenApiCodeGen.Editor.Generation;
 using Rhycol.OpenApiCodeGen.SourceGenerator.Editor;
@@ -159,6 +162,200 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(definitionImports, Is.Empty);
             Assert.That(File.GetLastWriteTimeUtc(mirrorPath), Is.EqualTo(mirrorTimestamp));
             Assert.That(File.GetLastWriteTimeUtc(definitionPath), Is.EqualTo(definitionTimestamp));
+        }
+
+        [Test]
+        public void NamespaceChangePreservesSpecIdAndReusesExistingCacheAndMirror()
+        {
+            SourceGeneratorGenerationProvider provider = CreateProvider();
+            GenerationResult first = provider.Generate(CreateRequest());
+            Assert.That(first.IsSuccess, Is.True, first.Message);
+            string specId = ReadSpecId(first.Message);
+            string definitionPath = Path.Combine(
+                outputFolder,
+                "PetStoreApi.OpenApiDefinition.cs");
+            string mirrorPath = Path.Combine(
+                projectRoot,
+                NormalizedSpecBundleConstants.CompilerMirrorRelativePath,
+                specId + NormalizedSpecBundleConstants.AdditionalFileSuffix);
+            byte[] mirrorBytes = File.ReadAllBytes(mirrorPath);
+            File.WriteAllText(
+                definitionPath + ".meta",
+                "fileFormatVersion: 2\nguid: 0123456789abcdef0123456789abcdef\n",
+                new UTF8Encoding(false));
+            string metaBefore = File.ReadAllText(definitionPath + ".meta");
+            mirrorImporter.ImportedAssetPaths.Clear();
+            definitionImports.Clear();
+
+            GenerationResult renamed = provider.Generate(CreateRequest(
+                "Example.Renamed.PetStore"));
+
+            Assert.That(renamed.IsSuccess, Is.True, renamed.Message);
+            Assert.That(ReadSpecId(renamed.Message), Is.EqualTo(specId));
+            Assert.That(
+                File.ReadAllText(definitionPath),
+                Does.Contain("namespace Example.Renamed.PetStore"));
+            Assert.That(File.ReadAllText(definitionPath + ".meta"), Is.EqualTo(metaBefore));
+            Assert.That(File.ReadAllBytes(mirrorPath), Is.EqualTo(mirrorBytes));
+            Assert.That(mirrorImporter.ImportedAssetPaths, Is.Empty);
+            Assert.That(definitionImports, Is.EqualTo(new[]
+            {
+                "Assets/Clients/PetStore/PetStoreApi.OpenApiDefinition.cs",
+            }));
+            Assert.That(compilationRequestCount, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void NamespaceChangeFailureRestoresDefinitionCacheAndMirror()
+        {
+            SourceGeneratorGenerationProvider initialProvider = CreateProvider();
+            GenerationResult first = initialProvider.Generate(CreateRequest());
+            Assert.That(first.IsSuccess, Is.True, first.Message);
+            string specId = ReadSpecId(first.Message);
+            string definitionPath = Path.Combine(
+                outputFolder,
+                "PetStoreApi.OpenApiDefinition.cs");
+            string cachePath = Path.Combine(
+                projectRoot,
+                NormalizedSpecBundleConstants.AuthoritativeCacheRelativePath,
+                specId,
+                NormalizedSpecBundleConstants.BundleFileName);
+            string mirrorPath = Path.Combine(
+                projectRoot,
+                NormalizedSpecBundleConstants.CompilerMirrorRelativePath,
+                specId + NormalizedSpecBundleConstants.AdditionalFileSuffix);
+            byte[] definitionBefore = File.ReadAllBytes(definitionPath);
+            byte[] cacheBefore = File.ReadAllBytes(cachePath);
+            byte[] mirrorBefore = File.ReadAllBytes(mirrorPath);
+            mirrorImporter.ImportedAssetPaths.Clear();
+            definitionImports.Clear();
+            SourceGeneratorGenerationProvider failingProvider = CreateProvider(
+                importDefinition: _ => throw new IOException("Simulated definition import failure."));
+
+            GenerationResult failed = failingProvider.Generate(CreateRequest(
+                "Example.Renamed.PetStore"));
+
+            Assert.That(failed.IsSuccess, Is.False);
+            Assert.That(File.ReadAllBytes(definitionPath), Is.EqualTo(definitionBefore));
+            Assert.That(File.ReadAllBytes(cachePath), Is.EqualTo(cacheBefore));
+            Assert.That(File.ReadAllBytes(mirrorPath), Is.EqualTo(mirrorBefore));
+            Assert.That(mirrorImporter.ImportedAssetPaths, Is.Empty);
+            Assert.That(definitionImports, Is.Empty);
+            Assert.That(compilationRequestCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public async Task AsyncFormatDetectionDoesNotAdoptDefinitionChangedAfterInitialPrepare()
+        {
+            const string Yaml =
+                "openapi: 3.0.3\ninfo:\n  title: Pet Store\n  version: 1.0.0\npaths: {}\n";
+            using var server = new OneShotHttpServer(Yaml, "application/yaml");
+            SourceGeneratorGenerationProvider provider = CreateProvider();
+            var request = new GenerationRequest(
+                server.Url,
+                outputFolder,
+                "PetStoreApi",
+                "Example.Generated.PetStore");
+            string definitionPath = Path.Combine(
+                outputFolder,
+                "PetStoreApi.OpenApiDefinition.cs");
+            byte[] competingBytes = Array.Empty<byte>();
+            string competingSpecId = string.Empty;
+            bool injected = false;
+            SetProgressReporter(request, value =>
+            {
+                if (value != 0.75 || injected)
+                {
+                    return;
+                }
+
+                injected = true;
+                var competingWriter = new OpenApiClientDefinitionWriter(
+                    projectRoot,
+                    new AtomicFileWriter(),
+                    definitionImports.Add);
+                OpenApiClientDefinitionPlan competingPlan = competingWriter.Prepare(
+                    outputFolder,
+                    "PetStoreApi",
+                    "Example.Competing.PetStore",
+                    OpenApiDocumentFormat.Yaml);
+                Assert.That(competingWriter.Publish(competingPlan), Is.True);
+                competingSpecId = competingPlan.SpecId;
+                competingBytes = File.ReadAllBytes(definitionPath);
+            });
+
+            GenerationResult result = await provider.GenerateAsync(
+                request,
+                CancellationToken.None);
+
+            Assert.That(injected, Is.True);
+            Assert.That(result.IsSuccess, Is.False, result.Message);
+            Assert.That(File.ReadAllBytes(definitionPath), Is.EqualTo(competingBytes));
+            Assert.That(
+                File.ReadAllText(definitionPath),
+                Does.Contain("\"" + competingSpecId + "\""));
+            Assert.That(compilationRequestCount, Is.Zero);
+        }
+
+        [Test]
+        public void MirrorImporterDefinitionChangeIsNotDestroyedByTransactionRollbackOrRepair()
+        {
+            var originalWriter = new OpenApiClientDefinitionWriter(
+                projectRoot,
+                new AtomicFileWriter(),
+                definitionImports.Add);
+            OpenApiClientDefinitionPlan originalPlan = originalWriter.Prepare(
+                outputFolder,
+                "PetStoreApi",
+                "Example.Generated.PetStore");
+            string definitionPath = originalPlan.DefinitionPath;
+            byte[] competingBytes = Array.Empty<byte>();
+            string competingSpecId = string.Empty;
+            mirrorImporter.OnImport = _ =>
+            {
+                mirrorImporter.OnImport = null;
+                var competingWriter = new OpenApiClientDefinitionWriter(
+                    projectRoot,
+                    new AtomicFileWriter(),
+                    definitionImports.Add);
+                OpenApiClientDefinitionPlan competingPlan = competingWriter.Prepare(
+                    outputFolder,
+                    "PetStoreApi",
+                    "Example.Competing.PetStore");
+                Assert.That(competingWriter.Publish(competingPlan), Is.True);
+                competingSpecId = competingPlan.SpecId;
+                competingBytes = File.ReadAllBytes(definitionPath);
+            };
+
+            GenerationResult result = CreateProvider().Generate(CreateRequest());
+
+            Assert.That(result.IsSuccess, Is.False, result.Message);
+            Assert.That(competingSpecId, Is.Not.EqualTo(originalPlan.SpecId));
+            Assert.That(File.ReadAllBytes(definitionPath), Is.EqualTo(competingBytes));
+
+            string replacementSpecId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+            string competingSource = new UTF8Encoding(false).GetString(competingBytes);
+            byte[] editedAgainBytes = new UTF8Encoding(false).GetBytes(
+                competingSource.Replace(competingSpecId, replacementSpecId));
+            File.WriteAllBytes(definitionPath, editedAgainBytes);
+
+            mirrorImporter.OnImport = null;
+            var repairService = new NormalizedSpecCacheService(
+                projectRoot,
+                new RawJsonNormalizer(),
+                new AtomicFileWriter(),
+                mirrorImporter);
+            repairService.CompilationRequester = () => { };
+            repairService.RepairPendingPublicationForSpec(
+                originalPlan.SpecId,
+                definitionPath,
+                originalPlan.DefinitionAssetPath);
+
+            Assert.That(File.ReadAllBytes(definitionPath), Is.EqualTo(editedAgainBytes));
+            Assert.That(
+                File.ReadAllText(definitionPath),
+                Does.Contain("\"" + replacementSpecId + "\""));
+            Assert.That(compilationRequestCount, Is.Zero);
         }
 
         [TestCase("ftp://example.test/openapi.json", "local paths and HTTP(S) URLs only")]
@@ -426,7 +623,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         SourceGeneratorGenerationProvider CreateProvider(
-            Action? requestCompilation = null)
+            Action? requestCompilation = null,
+            Action<string>? importDefinition = null)
         {
             var cacheService = new NormalizedSpecCacheService(
                 projectRoot,
@@ -436,7 +634,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             var definitionWriter = new OpenApiClientDefinitionWriter(
                 projectRoot,
                 new AtomicFileWriter(),
-                definitionImports.Add);
+                importDefinition ?? definitionImports.Add);
             return new SourceGeneratorGenerationProvider(
                 GenerationProviderAvailability.Available(),
                 cacheService,
@@ -444,13 +642,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 requestCompilation ?? (() => compilationRequestCount++));
         }
 
-        GenerationRequest CreateRequest()
+        GenerationRequest CreateRequest(
+            string generatedNamespace = "Example.Generated.PetStore")
         {
             return new GenerationRequest(
                 rawSpecPath,
                 outputFolder,
                 "PetStoreApi",
-                "Example.Generated.PetStore");
+                generatedNamespace);
         }
 
         static string ReadSpecId(string message)
@@ -459,6 +658,31 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             int start = message.IndexOf(Prefix, StringComparison.Ordinal);
             Assert.That(start, Is.GreaterThanOrEqualTo(0));
             return message.Substring(start + Prefix.Length).Trim();
+        }
+
+        static void SetProgressReporter(
+            GenerationRequest request,
+            Action<double> onProgress)
+        {
+            var progressProperty = typeof(GenerationRequest).GetProperty(
+                "Progress",
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic);
+            Type progressType = progressProperty.PropertyType.GetGenericArguments()[0];
+            Action<object> report = progress => onProgress((double)progressType.GetProperty(
+                    "Value",
+                    System.Reflection.BindingFlags.Instance |
+                    System.Reflection.BindingFlags.NonPublic)
+                .GetValue(progress));
+            object reporter = Activator.CreateInstance(
+                typeof(ImmediateProgress<>).MakeGenericType(progressType),
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.Public |
+                System.Reflection.BindingFlags.NonPublic,
+                null,
+                new object[] { report },
+                null);
+            progressProperty.SetValue(request, reporter);
         }
 
         static void WriteAsmdef(string directory, string assemblyName, string reference)
@@ -479,9 +703,78 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         {
             internal List<string> ImportedAssetPaths { get; } = new List<string>();
 
+            internal Action<string>? OnImport { get; set; }
+
             public void Import(string mirrorAssetPath)
             {
                 ImportedAssetPaths.Add(mirrorAssetPath);
+                OnImport?.Invoke(mirrorAssetPath);
+            }
+        }
+
+        sealed class OneShotHttpServer : IDisposable
+        {
+            readonly TcpListener listener;
+            readonly Task serverTask;
+            readonly byte[] responseBody;
+            readonly string contentType;
+
+            internal OneShotHttpServer(string responseBody, string contentType)
+            {
+                this.responseBody = new UTF8Encoding(false).GetBytes(responseBody);
+                this.contentType = contentType;
+                listener = new TcpListener(IPAddress.Loopback, 0);
+                listener.Start();
+                int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+                Url = "http://127.0.0.1:" + port.ToString(CultureInfo.InvariantCulture) +
+                    "/openapi";
+                serverTask = Task.Run(ServeOnceAsync);
+            }
+
+            internal string Url { get; }
+
+            public void Dispose()
+            {
+                listener.Stop();
+                try
+                {
+                    serverTask.GetAwaiter().GetResult();
+                }
+                catch (SocketException)
+                {
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+            }
+
+            async Task ServeOnceAsync()
+            {
+                using TcpClient client = await listener.AcceptTcpClientAsync();
+                using NetworkStream stream = client.GetStream();
+                using (var reader = new StreamReader(
+                    stream,
+                    Encoding.ASCII,
+                    false,
+                    1024,
+                    true))
+                {
+                    string line;
+                    do
+                    {
+                        line = await reader.ReadLineAsync();
+                    }
+                    while (!string.IsNullOrEmpty(line));
+                }
+
+                string headers =
+                    "HTTP/1.1 200 OK\r\n" +
+                    "Content-Type: " + contentType + "\r\n" +
+                    "Content-Length: " + responseBody.Length.ToString(CultureInfo.InvariantCulture) + "\r\n" +
+                    "Connection: close\r\n\r\n";
+                byte[] headerBytes = Encoding.ASCII.GetBytes(headers);
+                await stream.WriteAsync(headerBytes, 0, headerBytes.Length);
+                await stream.WriteAsync(responseBody, 0, responseBody.Length);
             }
         }
 

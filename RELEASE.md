@@ -1,5 +1,11 @@
 # Release and rollback procedure
 
+Source Generator generation is in beta. Review the supported features before use.
+Keep **Source Generator (Beta)** in the provider UI and **OpenApiCodeGen Source Generator (Beta)**
+in Package Manager and release descriptions. The beta status applies to Source Generator generation;
+package IDs and the shared version remain unchanged. See the
+[Support Matrix](SourceGenerators/OpenApiMvpSupportMatrix.md).
+
 ## Distribution and prerequisites
 
 This runbook is for maintainers updating the analyzer DLL and releasing the two
@@ -116,12 +122,30 @@ must use the same execution attempt. The candidate attempt remains unchanged
 when only failed jobs are rerun. The execution-attempt check accepts legacy schema-2 provenance without that
 field when no expected execution attempt is supplied; current required evidence
 files still apply. Mixed execution formats or attempts are rejected.
-The base gate also requires `base-consumer.log`: the same package is compiled
-without Test Framework before enabling Test Framework and running its tests.
+The base gate requires `base-consumer.log` for compilation without Test Framework
+and `base-test-framework-consumer.log` for compilation with Test Framework but
+without `testables`. Both Unity 6 gates require `source-generator-consumer.log`
+for the latter configuration. Each consumer phase checks that production
+assemblies exist and package test assemblies do not, before explicitly enabling
+tests. Cloud gates also require a sanitized `ci-host.log`.
 `SHA256SUMS` covers both packages and the manifest; the manifest and gate
 summaries transitively cover all verification files. Use the successful
 artifact for the commit being reviewed. Older or dirty-tree evidence is for
 development only.
+
+### Unity time budget
+
+The Unity job has a 240-minute limit. Its first step records the start time;
+the host controller stops new work at 210 minutes. Limits are 600 seconds for
+Docker build, 300 seconds per Editor or activation, and 120 seconds for license
+return and cleanup. A process-group watchdog also stops commands that ignore
+termination signals and their child processes.
+
+At the work deadline the host terminates the active container, allows bounded
+license-return/cleanup time, records the interrupted gate as `failed` and
+unstarted versions as `not-run`, and uploads partial redacted evidence. No
+verified artifact is saved unless every gate passes. Inspect `gate.json` and
+`ci-host.log` for the failed phase before retrying.
 
 ## Dry-run and publication
 

@@ -21,7 +21,7 @@ function fixture(ci = true, executionAttempt = '1') {
   function gates(status = 'passed') {
     for (const unityVersion of expectedGateVersions) {
       const dir = path.join(output, 'unity-gate', unityVersion); fs.mkdirSync(dir, { recursive: true });
-      const names = status === 'passed' ? requiredEvidence[unityVersion] : [];
+      const names = status === 'passed' ? requiredEvidence[unityVersion].concat(ci ? ['ci-host.log'] : []) : [];
       const files = names.map(name => {
         const file = path.join(dir, name);
         fs.writeFileSync(file, name.endsWith('.xml') ? '<test-run result="Passed" total="1" passed="1" failed="0"><test-suite><test-case fullname="Example.Tests.Passes" result="Passed" /></test-suite></test-run>' : 'verification evidence');

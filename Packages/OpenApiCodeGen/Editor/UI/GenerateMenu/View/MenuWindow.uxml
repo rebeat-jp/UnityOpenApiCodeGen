@@ -3,6 +3,10 @@
     <ui:ScrollView>
         <ui:Label tabindex="-1" text="OpenAPI Code Generator" display-tooltip-when-elided="true" name="Title" style="-unity-font-style: bold; font-size: 28px;" />
         <ui:TextField label="Generate Provider" readonly="true" name="GenerateProvider" />
+            <ui:VisualElement name="SourceGeneratorBetaNotice" class="source-generator-beta-notice source-generator-beta-hidden">
+                <ui:Label text="Source Generator generation is in beta. Review the supported features before use." class="source-generator-beta-description" />
+                <ui:Button name="SourceGeneratorSupportMatrix" text="Open Support Matrix" class="source-generator-beta-link" />
+            </ui:VisualElement>
         <ui:TextField picking-mode="Ignore" label="document file path/url" name="DocumentFilePath" binding-path="m_DocumentFilePath" style="white-space: nowrap; text-overflow: ellipsis;" />
         <ui:Label tabindex="-1" display-tooltip-when-elided="true" name="DocumentFilePathComment" style="align-items: center; align-self: auto; color: rgb(255, 42, 42);" />
         <ui:TextField picking-mode="Ignore" label="Output path name" readonly="false" binding-path="m_OutputFolderPath" name="OutputFolderPath" />

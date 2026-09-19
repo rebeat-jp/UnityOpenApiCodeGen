@@ -538,6 +538,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     true,
                     true);
                 PreparePublicationBackups(artifacts, publishBackupDirectory);
+                if (definitionPublicationRequired && definitionContent != null)
+                {
+                    artifacts[3].SetTransactionOutput(
+                        new FileSnapshot(true, definitionContent));
+                }
+
                 Action rollbackDefinition = null;
                 try
                 {
@@ -549,17 +555,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
                     if (authoritativeChanged)
                     {
+                        artifacts[0].SetTransactionOutput(
+                            new FileSnapshot(true, bundleBytes));
                         fileWriter.WriteAllBytesAtomically(authoritativePath, bundleBytes);
                     }
 
                     if (manifestChanged)
                     {
+                        artifacts[1].SetTransactionOutput(
+                            new FileSnapshot(true, manifestBytes));
                         fileWriter.WriteAllBytesAtomically(manifestPath, manifestBytes);
                     }
 
                     if (mirrorChanged)
                     {
                         fileWriter.WriteAllBytesAtomically(mirrorImportPendingPath, new byte[] { 1 });
+                        artifacts[2].SetTransactionOutput(
+                            new FileSnapshot(true, bundleBytes));
                         fileWriter.WriteAllBytesAtomically(mirrorPath, bundleBytes);
                         mirrorImportPending = true;
                     }
@@ -576,6 +588,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                             string.Equals(graph.Format, "yaml", StringComparison.Ordinal)
                                 ? OpenApiDocumentFormat.Yaml
                                 : OpenApiDocumentFormat.Json);
+                        if (definitionContent == null)
+                        {
+                            artifacts[3].SetTransactionOutput(
+                                CaptureFileSnapshot(definitionPath));
+                        }
                     }
 
                     bool definitionActuallyChanged = artifacts.Length > 3 &&
@@ -591,8 +608,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 }
                 catch
                 {
-                    RestorePublicationSnapshot(artifacts);
-                    if (rollbackDefinition != null)
+                    bool definitionWasExternallyChanged = RestorePublicationSnapshot(artifacts);
+                    if (definitionWasExternallyChanged)
+                    {
+                        ExcludeDefinitionFromPendingPublication(
+                            artifacts,
+                            publishPendingPath);
+                    }
+
+                    if (rollbackDefinition != null && !definitionWasExternallyChanged)
                     {
                         try
                         {
@@ -649,9 +673,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
         private static bool SnapshotMatchesFile(PublicationArtifact artifact)
         {
-            return artifact.Snapshot.Exists
-                ? FileContentEquals(artifact.TargetPath, artifact.Snapshot.Bytes)
-                : !File.Exists(artifact.TargetPath);
+            return SnapshotMatchesFile(artifact.TargetPath, artifact.Snapshot);
+        }
+
+        private static bool SnapshotMatchesFile(string path, FileSnapshot snapshot)
+        {
+            return snapshot.Exists
+                ? FileContentEquals(path, snapshot.Bytes)
+                : !File.Exists(path);
         }
 
         private static PublicationArtifact[] CreatePublicationArtifacts(
@@ -1265,14 +1294,43 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
         }
 
-        private void RestorePublicationSnapshot(IReadOnlyList<PublicationArtifact> artifacts)
+        private bool RestorePublicationSnapshot(IReadOnlyList<PublicationArtifact> artifacts)
         {
             // The durable backup remains available when an in-process restore itself cannot
             // complete (for example, a simulated writer failure). Best effort here preserves the
             // common case without masking the original publication exception.
+            bool definitionWasExternallyChanged = false;
             for (int index = 0; index < artifacts.Count; index++)
             {
                 PublicationArtifact artifact = artifacts[index];
+                if (!artifact.HasTransactionOutput)
+                {
+                    if (!SnapshotMatchesFile(artifact))
+                    {
+                        PreserveCurrentStateAsPublicationBackup(artifact);
+                        if (index == 3)
+                        {
+                            definitionWasExternallyChanged = true;
+                        }
+                    }
+
+                    continue;
+                }
+
+                if (!SnapshotMatchesFile(artifact.TargetPath, artifact.TransactionOutput))
+                {
+                    if (!SnapshotMatchesFile(artifact))
+                    {
+                        PreserveCurrentStateAsPublicationBackup(artifact);
+                        if (index == 3)
+                        {
+                            definitionWasExternallyChanged = true;
+                        }
+                    }
+
+                    continue;
+                }
+
                 try
                 {
                     if (artifact.Snapshot.Exists)
@@ -1292,6 +1350,82 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 catch (UnauthorizedAccessException)
                 {
                 }
+            }
+
+            return definitionWasExternallyChanged;
+        }
+
+        private void ExcludeDefinitionFromPendingPublication(
+            IReadOnlyList<PublicationArtifact> artifacts,
+            string publishPendingPath)
+        {
+            if (artifacts.Count != 4)
+            {
+                return;
+            }
+
+            var cacheArtifacts = new[]
+            {
+                artifacts[0],
+                artifacts[1],
+                artifacts[2],
+            };
+            PublicationArtifact definitionArtifact = artifacts[3];
+            try
+            {
+                // Persist the reduced ownership set before removing the obsolete definition
+                // backup. A crash between these operations fails closed on an extra backup file.
+                WritePublicationMarker(
+                    publishPendingPath,
+                    PublicationMarkerPendingState,
+                    cacheArtifacts,
+                    true);
+                DeleteFileOrThrow(definitionArtifact.BackupPath);
+                DeleteFileOrThrow(definitionArtifact.AbsentPath);
+            }
+            catch (IOException)
+            {
+                // If the marker cannot be rewritten, make its old four-artifact backup
+                // incomplete so recovery refuses to overwrite the externally owned definition.
+                TryDeleteFile(definitionArtifact.BackupPath);
+                TryDeleteFile(definitionArtifact.AbsentPath);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                TryDeleteFile(definitionArtifact.BackupPath);
+                TryDeleteFile(definitionArtifact.AbsentPath);
+            }
+        }
+
+        private void PreserveCurrentStateAsPublicationBackup(PublicationArtifact artifact)
+        {
+            FileSnapshot current = CaptureFileSnapshot(artifact.TargetPath);
+            try
+            {
+                if (current.Exists)
+                {
+                    fileWriter.WriteAllBytesAtomically(artifact.BackupPath, current.Bytes);
+                    DeleteFileOrThrow(artifact.AbsentPath);
+                }
+                else
+                {
+                    fileWriter.WriteAllBytesAtomically(
+                        artifact.AbsentPath,
+                        new byte[] { 1 });
+                    DeleteFileOrThrow(artifact.BackupPath);
+                }
+            }
+            catch (IOException)
+            {
+                // An incomplete backup is safer than retaining stale bytes that a later repair
+                // could use to overwrite an external edit.
+                TryDeleteFile(artifact.BackupPath);
+                TryDeleteFile(artifact.AbsentPath);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                TryDeleteFile(artifact.BackupPath);
+                TryDeleteFile(artifact.AbsentPath);
             }
         }
 
@@ -1493,12 +1627,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 BackupPath = backupPath;
                 AbsentPath = absentPath;
                 Snapshot = snapshot;
+                TransactionOutput = new FileSnapshot(false, new byte[0]);
             }
 
             internal string TargetPath { get; }
             internal string BackupPath { get; }
             internal string AbsentPath { get; }
             internal FileSnapshot Snapshot { get; }
+
+            internal bool HasTransactionOutput { get; private set; }
+
+            internal FileSnapshot TransactionOutput { get; private set; }
+
+            internal void SetTransactionOutput(FileSnapshot transactionOutput)
+            {
+                TransactionOutput = transactionOutput;
+                HasTransactionOutput = true;
+            }
         }
 
         private sealed class FileSnapshot

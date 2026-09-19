@@ -93,21 +93,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
             string outputFolder = ResolveOutputFolder(outputFolderPath);
             AsmdefInfo targetAssembly = ResolveTargetAssembly(outputFolder);
-            string clientIdentity = string.Join(
-                "\n",
+            string clientIdentitySha256 = ComputeClientIdentitySha256(
                 targetAssembly.Name,
                 generatedNamespace,
                 apiName);
-            byte[] clientIdentityHash = ComputeSha256(StrictUtf8.GetBytes(clientIdentity));
-            string clientIdentitySha256 = ToLowerHex(clientIdentityHash, clientIdentityHash.Length);
-            string deterministicSpecId = ToLowerHex(clientIdentityHash, 16);
+            string deterministicSpecId = clientIdentitySha256.Substring(0, 32);
             string definitionPath = Path.Combine(
                 outputFolder,
                 apiName + DefinitionFileSuffix);
-            string specId = ResolveSpecIdFromExistingOwnedFile(
+            ExistingDefinitionInfo existingDefinition = InspectExistingDefinition(
                 definitionPath,
+                targetAssembly.Name,
+                apiName,
+                generatedNamespace,
                 clientIdentitySha256,
                 deterministicSpecId);
+            string specId = existingDefinition.SpecId;
             string definitionAssetPath = ToAssetPath(definitionPath);
             byte[] content = StrictUtf8.GetBytes(
                 BuildDefinitionSource(
@@ -126,7 +127,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 apiName,
                 generatedNamespace,
                 documentFormat,
-                content);
+                content,
+                existingDefinition.Exists,
+                existingDefinition.ContentSha256);
         }
 
         internal bool Publish(OpenApiClientDefinitionPlan plan)
@@ -136,13 +139,54 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 throw new ArgumentNullException(nameof(plan));
             }
 
-            // Recheck immediately before writing so a file created after Prepare is never
-            // treated as ours merely because the earlier path inspection succeeded.
-            string currentSpecId = ResolveSpecIdFromExistingOwnedFile(
+            string outputFolder = ResolveOutputFolder(Path.GetDirectoryName(plan.DefinitionPath));
+            AsmdefInfo targetAssembly = ResolveTargetAssembly(outputFolder);
+            if (!string.Equals(
+                    targetAssembly.Name,
+                    plan.TargetAssemblyName,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The target assembly changed after generation was prepared.");
+            }
+
+            string expectedDefinitionPath = Path.Combine(
+                outputFolder,
+                plan.ApiName + DefinitionFileSuffix);
+            if (!PathsEqual(expectedDefinitionPath, plan.DefinitionPath))
+            {
+                throw new InvalidOperationException(
+                    "The definition path changed after generation was prepared.");
+            }
+
+            string expectedIdentity = ComputeClientIdentitySha256(
+                targetAssembly.Name,
+                plan.GeneratedNamespace,
+                plan.ApiName);
+            if (!string.Equals(
+                    expectedIdentity,
+                    plan.ClientIdentitySha256,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The client identity changed after generation was prepared.");
+            }
+
+            // Recheck the exact bytes immediately before writing. This prevents a definition
+            // created, removed, or edited after Prepare from being treated as the inspected file.
+            ExistingDefinitionInfo currentDefinition = InspectExistingDefinition(
                 plan.DefinitionPath,
+                targetAssembly.Name,
+                plan.ApiName,
+                plan.GeneratedNamespace,
                 plan.ClientIdentitySha256,
                 plan.SpecId);
-            if (!string.Equals(currentSpecId, plan.SpecId, StringComparison.Ordinal))
+            if (currentDefinition.Exists != plan.PreparedDefinitionExists ||
+                !string.Equals(
+                    currentDefinition.ContentSha256,
+                    plan.PreparedDefinitionSha256,
+                    StringComparison.Ordinal) ||
+                !string.Equals(currentDefinition.SpecId, plan.SpecId, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
                     "The owned definition changed after generation was prepared: " +
@@ -159,6 +203,46 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             return true;
         }
 
+        internal OpenApiClientDefinitionPlan WithDocumentFormat(
+            OpenApiClientDefinitionPlan plan,
+            OpenApiDocumentFormat documentFormat)
+        {
+            if (plan == null)
+            {
+                throw new ArgumentNullException(nameof(plan));
+            }
+
+            if (documentFormat != OpenApiDocumentFormat.Json &&
+                documentFormat != OpenApiDocumentFormat.Yaml)
+            {
+                throw new ArgumentOutOfRangeException(nameof(documentFormat));
+            }
+
+            if (plan.DocumentFormat == documentFormat)
+            {
+                return plan;
+            }
+
+            byte[] content = StrictUtf8.GetBytes(BuildDefinitionSource(
+                plan.SpecId,
+                plan.ClientIdentitySha256,
+                plan.ApiName,
+                plan.GeneratedNamespace,
+                documentFormat));
+            return new OpenApiClientDefinitionPlan(
+                plan.SpecId,
+                plan.ClientIdentitySha256,
+                plan.TargetAssemblyName,
+                plan.DefinitionPath,
+                plan.DefinitionAssetPath,
+                plan.ApiName,
+                plan.GeneratedNamespace,
+                documentFormat,
+                content,
+                plan.PreparedDefinitionExists,
+                plan.PreparedDefinitionSha256);
+        }
+
         internal DefinitionPublication PublishTransactional(OpenApiClientDefinitionPlan plan)
         {
             if (plan == null)
@@ -166,6 +250,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 throw new ArgumentNullException(nameof(plan));
             }
 
+            EnsureDefinitionFileIsSafe(plan.DefinitionPath);
             DefinitionFileSnapshot snapshot = CaptureDefinitionSnapshot(plan.DefinitionPath);
             try
             {
@@ -199,6 +284,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         {
             try
             {
+                bool alreadyMatchesSnapshot = snapshot.Exists
+                    ? FileContentEquals(plan.DefinitionPath, snapshot.Bytes)
+                    : !File.Exists(plan.DefinitionPath);
+                if (alreadyMatchesSnapshot)
+                {
+                    return;
+                }
+
+                // Restore only bytes published by this plan. If an importer or another owner
+                // changed the file afterwards, preserving that edit is safer than clobbering it.
+                if (!FileContentEquals(plan.DefinitionPath, plan.Content))
+                {
+                    return;
+                }
+
                 if (snapshot.Exists)
                 {
                     fileWriter.WriteAllBytesAtomically(plan.DefinitionPath, snapshot.Bytes);
@@ -354,20 +454,26 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             return new AsmdefInfo(name, referencesRuntime);
         }
 
-        private static string ResolveSpecIdFromExistingOwnedFile(
+        private static ExistingDefinitionInfo InspectExistingDefinition(
             string definitionPath,
+            string targetAssemblyName,
+            string expectedApiName,
+            string expectedGeneratedNamespace,
             string expectedClientIdentity,
             string fallbackSpecId)
         {
+            EnsureDefinitionFileIsSafe(definitionPath);
             if (!File.Exists(definitionPath))
             {
-                return fallbackSpecId;
+                return new ExistingDefinitionInfo(false, fallbackSpecId, string.Empty);
             }
 
+            byte[] bytes;
             string content;
             try
             {
-                content = File.ReadAllText(definitionPath, StrictUtf8);
+                bytes = File.ReadAllBytes(definitionPath);
+                content = StrictUtf8.GetString(bytes);
             }
             catch (Exception exception) when (
                 exception is IOException ||
@@ -379,22 +485,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     exception);
             }
 
-            string normalizedContent = content.Replace("\r\n", "\n");
+            string normalizedContent = NormalizeLineEndings(content);
             if (!normalizedContent.StartsWith(OwnedFileHeader + "\n", StringComparison.Ordinal))
             {
                 throw new SafeGenerationException(
                     "Refusing to overwrite a definition file not owned by UnityOpenApiCodeGen.");
-            }
-
-            string existingIdentity = ReadHeaderValue(normalizedContent, ClientIdentityPrefix);
-            if (!string.Equals(
-                    existingIdentity,
-                    expectedClientIdentity,
-                    StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    "Refusing to overwrite an owned definition for a different client identity: " +
-                    definitionPath);
             }
 
             string existingSpecId = ReadHeaderValue(normalizedContent, SpecIdPrefix);
@@ -409,7 +504,226 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     "The owned definition contains an invalid Spec ID: " + definitionPath);
             }
 
-            return existingSpecId;
+            ParsedOwnedDefinition parsed = ParseOwnedDefinitionSource(
+                normalizedContent,
+                definitionPath);
+            if (!string.Equals(parsed.SpecId, existingSpecId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The owned definition's header and source declare different Spec IDs: " +
+                    definitionPath);
+            }
+
+            if (!string.Equals(parsed.ApiName, expectedApiName, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Refusing to overwrite an owned definition for a different API name: " +
+                    definitionPath);
+            }
+
+            string existingIdentity = ReadHeaderValue(normalizedContent, ClientIdentityPrefix);
+            string recomputedExistingIdentity = ComputeClientIdentitySha256(
+                targetAssemblyName,
+                parsed.GeneratedNamespace,
+                parsed.ApiName);
+            if (!string.Equals(
+                    existingIdentity,
+                    recomputedExistingIdentity,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The owned definition's client identity does not match its generated source: " +
+                    definitionPath);
+            }
+
+            string expectedSource = NormalizeLineEndings(BuildDefinitionSource(
+                existingSpecId,
+                existingIdentity,
+                parsed.ApiName,
+                parsed.GeneratedNamespace,
+                parsed.DocumentFormat));
+            if (!string.Equals(normalizedContent, expectedSource, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The owned definition source was modified outside UnityOpenApiCodeGen: " +
+                    definitionPath);
+            }
+
+            // A namespace-only change intentionally changes the identity. The target assembly
+            // and API name above remain authoritative, so the existing Spec ID can be retained.
+            if (string.Equals(existingIdentity, expectedClientIdentity, StringComparison.Ordinal) ||
+                !string.Equals(
+                    parsed.GeneratedNamespace,
+                    expectedGeneratedNamespace,
+                    StringComparison.Ordinal))
+            {
+                return new ExistingDefinitionInfo(
+                    true,
+                    existingSpecId,
+                    ToLowerHex(ComputeSha256(bytes), 32));
+            }
+
+            throw new InvalidOperationException(
+                "Refusing to overwrite an owned definition for a different client identity: " +
+                definitionPath);
+        }
+
+        private static ParsedOwnedDefinition ParseOwnedDefinitionSource(
+            string normalizedContent,
+            string definitionPath)
+        {
+            string[] lines = normalizedContent.Split('\n');
+            int attributeLine = FindUniqueLine(
+                lines,
+                "    [global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiClientDefinitionAttribute(",
+                definitionPath);
+            if (attributeLine + 4 >= lines.Length)
+            {
+                throw InvalidOwnedDefinitionSource(definitionPath);
+            }
+
+            string specId = ReadQuotedAttributeArgument(lines[attributeLine + 1], true, definitionPath);
+            string apiName = ReadQuotedAttributeArgument(lines[attributeLine + 2], true, definitionPath);
+            string generatedNamespace = ReadQuotedAttributeArgument(
+                lines[attributeLine + 3],
+                true,
+                definitionPath);
+            const string FormatPrefix =
+                "        global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.";
+            string formatLine = lines[attributeLine + 4];
+            if (!formatLine.StartsWith(FormatPrefix, StringComparison.Ordinal) ||
+                !formatLine.EndsWith(")]", StringComparison.Ordinal))
+            {
+                throw InvalidOwnedDefinitionSource(definitionPath);
+            }
+
+            string formatName = formatLine.Substring(
+                FormatPrefix.Length,
+                formatLine.Length - FormatPrefix.Length - 2);
+            OpenApiDocumentFormat documentFormat;
+            if (string.Equals(formatName, "Json", StringComparison.Ordinal))
+            {
+                documentFormat = OpenApiDocumentFormat.Json;
+            }
+            else if (string.Equals(formatName, "Yaml", StringComparison.Ordinal))
+            {
+                documentFormat = OpenApiDocumentFormat.Yaml;
+            }
+            else
+            {
+                throw InvalidOwnedDefinitionSource(definitionPath);
+            }
+
+            int namespaceLine = FindUniqueLine(
+                lines,
+                "namespace " + generatedNamespace,
+                definitionPath);
+            int classLine = FindUniqueLine(
+                lines,
+                "    public partial class " + apiName,
+                definitionPath);
+            if (namespaceLine >= attributeLine || classLine <= attributeLine ||
+                !CSharpNameValidator.TryValidateIdentifier(apiName, out _) ||
+                !CSharpNameValidator.TryValidateNamespace(generatedNamespace, out _))
+            {
+                throw InvalidOwnedDefinitionSource(definitionPath);
+            }
+
+            return new ParsedOwnedDefinition(
+                specId,
+                apiName,
+                generatedNamespace,
+                documentFormat);
+        }
+
+        private static int FindUniqueLine(
+            string[] lines,
+            string expectedLine,
+            string definitionPath)
+        {
+            int match = -1;
+            for (int index = 0; index < lines.Length; index++)
+            {
+                if (!string.Equals(lines[index], expectedLine, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (match >= 0)
+                {
+                    throw InvalidOwnedDefinitionSource(definitionPath);
+                }
+
+                match = index;
+            }
+
+            if (match < 0)
+            {
+                throw InvalidOwnedDefinitionSource(definitionPath);
+            }
+
+            return match;
+        }
+
+        private static string ReadQuotedAttributeArgument(
+            string line,
+            bool hasTrailingComma,
+            string definitionPath)
+        {
+            const string Prefix = "        \"";
+            string suffix = hasTrailingComma ? "\"," : "\"";
+            if (!line.StartsWith(Prefix, StringComparison.Ordinal) ||
+                !line.EndsWith(suffix, StringComparison.Ordinal) ||
+                line.Length < Prefix.Length + suffix.Length)
+            {
+                throw InvalidOwnedDefinitionSource(definitionPath);
+            }
+
+            return line.Substring(
+                Prefix.Length,
+                line.Length - Prefix.Length - suffix.Length);
+        }
+
+        private static InvalidOperationException InvalidOwnedDefinitionSource(string definitionPath)
+        {
+            return new InvalidOperationException(
+                "The owned definition source is not in a recognized generated format: " +
+                definitionPath);
+        }
+
+        private static string NormalizeLineEndings(string value)
+        {
+            return value.Replace("\r\n", "\n").Replace('\r', '\n');
+        }
+
+        private static string ComputeClientIdentitySha256(
+            string targetAssemblyName,
+            string generatedNamespace,
+            string apiName)
+        {
+            string identity = string.Join(
+                "\n",
+                targetAssemblyName,
+                generatedNamespace,
+                apiName);
+            byte[] hash = ComputeSha256(StrictUtf8.GetBytes(identity));
+            return ToLowerHex(hash, hash.Length);
+        }
+
+        private static void EnsureDefinitionFileIsSafe(string definitionPath)
+        {
+            if (Directory.Exists(definitionPath))
+            {
+                throw new InvalidOperationException(
+                    "The definition path resolves to an existing directory.");
+            }
+
+            if (File.Exists(definitionPath) &&
+                (File.GetAttributes(definitionPath) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidOperationException(
+                    "The definition path must not be a symbolic link: " + definitionPath);
+            }
         }
 
         private static string ReadHeaderValue(string content, string prefix)
@@ -645,6 +959,45 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             internal bool Exists { get; }
 
             internal byte[] Bytes { get; }
+        }
+
+        private sealed class ExistingDefinitionInfo
+        {
+            internal ExistingDefinitionInfo(bool exists, string specId, string contentSha256)
+            {
+                Exists = exists;
+                SpecId = specId;
+                ContentSha256 = contentSha256;
+            }
+
+            internal bool Exists { get; }
+
+            internal string SpecId { get; }
+
+            internal string ContentSha256 { get; }
+        }
+
+        private sealed class ParsedOwnedDefinition
+        {
+            internal ParsedOwnedDefinition(
+                string specId,
+                string apiName,
+                string generatedNamespace,
+                OpenApiDocumentFormat documentFormat)
+            {
+                SpecId = specId;
+                ApiName = apiName;
+                GeneratedNamespace = generatedNamespace;
+                DocumentFormat = documentFormat;
+            }
+
+            internal string SpecId { get; }
+
+            internal string ApiName { get; }
+
+            internal string GeneratedNamespace { get; }
+
+            internal OpenApiDocumentFormat DocumentFormat { get; }
         }
     }
 

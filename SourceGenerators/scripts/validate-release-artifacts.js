@@ -91,12 +91,14 @@ const requiredEvidence = {
   '2021.3.19f1': [
     'base-results.xml',
     'base.log',
-    'base-consumer.log'
+    'base-consumer.log',
+    'base-test-framework-consumer.log'
   ],
   '6000.0.23f1': [
     'source-generator-results.xml',
     'source-generator.log',
     'source-generator-bootstrap.log',
+    'source-generator-consumer.log',
     'source-generator-generation.log',
     'source-generator-unchanged-generation.log',
     'source-generator-no-change.log',
@@ -112,6 +114,7 @@ const requiredEvidence = {
     'source-generator-results.xml',
     'source-generator.log',
     'source-generator-bootstrap.log',
+    'source-generator-consumer.log',
     'source-generator-generation.log',
     'source-generator-unchanged-generation.log',
     'source-generator-no-change.log',
@@ -125,7 +128,7 @@ const requiredEvidence = {
   ]
 };
 
-function validateEvidenceFiles(releaseOutput, version, files, requireComplete) {
+function validateEvidenceFiles(releaseOutput, version, files, requireComplete, requireCiHost = false) {
   if (!Array.isArray(files)) fail(`Unity ${version} evidence files must be an array`);
   const expectedPaths = new Set();
   const normalized = files.map((entry, index) => {
@@ -141,7 +144,8 @@ function validateEvidenceFiles(releaseOutput, version, files, requireComplete) {
     return { path: entry.path, sha256: entry.sha256 };
   });
   if (requireComplete) {
-    const expected = requiredEvidence[version].map(name => `unity-gate/${version}/${name}`).sort();
+    const expectedNames = requiredEvidence[version].concat(requireCiHost ? ['ci-host.log'] : []);
+    const expected = expectedNames.map(name => `unity-gate/${version}/${name}`).sort();
     const actual = normalized.map(entry => entry.path).sort();
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
       fail(`Unity ${version} passed gate evidence is incomplete or unexpected`);
@@ -167,7 +171,7 @@ function validateGateSummary(releaseOutput, version, summaryPath, expectedHash, 
   if (summary.status !== 'passed' && summary.exitCode === 0) fail(`Unity ${version} unsuccessful gate has zero exit code`);
   if (manifest) validateCiGate(summary, manifest, expectedExecutionAttempt);
   if (summary.evidencePath !== `unity-gate/${version}`) fail(`Unity ${version} gate summary has invalid evidencePath`);
-  const files = validateEvidenceFiles(releaseOutput, version, summary.files, summary.status === 'passed');
+  const files = validateEvidenceFiles(releaseOutput, version, summary.files, summary.status === 'passed', manifest?.unityGate.mode === 'ci');
   if (summary.status === 'passed') {
     for (const file of files.filter(entry => entry.path.endsWith('.xml'))) validateTestXml(resolveArtifactPath(releaseOutput, file.path, 'test XML'));
   }
@@ -224,7 +228,7 @@ function validateUnityGate(releaseOutput, unityGate, gateMode, manifest, expecte
     if (summary.status !== entry.status || JSON.stringify(summary.files) !== JSON.stringify(entry.files)) {
       fail(`Unity ${version} aggregate does not match its gate summary`);
     }
-    validateEvidenceFiles(releaseOutput, version, entry.files, entry.status === 'passed');
+    validateEvidenceFiles(releaseOutput, version, entry.files, entry.status === 'passed', manifest.unityGate.mode === 'ci');
     expectedSummaries.push(entry.gate.path);
     if (summary.executionAttempt !== undefined) {
       executionAttempts.add(summary.executionAttempt);

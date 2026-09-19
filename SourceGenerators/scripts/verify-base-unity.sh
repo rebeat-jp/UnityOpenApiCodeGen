@@ -7,6 +7,8 @@ set -euo pipefail
 scripts_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "${scripts_directory}/common.sh"
+# shellcheck source=ci-time-budget.sh
+source "${scripts_directory}/ci-time-budget.sh"
 
 unity_version="2021.3.19f1"
 pack_release_args=()
@@ -34,7 +36,7 @@ release_version="$(node -p "require('${repository_root}/Packages/OpenApiCodeGen/
 release_output="${SOURCE_GENERATOR_RELEASE_OUTPUT:-${repository_root}/artifacts/upm/${release_version}}"
 base_archive="${release_output}/jp.rhycol.openapicodegen-${release_version}.tgz"
 evidence_root="${SOURCE_GENERATOR_EVIDENCE_ROOT:-${release_output}/unity-gate/${unity_version}}"
-unity_timeout_seconds="${SOURCE_GENERATOR_UNITY_TIMEOUT_SECONDS:-300}"
+unity_timeout_seconds="${SOURCE_GENERATOR_UNITY_TIMEOUT_SECONDS:-${CI_EDITOR_TIMEOUT_SECONDS}}"
 
 case "${unity_version}" in
   2021.3.19f1)
@@ -53,6 +55,7 @@ local_packages="${temporary_root}/LocalPackages"
 results="${temporary_root}/base-results.xml"
 log="${temporary_root}/base.log"
 consumer_log="${temporary_root}/base-consumer.log"
+test_framework_consumer_log="${temporary_root}/base-test-framework-consumer.log"
 gate_status="not-run"
 gate_reason="base Unity gate did not start"
 
@@ -76,6 +79,7 @@ write_gate_evidence() {
   copy_evidence_file "${results}" "base-results.xml"
   copy_evidence_file "${log}" "base.log"
   copy_evidence_file "${consumer_log}" "base-consumer.log"
+  copy_evidence_file "${test_framework_consumer_log}" "base-test-framework-consumer.log"
 
   if command -v node >/dev/null 2>&1; then
     node "${scripts_directory}/ci-evidence.js" write-gate \
@@ -155,7 +159,7 @@ printf 'm_EditorVersion: %s\nm_EditorVersionWithRevision: %s (%s)\n' \
   "${unity_version}" "${unity_version}" "${unity_revision}" \
   > "${project_path}/ProjectSettings/ProjectVersion.txt"
 
-# ApplicationConstant resolves the settings directory from the process cwd.
+# Keep fixture-relative shell operations inside the disposable project.
 cd "${project_path}"
 
 run_editor() {
@@ -163,16 +167,12 @@ run_editor() {
   shift
 
   rm -f "${output_log}"
-  if command -v perl >/dev/null 2>&1; then
-    perl -e 'alarm shift; exec @ARGV' "${unity_timeout_seconds}" "$@" \
-      -logFile "${output_log}"
-  else
-    "$@" -logFile "${output_log}"
-  fi
+  perl "${scripts_directory}/run-with-timeout.pl" "${unity_timeout_seconds}" "$@" \
+    -logFile "${output_log}"
 }
 
-# A normal package consumer does not need the Unity Test Framework. Compile the
-# exact candidate in that configuration before explicitly enabling package tests.
+# Preserve the normal consumer check for projects that have not installed the
+# Unity Test Framework.
 if run_editor "${consumer_log}" \
     "${unity_executable}" \
     -batchmode \
@@ -195,6 +195,47 @@ for assembly in Unity.OpenApiCodeGen.Editor.Contracts.dll Unity.OpenApiCodeGen.E
     fail_gate "base package consumer compilation did not produce ${assembly}"
   fi
 done
+if [[ -f "${project_path}/Library/ScriptAssemblies/Unity.OpenApiCodeGen.Test.dll" ]]; then
+  fail_gate "base package consumer unexpectedly compiled Unity.OpenApiCodeGen.Test.dll without the Unity Test Framework"
+fi
+
+printf '%s\n' \
+  '{' \
+  '  "dependencies": {' \
+  "    \"com.unity.test-framework\": \"${test_framework_version}\"," \
+  "    \"jp.rhycol.openapicodegen\": \"file:../../LocalPackages/${base_archive_name}\"" \
+  '  }' \
+  '}' \
+  > "${project_path}/Packages/manifest.json"
+rm -f "${project_path}/Packages/packages-lock.json"
+
+# Also compile with Test Framework installed but without testables. This catches
+# package test assemblies that leak into ordinary framework-enabled consumers.
+if run_editor "${test_framework_consumer_log}" \
+    "${unity_executable}" \
+    -batchmode \
+    -nographics \
+    -projectPath "${project_path}" \
+    -quit; then
+  :
+else
+  unity_exit_code=$?
+  if [[ "${unity_exit_code}" == "142" || "${unity_exit_code}" == "124" || ! -f "${test_framework_consumer_log}" ]]; then
+    fail_not_run "Unity Test Framework consumer compilation timed out or produced no log (exit ${unity_exit_code})"
+  fi
+  fail_gate "base package failed to compile with Test Framework installed and testables omitted"
+fi
+if grep -Eq 'error CS[0-9]{4}|Scripts have compiler errors' "${test_framework_consumer_log}"; then
+  fail_gate "base package reported compiler errors with Test Framework installed and testables omitted"
+fi
+for assembly in Unity.OpenApiCodeGen.Editor.Contracts.dll Unity.OpenApiCodeGen.Editor.dll; do
+  if [[ ! -f "${project_path}/Library/ScriptAssemblies/${assembly}" ]]; then
+    fail_gate "base package Test Framework consumer compilation did not produce ${assembly}"
+  fi
+done
+if [[ -f "${project_path}/Library/ScriptAssemblies/Unity.OpenApiCodeGen.Test.dll" ]]; then
+  fail_gate "base package consumer unexpectedly compiled Unity.OpenApiCodeGen.Test.dll without testables"
+fi
 
 printf '%s\n' \
   '{' \
@@ -247,10 +288,11 @@ if grep -q 'CS8785' "${log}"; then
 fi
 
 gate_status="passed"
-gate_reason="base consumer compilation and Unity EditMode gate passed"
+gate_reason="base consumer compilations and Unity EditMode gate passed"
 echo "Unity ${unity_version} base-package verification passed."
 xmllint --xpath 'concat("total=",/test-run/@total," passed=",/test-run/@passed," failed=",/test-run/@failed)' "${results}"
 printf '\n'
 echo "Results: ${results}"
 echo "Log: ${log}"
 echo "Consumer log: ${consumer_log}"
+echo "Test Framework consumer log: ${test_framework_consumer_log}"

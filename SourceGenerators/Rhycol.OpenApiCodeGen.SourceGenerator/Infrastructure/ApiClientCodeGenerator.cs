@@ -243,6 +243,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     diagnosticLocation);
             }
 
+            if (namedType.Arity != 0)
+            {
+                return OpenApiClientDefinitionInput.CreateInvalid(
+                    targetDisplayName,
+                    "the attribute target must be a non-generic class",
+                    diagnosticLocation);
+            }
+
             if (!classDeclaration.Modifiers.Any(static modifier =>
                     modifier.IsKind(SyntaxKind.PartialKeyword)))
             {

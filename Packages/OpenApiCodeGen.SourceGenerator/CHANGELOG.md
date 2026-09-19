@@ -43,6 +43,8 @@
 
 ### Changed
 
+- Label Source Generator generation as beta in Settings, Generator, documentation, and add-on Package Manager metadata; preserve package IDs, versions, and saved provider values.
+
 - Accept local and HTTP(S) Source Generator inputs. `Generate` is the explicit
   fetch/refresh operation; URL queries are used for the current request and
   are not persisted in plain text.
@@ -57,6 +59,13 @@
 - Avoid rewriting unchanged cache and definition inputs or requesting unnecessary script compilation.
 
 ### Fixed
+
+- Normalize and validate parameterized JSON media types and request charsets before generation.
+- Separate error-response schema validation from successful JSON body generation; preserve response extensions and error bodies.
+- Preserve nullable through multi-hop references, reject complex referenced parameters, merge headers case-insensitively, and diagnose generic definitions and non-ASCII status codes.
+- Permit owned namespace changes while retaining SpecId and GUID and protecting concurrent edits during publication and recovery.
+- Cache semantic reference scans and completed schema validation, preserving literal data and YAML alias context.
+- Bound Unity CI processes and retain partial failure evidence; compile consumers with Test Framework but without testables.
 
 - Sanitize URL reference/query display data and unexpected generation failures without changing fetch identity.
 - Preserve successful artifacts when generation is canceled after loading but before publication.

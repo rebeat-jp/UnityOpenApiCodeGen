@@ -42,7 +42,14 @@ test('completed schema v2 gates without executionAttempt remain readable', t => 
   for (const version of require('../validate-release-artifacts').expectedGateVersions) mutateGate(f, version, gate => { delete gate.ci.executionAttempt; });
   aggregate({ ...f.options, gateMode: '--require-passed-unity-gate' });
 });
-test('manual Mac evidence remains supported', t => { const f = use(t, false); f.gates(); aggregate({ ...f.options, gateMode: '--require-passed-unity-gate' }); });
+test('manual Mac evidence remains supported without CI host logs', t => {
+  const f = use(t, false); f.gates();
+  for (const version of require('../validate-release-artifacts').expectedGateVersions) {
+    assert.equal(fs.existsSync(path.join(f.output, 'unity-gate', version, 'ci-host.log')), false);
+  }
+  const result = aggregate({ ...f.options, gateMode: '--require-passed-unity-gate' });
+  assert.equal(result.unityGate.status, 'passed');
+});
 test('reject wrong target version, commit, CI run and attempt', t => {
   const f = use(t);
   for (const [key, value, message] of [['expected-version', '0.6.0', /version/], ['expected-commit', 'b'.repeat(40), /commit/], ['expected-run-id', '124', /run ID/], ['expected-run-attempt', '2', /attempt/]]) assert.throws(() => validateRelease({ ...f.options, [key]: value }), message);

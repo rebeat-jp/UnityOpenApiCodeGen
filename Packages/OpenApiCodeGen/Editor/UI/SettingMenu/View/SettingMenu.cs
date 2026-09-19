@@ -1,5 +1,6 @@
 ﻿#nullable enable
 using System;
+using System.Collections.Generic;
 
 using Rhycol.OpenApiCodeGen.Core;
 using Rhycol.OpenApiCodeGen.Editor.Generation;
@@ -13,6 +14,9 @@ using UnityEngine.UIElements;
 
 #if !UNITY_2022_1_OR_NEWER
 using EnumField = UnityEditor.UIElements.EnumField;
+using PopupField = UnityEditor.UIElements.PopupField<Rhycol.OpenApiCodeGen.Editor.Generation.GenerateProvider>;
+#else
+using PopupField = UnityEngine.UIElements.PopupField<Rhycol.OpenApiCodeGen.Editor.Generation.GenerateProvider>;
 #endif
 
 internal class SettingMenu : EditorWindow, ISettingView
@@ -28,7 +32,8 @@ internal class SettingMenu : EditorWindow, ISettingView
 
     #region UI Elements
     /* General */
-    EnumField? _generateProviderField;
+    PopupField? _generateProviderField;
+    VisualElement? _sourceGeneratorBetaNotice;
     Label? _generateProviderDisplayNameLabel;
     Label? _generateProviderAvailabilityLabel;
     TextField? _dockerPathField;
@@ -84,7 +89,7 @@ internal class SettingMenu : EditorWindow, ISettingView
             var settings = GetCurrentProjectSettingValue();
             ProjectSettingChanged?.Invoke(settings);
         }
-        void EnumChangeEvent(ChangeEvent<Enum> e)
+        void ProviderChangeEvent(ChangeEvent<GenerateProvider> e)
         {
             RefreshProviderUi();
             var settings = GetCurrentProjectSettingValue();
@@ -93,7 +98,7 @@ internal class SettingMenu : EditorWindow, ISettingView
 
 
         // General
-        _generateProviderField?.RegisterValueChangedCallback(EnumChangeEvent);
+        _generateProviderField?.RegisterValueChangedCallback(ProviderChangeEvent);
         _defaultApiClientOutputFolderPathField?.RegisterCallback((EventCallback<FocusOutEvent>)FocusOutEvent);
         _defaultApiDocumentFilePathOrUrlField?.RegisterCallback((EventCallback<FocusOutEvent>)FocusOutEvent);
 
@@ -172,7 +177,9 @@ internal class SettingMenu : EditorWindow, ISettingView
 
         // General
         InitializeEnumFields(root);
-        _generateProviderField = root.Q<EnumField>("GenerateProviderField");
+        _generateProviderField = root.Q<PopupField>("GenerateProviderField");
+        _sourceGeneratorBetaNotice = root.Q<VisualElement>("SourceGeneratorBetaNotice");
+        GenerationProviderPresentation.BindSupportLink(root);
         _generateProviderDisplayNameLabel = root.Q<Label>("GenerateProviderDisplayNameLabel");
         _generateProviderAvailabilityLabel = root.Q<Label>("GenerateProviderAvailabilityLabel");
         _dockerPathField = root.Q<TextField>("DockerPathField");
@@ -220,7 +227,10 @@ internal class SettingMenu : EditorWindow, ISettingView
     internal static void InitializeEnumFields(VisualElement root)
     {
         root.Q<VisualElement>("GenerateProviderContainer").Add(
-            new EnumField("Generate Provider", GenerateProvider.OpenApi) { name = "GenerateProviderField" });
+            new PopupField("Generate Provider",
+                new List<GenerateProvider> { GenerateProvider.OpenApi, GenerateProvider.SourceGenerator },
+                GenerateProvider.OpenApi, GenerationProviderPresentation.GetDisplayName,
+                GenerationProviderPresentation.GetDisplayName) { name = "GenerateProviderField" });
         root.Q<VisualElement>("LibraryContainer").Add(
             new EnumField("Library", default(OpenApiDependenceLibrary)) { name = "LibraryField" });
     }
@@ -244,6 +254,7 @@ internal class SettingMenu : EditorWindow, ISettingView
     void RefreshProviderUi()
     {
         GenerateProvider provider = GetSelectedProvider();
+        GenerationProviderPresentation.UpdateBetaNotice(_sourceGeneratorBetaNotice, provider);
         GenerationProviderResolution resolution = GenerationProviderRegistry.Shared.Resolve(provider);
 
         if (resolution.IsResolved)
@@ -251,7 +262,7 @@ internal class SettingMenu : EditorWindow, ISettingView
             GenerationProviderDescriptor descriptor = resolution.Provider!.Descriptor;
             if (_generateProviderDisplayNameLabel != null)
             {
-                _generateProviderDisplayNameLabel.text = descriptor.DisplayName;
+                _generateProviderDisplayNameLabel.text = GenerationProviderPresentation.GetDisplayName(provider);
             }
 
             if (_generateProviderAvailabilityLabel != null)
@@ -273,9 +284,7 @@ internal class SettingMenu : EditorWindow, ISettingView
         {
             if (_generateProviderDisplayNameLabel != null)
             {
-                _generateProviderDisplayNameLabel.text = Enum.IsDefined(typeof(GenerateProvider), provider)
-                    ? provider.ToString()
-                    : $"Unknown provider ({(int)provider})";
+                _generateProviderDisplayNameLabel.text = GenerationProviderPresentation.GetDisplayName(provider);
             }
 
             if (_generateProviderAvailabilityLabel != null)

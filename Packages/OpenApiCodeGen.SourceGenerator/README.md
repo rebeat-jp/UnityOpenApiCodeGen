@@ -1,4 +1,7 @@
-# OpenApiCodeGen Source Generator
+# OpenApiCodeGen Source Generator (Beta)
+
+Source Generator generation is in beta. Review the supported features before use. See the
+[Support Matrix](../../SourceGenerators/OpenApiMvpSupportMatrix.md). The Editor provider is named **Source Generator (Beta)**.
 
 ## Purpose and audience
 
@@ -21,7 +24,7 @@ Add both packages to the Unity project's `Packages/manifest.json`:
 ```
 
 The add-on requires Unity `6000.0` or later, base package `0.5.0`, and
-`com.unity.nuget.newtonsoft-json` `3.2.2`. Select **Source Generator** in
+`com.unity.nuget.newtonsoft-json` `3.2.2`. Select **Source Generator (Beta)** in
 `Window/OpenAPI Code Generator/Settings`, then use
 `Window/OpenAPI Code Generator/Generator`.
 
@@ -97,6 +100,13 @@ space indentation. A byte-identical Generate keeps the owned definition and
 compiler input unchanged and does not request script compilation. A fetch,
 parse, reference, or publication failure leaves the last successful cache and
 mirror intact but returns failure; the failed input is not published.
+
+Change `PackageName` in Settings and Generate again to move an owned definition
+to a new namespace in the same output folder with the same API name. The Editor
+checks its generated source, ownership header, identity and SpecId, retains its
+SpecId and `.meta` GUID, and rejects edits made while generation is running.
+Publication failures restore this transaction's files without overwriting
+external definition edits, including during later journal recovery.
 
 The window reports progress and supports Cancel before publication. Generation
 and startup recovery use process-local and OS file locks. A durable publication

@@ -186,7 +186,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         internal OpenApiSourceLocation Location { get; }
 
-        internal string Identity => LocationName + ":" + Name;
+        internal string Identity => LocationName == "header"
+            ? LocationName + ":" + Name.ToUpperInvariant()
+            : LocationName + ":" + Name;
     }
 
     internal sealed class OpenApiSemanticRequestBody

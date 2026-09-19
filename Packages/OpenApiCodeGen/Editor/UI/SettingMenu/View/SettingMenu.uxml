@@ -9,6 +9,10 @@
             <ui:VisualElement name="GenerateProviderContainer" />
             <ui:Label name="GenerateProviderDisplayNameLabel" style="margin-left: 3px; white-space: normal;" />
             <ui:Label name="GenerateProviderAvailabilityLabel" style="margin-left: 3px; margin-bottom: 4px; white-space: normal;" />
+            <ui:VisualElement name="SourceGeneratorBetaNotice" class="source-generator-beta-notice source-generator-beta-hidden">
+                <ui:Label text="Source Generator generation is in beta. Review the supported features before use." class="source-generator-beta-description" />
+                <ui:Button name="SourceGeneratorSupportMatrix" text="Open Support Matrix" class="source-generator-beta-link" />
+            </ui:VisualElement>
             <ui:TextField picking-mode="Ignore" label="Default API Document File URL" name="DefaultApiDocumentFilePathOrUrlField" />
             <ui:TextField picking-mode="Ignore" label="Default Output Folder Path" name="DefaultOutputFolderPathField" />
         </ui:Foldout>

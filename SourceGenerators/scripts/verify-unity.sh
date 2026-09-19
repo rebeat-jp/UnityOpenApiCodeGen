@@ -5,6 +5,8 @@ set -euo pipefail
 scripts_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "${scripts_directory}/common.sh"
+# shellcheck source=ci-time-budget.sh
+source "${scripts_directory}/ci-time-budget.sh"
 
 unity_version="6000.3.2f1"
 pack_release_args=()
@@ -35,7 +37,7 @@ release_output="${SOURCE_GENERATOR_RELEASE_OUTPUT:-${repository_root}/artifacts/
 base_archive="${release_output}/jp.rhycol.openapicodegen-${release_version}.tgz"
 source_generator_archive="${release_output}/jp.rhycol.openapicodegen.source-generator-${release_version}.tgz"
 evidence_root="${SOURCE_GENERATOR_EVIDENCE_ROOT:-${release_output}/unity-gate/${unity_version}}"
-unity_timeout_seconds="${SOURCE_GENERATOR_UNITY_TIMEOUT_SECONDS:-300}"
+unity_timeout_seconds="${SOURCE_GENERATOR_UNITY_TIMEOUT_SECONDS:-${CI_EDITOR_TIMEOUT_SECONDS}}"
 
 case "${unity_version}" in
   6000.0.23f1)
@@ -70,6 +72,7 @@ regeneration_test_log="${temporary_root}/source-generator-regeneration-tests.log
 without_addon_results="${temporary_root}/without-addon-results.xml"
 without_addon_log="${temporary_root}/without-addon.log"
 without_addon_bootstrap_log="${temporary_root}/without-addon-bootstrap.log"
+consumer_log="${temporary_root}/source-generator-consumer.log"
 gate_status="not-run"
 gate_reason="Source Generator Unity gate did not start"
 published_authoritative_cache=""
@@ -115,6 +118,7 @@ write_gate_evidence() {
   copy_evidence_file "${without_addon_results}" "without-addon-results.xml"
   copy_evidence_file "${without_addon_log}" "without-addon.log"
   copy_evidence_file "${without_addon_bootstrap_log}" "without-addon-bootstrap.log"
+  copy_evidence_file "${consumer_log}" "source-generator-consumer.log"
   copy_evidence_file "${published_authoritative_cache}" "normalized-v2.json"
 
   if command -v node >/dev/null 2>&1; then
@@ -224,11 +228,68 @@ printf '%s\n' \
   "    \"com.unity.test-framework\": \"${test_framework_version}\"," \
   "    \"jp.rhycol.openapicodegen\": \"file:../../LocalPackages/${base_archive_name}\"," \
   "    \"jp.rhycol.openapicodegen.source-generator\": \"file:../../LocalPackages/${source_generator_archive_name}\"" \
+  '  }' \
+  '}' \
+  > "${project_path}/Packages/manifest.json"
+rm -f "${project_path}/Packages/packages-lock.json"
+
+# Keep fixture-relative shell operations inside the disposable project.
+cd "${project_path}"
+
+run_editor() {
+  local output_log="$1"
+  shift
+
+  rm -f "${output_log}"
+  perl "${scripts_directory}/run-with-timeout.pl" "${unity_timeout_seconds}" "$@" \
+    -logFile "${output_log}"
+}
+
+# Compile both release-candidate packages with Test Framework installed but no
+# testables entries. Production assemblies must exist and package tests must not.
+if run_editor "${consumer_log}" \
+    "${unity_executable}" \
+    -batchmode \
+    -nographics \
+    -projectPath "${project_path}" \
+    -quit; then
+  :
+else
+  editor_exit_code=$?
+  if [[ "${editor_exit_code}" == "142" || "${editor_exit_code}" == "124" || ! -f "${consumer_log}" ]]; then
+    fail_not_run "Unity ${unity_version} consumer compilation timed out or produced no log"
+  fi
+  fail_gate "Unity ${unity_version} consumer compilation failed while testables was omitted"
+fi
+if grep -Eq 'error CS[0-9]{4}|Scripts have compiler errors' "${consumer_log}"; then
+  fail_gate "Unity ${unity_version} consumer reported compiler errors while testables was omitted"
+fi
+for assembly in \
+  Unity.OpenApiCodeGen.Editor.Contracts.dll \
+  Unity.OpenApiCodeGen.Editor.dll \
+  Unity.OpenApiCodeGen.SourceGenerator.dll \
+  Unity.OpenApiCodeGen.SourceGenerator.Editor.dll \
+  Unity.OpenApiCodeGen.SourceGenerator.Editor.Parsing.dll; do
+  if [[ ! -f "${project_path}/Library/ScriptAssemblies/${assembly}" ]]; then
+    fail_gate "Unity ${unity_version} consumer compilation did not produce ${assembly}"
+  fi
+done
+for test_assembly in Unity.OpenApiCodeGen.Test.dll Unity.OpenApiCodeGen.SourceGenerator.Tests.dll; do
+  if [[ -f "${project_path}/Library/ScriptAssemblies/${test_assembly}" ]]; then
+    fail_gate "Unity ${unity_version} consumer unexpectedly compiled ${test_assembly} without testables"
+  fi
+done
+
+printf '%s\n' \
+  '{' \
+  '  "dependencies": {' \
+  "    \"com.unity.test-framework\": \"${test_framework_version}\"," \
+  "    \"jp.rhycol.openapicodegen\": \"file:../../LocalPackages/${base_archive_name}\"," \
+  "    \"jp.rhycol.openapicodegen.source-generator\": \"file:../../LocalPackages/${source_generator_archive_name}\"" \
   '  },' \
   '  "testables": ["jp.rhycol.openapicodegen", "jp.rhycol.openapicodegen.source-generator"]' \
   '}' \
   > "${project_path}/Packages/manifest.json"
-rm -f "${project_path}/Packages/packages-lock.json"
 
 verification_assets="${project_path}/Assets/OpenApiCodeGen/SourceGeneratorVerification"
 mkdir -p "${verification_assets}"
@@ -247,23 +308,6 @@ authoritative_cache_root="${project_path}/Library/OpenApiCodeGen/SourceGenerator
 printf '%s\n' \
   '{"GenerateProvider":1,"ApiDocumentFilePathOrUrl":"Assets/OpenApiCodeGen/SourceGeneratorVerification/Specs/openapi.json","ApiClientOutputFolderPath":"Assets/OpenApiCodeGen/SourceGeneratorVerification/Target/Generated"}' \
   > "${project_path}/Assets/OpenApiCodeGen/projectSettings.json"
-
-# ApplicationConstant resolves the project settings folder from the current
-# directory, so Unity must inherit the temporary verification project as cwd.
-cd "${project_path}"
-
-run_editor() {
-  local output_log="$1"
-  shift
-
-  rm -f "${output_log}"
-  if command -v perl >/dev/null 2>&1; then
-    perl -e 'alarm shift; exec @ARGV' "${unity_timeout_seconds}" "$@" \
-      -logFile "${output_log}"
-  else
-    "$@" -logFile "${output_log}"
-  fi
-}
 
 classify_editor_failure() {
   local output_log="$1"

@@ -22,11 +22,17 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Changed
 
+- Label Source Generator generation as beta in Settings, Generator, documentation, and add-on Package Manager metadata; preserve package IDs, versions, and saved provider values.
+
 - Make the Setup window Docker-specific and route Generate through the saved provider.
 - Keep an open Generator window synchronized with the saved provider.
 - Keep the base package usable without the optional Source Generator add-on.
 
 ### Fixed
+
+- Resolve project settings from `Application.dataPath`, independent of the Editor process working directory.
+- Keep API name and package name editable for Source Generator while disabling Docker-specific fields.
+- Verify consumer compilation both without Test Framework and with Test Framework but without package testables.
 
 - Stop unknown or unavailable providers from falling back to Docker.
 - Avoid main-thread deadlocks in synchronous Docker provider generation.

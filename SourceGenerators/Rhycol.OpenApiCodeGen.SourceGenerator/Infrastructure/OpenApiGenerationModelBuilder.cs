@@ -122,8 +122,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     string parameterName = AllocateUniqueName(
                         ToIdentifier(parameter.Name, pascalCase: false),
                         usedParameterNames);
-                    GeneratedTypeModel type = ResolveType(parameter.Schema)
-                        .WithNullable(parameter.Schema.Nullable || !parameter.Required);
+                    GeneratedTypeModel resolvedType = ResolveType(parameter.Schema);
+                    GeneratedTypeModel type = resolvedType.WithNullable(
+                        resolvedType.Nullable || parameter.Schema.Nullable || !parameter.Required);
                     parameters.Add(new GeneratedParameterModel(
                         parameterName,
                         parameter.Name,
@@ -136,8 +137,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 if (operation.RequestBody is not null)
                 {
                     string parameterName = AllocateUniqueName("body", usedParameterNames);
-                    GeneratedTypeModel type = ResolveType(operation.RequestBody.Schema)
-                        .WithNullable(operation.RequestBody.Schema.Nullable || !operation.RequestBody.Required);
+                    GeneratedTypeModel resolvedType = ResolveType(operation.RequestBody.Schema);
+                    GeneratedTypeModel type = resolvedType.WithNullable(
+                        resolvedType.Nullable ||
+                        operation.RequestBody.Schema.Nullable ||
+                        !operation.RequestBody.Required);
                     requestBody = new GeneratedRequestBodyModel(
                         parameterName,
                         operation.RequestBody.Required,
@@ -145,10 +149,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         type);
                 }
 
-                GeneratedTypeModel? responseType = operation.ResponseSchema is null
-                    ? null
-                    : ResolveType(operation.ResponseSchema)
-                        .WithNullable(operation.ResponseSchema.Nullable);
+                GeneratedTypeModel? responseType = null;
+                if (operation.ResponseSchema is not null)
+                {
+                    GeneratedTypeModel resolvedType = ResolveType(operation.ResponseSchema);
+                    responseType = resolvedType.WithNullable(
+                        resolvedType.Nullable || operation.ResponseSchema.Nullable);
+                }
                 result.Add(new GeneratedOperationModel(
                     methodName,
                     operation.Summary,
@@ -206,12 +213,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                             referencedSchema.Kind == OpenApiSemanticSchemaKind.Enum
                                 ? GeneratedTypeKind.NamedEnum
                                 : GeneratedTypeKind.Named,
-                            schema.Nullable,
+                            schema.Nullable || referencedSchema.Nullable,
                             _componentTypeNames[referenceIdentity]);
                     }
 
-                    return ResolveType(referencedSchema).WithNullable(
-                        schema.Nullable || referencedSchema.Nullable);
+                    GeneratedTypeModel resolvedType = ResolveType(referencedSchema);
+                    return resolvedType.WithNullable(
+                        resolvedType.Nullable || schema.Nullable || referencedSchema.Nullable);
                 case OpenApiSemanticSchemaKind.Object:
                 case OpenApiSemanticSchemaKind.Enum:
                     string typeName = GetOrAllocateSchemaTypeName(schema);

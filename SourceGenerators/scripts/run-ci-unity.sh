@@ -4,6 +4,8 @@ set -euo pipefail
 # files or raw activation/console logs are written to the mounted checkout.
 scripts_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly scripts_directory
+# shellcheck source=ci-time-budget.sh
+source "${scripts_directory}/ci-time-budget.sh"
 readonly version="${1:?Unity version required}"
 readonly release_output="${SOURCE_GENERATOR_RELEASE_OUTPUT:?Candidate output required}"
 private_directory="$(mktemp -d /tmp/unity-auth.XXXXXX)"
@@ -12,13 +14,16 @@ readonly evidence_directory="${release_output}/unity-gate/${version}"
 umask 077
 mkdir -p "${private_directory}/BlankProject/Assets" "${evidence_directory}"
 activated=false
+gate_pid=""
 export UNITY_EXECUTABLE=/opt/unity/Editor/Unity
+export SOURCE_GENERATOR_UNITY_TIMEOUT_SECONDS="${CI_EDITOR_TIMEOUT_SECONDS}"
 # shellcheck disable=SC2329 # Invoked by the EXIT trap.
 cleanup() {
   local result=$?
   trap - EXIT
   if [[ "${activated}" == true ]]; then
-    if ! timeout 120 "${UNITY_EXECUTABLE}" -batchmode -nographics -quit \
+    if ! perl "${scripts_directory}/run-with-timeout.pl" "${CI_LICENSE_RETURN_TIMEOUT_SECONDS}" \
+        "${UNITY_EXECUTABLE}" -batchmode -nographics -quit \
         -returnlicense -username "${UNITY_EMAIL}" -password "${UNITY_PASSWORD}" \
         -projectPath "${private_directory}/BlankProject" \
         -logFile "${private_directory}/return.log" >"${private_directory}/return-console.log" 2>&1; then
@@ -34,6 +39,26 @@ cleanup() {
   exit "${result}"
 }
 trap cleanup EXIT
+emit_gate_console() {
+  if [[ -f "${private_directory}/gate-console.log" ]]; then
+    node - "${private_directory}/gate-console.log" "${scripts_directory}/ci-evidence.js" <<'NODE'
+const fs = require('fs');
+const { redact } = require(process.argv[3]);
+process.stdout.write(redact(fs.readFileSync(process.argv[2], 'utf8')));
+NODE
+  fi
+}
+# shellcheck disable=SC2329 # Invoked by the TERM/INT traps.
+terminate_gate() {
+  trap - TERM INT
+  if [[ -n "${gate_pid}" ]]; then
+    kill -TERM -- "-${gate_pid}" 2>/dev/null || kill -TERM "${gate_pid}" 2>/dev/null || true
+    wait "${gate_pid}" 2>/dev/null || true
+  fi
+  emit_gate_console
+  exit 143
+}
+trap terminate_gate TERM INT
 failure_evidence() {
   local reason="$1"
   node "${scripts_directory}/ci-evidence.js" write-gate \
@@ -53,7 +78,8 @@ export UNITY_SERIAL
 dbus-uuidgen > /etc/machine-id
 mkdir -p /var/lib/dbus
 ln -sf /etc/machine-id /var/lib/dbus/machine-id
-if ! timeout 300 "${UNITY_EXECUTABLE}" -batchmode -nographics -quit \
+if ! perl "${scripts_directory}/run-with-timeout.pl" "${CI_ACTIVATION_TIMEOUT_SECONDS}" \
+    "${UNITY_EXECUTABLE}" -batchmode -nographics -quit \
     -serial "${UNITY_SERIAL}" -username "${UNITY_EMAIL}" -password "${UNITY_PASSWORD}" \
     -projectPath "${private_directory}/BlankProject" \
     -logFile "${private_directory}/activation.log" >"${private_directory}/activation-console.log" 2>&1; then
@@ -66,11 +92,10 @@ case "${version}" in
   *) failure_evidence 'Unsupported Unity version' ;;
 esac
 status=0
-SOURCE_GENERATOR_SKIP_DOTNET_VERIFY=1 SOURCE_GENERATOR_EVIDENCE_ROOT="${evidence_directory}" \
-  "${scripts_directory}/${gate_script}" "${version}" >"${private_directory}/gate-console.log" 2>&1 || status=$?
-node - "${private_directory}/gate-console.log" "${scripts_directory}/ci-evidence.js" <<'NODE'
-const fs = require('fs');
-const { redact } = require(process.argv[3]);
-process.stdout.write(redact(fs.readFileSync(process.argv[2], 'utf8')));
-NODE
+setsid env SOURCE_GENERATOR_SKIP_DOTNET_VERIFY=1 SOURCE_GENERATOR_EVIDENCE_ROOT="${evidence_directory}" \
+  "${scripts_directory}/${gate_script}" "${version}" >"${private_directory}/gate-console.log" 2>&1 &
+gate_pid=$!
+wait "${gate_pid}" || status=$?
+gate_pid=""
+emit_gate_console
 exit "${status}"

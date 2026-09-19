@@ -13,7 +13,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             string apiName,
             string generatedNamespace,
             OpenApiDocumentFormat documentFormat,
-            byte[] content)
+            byte[] content,
+            bool preparedDefinitionExists,
+            string preparedDefinitionSha256)
         {
             SpecId = specId;
             ClientIdentitySha256 = clientIdentitySha256;
@@ -24,6 +26,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             GeneratedNamespace = generatedNamespace;
             DocumentFormat = documentFormat;
             Content = content;
+            PreparedDefinitionExists = preparedDefinitionExists;
+            PreparedDefinitionSha256 = preparedDefinitionSha256;
         }
 
         internal string SpecId { get; }
@@ -43,5 +47,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         internal OpenApiDocumentFormat DocumentFormat { get; }
 
         internal byte[] Content { get; }
+
+        internal bool PreparedDefinitionExists { get; }
+
+        internal string PreparedDefinitionSha256 { get; }
     }
 }

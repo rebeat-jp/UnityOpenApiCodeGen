@@ -5,6 +5,9 @@ documents. This repository contains the base package (Docker provider and
 Editor UI) and the optional Source Generator package (Unity 6, local or URL
 documents).
 
+Source Generator generation is in beta. Review the supported features before use. See the
+[Support Matrix](SourceGenerators/OpenApiMvpSupportMatrix.md). The Editor provider is named **Source Generator (Beta)**.
+
 ## Requirements
 
 | Package | Minimum Unity | Additional requirement |
@@ -36,7 +39,7 @@ replace `0.5.0` with the same reviewed commit SHA in both Git URLs.
 ## Getting started
 
 1. Open `Window/OpenAPI Code Generator/Settings` and select `Docker` or
-   `Source Generator`.
+   `Source Generator (Beta)`.
 2. If Docker is selected, configure the Docker executable in the Setup window.
    Setup is Docker-specific and does not switch the saved provider.
 3. Open `Window/OpenAPI Code Generator/Generator`. Enter the document path or

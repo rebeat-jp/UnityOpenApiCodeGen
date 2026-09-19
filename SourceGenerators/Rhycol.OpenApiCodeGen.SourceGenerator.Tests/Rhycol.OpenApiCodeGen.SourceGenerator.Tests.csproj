@@ -37,10 +37,14 @@
   <ItemGroup>
     <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/CanonicalSpecBundleWriter.cs"
              Link="LinkedProduction/CanonicalSpecBundleWriter.cs" />
+    <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/ExternalSpecGraphLoader.cs"
+             Link="LinkedProduction/ExternalSpecGraphLoader.cs" />
     <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/NormalizedSpecBundleConstants.cs"
              Link="LinkedProduction/NormalizedSpecBundleConstants.cs" />
     <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/NormalizedSpecException.cs"
              Link="LinkedProduction/NormalizedSpecException.cs" />
+    <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/SafeGenerationException.cs"
+             Link="LinkedProduction/SafeGenerationException.cs" />
     <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/RawJsonNormalizer.cs"
              Link="LinkedProduction/RawJsonNormalizer.cs" />
     <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/RawYamlNormalizer.cs"
@@ -50,5 +54,9 @@
     <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/Parsing/*.cs"
              Exclude="../../Packages/OpenApiCodeGen.SourceGenerator/Editor/Parsing/AssemblyInfo.cs"
              Link="LinkedProduction/Parsing/%(Filename)%(Extension)" />
+    <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Runtime/OpenApiDocumentFormat.cs"
+             Link="LinkedProduction/OpenApiDocumentFormat.cs" />
+    <Compile Include="../../Packages/OpenApiCodeGen/Editor/Contracts/GenerationProviderContracts.cs"
+             Link="LinkedProduction/GenerationProviderContracts.cs" />
   </ItemGroup>
 </Project>

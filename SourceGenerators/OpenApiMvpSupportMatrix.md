@@ -1,5 +1,8 @@
 # OpenAPI MVP support matrix
 
+**Source Generator (Beta)** による生成はベータです。
+Source Generator generation is in beta. Review the supported features before use.
+
 ## 目的と対象読者
 
 この文書は、`Rhycol.OpenApiCodeGen.SourceGenerator`で生成できるOpenAPI documentの
@@ -125,12 +128,20 @@ YAML diagnostic IDs are stable within Phase 5:
 | `servers` | Partial | URLは0個または1個、variablesなし。 |
 | parameter location | Partial | path、query、headerのscalar parameterのみ。cookieは対象外です。 |
 | parameter serialization | Partial | defaultの`style`/`explode`のみ。`allowReserved: true`は対象外です。 |
-| complex parameter | Unsupported | array/object等のcomplex parameterは対象外です。 |
-| request body | Partial | JSON media typeのみ。`application/json`または`application/*+json`。 |
+| complex parameter | Unsupported | 直接定義・多段`$ref`ともarray/object等のcomplex parameterは対象外です。 |
+| header identity | Supported | header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。 |
+| request body | Partial | パラメーター付きも含む`application/json`または`application/*+json`。type/subtypeを正規化して判定します。 |
+| request charset | Partial | UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。 |
 | successful response | Partial | 少なくとも1つの`2xx` responseが必要です。複数ある場合、contractは一致する必要があります。 |
+| error/default response | Partial | JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。 |
+| response extension | Supported | operationのResponses Objectでは`x-*`を除外します。`components.responses`の`x-*`名は通常のResponse/Referenceです。 |
 | response header | Unsupported | nonempty response headerは対象外です。 |
 
+status codeはASCII数字で検証します。属性付きのジェネリックclassは`OACG005`で拒否します。
+
 ## Schema
+
+以下は生成するrequest／成功response／DTOの制限です。非2xxと`default`の本文は構造・参照検証の対象です。
 
 | 項目 | Status | 条件・制約 |
 | --- | --- | --- |
@@ -138,12 +149,15 @@ YAML diagnostic IDs are stable within Phase 5:
 | object | Partial | named propertiesと`required`を持つobject。 |
 | array | Partial | supported schemaのarray。 |
 | string enum | Supported | generated C# enumに`StringEnumConverter`を付与します。 |
-| direct schema reference | Supported | supported schemaへのdirect internal reference。 |
+| direct schema reference | Supported | supported schemaへの参照。多段参照のscalar／enumもnullableを保持します。 |
 | nullable | Partial | OpenAPI 3.0の`nullable`、OpenAPI 3.1の`type: [<type>, null]`。 |
 | scalar format | Partial | `integer`は通常`int`、`int64`は`long`。`number`は通常`double`、`float`は`float`、`decimal`は`decimal`。`date`、`date-time`、`uuid`は`DateTime`、`DateTimeOffset`、`Guid`へmappingします。 |
 | map / free-form object | Unsupported | `additionalProperties`などのmap/free-form表現は対象外です。 |
 | composition | Unsupported | `allOf`、`anyOf`、`oneOf`、`not`、discriminatorは対象外です。 |
 | binary / readOnly / writeOnly | Unsupported | 生成contractでは対象外です。 |
+
+リクエストJSONの`format: date`は`yyyy-MM-dd`へ変換します。公開型の`DateTime`は維持し、
+`date-time`の`DateTimeOffset`にはdate用converterを適用しません。
 
 ## Generated outputと利用上の制約
 
@@ -186,21 +200,30 @@ GitHub ActionsのUnity検証とCD dry-runは実装済みです。レビュー対
 [run 34987295723](https://github.com/rebeat-jp/UnityOpenApiCodeGen/actions/runs/34987295723)
 で3版のUnity検証とCD dry-runが成功しています。
 
-2026-09-19のレビュー対応後のローカル検証では、.NET 115/115、Node 34/34が成功しました。
+2026-09-19の再レビュー対応後のローカル検証では、.NET 143/143、Node 42/42が成功しました。
 Analyzer再現ビルド・同梱DLL同期・package inspection・tarball再現性と、同一候補を使った
 次のUnity検証も成功しています。すべて失敗・スキップ0件です。
 
 | Unity | 初回EditMode | 再生成 | add-on除去後 |
 | --- | ---: | ---: | ---: |
-| `2021.3.19f1`（base） | 52/52 | 対象外 | 対象外 |
-| `6000.0.23f1` | 222/222 | 222/222 | 52/52 |
-| `6000.3.2f1` | 222/222 | 222/222 | 52/52 |
+| `2021.3.19f1`（base） | 55/55 | 対象外 | 対象外 |
+| `6000.0.23f1` | 238/238 | 238/238 | 55/55 |
+| `6000.3.2f1` | 238/238 | 238/238 | 55/55 |
 
-baseはTest Framework未導入のconsumer compileも成功しています。Source Generatorの
-設定UIではApiName/PackageNameを編集でき、Docker専用項目は無効になります。
+baseはTest Framework未導入と導入済み・`testables`なしのconsumer compileが成功しています。
+両Unity 6でもTest Framework導入済み・`testables`なしで、本番assemblyの生成と
+両パッケージのtest assembly不在を確認しました。
+Settings／Generatorは`Source Generator (Beta)`を表示し、ベータ説明とSupport Matrixへの
+導線を持ちます。利用不可時もベータ表示を維持します。ApiName/PackageNameを編集でき、
+Docker専用項目は無効になります。実UXMLテストに加え、Unity Editorで利用可能／不可と
+狭い幅での説明文の折り返しを確認しました。Unity 2021.3のネイティブpopup操作は
+このmacOS環境で標準PopupFieldでもEditor終了を再現したため、候補の実表示はUnity 6で確認しています。
 共有`$ref`の解析完了結果はdocument ID＋pointerで再利用し、循環診断は維持します。
 比較用の深さ14のDAGでは割当量が893,361,000 bytesから254,416 bytesへ減少しました
 （ローカル測定値であり、実行時間のCI閾値には使いません）。
+文書走査では870,986 bytes／8,000 schemaの同一入力で、割り当てが約843 MBから
+約305 MBへ減少しました。エラーschema検証も成功済み参照を再利用し、深さ15の
+共有DAGで約155 MBから約9.8 MBへ減少しました。
 
 このローカル候補は`--allow-dirty`で作成した開発用証拠です。公開に使うclean commitと
 最新のCI結果・成果物は[PR #56](https://github.com/rebeat-jp/UnityOpenApiCodeGen/pull/56)

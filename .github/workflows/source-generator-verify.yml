@@ -89,7 +89,7 @@ jobs:
     needs: candidate
     if: inputs.unity && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 240
     outputs:
       artifact: ${{ steps.evidence.outputs.artifact }}
       execution-attempt: ${{ steps.evidence.outputs.execution-attempt }}
@@ -103,8 +103,11 @@ jobs:
       SOURCE_GENERATOR_CI: '1'
       SOURCE_GENERATOR_CI_COMMIT: ${{ needs.candidate.outputs.commit }}
       SOURCE_GENERATOR_CANDIDATE_ATTEMPT: ${{ needs.candidate.outputs.attempt }}
+      SOURCE_GENERATOR_RELEASE_VERSION: ${{ needs.candidate.outputs.version }}
       SOURCE_GENERATOR_RELEASE_OUTPUT: ${{ github.workspace }}/artifacts/upm/${{ needs.candidate.outputs.version }}
     steps:
+      - name: Start the bounded Unity work deadline
+        run: printf 'SOURCE_GENERATOR_CI_STARTED_AT_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.candidate.outputs.commit }}
@@ -141,56 +144,13 @@ jobs:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-        run: |
-          missing_secret=false
-          for secret_name in UNITY_LICENSE UNITY_EMAIL UNITY_PASSWORD; do
-            if [[ -z "${!secret_name:-}" ]]; then missing_secret=true; fi
-          done
-          if [[ "$missing_secret" == true ]]; then
-            for version in 2021.3.19f1 6000.0.23f1 6000.3.2f1; do
-              evidence_root="$SOURCE_GENERATOR_RELEASE_OUTPUT/unity-gate/$version"
-              mkdir -p "$evidence_root"
-              node SourceGenerators/scripts/ci-evidence.js write-gate \
-                "$evidence_root/gate.json" not-run 2 "$version" \
-                'Unity authentication Secrets are unavailable; check Environment UNITY_LICENSE and caller secret inheritance' \
-                "$evidence_root" "$SOURCE_GENERATOR_RELEASE_OUTPUT"
-            done
-            echo '::error::Required Unity authentication Secrets are unavailable; no Unity images were downloaded.'
-            exit 2
-          fi
-          failed=0
-          for version in 2021.3.19f1 6000.0.23f1 6000.3.2f1; do
-            image="openapi-unity-gate:${version}"
-            digest="$(node -p "require('./SourceGenerators/BuildTools/CI/unity-images.json')['$version']")"
-            if docker build --build-arg "UNITY_VERSION=$version" --build-arg "UNITY_IMAGE_DIGEST=$digest" \
-                --build-arg "NODE_VERSION=$(cat .node-version)" \
-                --tag "$image" SourceGenerators/BuildTools/CI; then
-              docker run --rm --shm-size=2g \
-                --volume "$GITHUB_WORKSPACE:/workspace" \
-                --env UNITY_LICENSE --env UNITY_EMAIL --env UNITY_PASSWORD \
-                --env SOURCE_GENERATOR_CI --env SOURCE_GENERATOR_CI_COMMIT --env SOURCE_GENERATOR_CANDIDATE_ATTEMPT \
-                --env GITHUB_REPOSITORY --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
-                --env "SOURCE_GENERATOR_RELEASE_OUTPUT=/workspace/artifacts/upm/${{ needs.candidate.outputs.version }}" \
-                --env SOURCE_GENERATOR_UNITY_TIMEOUT_SECONDS=900 \
-                "$image" "$version" || failed=1
-            else
-              failed=1
-            fi
-            sudo chown -R "$(id -u):$(id -g)" "$SOURCE_GENERATOR_RELEASE_OUTPUT"
-            if [[ ! -f "$SOURCE_GENERATOR_RELEASE_OUTPUT/unity-gate/$version/gate.json" ]]; then
-              mkdir -p "$SOURCE_GENERATOR_RELEASE_OUTPUT/unity-gate/$version"
-              node SourceGenerators/scripts/ci-evidence.js write-gate \
-                "$SOURCE_GENERATOR_RELEASE_OUTPUT/unity-gate/$version/gate.json" not-run 2 "$version" \
-                'Unity image build or container execution failed before gate evidence was written' \
-                "$SOURCE_GENERATOR_RELEASE_OUTPUT/unity-gate/$version" "$SOURCE_GENERATOR_RELEASE_OUTPUT"
-            fi
-            docker image rm "$image" "unityci/editor:ubuntu-${version}-base-3@$digest" || true
-            docker builder prune --force
-          done
-          exit "$failed"
+        run: bash SourceGenerators/scripts/run-ci-unity-matrix.sh
       - name: Recover artifact ownership
         if: always()
-        run: sudo chown -R "$(id -u):$(id -g)" "$SOURCE_GENERATOR_RELEASE_OUTPUT"
+        run: |
+          source SourceGenerators/scripts/ci-time-budget.sh
+          perl SourceGenerators/scripts/run-with-timeout.pl "$CI_CLEANUP_TIMEOUT_SECONDS" \
+            sudo chown -R "$(id -u):$(id -g)" "$SOURCE_GENERATOR_RELEASE_OUTPUT"
       - name: Upload Unity evidence, including failed gates
         if: always()
         uses: actions/upload-artifact@v4

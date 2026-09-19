@@ -3,3 +3,23 @@
     -unity-font-style: bold;
     color: rgb(68, 138, 255);
 }
+
+.source-generator-beta-notice {
+    margin-top: 4px;
+    margin-bottom: 8px;
+    margin-left: 3px;
+    margin-right: 3px;
+}
+
+.source-generator-beta-hidden {
+    display: none;
+}
+
+.source-generator-beta-description {
+    white-space: normal;
+}
+
+.source-generator-beta-link {
+    align-self: flex-start;
+    margin-top: 4px;
+}

@@ -189,37 +189,64 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Test]
-        public async Task ExternalGraphResolvesRelativeRootAgainstTheUnityProjectRoot()
+        public async Task ExternalGraphResolvesRelativeRootAgainstExplicitUnityProjectRoot()
         {
             WriteText(
                 "Assets/Specs/root.json",
                 "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Root\",\"version\":\"1\"},\"paths\":{}}");
-            string originalCurrentDirectory = Directory.GetCurrentDirectory();
-            string unrelatedDirectory = Path.Combine(
-                Path.GetTempPath(),
-                "OpenApiCodeGenPhase6UnrelatedCwd",
-                Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(unrelatedDirectory);
+            NormalizedSpecGraph graph = await CreateLoader().LoadAsync(
+                "Assets/Specs/root.json",
+                SpecId,
+                CancellationToken.None);
 
-            try
-            {
-                Directory.SetCurrentDirectory(unrelatedDirectory);
-                NormalizedSpecGraph graph = await CreateLoader().LoadAsync(
-                    "Assets/Specs/root.json",
-                    SpecId,
-                    CancellationToken.None);
+            Assert.That(graph.SourcePath, Is.EqualTo("Assets/Specs/root.json"));
+            Assert.That(graph.Documents, Has.Count.EqualTo(1));
+        }
 
-                Assert.That(graph.SourcePath, Is.EqualTo("Assets/Specs/root.json"));
-                Assert.That(graph.Documents, Has.Count.EqualTo(1));
-            }
-            finally
-            {
-                Directory.SetCurrentDirectory(originalCurrentDirectory);
-                if (Directory.Exists(unrelatedDirectory))
-                {
-                    Directory.Delete(unrelatedDirectory, true);
-                }
-            }
+        [Test]
+        public async Task NormalizeAndCacheAsyncKeepsYamlAliasReferencesInTheirSemanticContexts()
+        {
+            WriteText(
+                "Assets/Specs/root.yaml",
+                "openapi: 3.1.0\n" +
+                "info:\n" +
+                "  title: Root\n" +
+                "  version: '1'\n" +
+                "paths: {}\n" +
+                "components:\n" +
+                "  schemas:\n" +
+                "    Shared: &semantic\n" +
+                "      $ref: 'child.yaml?token=secret#/components/schemas/Pet'\n" +
+                "    SharedAlias: *semantic\n" +
+                "  examples:\n" +
+                "    Literal:\n" +
+                "      value: &literal\n" +
+                "        $ref: 'missing.yaml?token=literal'\n" +
+                "    LiteralAlias:\n" +
+                "      value: *literal\n" +
+                "x-data: *literal\n");
+            WriteText(
+                "Assets/Specs/child.yaml",
+                "openapi: 3.1.0\n" +
+                "info:\n" +
+                "  title: Child\n" +
+                "  version: '1'\n" +
+                "paths: {}\n" +
+                "components:\n" +
+                "  schemas:\n" +
+                "    Pet:\n" +
+                "      type: string\n");
+
+            NormalizedSpecCacheResult result = await CreateService().NormalizeAndCacheAsync(
+                "Assets/Specs/root.yaml",
+                SpecId,
+                CancellationToken.None);
+            string bundle = File.ReadAllText(result.AuthoritativePath, new UTF8Encoding(false));
+
+            Assert.That(bundle, Does.Contain("/components/schemas/Shared/$ref"));
+            Assert.That(bundle, Does.Contain("/components/schemas/SharedAlias/$ref"));
+            Assert.That(bundle, Does.Not.Contain("token=secret"));
+            Assert.That(CountOccurrences(bundle, "missing.yaml?token=literal"), Is.EqualTo(3));
         }
 
         [Test]
@@ -1330,6 +1357,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 NormalizedSpecBundleConstants.AuthoritativeCacheRelativePath,
                 specId,
                 NormalizedSpecBundleConstants.PublishPendingFileName);
+        }
+
+        private static int CountOccurrences(string value, string fragment)
+        {
+            int count = 0;
+            int index = 0;
+            while ((index = value.IndexOf(fragment, index, StringComparison.Ordinal)) >= 0)
+            {
+                count++;
+                index += fragment.Length;
+            }
+
+            return count;
         }
 
         private static string CreateStructuredMarker(params string[] relativePaths)

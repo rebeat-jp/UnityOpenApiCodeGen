@@ -7,6 +7,9 @@ provider registry. It supports the Docker provider on Unity 2021.3 or later
 and is also the required base package for the optional Source Generator add-on
 on Unity 6.
 
+Source Generator generation is in beta. Review the supported features before use. See the
+[Support Matrix](../../SourceGenerators/OpenApiMvpSupportMatrix.md). The Editor provider is named **Source Generator (Beta)**.
+
 ## Install
 
 For the Source Generator provider, add both packages to the Unity project's

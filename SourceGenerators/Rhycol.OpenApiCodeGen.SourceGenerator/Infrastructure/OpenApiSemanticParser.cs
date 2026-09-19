@@ -23,6 +23,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             new Dictionary<string, NormalizedSpecDocument>(StringComparer.Ordinal);
         private readonly Dictionary<NormalizedSpecNodeIdentity, OpenApiSemanticSchema> _schemas =
             new Dictionary<NormalizedSpecNodeIdentity, OpenApiSemanticSchema>();
+        private readonly HashSet<NormalizedSpecNodeIdentity> _validatedResponseSchemas =
+            new HashSet<NormalizedSpecNodeIdentity>();
         private string _currentDocumentId = "root";
 
         private OpenApiSemanticParser(SpecNode root, int minorVersion)
@@ -236,7 +238,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 (node, name) => ParseResponse(
                     node,
                     new HashSet<NormalizedSpecNodeIdentity>(),
-                    name + "Response"));
+                    name + "Response",
+                    parseJsonBody: false));
         }
 
         private static void ValidateComponentMap(
@@ -468,8 +471,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 RequireProperty(node, "schema"),
                 name + "Parameter",
                 new HashSet<NormalizedSpecNodeIdentity>());
-            if (schema.Kind == OpenApiSemanticSchemaKind.Array ||
-                schema.Kind == OpenApiSemanticSchemaKind.Object)
+            OpenApiSemanticSchema effectiveSchema = GetEffectiveSchema(schema);
+            if (effectiveSchema.Kind == OpenApiSemanticSchemaKind.Array ||
+                effectiveSchema.Kind == OpenApiSemanticSchemaKind.Object)
             {
                 throw Unsupported(node, "Array and object parameters require style/explode support and are outside the Phase 4 MVP.");
             }
@@ -603,7 +607,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             bool required = GetOptionalBoolean(node, "required") ?? false;
-            ParsedContent content = ParseContent(RequireProperty(node, "content"), suggestedName);
+            ParsedContent content = ParseContent(
+                RequireProperty(node, "content"),
+                suggestedName,
+                validateRequestEncoding: true);
             if (content.Schema is null)
             {
                 throw Invalid(node, "A request body must define a JSON schema.");
@@ -626,11 +633,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             foreach (SpecProperty responseProperty in responsesNode.EnumerateObject()
                          .OrderBy(static value => value.Name, StringComparer.Ordinal))
             {
+                if (responseProperty.Name.StartsWith("x-", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                ValidateResponseStatusCode(responseProperty);
                 bool isSuccess = IsSuccessStatusCode(responseProperty.Name);
                 OpenApiSemanticSchema? schema = ParseResponse(
                     responseProperty.Value,
                     new HashSet<NormalizedSpecNodeIdentity>(),
-                    suggestedName);
+                    suggestedName,
+                    parseJsonBody: isSuccess);
                 if (!isSuccess)
                 {
                     continue;
@@ -661,7 +675,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private OpenApiSemanticSchema? ParseResponse(
             SpecNode node,
             HashSet<NormalizedSpecNodeIdentity> referenceStack,
-            string suggestedName)
+            string suggestedName,
+            bool parseJsonBody)
         {
             RequireKind(node, SpecValueKind.Object, "Each response must be an object or an internal $ref.");
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
@@ -671,7 +686,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     reference,
                     referenceNode,
                     referenceStack,
-                    target => ParseResponse(target, referenceStack, suggestedName));
+                    target => ParseResponse(target, referenceStack, suggestedName, parseJsonBody));
             }
 
             RequireString(RequireProperty(node, "description"), "The response description must be a string.");
@@ -683,17 +698,35 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             ThrowIfPresent(node, "links", "OpenAPI response links are not supported by the Phase 4 MVP.");
             SpecNode? contentNode = GetProperty(node, "content");
-            return contentNode is null ? null : ParseContent(contentNode, suggestedName).Schema;
+            if (contentNode is null)
+            {
+                return null;
+            }
+
+            if (!parseJsonBody)
+            {
+                ValidateResponseContent(contentNode);
+                return null;
+            }
+
+            return ParseContent(
+                contentNode,
+                suggestedName,
+                validateRequestEncoding: false).Schema;
         }
 
-        private ParsedContent ParseContent(SpecNode contentNode, string suggestedName)
+        private ParsedContent ParseContent(
+            SpecNode contentNode,
+            string suggestedName,
+            bool validateRequestEncoding)
         {
             RequireKind(contentNode, SpecValueKind.Object, "The content field must be an object.");
             var supported = new List<(string MediaType, OpenApiSemanticSchema Schema)>();
             foreach (SpecProperty mediaProperty in contentNode.EnumerateObject()
                          .OrderBy(static value => value.Name, StringComparer.Ordinal))
             {
-                if (!IsJsonMediaType(mediaProperty.Name))
+                ParsedOpenApiMediaType mediaType = ParseMediaType(mediaProperty);
+                if (!mediaType.IsJson)
                 {
                     throw Unsupported(
                         mediaProperty.Value,
@@ -706,7 +739,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     RequireProperty(mediaProperty.Value, "schema"),
                     suggestedName,
                     new HashSet<NormalizedSpecNodeIdentity>());
-                supported.Add((mediaProperty.Name, schema));
+                string? normalizedCharset = validateRequestEncoding
+                    ? GetSupportedRequestCharset(mediaType, mediaProperty.Value)
+                    : null;
+                supported.Add((mediaType.ToNormalizedString(normalizedCharset), schema));
             }
 
             if (supported.Count == 0)
@@ -728,6 +764,288 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             return new ParsedContent(supported[0].MediaType, supported[0].Schema);
+        }
+
+        private void ValidateResponseContent(SpecNode contentNode)
+        {
+            RequireKind(contentNode, SpecValueKind.Object, "The content field must be an object.");
+            foreach (SpecProperty mediaProperty in contentNode.EnumerateObject()
+                         .OrderBy(static value => value.Name, StringComparer.Ordinal))
+            {
+                ParseMediaType(mediaProperty);
+                RequireKind(mediaProperty.Value, SpecValueKind.Object, "Each media type entry must be an object.");
+                SpecNode? schemaNode = GetProperty(mediaProperty.Value, "schema");
+                if (schemaNode is not null)
+                {
+                    ValidateResponseSchemaReferences(
+                        schemaNode,
+                        new HashSet<NormalizedSpecNodeIdentity>());
+                }
+            }
+        }
+
+        private void ValidateResponseSchemaReferences(
+            SpecNode node,
+            HashSet<NormalizedSpecNodeIdentity> referenceStack)
+        {
+            if (node.ValueKind == SpecValueKind.True || node.ValueKind == SpecValueKind.False)
+            {
+                return;
+            }
+
+            RequireKind(node, SpecValueKind.Object, "A response schema must be an object or boolean schema.");
+            ValidateResponseSchemaKeywordShapes(node);
+            if (TryGetReference(node, out string reference, out SpecNode referenceNode))
+            {
+                ResolvedSpecReference resolved = ResolveReference(reference, referenceNode);
+                if (_bundle is null ||
+                    resolved.Pointer.StartsWith("/components/schemas/", StringComparison.Ordinal))
+                {
+                    _resolver.GetComponentName(
+                        _currentDocumentId,
+                        reference,
+                        "schemas",
+                        referenceNode);
+                }
+                else if (resolved.Pointer.Length == 0)
+                {
+                    if ((resolved.Node.ValueKind != SpecValueKind.Object &&
+                         resolved.Node.ValueKind != SpecValueKind.True &&
+                         resolved.Node.ValueKind != SpecValueKind.False) ||
+                        resolved.Node.TryGetProperty("openapi", out _))
+                    {
+                        throw Unsupported(
+                            referenceNode,
+                            "An external document root may be used only when it is a bare schema.");
+                    }
+                }
+                else
+                {
+                    throw Unsupported(
+                        referenceNode,
+                        "Schema $ref values must target a component schema or an external bare schema root.");
+                }
+
+                if (referenceStack.Contains(resolved.Identity))
+                {
+                    throw CreateException(
+                        OpenApiSemanticErrorKind.CyclicReference,
+                        "A cyclic internal $ref was detected at '" + reference + "'.",
+                        referenceNode,
+                        new[] { CreateLocation(resolved.Node, resolved.DocumentId) });
+                }
+
+                if (_validatedResponseSchemas.Contains(resolved.Identity))
+                {
+                    return;
+                }
+
+                ParseResolvedReferenced(
+                    reference,
+                    referenceNode,
+                    referenceStack,
+                    resolved,
+                    target =>
+                    {
+                        ValidateResponseSchemaReferences(target, referenceStack);
+                        return true;
+                    });
+                _validatedResponseSchemas.Add(resolved.Identity);
+                return;
+            }
+
+            ValidateResponseSchemaProperty(node, "items", referenceStack);
+            ValidateResponseSchemaProperty(node, "not", referenceStack);
+            ValidateResponseSchemaProperty(node, "contains", referenceStack);
+            ValidateResponseSchemaProperty(node, "propertyNames", referenceStack);
+            ValidateResponseSchemaProperty(node, "unevaluatedProperties", referenceStack);
+            ValidateResponseSchemaProperty(node, "unevaluatedItems", referenceStack);
+            ValidateResponseSchemaProperty(node, "if", referenceStack);
+            ValidateResponseSchemaProperty(node, "then", referenceStack);
+            ValidateResponseSchemaProperty(node, "else", referenceStack);
+            ValidateResponseSchemaMap(node, "properties", referenceStack);
+            ValidateResponseSchemaMap(node, "patternProperties", referenceStack);
+            ValidateResponseSchemaMap(node, "dependentSchemas", referenceStack);
+            ValidateResponseSchemaArray(node, "allOf", referenceStack);
+            ValidateResponseSchemaArray(node, "anyOf", referenceStack);
+            ValidateResponseSchemaArray(node, "oneOf", referenceStack);
+            ValidateResponseSchemaArray(node, "prefixItems", referenceStack);
+
+            SpecNode? additionalProperties = GetProperty(node, "additionalProperties");
+            if (additionalProperties is not null &&
+                additionalProperties.ValueKind != SpecValueKind.True &&
+                additionalProperties.ValueKind != SpecValueKind.False)
+            {
+                ValidateResponseSchemaReferences(additionalProperties, referenceStack);
+            }
+        }
+
+        private static void ValidateResponseSchemaKeywordShapes(SpecNode node)
+        {
+            SpecNode? type = GetProperty(node, "type");
+            if (type is not null)
+            {
+                if (type.ValueKind == SpecValueKind.String)
+                {
+                    RequireString(type, "The schema type must be a string or an array of strings.");
+                }
+                else if (type.ValueKind == SpecValueKind.Array)
+                {
+                    foreach (SpecNode item in type.EnumerateArray())
+                    {
+                        RequireString(item, "Schema type array entries must be strings.");
+                    }
+                }
+                else
+                {
+                    throw Invalid(type, "The schema type must be a string or an array of strings.");
+                }
+            }
+
+            SpecNode? required = GetProperty(node, "required");
+            if (required is not null)
+            {
+                RequireKind(required, SpecValueKind.Array, "The schema required field must be an array of strings.");
+                foreach (SpecNode item in required.EnumerateArray())
+                {
+                    RequireString(item, "Schema required entries must be strings.");
+                }
+            }
+
+            SpecNode? enumNode = GetProperty(node, "enum");
+            if (enumNode is not null)
+            {
+                RequireKind(enumNode, SpecValueKind.Array, "The schema enum field must be an array.");
+            }
+
+            ValidateOptionalStringKeyword(node, "format");
+            ValidateOptionalStringKeyword(node, "title");
+            ValidateOptionalStringKeyword(node, "description");
+            ValidateOptionalStringKeyword(node, "pattern");
+            ValidateOptionalStringKeyword(node, "contentEncoding");
+            ValidateOptionalStringKeyword(node, "contentMediaType");
+            ValidateOptionalBooleanKeyword(node, "nullable");
+            ValidateOptionalBooleanKeyword(node, "deprecated");
+            ValidateOptionalBooleanKeyword(node, "readOnly");
+            ValidateOptionalBooleanKeyword(node, "writeOnly");
+            ValidateOptionalBooleanKeyword(node, "uniqueItems");
+        }
+
+        private static void ValidateOptionalStringKeyword(SpecNode node, string keyword)
+        {
+            SpecNode? value = GetProperty(node, keyword);
+            if (value is not null)
+            {
+                RequireString(value, "The schema '" + keyword + "' field must be a string.");
+            }
+        }
+
+        private static void ValidateOptionalBooleanKeyword(SpecNode node, string keyword)
+        {
+            SpecNode? value = GetProperty(node, keyword);
+            if (value is not null)
+            {
+                RequireBoolean(value, "The schema '" + keyword + "' field must be a boolean.");
+            }
+        }
+
+        private void ValidateResponseSchemaProperty(
+            SpecNode owner,
+            string propertyName,
+            HashSet<NormalizedSpecNodeIdentity> referenceStack)
+        {
+            SpecNode? schema = GetProperty(owner, propertyName);
+            if (schema is not null)
+            {
+                ValidateResponseSchemaReferences(schema, referenceStack);
+            }
+        }
+
+        private void ValidateResponseSchemaMap(
+            SpecNode owner,
+            string propertyName,
+            HashSet<NormalizedSpecNodeIdentity> referenceStack)
+        {
+            SpecNode? map = GetProperty(owner, propertyName);
+            if (map is null)
+            {
+                return;
+            }
+
+            RequireKind(map, SpecValueKind.Object, "The schema '" + propertyName + "' field must be an object.");
+            foreach (SpecProperty property in map.EnumerateObject())
+            {
+                ValidateResponseSchemaReferences(property.Value, referenceStack);
+            }
+        }
+
+        private void ValidateResponseSchemaArray(
+            SpecNode owner,
+            string propertyName,
+            HashSet<NormalizedSpecNodeIdentity> referenceStack)
+        {
+            SpecNode? array = GetProperty(owner, propertyName);
+            if (array is null)
+            {
+                return;
+            }
+
+            RequireKind(array, SpecValueKind.Array, "The schema '" + propertyName + "' field must be an array.");
+            foreach (SpecNode schema in array.EnumerateArray())
+            {
+                ValidateResponseSchemaReferences(schema, referenceStack);
+            }
+        }
+
+        private static ParsedOpenApiMediaType ParseMediaType(SpecProperty mediaProperty)
+        {
+            if (!OpenApiMediaTypeParser.TryParse(
+                    mediaProperty.Name,
+                    out ParsedOpenApiMediaType mediaType,
+                    out string error))
+            {
+                throw Invalid(
+                    mediaProperty.Value,
+                    "Invalid media type '" + mediaProperty.Name + "': " + error);
+            }
+
+            return mediaType;
+        }
+
+        private static string? GetSupportedRequestCharset(
+            ParsedOpenApiMediaType mediaType,
+            SpecNode mediaNode)
+        {
+            string? charset = mediaType.Charset;
+            if (charset is null)
+            {
+                return null;
+            }
+
+            if (string.Equals(charset, "utf-8", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(charset, "utf8", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(charset, "unicode-1-1-utf-8", StringComparison.OrdinalIgnoreCase))
+            {
+                return "utf-8";
+            }
+
+            if (string.Equals(charset, "utf-16", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(charset, "utf-16le", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(charset, "unicode", StringComparison.OrdinalIgnoreCase))
+            {
+                return "utf-16";
+            }
+
+            if (string.Equals(charset, "utf-16be", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(charset, "bigendianunicode", StringComparison.OrdinalIgnoreCase))
+            {
+                return "utf-16BE";
+            }
+
+            throw Unsupported(
+                mediaNode,
+                "Request media type charset '" + charset +
+                "' is not supported. Use UTF-8, UTF-16, or UTF-16BE.");
         }
 
         private OpenApiSemanticSchema ParseSchema(
@@ -1095,17 +1413,43 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return minor;
         }
 
-        private static bool IsJsonMediaType(string value)
+        private OpenApiSemanticSchema GetEffectiveSchema(OpenApiSemanticSchema schema)
         {
-            if (string.Equals(value, "application/json", StringComparison.OrdinalIgnoreCase))
+            var visited = new HashSet<NormalizedSpecNodeIdentity>();
+            OpenApiSemanticSchema current = schema;
+            while (current.Kind == OpenApiSemanticSchemaKind.Reference)
             {
-                return true;
+                NormalizedSpecNodeIdentity identity = current.ReferenceIdentity;
+                if (identity.IsEmpty ||
+                    !visited.Add(identity) ||
+                    !_schemas.TryGetValue(identity, out OpenApiSemanticSchema? referenced))
+                {
+                    return current;
+                }
+
+                current = referenced;
             }
 
-            int separator = value.IndexOf(';');
-            string mediaType = separator < 0 ? value : value.Substring(0, separator);
-            return mediaType.StartsWith("application/", StringComparison.OrdinalIgnoreCase) &&
-                   mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase);
+            return current;
+        }
+
+        private static void ValidateResponseStatusCode(SpecProperty property)
+        {
+            string value = property.Name;
+            if (string.Equals(value, "default", StringComparison.Ordinal) ||
+                (value.Length == 3 &&
+                 value[0] >= '1' && value[0] <= '5' &&
+                 ((IsAsciiDigit(value[1]) && IsAsciiDigit(value[2])) ||
+                  ((value[1] == 'X' || value[1] == 'x') &&
+                   (value[2] == 'X' || value[2] == 'x')))))
+            {
+                return;
+            }
+
+            throw Invalid(
+                property.Value,
+                "Response status code '" + value +
+                "' must be 'default', an ASCII HTTP status code, or a range such as '2XX'.");
         }
 
         private static bool IsSuccessStatusCode(string value)
@@ -1117,8 +1461,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             return value.Length == 3 &&
                    value[0] == '2' &&
-                   char.IsDigit(value[1]) &&
-                   char.IsDigit(value[2]);
+                   IsAsciiDigit(value[1]) &&
+                   IsAsciiDigit(value[2]);
+        }
+
+        private static bool IsAsciiDigit(char value)
+        {
+            return value >= '0' && value <= '9';
         }
 
         private static string GetSchemaSignature(OpenApiSemanticSchema? schema)

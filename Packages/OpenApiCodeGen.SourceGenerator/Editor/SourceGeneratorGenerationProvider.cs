@@ -41,7 +41,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         {
             Descriptor = new GenerationProviderDescriptor(
                 GenerateProvider.SourceGenerator,
-                "Source Generator",
+                "Source Generator (Beta)",
                 availability ?? throw new ArgumentNullException(nameof(availability)));
             this.cacheService = cacheService
                 ?? throw new ArgumentNullException(nameof(cacheService));
@@ -105,13 +105,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     cancellationToken,
                     request.Progress);
                 cancellationToken.ThrowIfCancellationRequested();
-                definitionPlan = PrepareForGraphFormat(definitionPlan, request, graph.Format);
+                definitionPlan = PrepareForGraphFormat(definitionPlan, graph.Format);
                 bool definitionChanged = false;
                 NormalizedSpecCacheResult cacheResult = cacheService.PublishGraph(
                     graph,
                     definitionPlan.DefinitionPath,
                     definitionPlan.DefinitionAssetPath,
-                    format => PublishDefinition(definitionPlan, request, format, ref definitionChanged),
+                    format => PublishDefinition(definitionPlan, format, ref definitionChanged),
                     definitionPlan.Content);
 
                 request.ReportProgress(0.9, "Publishing generated inputs.");
@@ -156,13 +156,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     CancellationToken.None)
                     .GetAwaiter()
                     .GetResult();
-                definitionPlan = PrepareForGraphFormat(definitionPlan, request, graph.Format);
+                definitionPlan = PrepareForGraphFormat(definitionPlan, graph.Format);
                 bool definitionChanged = false;
                 NormalizedSpecCacheResult cacheResult = cacheService.PublishGraph(
                     graph,
                     definitionPlan.DefinitionPath,
                     definitionPlan.DefinitionAssetPath,
-                    format => PublishDefinition(definitionPlan, request, format, ref definitionChanged),
+                    format => PublishDefinition(definitionPlan, format, ref definitionChanged),
                     definitionPlan.Content);
 
                 return CompleteGeneration(cacheResult, definitionChanged, request);
@@ -176,17 +176,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
         private Action PublishDefinition(
             OpenApiClientDefinitionPlan definitionPlan,
-            GenerationRequest request,
             OpenApiDocumentFormat format,
             ref bool definitionChanged)
         {
             if (definitionPlan.DocumentFormat != format)
             {
-                definitionPlan = definitionWriter.Prepare(
-                    request.OutputFolderPath,
-                    request.ApiName,
-                    request.GeneratedNamespace,
-                    format);
+                definitionPlan = definitionWriter.WithDocumentFormat(definitionPlan, format);
             }
 
             DefinitionPublication publication = definitionWriter.PublishTransactional(definitionPlan);
@@ -196,7 +191,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
         private OpenApiClientDefinitionPlan PrepareForGraphFormat(
             OpenApiClientDefinitionPlan plan,
-            GenerationRequest request,
             string graphFormat)
         {
             OpenApiDocumentFormat format = string.Equals(graphFormat, "yaml", StringComparison.Ordinal)
@@ -204,7 +198,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 : OpenApiDocumentFormat.Json;
             return plan.DocumentFormat == format
                 ? plan
-                : definitionWriter.Prepare(request.OutputFolderPath, request.ApiName, request.GeneratedNamespace, format);
+                : definitionWriter.WithDocumentFormat(plan, format);
         }
 
         private GenerationResult CompleteGeneration(

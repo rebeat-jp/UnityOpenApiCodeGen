@@ -59,6 +59,26 @@ function writeGate([outputPath, status, exitCode, version, reason, evidenceRoot,
   const summary = { schemaVersion: 2, status, version, exitCode: Number(exitCode), reason: redact(reason), evidencePath: path.relative(releaseOutput, evidenceRoot).split(path.sep).join('/'), files, timestampUtc: new Date().toISOString(), ...(ci ? { ci } : {}) };
   fs.writeFileSync(outputPath, JSON.stringify(summary, null, 2) + '\n');
 }
+function finalizeGate([hostLog, evidenceRoot, releaseOutput, version, policy, fallbackStatus, fallbackExitCode, fallbackReason]) {
+  if (!['preserve', 'replace'].includes(policy)) throw new Error('Gate finalization policy must be preserve or replace');
+  fs.mkdirSync(evidenceRoot, { recursive: true });
+  const gatePath = path.join(evidenceRoot, 'gate.json');
+  let status = fallbackStatus;
+  let exitCode = Number(fallbackExitCode);
+  let reason = fallbackReason;
+  if (policy === 'preserve' && fs.existsSync(gatePath)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(gatePath, 'utf8'));
+      if (!['passed', 'failed', 'not-run'].includes(existing.status) || !Number.isInteger(existing.exitCode) ||
+        typeof existing.reason !== 'string' || existing.version !== version) throw new Error('invalid existing gate');
+      ({ status, exitCode, reason } = existing);
+    } catch {
+      status = fallbackStatus; exitCode = Number(fallbackExitCode); reason = fallbackReason;
+    }
+  }
+  if (fs.existsSync(hostLog)) sanitizeFile(hostLog, path.join(evidenceRoot, 'ci-host.log'));
+  writeGate([gatePath, status, String(exitCode), version, reason, evidenceRoot, releaseOutput]);
+}
 function writeChecksums(output, manifest) {
   const files = manifest.archives.map(archive => archive.file).concat('release-manifest.json').sort();
   fs.writeFileSync(path.join(output, 'SHA256SUMS'), files.map(file => `${sha256(path.join(output, file))}  ${file}`).join('\n') + '\n');
@@ -74,13 +94,14 @@ function stampCandidate(output) {
     fs.writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n');
   }
 }
-module.exports = { ciContext, gateContext, redact, writeGate, writeChecksums, stampCandidate, sanitizeFile, sanitizeEvidence };
+module.exports = { ciContext, gateContext, redact, writeGate, finalizeGate, writeChecksums, stampCandidate, sanitizeFile, sanitizeEvidence };
 if (require.main === module) {
   try {
     const [command, ...args] = process.argv.slice(2);
     if (command === 'stamp-candidate' && args.length === 1) stampCandidate(args[0]);
     else if (command === 'sanitize-file' && args.length === 2) sanitizeFile(args[0], args[1]);
     else if (command === 'write-gate' && args.length === 7) writeGate(args);
-    else throw new Error('Usage: ci-evidence.js stamp-candidate <output> | write-gate <path> <status> <exit> <version> <reason> <evidence-root> <output>');
+    else if (command === 'finalize-gate' && args.length === 8) finalizeGate(args);
+    else throw new Error('Usage: ci-evidence.js stamp-candidate <output> | write-gate <path> <status> <exit> <version> <reason> <evidence-root> <output> | finalize-gate <host-log> <evidence-root> <output> <version> <preserve|replace> <status> <exit> <reason>');
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

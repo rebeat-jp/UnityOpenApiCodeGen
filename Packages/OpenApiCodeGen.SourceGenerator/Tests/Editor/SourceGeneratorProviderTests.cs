@@ -131,7 +131,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             var provider = new SourceGeneratorGenerationProvider(availability);
 
             Assert.That(provider.Descriptor.Provider, Is.EqualTo(GenerateProvider.SourceGenerator));
-            Assert.That(provider.Descriptor.DisplayName, Is.EqualTo("Source Generator"));
+            Assert.That(provider.Descriptor.DisplayName, Is.EqualTo("Source Generator (Beta)"));
             Assert.That(provider.Descriptor.Availability, Is.SameAs(availability));
         }
 
