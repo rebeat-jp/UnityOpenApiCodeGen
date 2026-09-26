@@ -123,6 +123,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     "request",
                     "response",
                     "responseBody",
+                    "deserializedResponse",
                     "requestJson",
                     "_httpClient",
                     "CreateRequestUri",
@@ -155,11 +156,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         resolvedType.Nullable ||
                         operation.RequestBody.Schema.Nullable ||
                         !operation.RequestBody.Required);
+                    string? specifiedParameterName = !operation.RequestBody.Required &&
+                                                     (resolvedType.Nullable || operation.RequestBody.Schema.Nullable)
+                        ? AllocateUniqueName(parameterName + "Specified", usedParameterNames)
+                        : null;
                     requestBody = new GeneratedRequestBodyModel(
                         parameterName,
                         operation.RequestBody.Required,
                         operation.RequestBody.MediaType,
-                        type);
+                        type,
+                        specifiedParameterName);
                 }
 
                 GeneratedTypeModel? responseType = null;

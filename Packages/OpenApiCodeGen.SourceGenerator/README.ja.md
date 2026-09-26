@@ -63,6 +63,13 @@ body.NicknameSpecified = false;   // "nickname" を省略する
 ```
 
 この例の型名とプロパティ名は説明用です。実際の名前は入力schemaから生成されます。
+任意かつschema上nullableなリクエスト本文では、生成メソッドに省略可能な`bodySpecified`引数が
+追加されます。`body: null`だけなら本文を省略し、`body: null, bodySpecified: true`なら
+JSON `null`を送ります。本文に値があれば通常どおり送信します。本文の引数名が異なる場合は
+`<本文の引数名>Specified`となり、名前が衝突すると番号が付きます。
+
+成功レスポンスのschemaが非nullableの場合、空本文またはJSON `null`は
+`JsonSerializationException`になります。nullableなschemaではJSON `null`を受け取れます。
 必須nullableパラメーターや、対応表の範囲外のwire formatは位置付き診断で拒否します。
 
 成功した`Generate`では、`Library/OpenApiCodeGen/SourceGenerator/SpecCache/<specId>/`に

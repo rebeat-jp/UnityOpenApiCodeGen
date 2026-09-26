@@ -1592,33 +1592,52 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return value >= '0' && value <= '9';
         }
 
-        private static string GetSchemaSignature(OpenApiSemanticSchema? schema)
+        private string GetSchemaSignature(OpenApiSemanticSchema? schema)
         {
             if (schema is null)
             {
                 return "void";
             }
 
+            bool nullable = schema.Nullable;
+            NormalizedSpecNodeIdentity terminalIdentity = default;
+            var visited = new HashSet<NormalizedSpecNodeIdentity>();
+            while (schema.Kind == OpenApiSemanticSchemaKind.Reference)
+            {
+                NormalizedSpecNodeIdentity identity = schema.ReferenceIdentity;
+                if (identity.IsEmpty || !visited.Add(identity) ||
+                    !_schemas.TryGetValue(identity, out OpenApiSemanticSchema? referenced))
+                {
+                    return "ref:" + (identity.IsEmpty ? schema.ReferenceName : identity.ToString()) +
+                           (nullable ? "?" : string.Empty);
+                }
+
+                terminalIdentity = identity;
+                schema = referenced;
+                nullable |= schema.Nullable;
+            }
+
+            if (!terminalIdentity.IsEmpty &&
+                (schema.Kind == OpenApiSemanticSchemaKind.Object ||
+                 schema.Kind == OpenApiSemanticSchemaKind.Enum))
+            {
+                return "ref:" + terminalIdentity + (nullable ? "?" : string.Empty);
+            }
+
             switch (schema.Kind)
             {
-                case OpenApiSemanticSchemaKind.Reference:
-                    return "ref:" +
-                           (schema.ReferenceIdentity.IsEmpty
-                               ? schema.ReferenceName
-                               : schema.ReferenceIdentity.ToString()) +
-                           (schema.Nullable ? "?" : string.Empty);
                 case OpenApiSemanticSchemaKind.Array:
-                    return "array:" + GetSchemaSignature(schema.ItemSchema) + (schema.Nullable ? "?" : string.Empty);
+                    return "array:" + GetSchemaSignature(schema.ItemSchema) + (nullable ? "?" : string.Empty);
                 case OpenApiSemanticSchemaKind.Object:
                     return "object:" + string.Join(
                         ",",
-                        schema.Properties.Select(static property =>
+                        schema.Properties.Select(property =>
                             property.WireName + ":" + property.Required + ":" + GetSchemaSignature(property.Schema))) +
-                           (schema.Nullable ? "?" : string.Empty);
+                           (nullable ? "?" : string.Empty);
                 case OpenApiSemanticSchemaKind.Enum:
-                    return "enum:" + string.Join(",", schema.EnumValues) + (schema.Nullable ? "?" : string.Empty);
+                    return "enum:" + string.Join(",", schema.EnumValues) + (nullable ? "?" : string.Empty);
                 default:
-                    return schema.Kind + ":" + schema.Format + (schema.Nullable ? "?" : string.Empty);
+                    return schema.Kind + ":" + schema.Format + (nullable ? "?" : string.Empty);
             }
         }
 

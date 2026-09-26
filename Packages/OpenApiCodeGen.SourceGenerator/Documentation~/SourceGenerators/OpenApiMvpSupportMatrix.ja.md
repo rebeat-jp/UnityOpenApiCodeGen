@@ -140,8 +140,9 @@ YAMLの診断IDは次のとおりです。
 | dot-only path segment | 非対応 | 引数置換後のpath segmentが`.`／`..`（1回percent-decodeした表現を含む）なら、HTTP送信前に`ArgumentException`です。`.hidden`、`a.b`、`...`や通常の複合segmentは使用できます。 |
 | header identity | 対応 | header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。 |
 | request body | 一部対応 | パラメーター付きも含む`application/json`または`application/*+json`。type/subtypeを正規化して判定します。 |
+| optional nullable request body | 対応 | `requestBody.required: false`かつschemaがnullableの場合、`null`引数は本文省略、非`null`引数はJSON本文を送信します。生成メソッドの`<BodyParameterName>Specified`を`true`にすると、`null`引数でも明示的なJSON `null`を送信します。名前が衝突する場合は番号を付けます。 |
 | request charset | 一部対応 | UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。 |
-| successful response | 一部対応 | 少なくとも1つの`2xx` responseが必要です。複数ある場合、contractは一致する必要があります。 |
+| successful response | 一部対応 | 少なくとも1つの`2xx` responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性と型の同一性を含むcontractが一致する必要があります。非nullableな成功本文が空またはJSON `null`なら実行時に`JsonSerializationException`です。 |
 | error/default response | 一部対応 | JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。 |
 | response extension | 対応 | operationのResponses Objectでは`x-*`を除外します。`components.responses`の`x-*`名は通常のResponse/Referenceです。 |
 | response header | 非対応 | nonempty response headerは対象外です。 |
@@ -180,6 +181,7 @@ OpenAPI 3.0では既存互換として`nullable`も扱います。
 
 - public mutable sealed DTO（Json.NET attribute使用）
 - 任意かつschema上nullableなDTO propertyの`<PropertyName>Specified`による存在状態の管理
+- 任意かつschema上nullableなrequest bodyの`<BodyParameterName>Specified`による明示的なJSON `null`送信
 - `StringEnumConverter`付きのstring enumと`List<T>`
 - injected `HttpClient`を使うasync client API。documentまたはexplicit base URLを指定するconstructorを使用可能
 - path/query/header/body、`JsonConvert`、`CancellationToken`、宣言された`2xx` response handling

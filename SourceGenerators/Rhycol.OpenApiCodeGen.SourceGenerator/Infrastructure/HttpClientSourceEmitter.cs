@@ -84,6 +84,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             source.AppendLine("        /// <param name=\"cancellationToken\">Cancellation token.</param>");
+            if (operation.RequestBody?.SpecifiedParameterName is string specifiedParameterName)
+            {
+                source.Append("        /// <param name=\"").Append(specifiedParameterName)
+                    .AppendLine("\">Send the JSON body even when its value is null.</param>");
+            }
             string taskType = operation.ResponseType is null
                 ? "global::System.Threading.Tasks.Task"
                 : "global::System.Threading.Tasks.Task<" +
@@ -107,7 +112,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             AppendParameterSeparator(source, ref first);
-            source.AppendLine("global::System.Threading.CancellationToken cancellationToken = default)");
+            source.Append("global::System.Threading.CancellationToken cancellationToken = default");
+            if (operation.RequestBody?.SpecifiedParameterName is string specifiedParameter)
+            {
+                source.Append(", bool ").Append(specifiedParameter).Append(" = false");
+            }
+            source.AppendLine(")");
             source.AppendLine("        {");
             source.Append("            string relativePath = ")
                 .Append(GeneratedSourceEmitter.StringLiteral(operation.Path))
@@ -141,9 +151,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
             else
             {
-                source.Append("                    return global::Newtonsoft.Json.JsonConvert.DeserializeObject<")
+                if (!operation.ResponseType.Nullable)
+                {
+                    source.AppendLine("                    if (global::System.String.IsNullOrWhiteSpace(responseBody) ||");
+                    source.AppendLine("                        global::System.String.Equals(responseBody.Trim(), \"null\", global::System.StringComparison.Ordinal))");
+                    source.AppendLine("                    {");
+                    source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response requires a non-null JSON body.\");");
+                    source.AppendLine("                    }");
+                }
+                source.Append("                    var deserializedResponse = global::Newtonsoft.Json.JsonConvert.DeserializeObject<")
                     .Append(GeneratedSourceEmitter.TypeName(operation.ResponseType))
-                    .AppendLine(">(responseBody)!;");
+                    .AppendLine(">(responseBody);");
+                if (!operation.ResponseType.Nullable && !operation.ResponseType.IsValueType)
+                {
+                    source.AppendLine("                    if (deserializedResponse is null)");
+                    source.AppendLine("                    {");
+                    source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response requires a non-null JSON body.\");");
+                    source.AppendLine("                    }");
+                }
+                source.AppendLine("                    return deserializedResponse!;");
             }
 
             source.AppendLine("                }");
@@ -211,7 +237,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             if (!body.Required)
             {
-                source.Append("                if (").Append(body.ParameterName).AppendLine(" != null)");
+                source.Append("                if (").Append(body.ParameterName).Append(" != null");
+                if (body.SpecifiedParameterName is not null)
+                {
+                    source.Append(" || ").Append(body.SpecifiedParameterName);
+                }
+                source.AppendLine(")");
                 source.AppendLine("                {");
             }
 

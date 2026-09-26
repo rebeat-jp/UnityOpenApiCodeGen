@@ -194,12 +194,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string parameterName,
             bool required,
             string mediaType,
-            GeneratedTypeModel type)
+            GeneratedTypeModel type,
+            string? specifiedParameterName)
         {
             ParameterName = parameterName;
             Required = required;
             MediaType = mediaType;
             Type = type;
+            SpecifiedParameterName = specifiedParameterName;
         }
 
         internal string ParameterName { get; }
@@ -209,6 +211,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal string MediaType { get; }
 
         internal GeneratedTypeModel Type { get; }
+
+        internal string? SpecifiedParameterName { get; }
     }
 
     internal enum GeneratedTypeKind

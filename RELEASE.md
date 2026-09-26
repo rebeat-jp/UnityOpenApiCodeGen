@@ -24,7 +24,7 @@ not establish that a version is published.
 
 | Workflow | Entry point | Result |
 | --- | --- | --- |
-| `source-generator-ci.yml` | PR, main/develop push, manual SHA from `main` | .NET/package checks, Unity evidence, CD dry-run |
+| `source-generator-ci.yml` | PR, main/develop push, manual SHA from `main`, trusted DLL PR dispatch from `main` | .NET/package checks, Unity evidence, CD dry-run |
 | `source-generator-verify.yml` | Reused by CI and release | One candidate shared by all Unity versions |
 | `source-generator-update-dll.yml` | Manual, workflow ref `main` | DLL-only PR against `develop` or `main` |
 | `source-generator-release.yml` | Manual `main` commit/version/publish | Dry-run, or immutable tag and Release |
@@ -67,9 +67,15 @@ gh workflow run source-generator-update-dll.yml --ref main \
 The accepted bases are `develop` (default) and `main`. A read-only build job
 runs `sync-analyzer.sh` and verification. A separate job uses the trusted
 workflow controller to commit only the DLL, open a PR, and explicitly dispatch
-CI for its exact SHA. Existing `.meta`/GUID and package versions are preserved.
+CI from `main` for its exact SHA. The update run uploads a provenance artifact;
+CI checks the bot PR, source run and attempt, artifact, single-DLL commit, and
+base ancestry before executing code from that SHA. The ordinary manual CI path
+still accepts only commits in `origin/main` history. Existing `.meta`/GUID and
+package versions are preserved.
 An unchanged DLL produces no PR. Review and merge the PR through the normal
-repository process.
+repository process. The `main`-ref dispatch has its own Actions run; it does
+not appear as a check on the bot PR head. Find that run in Source Generator CI
+and confirm its `commit` input matches the PR head SHA before merging.
 
 The explicit dispatch is required because a PR created with `GITHUB_TOKEN`
 does not automatically trigger the ordinary PR workflow.
@@ -181,8 +187,10 @@ The default `publish=false` verifies the full candidate and executes the CD
 script without remote publication. Review the workflow result and complete
 artifact. CI and CD dry-run success are the implementation's review gate;
 registry delivery is confirmed at the first formal release.
-Both manual CI dispatch and release dry-run must run from `main` and select a
-commit in `origin/main` history. Use normal PR CI to verify an unmerged change.
+Both manual CI dispatch and release dry-run must run from `main`. Ordinary
+manual CI and release dry-runs select a commit in `origin/main` history. The
+DLL update workflow has the separately validated bot PR path described above;
+use normal PR CI to verify other unmerged changes.
 
 For publication, complete the add-on's
 [initial OpenUPM registration](SourceGenerators/OpenUPM/README.md), then start
@@ -216,7 +224,8 @@ tarball byte-for-byte with the verified asset.
   reused, and a new successful verified artifact is named for the aggregate
   attempt. No existing artifact is overwritten.
 - **Incorrect manual ref or SHA:** manual CI, DLL update and release require
-  `main`; manual CI and release also require a `main` ancestor SHA. OpenUPM
+  `main`; ordinary manual CI and release also require a `main` ancestor SHA.
+  The bot DLL PR path requires matching PR and source-run provenance. OpenUPM
   requires the release tag. Read-only preflight fails before gated jobs begin.
 - **DLL/version/evidence mismatch:** correct source, committed DLL or metadata
   in a reviewed commit and rebuild. Do not edit evidence to bypass checks.

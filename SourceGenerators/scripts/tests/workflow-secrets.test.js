@@ -82,7 +82,8 @@ test('manual CI gates both explicit SHA and selected ref on main ancestry before
   const verify = ci.split('\n  verify:\n')[1];
   assert.match(preflight, /Validate manual target SHA before checkout/);
   assert.match(preflight, /ref: \$\{\{ inputs\.commit \|\| github\.sha \}\}/);
-  assert.equal((preflight.match(/if: github\.event_name == 'workflow_dispatch'/g) || []).length, 3);
+  assert.match(preflight, /if: github\.event_name == 'workflow_dispatch' && inputs\.automation_pr == ''/);
+  assert.match(preflight, /Validate bot DLL PR before target code runs/);
   assert.match(verify, /^    needs: preflight\n/);
   assert.match(verify, /commit: \$\{\{ github\.event\.pull_request\.head\.sha \|\| inputs\.commit \|\| github\.sha \}\}/);
 

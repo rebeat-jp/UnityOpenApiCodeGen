@@ -96,9 +96,17 @@ function update() {
   const gh = args => execFileSync('gh', args, { encoding: 'utf8' }).trim();
   const pr = gh(['pr', 'create', '--repo', process.env.GITHUB_REPOSITORY, '--base', base, '--head', branch,
     '--title', 'chore: synchronize Source Generator analyzer DLL', '--body', 'Updates the deterministic analyzer DLL from the existing sources. Package versions and Unity metadata are preserved. Explicit Source Generator CI is dispatched for this commit.']);
-  // GITHUB_TOKEN PR creation does not trigger pull_request workflows. A workflow_dispatch does.
-  gh(['workflow', 'run', 'source-generator-ci.yml', '--repo', process.env.GITHUB_REPOSITORY, '--ref', branch, '-f', `commit=${commit}`]);
-  console.log(`Created ${pr}; dispatched exact-commit verification for ${commit}.`);
+  const escaped = process.env.GITHUB_REPOSITORY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = pr.match(new RegExp(`^https://github\\.com/${escaped}/pull/([1-9][0-9]*)$`));
+  if (!match) throw new Error('Unexpected URL for created analyzer PR');
+  const provenance = {
+    repository: process.env.GITHUB_REPOSITORY, pr: Number(match[1]), head: commit,
+    parent: git(['rev-parse', 'HEAD^']), base, branch,
+    runId: Number(process.env.GITHUB_RUN_ID), attempt: Number(process.env.GITHUB_RUN_ATTEMPT)
+  };
+  fs.writeFileSync(process.env.ANALYZER_PR_PROVENANCE, `${JSON.stringify(provenance)}\n`, { flag: 'wx', mode: 0o600 });
+  fs.appendFileSync(process.env.GITHUB_OUTPUT, `created=true\npr=${match[1]}\ncommit=${commit}\n`);
+  console.log(`Created ${pr}; recorded exact-commit provenance for ${commit}.`);
 }
 module.exports = { validateUpdate, copyAnalyzerArtifact, analyzer };
 if (require.main === module) {

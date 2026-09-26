@@ -386,6 +386,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>パラメーター付きも含む<code>application/json</code>または<code>application/*+json</code>。type/subtypeを正規化して判定します。</td>
 </tr>
 <tr>
+<td>optional nullable request body</td>
+<td>Supported</td>
+<td><code>requestBody.required: false</code>かつschemaがnullableの場合、<code>null</code>引数は本文省略、非<code>null</code>引数はJSON本文を送信します。生成メソッドの<code>&lt;BodyParameterName&gt;Specified</code>を<code>true</code>にすると、<code>null</code>引数でも明示的なJSON <code>null</code>を送信します。名前が衝突する場合は番号を付けます。</td>
+</tr>
+<tr>
 <td>request charset</td>
 <td>Partial</td>
 <td>UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。</td>
@@ -393,7 +398,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>successful response</td>
 <td>Partial</td>
-<td>少なくとも1つの<code>2xx</code> responseが必要です。複数ある場合、contractは一致する必要があります。</td>
+<td>少なくとも1つの<code>2xx</code> responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性と型の同一性を含むcontractが一致する必要があります。非nullableな成功本文が空またはJSON <code>null</code>なら実行時に<code>JsonSerializationException</code>です。</td>
 </tr>
 <tr>
 <td>error/default response</td>
@@ -493,6 +498,7 @@ OpenAPI 3.0では既存互換として<code>nullable</code>も扱います。</p
 <ul>
 <li>public mutable sealed DTO（Json.NET attribute使用）</li>
 <li>任意かつschema上nullableなDTO propertyの<code>&lt;PropertyName&gt;Specified</code>による存在状態の管理</li>
+<li>任意かつschema上nullableなrequest bodyの<code>&lt;BodyParameterName&gt;Specified</code>による明示的なJSON <code>null</code>送信</li>
 <li><code>StringEnumConverter</code>付きのstring enumと<code>List&lt;T&gt;</code></li>
 <li>injected <code>HttpClient</code>を使うasync client API。documentまたはexplicit base URLを指定するconstructorを使用可能</li>
 <li>path/query/header/body、<code>JsonConvert</code>、<code>CancellationToken</code>、宣言された<code>2xx</code> response handling</li>
