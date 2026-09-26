@@ -17,6 +17,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private static readonly HashSet<string> HttpMethodSet =
             new HashSet<string>(HttpMethods, StringComparer.Ordinal);
 
+        private static readonly HashSet<string> ContentOnlyRequestHeaders =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Allow", "Content-Disposition", "Content-Encoding", "Content-Language",
+                "Content-Length", "Content-Location", "Content-MD5", "Content-Range",
+                "Content-Type", "Expires", "Last-Modified"
+            };
+
         private static readonly HashSet<string> AllowedReferenceSchemaSiblings =
             new HashSet<string>(StringComparer.Ordinal)
             {
@@ -480,11 +488,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             ThrowIfPresent(node, "content", "Parameter content is not supported by the Phase 4 MVP.");
-            string name = RequireString(RequireProperty(node, "name"), "The parameter name must be a string.");
+            SpecNode nameNode = RequireProperty(node, "name");
+            string name = RequireString(nameNode, "The parameter name must be a string.");
             string locationName = RequireString(RequireProperty(node, "in"), "The parameter 'in' value must be a string.");
             if (locationName != "path" && locationName != "query" && locationName != "header")
             {
                 throw Unsupported(node, "Only path, query, and header parameters are supported.");
+            }
+
+            if (locationName == "header" && ContentOnlyRequestHeaders.Contains(name))
+            {
+                throw Unsupported(nameNode, "The content-only header parameter '" + name +
+                    "' cannot be sent through request headers by the Phase 4 MVP.");
             }
 
             bool required = GetOptionalBoolean(node, "required") ?? false;
@@ -1608,8 +1623,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 if (identity.IsEmpty || !visited.Add(identity) ||
                     !_schemas.TryGetValue(identity, out OpenApiSemanticSchema? referenced))
                 {
-                    return "ref:" + (identity.IsEmpty ? schema.ReferenceName : identity.ToString()) +
-                           (nullable ? "?" : string.Empty);
+                    return BuildSchemaSignature(
+                        "ref",
+                        nullable,
+                        identity.IsEmpty ? schema.ReferenceName : identity.ToString());
                 }
 
                 terminalIdentity = identity;
@@ -1621,24 +1638,36 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 (schema.Kind == OpenApiSemanticSchemaKind.Object ||
                  schema.Kind == OpenApiSemanticSchemaKind.Enum))
             {
-                return "ref:" + terminalIdentity + (nullable ? "?" : string.Empty);
+                return BuildSchemaSignature("ref", nullable, terminalIdentity.ToString());
             }
 
             switch (schema.Kind)
             {
                 case OpenApiSemanticSchemaKind.Array:
-                    return "array:" + GetSchemaSignature(schema.ItemSchema) + (nullable ? "?" : string.Empty);
+                    return BuildSchemaSignature("array", nullable, GetSchemaSignature(schema.ItemSchema));
                 case OpenApiSemanticSchemaKind.Object:
-                    return "object:" + string.Join(
-                        ",",
-                        schema.Properties.Select(property =>
-                            property.WireName + ":" + property.Required + ":" + GetSchemaSignature(property.Schema))) +
-                           (nullable ? "?" : string.Empty);
+                    return BuildSchemaSignature(
+                        "object",
+                        nullable,
+                        schema.Properties.Select(property => BuildSchemaSignature(
+                            "property",
+                            false,
+                            property.WireName,
+                            property.Required ? "1" : "0",
+                            GetSchemaSignature(property.Schema))).ToArray());
                 case OpenApiSemanticSchemaKind.Enum:
-                    return "enum:" + string.Join(",", schema.EnumValues) + (nullable ? "?" : string.Empty);
+                    return BuildSchemaSignature("enum", nullable, schema.EnumValues.ToArray());
                 default:
-                    return schema.Kind + ":" + schema.Format + (nullable ? "?" : string.Empty);
+                    return BuildSchemaSignature(schema.Kind.ToString(), nullable, schema.Format);
             }
+        }
+
+        private static string BuildSchemaSignature(string kind, bool nullable, params string[] parts)
+        {
+            return kind + ":" + (nullable ? "1" : "0") + ":" +
+                   parts.Length.ToString(CultureInfo.InvariantCulture) + ":" +
+                   string.Concat(parts.Select(part =>
+                       part.Length.ToString(CultureInfo.InvariantCulture) + ":" + part));
         }
 
         private OpenApiSemanticSchema CreateSimpleSchema(

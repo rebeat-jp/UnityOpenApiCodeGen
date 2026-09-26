@@ -221,9 +221,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             foreach (GeneratedParameterModel parameter in operation.Parameters.Where(
                          static value => value.LocationName == "header"))
             {
-                string statement = "request.Headers.TryAddWithoutValidation(" +
+                string statement = "if (!request.Headers.TryAddWithoutValidation(" +
                                    GeneratedSourceEmitter.StringLiteral(parameter.WireName) +
-                                   ", ConvertToString(" + GetValueExpression(parameter) + "));";
+                                   ", ConvertToString(" + GetValueExpression(parameter) + "))) " +
+                                   "throw new global::System.InvalidOperationException(" +
+                                   GeneratedSourceEmitter.StringLiteral(
+                                       "Unable to add request header '" + parameter.WireName + "'.") + ");";
                 AppendConditionalStatement(source, parameter, statement, 16);
             }
         }

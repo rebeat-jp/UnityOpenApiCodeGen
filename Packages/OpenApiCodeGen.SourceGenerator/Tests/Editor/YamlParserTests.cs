@@ -55,6 +55,70 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(value, Is.EqualTo("first\n  extra\n"));
         }
 
+        [TestCase(">", 1, "first\nsecond\n")]
+        [TestCase(">", 2, "first\n\nsecond\n")]
+        [TestCase(">-", 1, "first\nsecond")]
+        [TestCase(">-", 2, "first\n\nsecond")]
+        [TestCase(">+", 1, "first\nsecond\n")]
+        [TestCase(">+", 2, "first\n\nsecond\n")]
+        public void ParseFoldsInteriorEmptyLinesOnce(string header, int emptyLineCount, string expected)
+        {
+            SpecObjectNode root = ParseObject(
+                "value: " + header + "\n" +
+                "  first\n" +
+                new string('\n', emptyLineCount) +
+                "  second\n" +
+                "next: value\n");
+
+            Assert.That(((SpecStringNode)Property(root, "value").Value).Value, Is.EqualTo(expected));
+            Assert.That(((SpecStringNode)Property(root, "next").Value).Value, Is.EqualTo("value"));
+        }
+
+        [Test]
+        public void ParsePreservesOrdinaryFoldAndMoreIndentedSeparation()
+        {
+            SpecObjectNode root = ParseObject(
+                "value: >\n" +
+                "  first\n" +
+                "  second\n" +
+                "\n" +
+                "    indented\n" +
+                "\n" +
+                "  last\n");
+
+            Assert.That(
+                ((SpecStringNode)Property(root, "value").Value).Value,
+                Is.EqualTo("first second\n\n  indented\n\nlast\n"));
+        }
+
+        [Test]
+        public void ParsePreservesTrailingEmptyLinesForKeepChomping()
+        {
+            SpecObjectNode root = ParseObject(
+                "value: >+\n" +
+                "  first\n" +
+                "  second\n" +
+                "\n" +
+                "\n" +
+                "next: value\n");
+
+            Assert.That(((SpecStringNode)Property(root, "value").Value).Value, Is.EqualTo("first second\n\n\n"));
+        }
+
+        [Test]
+        public void ParseFoldsExplicitIndentAndStopsAtDedentedKey()
+        {
+            SpecObjectNode root = ParseObject(
+                "value: >2-\n" +
+                "  first\n" +
+                "\n" +
+                "  second\n" +
+                "next: value\n");
+
+            Assert.That(((SpecStringNode)Property(root, "value").Value).Value, Is.EqualTo("first\nsecond"));
+            Assert.That(((SpecStringNode)Property(root, "next").Value).Value, Is.EqualTo("value"));
+        }
+
         [Test]
         public void ParseSupportsRootAndSequenceItemBlockScalars()
         {

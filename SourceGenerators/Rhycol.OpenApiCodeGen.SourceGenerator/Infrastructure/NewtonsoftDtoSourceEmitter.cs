@@ -36,7 +36,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             var source = new StringBuilder();
             AppendHeader(source, generatedNamespace);
-            source.AppendLine("    [global::Newtonsoft.Json.JsonConverter(typeof(global::Newtonsoft.Json.Converters.StringEnumConverter))]");
+            source.AppendLine("    [global::Newtonsoft.Json.JsonConverter(typeof(global::Newtonsoft.Json.Converters.StringEnumConverter), typeof(global::Newtonsoft.Json.Serialization.DefaultNamingStrategy), new object[0], false)]");
             source.Append("    public enum ").Append(model.Name).AppendLine();
             source.AppendLine("    {");
             for (int index = 0; index < model.Members.Count; index++)

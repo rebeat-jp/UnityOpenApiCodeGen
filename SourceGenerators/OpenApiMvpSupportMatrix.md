@@ -82,7 +82,7 @@ YAML 1.2-compatible subsetです。subset外は黙ってJSONへ変換したり�
 | comments / encoding | Supported | comments、UTF-8 BOM、LF、CRLF。BOMはtreeから除きraw hashには含めます。 |
 | quoted / plain scalar | Supported | single/double quoteとplain scalar。YAML 1.1 implicit bool/date等はstringとして保持。 |
 | JSON-compatible scalar | Supported | `null`、`true`/`false`、RFC 8259 number（integer/real）、string。 |
-| literal / folded block scalar | Partial | `|`/`>`、`+`/`-` chomping、explicit indent `1`–`9`。flow内は拒否。 |
+| literal / folded block scalar | Partial | `|`/`>`、`+`/`-` chomping、explicit indent `1`–`9`。`>`では内側の空行1行を改行1つ、空行2行を改行2つへfoldします。末尾空行はchompingに従います。flow内は拒否。 |
 | flow plain delimiter | Partial | plain valueに`,`, `[`, `]`, `{`, `}`を含める場合はquote必須。URL scheme colon（`https://`）は受理。 |
 | anchor / alias | Partial | anchor定義とalias展開をサポート。alias rootにはalias位置を付与。undefined/cycle/redefinitionは拒否。同一行のcompact anchor mapping（`- &a key: value`）は対象外で、nestedまたはflow valueとして記述する。 |
 | tags / directives | Unsupported | explicit/custom tagとdirectiveは拒否。 |
@@ -139,10 +139,11 @@ YAML diagnostic IDs are stable within Phase 5:
 | required nullable parameter | Unsupported | path/query/headerの`required: true`とnullableの組み合わせは`OACG101`です。参照チェーン全体を確認します。任意parameterのnull省略とDTOのnullableは維持します。 |
 | dot-only path segment | Unsupported | 引数置換後のpath segmentが`.`／`..`（1回percent-decodeした表現を含む）なら、HTTP送信前に`ArgumentException`です。`.hidden`、`a.b`、`...`や通常の複合segmentは使用できます。 |
 | header identity | Supported | header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。 |
+| content専用header parameter | Unsupported | `Allow`、`Content-Disposition`、`Content-Encoding`、`Content-Language`、`Content-Length`、`Content-Location`、`Content-MD5`、`Content-Range`、`Content-Type`、`Expires`、`Last-Modified`は大小文字を問わず`OACG101`で拒否します。独自の`Content-*`名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に`InvalidOperationException`です。 |
 | request body | Partial | パラメーター付きも含む`application/json`または`application/*+json`。type/subtypeを正規化して判定します。 |
 | optional nullable request body | Supported | `requestBody.required: false`かつschemaがnullableの場合、`null`引数は本文省略、非`null`引数はJSON本文を送信します。生成メソッドの`<BodyParameterName>Specified`を`true`にすると、`null`引数でも明示的なJSON `null`を送信します。名前が衝突する場合は番号を付けます。 |
 | request charset | Partial | UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。 |
-| successful response | Partial | 少なくとも1つの`2xx` responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性と型の同一性を含むcontractが一致する必要があります。非nullableな成功本文が空またはJSON `null`なら実行時に`JsonSerializationException`です。 |
+| successful response | Partial | 少なくとも1つの`2xx` responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。非nullableな成功本文が空またはJSON `null`なら実行時に`JsonSerializationException`です。 |
 | error/default response | Partial | JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。 |
 | response extension | Supported | operationのResponses Objectでは`x-*`を除外します。`components.responses`の`x-*`名は通常のResponse/Referenceです。 |
 | response header | Unsupported | nonempty response headerは対象外です。 |
@@ -158,7 +159,7 @@ status codeはASCII数字で検証します。属性付きのジェネリックc
 | scalar | Supported | `string`、`integer`、`number`、`boolean`。 |
 | object | Partial | named propertiesと`required`を持つobject。 |
 | array | Partial | supported schemaのarray。 |
-| string enum | Partial | generated C# enumに`StringEnumConverter`を付与します。OpenAPI 3.1の`type: [string, null]`でも`enum`に文字列しかなければ非nullableです。`null`を含むenumは`OACG101`です。 |
+| string enum | Partial | generated C# enumに数値入出力を許さない`StringEnumConverter`を付与します。OpenAPI 3.1の`type: [string, null]`でも`enum`に文字列しかなければ非nullableです。`null`を含むenumは`OACG101`です。 |
 | direct schema reference | Supported | supported schemaへの参照。多段参照のscalar／enumもnullableを保持します。 |
 | `$ref` sibling | Partial | 注釈、literalデータ、`x-*`と既存の3.0 `nullable`は保持します。合成が必要な`type`、`properties`、`required`などは、該当位置の`OACG101`で拒否します。 |
 | nullable | Partial | OpenAPI 3.0の`nullable`、OpenAPI 3.1の`type: [<type>, null]`。 |

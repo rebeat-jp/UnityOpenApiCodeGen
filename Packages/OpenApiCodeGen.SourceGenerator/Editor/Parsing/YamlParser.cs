@@ -1003,10 +1003,26 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     bool currentBlank = lines[index].Length == 0;
                     bool previousMoreIndented = moreIndentedLines[index - 1];
                     bool currentMoreIndented = moreIndentedLines[index];
-                    builder.Append(
-                        previousBlank || currentBlank || previousMoreIndented || currentMoreIndented
-                            ? '\n'
-                            : ' ');
+                    if (!previousBlank && currentBlank && !previousMoreIndented)
+                    {
+                        int nextContent = index + 1;
+                        while (nextContent < lines.Count && lines[nextContent].Length == 0)
+                        {
+                            nextContent++;
+                        }
+
+                        // An inner run of empty lines contributes one fewer line feed when
+                        // both surrounding text lines are folded. Trailing empty lines and
+                        // more-indented boundaries retain their line breaks.
+                        if (nextContent < lines.Count && !moreIndentedLines[nextContent])
+                        {
+                            continue;
+                        }
+                    }
+
+                    builder.Append(previousBlank || currentBlank || previousMoreIndented || currentMoreIndented
+                        ? '\n'
+                        : ' ');
                 }
 
                 builder.Append(lines[index]);

@@ -48,6 +48,9 @@ manifest、診断へ平文保存しません。次回の`Generate`時にはquery
 
 対応するOpenAPI要素、YAMLの範囲、診断は[日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)に記載しています。
 OpenAPI 3.1は標準schema dialectのみを受け付けます。独自dialectや`null`入りstring enumは診断で拒否します。
+string enumは文字列として送受信し、JSON数値の読み取りと整数値としての書き出しを拒否します。
+header parameterはscalarに対応しますが、`Content-Language`や`Content-Encoding`などの
+content専用headerは位置付き診断で拒否します。対象名は[日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)を参照してください。
 
 ## 生成されたDTOとHTTPクライアント
 

@@ -381,6 +381,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。</td>
 </tr>
 <tr>
+<td>content専用header parameter</td>
+<td>非対応</td>
+<td><code>Allow</code>、<code>Content-Disposition</code>、<code>Content-Encoding</code>、<code>Content-Language</code>、<code>Content-Length</code>、<code>Content-Location</code>、<code>Content-MD5</code>、<code>Content-Range</code>、<code>Content-Type</code>、<code>Expires</code>、<code>Last-Modified</code>は大小文字を問わず<code>OACG101</code>で拒否します。独自の<code>Content-*</code>名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に<code>InvalidOperationException</code>です。</td>
+</tr>
+<tr>
 <td>request body</td>
 <td>一部対応</td>
 <td>パラメーター付きも含む<code>application/json</code>または<code>application/*+json</code>。type/subtypeを正規化して判定します。</td>
@@ -398,7 +403,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>successful response</td>
 <td>一部対応</td>
-<td>少なくとも1つの<code>2xx</code> responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性と型の同一性を含むcontractが一致する必要があります。非nullableな成功本文が空またはJSON <code>null</code>なら実行時に<code>JsonSerializationException</code>です。</td>
+<td>少なくとも1つの<code>2xx</code> responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。非nullableな成功本文が空またはJSON <code>null</code>なら実行時に<code>JsonSerializationException</code>です。</td>
 </tr>
 <tr>
 <td>error/default response</td>
@@ -445,7 +450,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>string enum</td>
 <td>一部対応</td>
-<td>generated C# enumに<code>StringEnumConverter</code>を付与します。OpenAPI 3.1の<code>type: [string, null]</code>でも<code>enum</code>に文字列しかなければ非nullableです。<code>null</code>を含むenumは<code>OACG101</code>です。</td>
+<td>generated C# enumに数値入出力を許さない<code>StringEnumConverter</code>を付与します。OpenAPI 3.1の<code>type: [string, null]</code>でも<code>enum</code>に文字列しかなければ非nullableです。<code>null</code>を含むenumは<code>OACG101</code>です。</td>
 </tr>
 <tr>
 <td>direct schema reference</td>
