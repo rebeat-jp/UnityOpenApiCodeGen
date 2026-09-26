@@ -1,7 +1,9 @@
 {
     "name": "Unity.OpenApiCodeGen.Editor",
     "rootNamespace": "",
-    "references": [],
+    "references": [
+        "Unity.OpenApiCodeGen.Editor.Contracts"
+    ],
     "includePlatforms": [
         "Editor"
     ],

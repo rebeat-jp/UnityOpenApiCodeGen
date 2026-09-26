@@ -1,0 +1,16 @@
+{
+  "name": "Unity.OpenApiCodeGen.Editor.Contracts",
+  "rootNamespace": "Rhycol.OpenApiCodeGen.Editor.Generation",
+  "references": [],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": true
+}

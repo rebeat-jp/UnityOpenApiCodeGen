@@ -6,7 +6,13 @@
             <ui:TextField picking-mode="Ignore" label="Docker Path" name="DockerPathField" />
         </ui:Foldout>
         <ui:Foldout text="Project Settings" name="ProjectSettingsFoldout" class="setting-section" style="font-size: 14px;">
-            <ui:EnumField label="Generate Provider" type="Rhycol.OpenApiCodeGen.Core.GenerateProvider, Unity.OpenApiCodeGen.Editor" name="GenerateProviderField" />
+            <ui:VisualElement name="GenerateProviderContainer" />
+            <ui:Label name="GenerateProviderDisplayNameLabel" style="margin-left: 3px; white-space: normal;" />
+            <ui:Label name="GenerateProviderAvailabilityLabel" style="margin-left: 3px; margin-bottom: 4px; white-space: normal;" />
+            <ui:VisualElement name="SourceGeneratorBetaNotice" class="source-generator-beta-notice source-generator-beta-hidden">
+                <ui:Label text="Source Generator generation is in beta. Review the supported features before use." class="source-generator-beta-description" />
+                <ui:Button name="SourceGeneratorSupportMatrix" text="Open Support Matrix" class="source-generator-beta-link" />
+            </ui:VisualElement>
             <ui:TextField picking-mode="Ignore" label="Default API Document File URL" name="DefaultApiDocumentFilePathOrUrlField" />
             <ui:TextField picking-mode="Ignore" label="Default Output Folder Path" name="DefaultOutputFolderPathField" />
         </ui:Foldout>
@@ -19,7 +25,7 @@
             <ui:Toggle label="Equatable" name="EquatableField" style="display: flex; visibility: visible; justify-content: flex-start;" />
             <ui:Toggle label="Hide Generation Timestamp" name="HideGenerationTimestampField" />
             <ui:TextField picking-mode="Ignore" label="Interface Prefix" name="InterfacePrefixField" />
-            <ui:EnumField label="Library" type="Rhycol.OpenApiCodeGen.UI.OpenApiDependenceLibrary, Unity.OpenApiCodeGen.Editor" name="LibraryField" />
+            <ui:VisualElement name="LibraryContainer" />
             <ui:TextField picking-mode="Ignore" label="License ID" name="LicenseIdField" />
             <ui:TextField picking-mode="Ignore" label="Model Property Naming" name="ModelPropertyNamingField" />
             <ui:Toggle label=".Net Core Project File" name="NetCoreProjectFileField" />

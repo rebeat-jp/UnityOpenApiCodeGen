@@ -5,6 +5,7 @@ using System.IO;
 using System.Threading.Tasks;
 
 using Rhycol.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Editor.Generation;
 
 
 namespace Rhycol.OpenApiCodeGen.Lib
@@ -55,7 +56,9 @@ namespace Rhycol.OpenApiCodeGen.Lib
                 return new ProjectSettingJson
                 {
                     GenerateProvider = value.GenerateProvider,
-                    ApiDocumentFilePathOrUrl = value.ApiDocumentFilePathOrUrl,
+                    ApiDocumentFilePathOrUrl = SanitizeSourceGeneratorUrl(
+                        value.GenerateProvider,
+                        value.ApiDocumentFilePathOrUrl),
                     ApiClientOutputFolderPath = value.ApiClientOutputFolderPath,
                 };
             }
@@ -64,9 +67,41 @@ namespace Rhycol.OpenApiCodeGen.Lib
             {
                 return new ProjectSetting(
                     generateProvider: GenerateProvider,
-                    apiDocumentFilePathOrUrl: ApiDocumentFilePathOrUrl,
+                    apiDocumentFilePathOrUrl: SanitizeSourceGeneratorUrl(
+                        GenerateProvider,
+                        ApiDocumentFilePathOrUrl),
                     apiClientOutputFolderPath: ApiClientOutputFolderPath
                 );
+            }
+
+            private static string SanitizeSourceGeneratorUrl(GenerateProvider provider, string value)
+            {
+                // Docker is an existing provider and must preserve its configured URL verbatim.
+                if (provider != GenerateProvider.SourceGenerator)
+                {
+                    return value ?? string.Empty;
+                }
+
+                if (string.IsNullOrEmpty(value))
+                {
+                    return value ?? string.Empty;
+                }
+
+                Uri uri;
+                if (!Uri.TryCreate(value, UriKind.Absolute, out uri) ||
+                    (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+                {
+                    return value;
+                }
+
+                var builder = new UriBuilder(uri)
+                {
+                    Query = string.Empty,
+                    Fragment = string.Empty,
+                    UserName = string.Empty,
+                    Password = string.Empty,
+                };
+                return builder.Uri.AbsoluteUri;
             }
         }
 

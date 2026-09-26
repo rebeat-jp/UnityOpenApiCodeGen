@@ -1,0 +1,52 @@
+name: Refresh OpenUPM and verify released package
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight:
+    name: Validate immutable tag ref
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject unsupported workflow ref before OIDC is available
+        run: |
+          [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF" == refs/tags/* ]] || {
+            echo 'OpenUPM workflow must run from an immutable tag ref.' >&2
+            exit 1
+          }
+  publish:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: openupm-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+      - name: Require immutable tag and complete verified Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node SourceGenerators/scripts/verify-openupm.js prepare
+      - name: Refresh existing base package Git-tag release
+        uses: openupm/openupm-action@89b79dc8dd6cb319efff06727f8fa0051ce7e517
+        with:
+          package: jp.rhycol.openapicodegen
+          tag: ${{ github.ref_name }}
+      - name: Refresh registered Source Generator Release-asset package
+        uses: openupm/openupm-action@89b79dc8dd6cb319efff06727f8fa0051ce7e517
+        with:
+          package: jp.rhycol.openapicodegen.source-generator
+          tag: ${{ github.ref_name }}
+      - name: Compare registry tarball with validated Release asset
+        run: node SourceGenerators/scripts/verify-openupm.js compare

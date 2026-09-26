@@ -1,0 +1,222 @@
+name: Source Generator verification pipeline
+
+on:
+  workflow_call:
+    inputs:
+      commit:
+        type: string
+        required: true
+      version:
+        type: string
+        default: ''
+      unity:
+        type: boolean
+        default: true
+    outputs:
+      commit:
+        value: ${{ jobs.candidate.outputs.commit }}
+      version:
+        value: ${{ jobs.candidate.outputs.version }}
+      artifact:
+        value: ${{ jobs.aggregate.outputs.verified-artifact }}
+      attempt:
+        value: ${{ jobs.candidate.outputs.attempt }}
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    name: Build, test, and pack exact commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      commit: ${{ steps.metadata.outputs.commit }}
+      version: ${{ steps.metadata.outputs.version }}
+      candidate-artifact: ${{ steps.metadata.outputs.candidate-artifact }}
+      attempt: ${{ steps.metadata.outputs.attempt }}
+    env:
+      SOURCE_GENERATOR_CI: '1'
+      SOURCE_GENERATOR_CI_COMMIT: ${{ inputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.301
+          cache: true
+          cache-dependency-path: SourceGenerators/**/*.csproj
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Pin npm and XML parser
+        run: |
+          npm install --global npm@11.19.0
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+      - name: Validate release contract
+        id: metadata
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          node SourceGenerators/scripts/release-contract.js
+          {
+            printf 'commit=%s\n' "$SOURCE_GENERATOR_CI_COMMIT"
+            printf 'version=%s\n' "$(node -p "require('./Packages/OpenApiCodeGen/package.json').version")"
+            printf 'candidate-artifact=candidate-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+            printf 'attempt=%s\n' "$GITHUB_RUN_ATTEMPT"
+          } >> "$GITHUB_OUTPUT"
+          {
+            printf '### Source Generator candidate\n\n'
+            printf -- '- Commit: [%s](https://github.com/%s/commit/%s)\n' "$SOURCE_GENERATOR_CI_COMMIT" "$GITHUB_REPOSITORY" "$SOURCE_GENERATOR_CI_COMMIT"
+            printf -- '- Candidate attempt: %s\n' "$GITHUB_RUN_ATTEMPT"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify analyzer and script failure scenarios
+        run: SourceGenerators/scripts/verify.sh
+      - name: Pack candidate once for all Unity runs
+        run: SourceGenerators/scripts/pack-release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.metadata.outputs.candidate-artifact }}
+          path: artifacts/upm/${{ steps.metadata.outputs.version }}
+          if-no-files-found: error
+
+  unity:
+    name: Unity 2021.3 and Unity 6 cloud gates
+    needs: candidate
+    if: inputs.unity && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    outputs:
+      artifact: ${{ steps.evidence.outputs.artifact }}
+      execution-attempt: ${{ steps.evidence.outputs.execution-attempt }}
+    environment:
+      name: UNITY_LICENSE
+      url: https://github.com/${{ github.repository }}/commit/${{ needs.candidate.outputs.commit }}
+    concurrency:
+      group: unity-license-${{ github.repository }}
+      cancel-in-progress: false
+    env:
+      SOURCE_GENERATOR_CI: '1'
+      SOURCE_GENERATOR_CI_COMMIT: ${{ needs.candidate.outputs.commit }}
+      SOURCE_GENERATOR_CANDIDATE_ATTEMPT: ${{ needs.candidate.outputs.attempt }}
+      SOURCE_GENERATOR_RELEASE_VERSION: ${{ needs.candidate.outputs.version }}
+      SOURCE_GENERATOR_RELEASE_OUTPUT: ${{ github.workspace }}/artifacts/upm/${{ needs.candidate.outputs.version }}
+    steps:
+      - name: Start the bounded Unity work deadline
+        run: printf 'SOURCE_GENERATOR_CI_STARTED_AT_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.candidate.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Record this Unity execution artifact
+        id: evidence
+        run: |
+          printf 'artifact=unity-evidence-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          printf 'execution-attempt=%s\n' "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.candidate.outputs.candidate-artifact }}
+          path: ${{ env.SOURCE_GENERATOR_RELEASE_OUTPUT }}
+      - name: Reserve disk for disposable Unity images
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+      - name: Validate downloaded candidate
+        env:
+          RELEASE_VERSION: ${{ needs.candidate.outputs.version }}
+        run: |
+          node SourceGenerators/scripts/validate-release-artifacts.js \
+            --release-output "$SOURCE_GENERATOR_RELEASE_OUTPUT" \
+            --analyzer Packages/OpenApiCodeGen.SourceGenerator/Runtime/Analyzers/Rhycol.OpenApiCodeGen.SourceGenerator.dll \
+            --expected-version "$RELEASE_VERSION" --expected-node-version "v$(cat .node-version)" \
+            --expected-npm-version 11.19.0 --expected-commit "$SOURCE_GENERATOR_CI_COMMIT" \
+            --expected-run-id "$GITHUB_RUN_ID" --expected-run-attempt "$SOURCE_GENERATOR_CANDIDATE_ATTEMPT" --require-initial-gate
+      - name: Run all three editors serially, retaining failures
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: bash SourceGenerators/scripts/run-ci-unity-matrix.sh
+      - name: Recover artifact ownership
+        if: always()
+        run: |
+          source SourceGenerators/scripts/ci-time-budget.sh
+          perl SourceGenerators/scripts/run-with-timeout.pl "$CI_CLEANUP_TIMEOUT_SECONDS" \
+            sudo chown -R "$(id -u):$(id -g)" "$SOURCE_GENERATOR_RELEASE_OUTPUT"
+      - name: Upload Unity evidence, including failed gates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.evidence.outputs.artifact }}
+          path: ${{ env.SOURCE_GENERATOR_RELEASE_OUTPUT }}/unity-gate
+          if-no-files-found: error
+
+  aggregate:
+    name: Verify release dry-run and complete Unity evidence
+    needs: [candidate, unity]
+    if: always() && needs.candidate.result == 'success' && inputs.unity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      verified-artifact: ${{ steps.metadata.outputs.verified-artifact }}
+      execution-attempt: ${{ steps.metadata.outputs.execution-attempt }}
+    env:
+      SOURCE_GENERATOR_RELEASE_OUTPUT: ${{ github.workspace }}/artifacts/upm/${{ needs.candidate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.candidate.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Record this aggregate artifact
+        id: metadata
+        run: |
+          printf 'verified-artifact=verified-release-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          printf 'execution-attempt=%s\n' "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.candidate.outputs.candidate-artifact }}
+          path: ${{ env.SOURCE_GENERATOR_RELEASE_OUTPUT }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.unity.outputs.artifact }}
+          path: ${{ env.SOURCE_GENERATOR_RELEASE_OUTPUT }}/unity-gate
+      - name: Aggregate exact run, commit, and candidate
+        env:
+          RELEASE_VERSION: ${{ needs.candidate.outputs.version }}
+          TARGET_COMMIT: ${{ needs.candidate.outputs.commit }}
+        run: |
+          node SourceGenerators/scripts/aggregate-unity-evidence.js \
+            --release-output "$SOURCE_GENERATOR_RELEASE_OUTPUT" \
+            --analyzer Packages/OpenApiCodeGen.SourceGenerator/Runtime/Analyzers/Rhycol.OpenApiCodeGen.SourceGenerator.dll \
+            --expected-version "$RELEASE_VERSION" --expected-node-version "v$(cat .node-version)" \
+            --expected-npm-version 11.19.0 --expected-commit "$TARGET_COMMIT" \
+            --expected-run-id "$GITHUB_RUN_ID" --expected-run-attempt "${{ needs.candidate.outputs.attempt }}" \
+            --expected-execution-attempt "${{ needs.unity.outputs.execution-attempt }}" --require-passed-unity-gate
+      - name: Exercise CD dry-run without publication on this commit
+        env:
+          RELEASE_OUTPUT: ${{ env.SOURCE_GENERATOR_RELEASE_OUTPUT }}
+          TARGET_COMMIT: ${{ needs.candidate.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.candidate.outputs.version }}
+          VERIFICATION_ATTEMPT: ${{ needs.candidate.outputs.attempt }}
+          PUBLISH: 'false'
+        run: node SourceGenerators/scripts/publish-release.js
+      - name: Upload complete release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.metadata.outputs.verified-artifact }}
+          path: ${{ env.SOURCE_GENERATOR_RELEASE_OUTPUT }}
+          if-no-files-found: error

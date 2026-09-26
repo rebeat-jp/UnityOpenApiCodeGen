@@ -1,0 +1,116 @@
+name: Update Source Generator analyzer DLL
+on:
+  workflow_dispatch:
+    inputs:
+      base_branch:
+        description: Base branch for the DLL-only update PR
+        type: choice
+        options: [develop, main]
+        default: develop
+permissions:
+  contents: read
+jobs:
+  preflight:
+    name: Validate trusted workflow ref and inputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject unsupported workflow ref before write-capable jobs
+        env:
+          BASE_BRANCH: ${{ inputs.base_branch }}
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo 'DLL update workflow must run from main.' >&2; exit 1; }
+          case "$BASE_BRANCH" in develop|main) ;; *) echo 'Unsupported base branch.' >&2; exit 1 ;; esac
+  build:
+    name: Build DLL without repository write credentials
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      commit: ${{ steps.base.outputs.commit }}
+      artifact: analyzer-dll-${{ github.run_id }}-${{ github.run_attempt }}
+    env:
+      BASE_BRANCH: ${{ inputs.base_branch }}
+    steps:
+      - name: Check branch allowlist
+        run: |
+          case "$BASE_BRANCH" in develop|main) ;; *) exit 1 ;; esac
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.base_branch }}
+          persist-credentials: false
+      - name: Record the base commit before target code runs
+        id: base
+        run: printf 'commit=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.301
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+      - name: Build and synchronize DLL preserving meta/GUID
+        run: SourceGenerators/scripts/sync-analyzer.sh
+      - name: Verify updated DLL and failure scenarios
+        run: SourceGenerators/scripts/verify.sh
+      - name: Transfer only the analyzer DLL to the isolated PR job
+        uses: actions/upload-artifact@v4
+        with:
+          name: analyzer-dll-${{ github.run_id }}-${{ github.run_attempt }}
+          path: Packages/OpenApiCodeGen.SourceGenerator/Runtime/Analyzers/Rhycol.OpenApiCodeGen.SourceGenerator.dll
+          if-no-files-found: error
+  create-pr:
+    name: Create DLL-only PR from trusted automation code
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - name: Check out the trusted workflow controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: controller
+          persist-credentials: false
+      - name: Check out the recorded base without running its code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          path: target
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: controller/.node-version
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: analyzer-artifact
+      - name: Copy the sole DLL artifact preserving existing metadata
+        run: node controller/SourceGenerators/scripts/update-analyzer-pr.js copy-analyzer analyzer-artifact target
+      - name: Create DLL-only bot PR and record provenance
+        id: create
+        working-directory: target
+        env:
+          BASE_BRANCH: ${{ inputs.base_branch }}
+          GH_TOKEN: ${{ github.token }}
+          ANALYZER_PR_PROVENANCE: ${{ runner.temp }}/analyzer-pr-provenance.json
+        run: node ../controller/SourceGenerators/scripts/update-analyzer-pr.js
+      - name: Upload provenance from the trusted controller
+        if: steps.create.outputs.created == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: analyzer-pr-provenance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/analyzer-pr-provenance.json
+          if-no-files-found: error
+      # GITHUB_TOKEN PR creation does not trigger pull_request workflows.
+      - name: Dispatch bot PR verification from trusted main
+        if: steps.create.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.create.outputs.pr }}
+          TARGET_COMMIT: ${{ steps.create.outputs.commit }}
+        run: gh workflow run source-generator-ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f "commit=$TARGET_COMMIT" -f "automation_pr=$PR_NUMBER"

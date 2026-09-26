@@ -1,0 +1,525 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+
+using Microsoft.CodeAnalysis.CSharp;
+
+namespace Rhycol.OpenApiCodeGen.SourceGenerator
+{
+    internal sealed class OpenApiGenerationModelBuilder
+    {
+        private readonly OpenApiSemanticDocument _document;
+        private readonly GeneratorOptions _options;
+        private readonly Dictionary<NormalizedSpecNodeIdentity, string> _componentTypeNames =
+            new Dictionary<NormalizedSpecNodeIdentity, string>();
+        private readonly Dictionary<NormalizedSpecNodeIdentity, string> _schemaTypeNames =
+            new Dictionary<NormalizedSpecNodeIdentity, string>();
+        private readonly HashSet<string> _usedTypeNames = new HashSet<string>(StringComparer.Ordinal);
+        private readonly List<GeneratedDtoModel> _dtos = new List<GeneratedDtoModel>();
+        private readonly List<GeneratedEnumModel> _enums = new List<GeneratedEnumModel>();
+        private readonly HashSet<NormalizedSpecNodeIdentity> _buildingSchemas =
+            new HashSet<NormalizedSpecNodeIdentity>();
+        private readonly List<GeneratedTypeNameCollision> _typeNameCollisions = new List<GeneratedTypeNameCollision>();
+        private readonly Dictionary<string, TypeNameAllocation> _typeNameAllocations =
+            new Dictionary<string, TypeNameAllocation>(StringComparer.Ordinal);
+
+        private OpenApiGenerationModelBuilder(OpenApiSemanticDocument document, GeneratorOptions options)
+        {
+            _document = document;
+            _options = options;
+            ReserveTypeName(options.ApiName, document.Location, emitsDeclaration: true);
+            ReserveTypeName(options.ApiName + "Exception", document.Location, emitsDeclaration: true);
+        }
+
+        internal static OpenApiGenerationModel Build(
+            OpenApiSemanticDocument document,
+            GeneratorOptions options)
+        {
+            if (document is null)
+            {
+                throw new ArgumentNullException(nameof(document));
+            }
+
+            var builder = new OpenApiGenerationModelBuilder(document, options);
+            return builder.BuildCore();
+        }
+
+        private OpenApiGenerationModel BuildCore()
+        {
+            AllocateComponentTypeNames();
+            foreach (KeyValuePair<NormalizedSpecNodeIdentity, OpenApiSemanticSchema> pair in _document.Schemas
+                         .OrderBy(static value => value.Key.DocumentId, StringComparer.Ordinal)
+                         .ThenBy(static value => value.Key.Pointer, StringComparer.Ordinal))
+            {
+                EnsureDeclaration(pair.Value, _componentTypeNames[pair.Key]);
+            }
+
+            IReadOnlyList<GeneratedOperationModel> operations = BuildOperations();
+            return new OpenApiGenerationModel(
+                _options.ApiName,
+                _options.GeneratedNamespace,
+                _document.BaseUrl,
+                _dtos.OrderBy(static value => value.Name, StringComparer.Ordinal).ToArray(),
+                _enums.OrderBy(static value => value.Name, StringComparer.Ordinal).ToArray(),
+                operations,
+                _typeNameCollisions.ToArray());
+        }
+
+        private void AllocateComponentTypeNames()
+        {
+            foreach (KeyValuePair<NormalizedSpecNodeIdentity, OpenApiSemanticSchema> schema in _document.Schemas
+                         .OrderBy(static value => string.Equals(
+                             value.Value.Location.DocumentId,
+                             "root",
+                             StringComparison.Ordinal)
+                             ? 0
+                             : 1)
+                         .ThenBy(static value => value.Key.DocumentId, StringComparer.Ordinal)
+                         .ThenBy(static value => value.Key.Pointer, StringComparer.Ordinal))
+            {
+                string requestedName = ToIdentifier(schema.Value.SuggestedName, pascalCase: true);
+                string allocatedName = AllocateSchemaTypeName(
+                    requestedName,
+                    schema.Value.Location,
+                    EmitsDeclaration(schema.Value));
+                _componentTypeNames.Add(schema.Key, allocatedName);
+            }
+        }
+
+        private IReadOnlyList<GeneratedOperationModel> BuildOperations()
+        {
+            var usedMethodNames = new HashSet<string>(StringComparer.Ordinal)
+            {
+                _options.ApiName,
+                "_httpClient",
+                "_baseUrl",
+                "DateOnlyJsonConverterInstance",
+                "CreateRequestUri",
+                "CombineAbsoluteUri",
+                "CombinePaths",
+                "CombineQueries",
+                "AppendQuery",
+                "SplitPathAndQuery",
+                "ValidatePathSegments",
+                "CreateJsonContent",
+                "ConvertToString",
+                "DateOnlyJsonConverter"
+            };
+            var result = new List<GeneratedOperationModel>();
+            foreach (OpenApiSemanticOperation operation in _document.Operations
+                         .OrderBy(static value => value.Path, StringComparer.Ordinal)
+                         .ThenBy(static value => value.HttpMethod, StringComparer.Ordinal))
+            {
+                string methodName = AllocateUniqueName(
+                    ToIdentifier(operation.OperationId, pascalCase: false),
+                    usedMethodNames);
+                var usedParameterNames = new HashSet<string>(StringComparer.Ordinal)
+                {
+                    "cancellationToken",
+                    "relativePath",
+                    "queryParts",
+                    "requestUri",
+                    "request",
+                    "response",
+                    "responseBody",
+                    "deserializedResponse",
+                    "requestJson",
+                    "_httpClient",
+                    "CreateRequestUri",
+                    "ConvertToString"
+                };
+                var parameters = new List<GeneratedParameterModel>();
+                foreach (OpenApiSemanticParameter parameter in operation.Parameters
+                             .OrderBy(static value => value.Identity, StringComparer.Ordinal))
+                {
+                    string parameterName = AllocateUniqueName(
+                        ToIdentifier(parameter.Name, pascalCase: false),
+                        usedParameterNames);
+                    GeneratedTypeModel resolvedType = ResolveType(parameter.Schema);
+                    GeneratedTypeModel type = resolvedType.WithNullable(
+                        resolvedType.Nullable || parameter.Schema.Nullable || !parameter.Required);
+                    parameters.Add(new GeneratedParameterModel(
+                        parameterName,
+                        parameter.Name,
+                        parameter.LocationName,
+                        parameter.Required,
+                        type));
+                }
+
+                GeneratedRequestBodyModel? requestBody = null;
+                if (operation.RequestBody is not null)
+                {
+                    string parameterName = AllocateUniqueName("body", usedParameterNames);
+                    GeneratedTypeModel resolvedType = ResolveType(operation.RequestBody.Schema);
+                    GeneratedTypeModel type = resolvedType.WithNullable(
+                        resolvedType.Nullable ||
+                        operation.RequestBody.Schema.Nullable ||
+                        !operation.RequestBody.Required);
+                    string? specifiedParameterName = !operation.RequestBody.Required &&
+                                                     (resolvedType.Nullable || operation.RequestBody.Schema.Nullable)
+                        ? AllocateUniqueName(parameterName + "Specified", usedParameterNames)
+                        : null;
+                    requestBody = new GeneratedRequestBodyModel(
+                        parameterName,
+                        operation.RequestBody.Required,
+                        operation.RequestBody.MediaType,
+                        type,
+                        specifiedParameterName);
+                }
+
+                GeneratedTypeModel? responseType = null;
+                if (operation.ResponseSchema is not null)
+                {
+                    GeneratedTypeModel resolvedType = ResolveType(operation.ResponseSchema);
+                    responseType = resolvedType.WithNullable(
+                        resolvedType.Nullable || operation.ResponseSchema.Nullable);
+                }
+                result.Add(new GeneratedOperationModel(
+                    methodName,
+                    operation.Summary,
+                    operation.HttpMethod,
+                    operation.Path,
+                    parameters,
+                    requestBody,
+                    responseType,
+                    operation.SuccessStatusCodes));
+            }
+
+            return result;
+        }
+
+        private GeneratedTypeModel ResolveType(OpenApiSemanticSchema schema)
+        {
+            switch (schema.Kind)
+            {
+                case OpenApiSemanticSchemaKind.String:
+                    return ResolveStringType(schema);
+                case OpenApiSemanticSchemaKind.Integer:
+                    return new GeneratedTypeModel(
+                        string.Equals(schema.Format, "int64", StringComparison.OrdinalIgnoreCase)
+                            ? GeneratedTypeKind.Int64
+                            : GeneratedTypeKind.Int32,
+                        schema.Nullable);
+                case OpenApiSemanticSchemaKind.Number:
+                    return new GeneratedTypeModel(ResolveNumberKind(schema.Format), schema.Nullable);
+                case OpenApiSemanticSchemaKind.Boolean:
+                    return new GeneratedTypeModel(GeneratedTypeKind.Boolean, schema.Nullable);
+                case OpenApiSemanticSchemaKind.Array:
+                    return new GeneratedTypeModel(
+                        GeneratedTypeKind.Array,
+                        schema.Nullable,
+                        itemType: ResolveType(schema.ItemSchema!));
+                case OpenApiSemanticSchemaKind.Reference:
+                    NormalizedSpecNodeIdentity referenceIdentity = schema.ReferenceIdentity;
+                    if (referenceIdentity.IsEmpty)
+                    {
+                        referenceIdentity = new NormalizedSpecNodeIdentity(
+                            schema.Location.DocumentId,
+                            "/components/schemas/" + schema.ReferenceName);
+                    }
+
+                    if (!_document.Schemas.TryGetValue(referenceIdentity, out OpenApiSemanticSchema? referencedSchema))
+                    {
+                        throw new InvalidOperationException(
+                            "Semantic model is missing referenced schema '" + schema.ReferenceName + "'.");
+                    }
+
+                    if (referencedSchema.Kind == OpenApiSemanticSchemaKind.Object ||
+                        referencedSchema.Kind == OpenApiSemanticSchemaKind.Enum)
+                    {
+                        return new GeneratedTypeModel(
+                            referencedSchema.Kind == OpenApiSemanticSchemaKind.Enum
+                                ? GeneratedTypeKind.NamedEnum
+                                : GeneratedTypeKind.Named,
+                            schema.Nullable || referencedSchema.Nullable,
+                            _componentTypeNames[referenceIdentity]);
+                    }
+
+                    GeneratedTypeModel resolvedType = ResolveType(referencedSchema);
+                    return resolvedType.WithNullable(
+                        resolvedType.Nullable || schema.Nullable || referencedSchema.Nullable);
+                case OpenApiSemanticSchemaKind.Object:
+                case OpenApiSemanticSchemaKind.Enum:
+                    string typeName = GetOrAllocateSchemaTypeName(schema);
+                    EnsureDeclaration(schema, typeName);
+                    return new GeneratedTypeModel(
+                        schema.Kind == OpenApiSemanticSchemaKind.Enum
+                            ? GeneratedTypeKind.NamedEnum
+                            : GeneratedTypeKind.Named,
+                        schema.Nullable,
+                        typeName);
+                default:
+                    throw new InvalidOperationException("Unknown semantic schema kind.");
+            }
+        }
+
+        private GeneratedTypeModel ResolveStringType(OpenApiSemanticSchema schema)
+        {
+            GeneratedTypeKind kind;
+            if (string.Equals(schema.Format, "date-time", StringComparison.OrdinalIgnoreCase))
+            {
+                kind = GeneratedTypeKind.DateTimeOffset;
+            }
+            else if (string.Equals(schema.Format, "date", StringComparison.OrdinalIgnoreCase))
+            {
+                kind = GeneratedTypeKind.DateTime;
+            }
+            else if (string.Equals(schema.Format, "uuid", StringComparison.OrdinalIgnoreCase))
+            {
+                kind = GeneratedTypeKind.Guid;
+            }
+            else
+            {
+                kind = GeneratedTypeKind.String;
+            }
+
+            return new GeneratedTypeModel(kind, schema.Nullable);
+        }
+
+        private static GeneratedTypeKind ResolveNumberKind(string format)
+        {
+            if (string.Equals(format, "float", StringComparison.OrdinalIgnoreCase))
+            {
+                return GeneratedTypeKind.Single;
+            }
+
+            if (string.Equals(format, "decimal", StringComparison.OrdinalIgnoreCase))
+            {
+                return GeneratedTypeKind.Decimal;
+            }
+
+            return GeneratedTypeKind.Double;
+        }
+
+        private void EnsureDeclaration(OpenApiSemanticSchema schema, string typeName)
+        {
+            NormalizedSpecNodeIdentity key = GetSchemaKey(schema);
+            if (!_buildingSchemas.Add(key))
+            {
+                return;
+            }
+
+            try
+            {
+                if (_dtos.Any(value => value.Name == typeName) ||
+                    _enums.Any(value => value.Name == typeName))
+                {
+                    return;
+                }
+
+                if (schema.Kind == OpenApiSemanticSchemaKind.Enum)
+                {
+                    _enums.Add(BuildEnum(schema, typeName));
+                    return;
+                }
+
+                if (schema.Kind != OpenApiSemanticSchemaKind.Object)
+                {
+                    return;
+                }
+
+                var usedPropertyNames = new HashSet<string>(StringComparer.Ordinal)
+                {
+                    typeName
+                };
+                OpenApiSemanticProperty[] orderedProperties = schema.Properties
+                    .OrderBy(static value => value.WireName, StringComparer.Ordinal)
+                    .ToArray();
+                var propertyTypes = orderedProperties.Select(property => new
+                {
+                    Property = property,
+                    ResolvedType = ResolveType(property.Schema)
+                }).ToArray();
+                var allocatedProperties = new Dictionary<OpenApiSemanticProperty, GeneratedDtoPropertyModel>();
+                foreach (var item in propertyTypes
+                             .OrderByDescending(static value => !value.Property.Required && value.ResolvedType.Nullable))
+                {
+                    OpenApiSemanticProperty property = item.Property;
+                    GeneratedTypeModel resolvedType = item.ResolvedType;
+                    bool useSpecified = !property.Required && resolvedType.Nullable;
+                    string requestedName = ToIdentifier(property.WireName, pascalCase: true);
+                    string propertyName = useSpecified
+                        ? AllocateUniqueSpecifiedPropertyName(requestedName, usedPropertyNames)
+                        : AllocateUniqueName(requestedName, usedPropertyNames);
+                    GeneratedTypeModel type = resolvedType.WithNullable(
+                        resolvedType.Nullable || !property.Required);
+                    allocatedProperties.Add(property, new GeneratedDtoPropertyModel(
+                        propertyName,
+                        property.WireName,
+                        property.Required,
+                        useSpecified,
+                        type));
+                }
+
+                _dtos.Add(new GeneratedDtoModel(
+                    typeName,
+                    orderedProperties.Select(value => allocatedProperties[value]).ToArray()));
+            }
+            finally
+            {
+                _buildingSchemas.Remove(key);
+            }
+        }
+
+        private GeneratedEnumModel BuildEnum(OpenApiSemanticSchema schema, string typeName)
+        {
+            var usedNames = new HashSet<string>(StringComparer.Ordinal)
+            {
+                typeName
+            };
+            var members = new List<GeneratedEnumMemberModel>();
+            foreach (string wireValue in schema.EnumValues.OrderBy(
+                         static value => value,
+                         StringComparer.Ordinal))
+            {
+                string name = AllocateUniqueName(ToIdentifier(wireValue, pascalCase: true), usedNames);
+                members.Add(new GeneratedEnumMemberModel(name, wireValue));
+            }
+
+            return new GeneratedEnumModel(typeName, members);
+        }
+
+        private string GetOrAllocateSchemaTypeName(OpenApiSemanticSchema schema)
+        {
+            NormalizedSpecNodeIdentity key = GetSchemaKey(schema);
+            if (_schemaTypeNames.TryGetValue(key, out string? existing))
+            {
+                return existing;
+            }
+
+            string name = AllocateSchemaTypeName(
+                ToIdentifier(schema.SuggestedName, pascalCase: true),
+                schema.Location,
+                emitsDeclaration: true);
+            _schemaTypeNames.Add(key, name);
+            return name;
+        }
+
+        private static NormalizedSpecNodeIdentity GetSchemaKey(OpenApiSemanticSchema schema)
+        {
+            return schema.Identity.IsEmpty
+                ? new NormalizedSpecNodeIdentity(schema.Location.DocumentId, schema.Location.LogicalPath)
+                : schema.Identity;
+        }
+
+        private string AllocateSchemaTypeName(
+            string requestedName,
+            OpenApiSourceLocation location,
+            bool emitsDeclaration)
+        {
+            string allocatedName = AllocateUniqueName(requestedName, _usedTypeNames);
+            if (!string.Equals(requestedName, allocatedName, StringComparison.Ordinal) &&
+                emitsDeclaration &&
+                _typeNameAllocations.TryGetValue(requestedName, out TypeNameAllocation? owner) &&
+                owner.EmitsDeclaration)
+            {
+                _typeNameCollisions.Add(new GeneratedTypeNameCollision(
+                    requestedName,
+                    allocatedName,
+                    location,
+                    owner.Location));
+            }
+
+            _typeNameAllocations.Add(allocatedName, new TypeNameAllocation(location, emitsDeclaration));
+            return allocatedName;
+        }
+
+        private void ReserveTypeName(
+            string name,
+            OpenApiSourceLocation location,
+            bool emitsDeclaration)
+        {
+            _usedTypeNames.Add(name);
+            _typeNameAllocations.Add(name, new TypeNameAllocation(location, emitsDeclaration));
+        }
+
+        private static bool EmitsDeclaration(OpenApiSemanticSchema schema)
+        {
+            return schema.Kind == OpenApiSemanticSchemaKind.Object ||
+                   schema.Kind == OpenApiSemanticSchemaKind.Enum;
+        }
+
+        private static string AllocateUniqueName(string name, HashSet<string> usedNames)
+        {
+            string baseName = string.IsNullOrEmpty(name) ? "Value" : name;
+            if (usedNames.Add(baseName))
+            {
+                return baseName;
+            }
+
+            int suffix = 2;
+            while (!usedNames.Add(baseName + suffix))
+            {
+                suffix++;
+            }
+
+            return baseName + suffix;
+        }
+
+        private static string AllocateUniqueSpecifiedPropertyName(
+            string name,
+            HashSet<string> usedNames)
+        {
+            string baseName = string.IsNullOrEmpty(name) ? "Value" : name;
+            string candidate = baseName;
+            int suffix = 2;
+            while (usedNames.Contains(candidate) || usedNames.Contains(candidate + "Specified"))
+            {
+                candidate = baseName + suffix++;
+            }
+
+            usedNames.Add(candidate);
+            // Json.NET discovers this exact suffix when deciding whether to write a property.
+            usedNames.Add(candidate + "Specified");
+            return candidate;
+        }
+
+        private sealed class TypeNameAllocation
+        {
+            internal TypeNameAllocation(OpenApiSourceLocation location, bool emitsDeclaration)
+            {
+                Location = location;
+                EmitsDeclaration = emitsDeclaration;
+            }
+
+            internal OpenApiSourceLocation Location { get; }
+
+            internal bool EmitsDeclaration { get; }
+        }
+
+        internal static string ToIdentifier(string value, bool pascalCase)
+        {
+            var builder = new StringBuilder(value?.Length ?? 0);
+            bool uppercaseNext = pascalCase;
+            if (value is not null)
+            {
+                foreach (char character in value)
+                {
+                    if (!char.IsLetterOrDigit(character) && character != '_')
+                    {
+                        uppercaseNext = pascalCase;
+                        continue;
+                    }
+
+                    char output = uppercaseNext ? char.ToUpperInvariant(character) : character;
+                    if (builder.Length == 0 && char.IsDigit(output))
+                    {
+                        builder.Append('_');
+                    }
+
+                    builder.Append(output);
+                    uppercaseNext = false;
+                }
+            }
+
+            if (builder.Length == 0)
+            {
+                builder.Append("Value");
+            }
+
+            string result = builder.ToString();
+            return SyntaxFacts.GetKeywordKind(result) == SyntaxKind.None ? result : "@" + result;
+        }
+    }
+}
