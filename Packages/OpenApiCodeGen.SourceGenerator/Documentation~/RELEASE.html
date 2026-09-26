@@ -45,7 +45,7 @@ not establish that a version is published.</p>
 </thead>
 <tbody><tr>
 <td><code>source-generator-ci.yml</code></td>
-<td>PR, main/develop push, manual SHA</td>
+<td>PR, main/develop push, manual SHA from <code>main</code></td>
 <td>.NET/package checks, Unity evidence, CD dry-run</td>
 </tr>
 <tr>
@@ -60,7 +60,7 @@ not establish that a version is published.</p>
 </tr>
 <tr>
 <td><code>source-generator-release.yml</code></td>
-<td>Manual commit/version/publish</td>
+<td>Manual <code>main</code> commit/version/publish</td>
 <td>Dry-run, or immutable tag and Release</td>
 </tr>
 <tr>
@@ -205,12 +205,15 @@ failure reasons. Arbitrary logs are not emitted as executable workflow commands.
 <p>The default <code>publish=false</code> verifies the full candidate and executes the CD
 script without remote publication. Review the workflow result and complete
 artifact. CI and CD dry-run success are the implementation&#39;s review gate;
-registry delivery is confirmed at the first formal release.</p>
+registry delivery is confirmed at the first formal release.
+Both manual CI dispatch and release dry-run must run from <code>main</code> and select a
+commit in <code>origin/main</code> history. Use normal PR CI to verify an unmerged change.</p>
 <p>For publication, complete the add-on&#39;s
 <a href="SourceGenerators/OpenUPM/README.html">initial OpenUPM registration</a>, then start
 the same workflow from <code>main</code> with <code>-F publish=true</code>. The trusted workflow
 checks exact SHA, clean checkout, and membership in <code>origin/main</code> before
-running target scripts, and repeats these checks at the write boundary.</p>
+running target scripts for both dry-run and publication, and repeats these
+checks at the write boundary.</p>
 <p>After verification, the publisher creates the immutable tag and a draft
 GitHub Release, uploads both packages, manifest, checksums and evidence
 archive, downloads the assets again to verify their bytes, then publishes the
@@ -233,8 +236,9 @@ by that Unity job, rather than guessing from the current run attempt.</li>
 <li><strong>Aggregate-only retry:</strong> the successful Unity job&#39;s original evidence is
 reused, and a new successful verified artifact is named for the aggregate
 attempt. No existing artifact is overwritten.</li>
-<li><strong>Incorrect manual ref:</strong> DLL update requires <code>main</code>; OpenUPM requires the
-release tag. Read-only preflight fails before write/OIDC jobs can begin.</li>
+<li><strong>Incorrect manual ref or SHA:</strong> manual CI, DLL update and release require
+<code>main</code>; manual CI and release also require a <code>main</code> ancestor SHA. OpenUPM
+requires the release tag. Read-only preflight fails before gated jobs begin.</li>
 <li><strong>DLL/version/evidence mismatch:</strong> correct source, committed DLL or metadata
 in a reviewed commit and rebuild. Do not edit evidence to bypass checks.</li>
 <li><strong>Interrupted publication:</strong> rerun only the failed publication job in the

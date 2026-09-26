@@ -91,7 +91,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             var usedMethodNames = new HashSet<string>(StringComparer.Ordinal)
             {
-                _options.ApiName
+                _options.ApiName,
+                "_httpClient",
+                "_baseUrl",
+                "DateOnlyJsonConverterInstance",
+                "CreateRequestUri",
+                "CombineAbsoluteUri",
+                "CombinePaths",
+                "CombineQueries",
+                "AppendQuery",
+                "SplitPathAndQuery",
+                "ValidatePathSegments",
+                "CreateJsonContent",
+                "ConvertToString",
+                "DateOnlyJsonConverter"
             };
             var result = new List<GeneratedOperationModel>();
             foreach (OpenApiSemanticOperation operation in _document.Operations
@@ -304,23 +317,38 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 {
                     typeName
                 };
-                var properties = new List<GeneratedDtoPropertyModel>();
-                foreach (OpenApiSemanticProperty property in schema.Properties
-                             .OrderBy(static value => value.WireName, StringComparer.Ordinal))
+                OpenApiSemanticProperty[] orderedProperties = schema.Properties
+                    .OrderBy(static value => value.WireName, StringComparer.Ordinal)
+                    .ToArray();
+                var propertyTypes = orderedProperties.Select(property => new
                 {
-                    string propertyName = AllocateUniqueName(
-                        ToIdentifier(property.WireName, pascalCase: true),
-                        usedPropertyNames);
-                    GeneratedTypeModel type = ResolveType(property.Schema)
-                        .WithNullable(property.Schema.Nullable || !property.Required);
-                    properties.Add(new GeneratedDtoPropertyModel(
+                    Property = property,
+                    ResolvedType = ResolveType(property.Schema)
+                }).ToArray();
+                var allocatedProperties = new Dictionary<OpenApiSemanticProperty, GeneratedDtoPropertyModel>();
+                foreach (var item in propertyTypes
+                             .OrderByDescending(static value => !value.Property.Required && value.ResolvedType.Nullable))
+                {
+                    OpenApiSemanticProperty property = item.Property;
+                    GeneratedTypeModel resolvedType = item.ResolvedType;
+                    bool useSpecified = !property.Required && resolvedType.Nullable;
+                    string requestedName = ToIdentifier(property.WireName, pascalCase: true);
+                    string propertyName = useSpecified
+                        ? AllocateUniqueSpecifiedPropertyName(requestedName, usedPropertyNames)
+                        : AllocateUniqueName(requestedName, usedPropertyNames);
+                    GeneratedTypeModel type = resolvedType.WithNullable(
+                        resolvedType.Nullable || !property.Required);
+                    allocatedProperties.Add(property, new GeneratedDtoPropertyModel(
                         propertyName,
                         property.WireName,
                         property.Required,
+                        useSpecified,
                         type));
                 }
 
-                _dtos.Add(new GeneratedDtoModel(typeName, properties));
+                _dtos.Add(new GeneratedDtoModel(
+                    typeName,
+                    orderedProperties.Select(value => allocatedProperties[value]).ToArray()));
             }
             finally
             {
@@ -421,6 +449,24 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             return baseName + suffix;
+        }
+
+        private static string AllocateUniqueSpecifiedPropertyName(
+            string name,
+            HashSet<string> usedNames)
+        {
+            string baseName = string.IsNullOrEmpty(name) ? "Value" : name;
+            string candidate = baseName;
+            int suffix = 2;
+            while (usedNames.Contains(candidate) || usedNames.Contains(candidate + "Specified"))
+            {
+                candidate = baseName + suffix++;
+            }
+
+            usedNames.Add(candidate);
+            // Json.NET discovers this exact suffix when deciding whether to write a property.
+            usedNames.Add(candidate + "Specified");
+            return candidate;
         }
 
         private sealed class TypeNameAllocation

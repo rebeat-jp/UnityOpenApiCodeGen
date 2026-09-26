@@ -68,9 +68,11 @@ test('trusted release workflow rejects non-main code even when target contract i
   const publishBoundary = step('Enforce trusted publication boundary before target scripts');
   const run = (script, target, publish = 'true', ref = 'refs/heads/main') => spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], { cwd: root, encoding: 'utf8', env: { ...process.env, TARGET_COMMIT: target, PUBLISH: publish, GITHUB_REF: ref } }).status;
   assert.equal(spawnForNoop(root), 0, 'attacker contract itself succeeds');
-  assert.notEqual(run(checkoutBoundary, untrusted), 0); assert.notEqual(run(publishBoundary, untrusted), 0); assert.equal(run(checkoutBoundary, untrusted, 'false'), 0, 'dry-run may validate a PR commit');
-  git(['switch', 'main']); assert.equal(run(checkoutBoundary, main), 0); assert.equal(run(publishBoundary, main), 0); assert.notEqual(run(checkoutBoundary, untrusted), 0, 'exact checkout mismatch rejected'); assert.notEqual(run(checkoutBoundary, main, 'true', 'refs/heads/develop'), 0);
+  assert.notEqual(run(checkoutBoundary, untrusted), 0); assert.notEqual(run(publishBoundary, untrusted), 0); assert.notEqual(run(checkoutBoundary, untrusted, 'false'), 0, 'dry-run rejects a non-main commit');
+  git(['switch', 'main']); assert.equal(run(checkoutBoundary, main), 0); assert.equal(run(checkoutBoundary, main, 'false'), 0); assert.equal(run(publishBoundary, main), 0); assert.notEqual(run(checkoutBoundary, untrusted), 0, 'exact checkout mismatch rejected'); assert.notEqual(run(checkoutBoundary, main, 'true', 'refs/heads/develop'), 0);
   assert.notEqual(run(step('Validate literal publication inputs before checkout'), 'main'), 0, 'symbolic refs are rejected before checkout');
+  assert.notEqual(run(step('Validate literal publication inputs before checkout'), main, 'false', 'refs/heads/feature'), 0, 'dry-run rejects a non-main dispatch ref before checkout');
+  assert.notEqual(run(step('Validate literal publication inputs before checkout'), main, 'true', 'refs/heads/feature'), 0, 'publish rejects a non-main dispatch ref before checkout');
   function spawnForNoop(cwd) { return spawnSync(process.execPath, ['contract.js'], { cwd }).status; }
 });
 test('real GitHub client honors draft HTTP API semantics and refreshes by Release ID', async t => {

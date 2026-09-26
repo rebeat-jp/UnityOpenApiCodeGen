@@ -1,5 +1,7 @@
 # Unity OpenAPI CodeGen
 
+[日本語](README.ja.md)
+
 Unity OpenAPI CodeGen generates strongly typed C# REST clients from OpenAPI
 documents. This repository contains the base package (Docker provider and
 Editor UI) and the optional Source Generator package (Unity 6, local or URL

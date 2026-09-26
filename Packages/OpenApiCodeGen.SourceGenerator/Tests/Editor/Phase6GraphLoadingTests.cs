@@ -861,6 +861,29 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Test]
+        public async Task ExternalGraphKeepsLocalSameDocumentReferencesInOneDocument()
+        {
+            WriteText(
+                "Assets/Specs/root.json",
+                "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Root\",\"version\":\"1\"}," +
+                "\"paths\":{},\"components\":{\"schemas\":{\"Pet\":{\"type\":\"string\"}," +
+                "\"First\":{\"$ref\":\"#/components/schemas/Pet\"}," +
+                "\"Second\":{\"$ref\":\"root.json#/components/schemas/Pet\"}}}}");
+
+            NormalizedSpecGraph graph = await CreateLoader().LoadAsync(
+                "Assets/Specs/root.json",
+                SpecId,
+                CancellationToken.None);
+
+            Assert.That(graph.Documents, Has.Count.EqualTo(1));
+            Assert.That(graph.Edges, Has.Count.EqualTo(2));
+            Assert.That(graph.Edges[0].TargetDocumentId, Is.EqualTo("root"));
+            Assert.That(graph.Edges[0].TargetPointer, Is.EqualTo("/components/schemas/Pet"));
+            Assert.That(graph.Edges[1].TargetDocumentId, Is.EqualTo("root"));
+            Assert.That(graph.Edges[1].TargetPointer, Is.EqualTo("/components/schemas/Pet"));
+        }
+
+        [Test]
         public async Task ExternalGraphAcceptsKnownFormatFromEitherExtensionOrContentType()
         {
             using (var server = new LoopbackHttpServer())

@@ -61,8 +61,33 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("    [global::Newtonsoft.Json.JsonObject(global::Newtonsoft.Json.MemberSerialization.OptIn)]");
             source.Append("    public sealed class ").Append(model.Name).AppendLine();
             source.AppendLine("    {");
+            var usedMemberNames = new HashSet<string>(model.Properties.Select(static value => value.Name),
+                StringComparer.Ordinal);
+            usedMemberNames.Add(model.Name);
+            foreach (GeneratedDtoPropertyModel property in model.Properties.Where(static value => value.UseSpecified))
+            {
+                usedMemberNames.Add(property.Name + "Specified");
+            }
+
             foreach (GeneratedDtoPropertyModel property in model.Properties)
             {
+                string? backingField = null;
+                if (property.UseSpecified)
+                {
+                    backingField = "_" + property.Name + "Value";
+                    int suffix = 2;
+                    while (!usedMemberNames.Add(backingField))
+                    {
+                        backingField = "_" + property.Name + "Value" + suffix++;
+                    }
+
+                    source.Append("        private ")
+                        .Append(GeneratedSourceEmitter.TypeName(property.Type))
+                        .Append(' ')
+                        .Append(backingField)
+                        .AppendLine(";");
+                }
+
                 string required = property.Required
                     ? property.Type.Nullable
                         ? "global::Newtonsoft.Json.Required.AllowNull"
@@ -72,22 +97,47 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     .Append(GeneratedSourceEmitter.StringLiteral(property.WireName))
                     .Append(", Required = ")
                     .Append(required);
-                if (!property.Required)
+                if (property.UseSpecified)
+                {
+                    source.Append(", NullValueHandling = global::Newtonsoft.Json.NullValueHandling.Include");
+                }
+                else if (!property.Required)
                 {
                     source.Append(", NullValueHandling = global::Newtonsoft.Json.NullValueHandling.Ignore");
                 }
 
                 source.AppendLine(")]");
-                source.Append("        public ")
-                    .Append(GeneratedSourceEmitter.TypeName(property.Type))
-                    .Append(' ')
-                    .Append(property.Name)
-                    .Append(" { get; set; }");
-                if (property.Required && !property.Type.Nullable && !property.Type.IsValueType)
+                if (property.UseSpecified)
                 {
-                    source.Append(" = null!;");
+                    source.Append("        public ")
+                        .Append(GeneratedSourceEmitter.TypeName(property.Type))
+                        .Append(' ')
+                        .Append(property.Name)
+                        .Append(" { get => ")
+                        .Append(backingField)
+                        .Append("; set { ")
+                        .Append(backingField)
+                        .Append(" = value; ")
+                        .Append(property.Name)
+                        .AppendLine("Specified = true; } }");
+                    source.Append("        public bool ")
+                        .Append(property.Name)
+                        .AppendLine("Specified { get; set; }");
                 }
+                else
+                {
+                    source.Append("        public ")
+                        .Append(GeneratedSourceEmitter.TypeName(property.Type))
+                        .Append(' ')
+                        .Append(property.Name)
+                        .Append(" { get; set; }");
+                    if (property.Required && !property.Type.Nullable && !property.Type.IsValueType)
+                    {
+                        source.Append(" = null!;");
+                    }
 
+                    source.AppendLine();
+                }
                 source.AppendLine();
             }
 

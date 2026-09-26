@@ -7,6 +7,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 {
     internal sealed class OpenApiSemanticParser
     {
+        private const string OpenApi31BaseDialect = "https://spec.openapis.org/oas/3.1/dialect/base";
+
         private static readonly string[] HttpMethods =
         {
             "delete", "get", "head", "options", "patch", "post", "put", "trace"
@@ -144,6 +146,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private void ValidateRootFeatures()
         {
+            SpecNode? dialectNode = GetProperty(_root, "jsonSchemaDialect");
+            if (dialectNode is not null)
+            {
+                string dialect = RequireAbsoluteDialectUri(dialectNode, "jsonSchemaDialect");
+                if (_minorVersion != 1 || !string.Equals(dialect, OpenApi31BaseDialect, StringComparison.Ordinal))
+                {
+                    throw Unsupported(dialectNode, "The jsonSchemaDialect '" + dialect + "' is not supported by the Phase 4 MVP.");
+                }
+            }
+
             ThrowIfPresent(_root, "swagger", "Swagger 2.0 documents are not supported by the Phase 4 Source Generator.");
             ThrowIfPresent(_root, "security", "OpenAPI security requirements are not supported by the Phase 4 MVP.");
             ThrowIfPresent(_root, "webhooks", "OpenAPI webhooks are not supported by the Phase 4 MVP.");
@@ -818,6 +830,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             RequireKind(node, SpecValueKind.Object, "A response schema must be an object or boolean schema.");
+            ValidateSchemaDialect(node);
             ValidateResponseSchemaKeywordShapes(node);
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
@@ -937,6 +950,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (enumNode is not null)
             {
                 RequireKind(enumNode, SpecValueKind.Array, "The schema enum field must be an array.");
+                if (enumNode.EnumerateArray().Any(static value => value.ValueKind == SpecValueKind.Null))
+                {
+                    throw Unsupported(enumNode, "String enums containing null are not supported by the Phase 4 MVP.");
+                }
             }
 
             ValidateOptionalStringKeyword(node, "format");
@@ -1173,10 +1190,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     throw Unsupported(enumNode, "Only string enums are supported by the Phase 4 MVP.");
                 }
 
+                RequireKind(enumNode, SpecValueKind.Array, "The schema enum field must be an array.");
+                if (enumNode.EnumerateArray().Any(static value => value.ValueKind == SpecValueKind.Null))
+                {
+                    throw Unsupported(enumNode, "String enums containing null are not supported by the Phase 4 MVP.");
+                }
+
                 IReadOnlyList<string> enumValues = ParseStringArray(enumNode, "Enum values must be strings.");
                 if (enumValues.Count == 0)
                 {
                     throw Invalid(enumNode, "An enum must contain at least one value.");
+                }
+
+                if (_minorVersion == 1)
+                {
+                    nullable = false;
                 }
 
                 return new OpenApiSemanticSchema(
@@ -1304,8 +1332,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 CreateLocation(node));
         }
 
-        private static void ValidateUnsupportedSchemaKeywords(SpecNode node)
+        private void ValidateUnsupportedSchemaKeywords(SpecNode node)
         {
+            ValidateSchemaDialect(node);
             string[] unsupported =
             {
                 "allOf", "anyOf", "oneOf", "not", "discriminator", "patternProperties",
@@ -1318,6 +1347,30 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 ThrowIfPresent(node, name, "Schema keyword '" + name + "' is not supported by the Phase 4 MVP.");
             }
+        }
+
+        private void ValidateSchemaDialect(SpecNode node)
+        {
+            SpecNode? dialectNode = GetProperty(node, "$schema");
+            if (dialectNode is not null)
+            {
+                string dialect = RequireAbsoluteDialectUri(dialectNode, "$schema");
+                if (_minorVersion != 1 || !string.Equals(dialect, OpenApi31BaseDialect, StringComparison.Ordinal))
+                {
+                    throw Unsupported(dialectNode, "Schema $schema dialect '" + dialect + "' is not supported by the Phase 4 MVP.");
+                }
+            }
+        }
+
+        private static string RequireAbsoluteDialectUri(SpecNode node, string keyword)
+        {
+            string value = RequireString(node, "The '" + keyword + "' field must be an absolute URI.");
+            if (!Uri.TryCreate(value, UriKind.Absolute, out _))
+            {
+                throw Invalid(node, "The '" + keyword + "' field must be an absolute URI.");
+            }
+
+            return value;
         }
 
         private void ValidateReferenceSchemaSiblings(SpecNode node)

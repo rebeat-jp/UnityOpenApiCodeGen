@@ -75,11 +75,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string name,
             string wireName,
             bool required,
+            bool useSpecified,
             GeneratedTypeModel type)
         {
             Name = name;
             WireName = wireName;
             Required = required;
+            UseSpecified = useSpecified;
             Type = type;
         }
 
@@ -88,6 +90,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal string WireName { get; }
 
         internal bool Required { get; }
+
+        internal bool UseSpecified { get; }
 
         internal GeneratedTypeModel Type { get; }
     }

@@ -52,6 +52,55 @@ test('CI and release callers inherit Secrets while fork Unity gates remain disab
   assert.match(workflow('source-generator-verify.yml'), /if: inputs\.unity && .*github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
   assert.match(workflow('source-generator-verify.yml'), /environment:\n      name: UNITY_LICENSE/);
 });
+test('manual CI gates both explicit SHA and selected ref on main ancestry before reusable verification', t => {
+  const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'manual-ci-boundary-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const git = args => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  function checkedGit(args) {
+    const result = git(args);
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  }
+  checkedGit(['init', '--initial-branch=main']);
+  fs.writeFileSync(path.join(root, 'file'), 'first');
+  checkedGit(['add', '.']);
+  checkedGit(['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-m', 'first']);
+  const ancestor = checkedGit(['rev-parse', 'HEAD']);
+  fs.writeFileSync(path.join(root, 'file'), 'second');
+  checkedGit(['add', '.']);
+  checkedGit(['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-m', 'second']);
+  const main = checkedGit(['rev-parse', 'HEAD']);
+  checkedGit(['update-ref', 'refs/remotes/origin/main', main]);
+  checkedGit(['switch', '--orphan', 'untrusted']);
+  fs.writeFileSync(path.join(root, 'file'), 'untrusted');
+  checkedGit(['add', '.']);
+  checkedGit(['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-m', 'untrusted']);
+  const untrusted = checkedGit(['rev-parse', 'HEAD']);
+
+  const ci = workflow('source-generator-ci.yml');
+  const preflight = ci.split('\n  preflight:\n')[1].split('\n  verify:\n')[0];
+  const verify = ci.split('\n  verify:\n')[1];
+  assert.match(preflight, /Validate manual target SHA before checkout/);
+  assert.match(preflight, /ref: \$\{\{ inputs\.commit \|\| github\.sha \}\}/);
+  assert.equal((preflight.match(/if: github\.event_name == 'workflow_dispatch'/g) || []).length, 3);
+  assert.match(verify, /^    needs: preflight\n/);
+  assert.match(verify, /commit: \$\{\{ github\.event\.pull_request\.head\.sha \|\| inputs\.commit \|\| github\.sha \}\}/);
+
+  const validate = workflowStep('source-generator-ci.yml', 'Validate manual target SHA before checkout');
+  const boundary = workflowStep('source-generator-ci.yml', 'Enforce main ancestry before manual Unity verification');
+  const run = (script, target, ref = 'refs/heads/main') => spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
+    cwd: root, encoding: 'utf8', env: { ...process.env, TARGET_COMMIT: target, GITHUB_REF: ref }
+  }).status;
+  assert.equal(run(validate, main), 0);
+  assert.notEqual(run(validate, 'main'), 0, 'symbolic refs must fail before checkout');
+  assert.notEqual(run(validate, main, 'refs/heads/feature'), 0, 'non-main dispatch refs must fail before checkout');
+  assert.notEqual(run(boundary, untrusted), 0, 'untrusted checkout is rejected');
+  checkedGit(['switch', 'main']);
+  assert.equal(run(boundary, main), 0, 'selected main ref is accepted');
+  checkedGit(['switch', '--detach', ancestor]);
+  assert.equal(run(boundary, ancestor), 0, 'an older main ancestor is accepted');
+  assert.notEqual(run(boundary, main), 0, 'selected SHA must match the checkout');
+});
 test('Unity approval links the exact commit and reruns keep immutable artifact identities', () => {
   const text = workflow('source-generator-verify.yml');
   assert.match(text, /environment:\n      name: UNITY_LICENSE\n      url: https:\/\/github\.com\/\$\{\{ github\.repository \}\}\/commit\/\$\{\{ needs\.candidate\.outputs\.commit \}\}/);

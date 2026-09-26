@@ -2,13 +2,13 @@
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
-<title>OpenAPI MVP support matrix</title>
+<title>OpenAPI MVP 対応表</title>
 <style>body{font:16px/1.7 system-ui,sans-serif;color:#20242c;background:#fff;max-width:1080px;margin:0 auto;padding:32px 24px;overflow-wrap:anywhere}a{color:#0756a5}h1,h2,h3{line-height:1.3}h2{margin-top:2em}table{display:block;overflow:auto;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #ccd2da;padding:9px 12px;text-align:left;vertical-align:top}th{background:#f1f4f8}pre{padding:16px;background:#f1f4f8;overflow:auto}code{font-family:ui-monospace,monospace}blockquote{border-left:4px solid #ccd2da;margin-left:0;padding-left:16px}img{max-width:100%}</style>
 </head><body><main>
-<h1 id="openapi-mvp-support-matrix">OpenAPI MVP support matrix</h1>
-<p><a href="OpenApiMvpSupportMatrix.ja.html">日本語版</a></p>
+<h1 id="openapi-mvp-対応表">OpenAPI MVP 対応表</h1>
+<p><a href="OpenApiMvpSupportMatrix.html">元の対応表</a></p>
 <p><strong>Source Generator (Beta)</strong> による生成はベータです。
-Source Generator generation is in beta. Review the supported features before use.</p>
+利用前にこの対応表で入力仕様と生成されるAPIの制約を確認してください。</p>
 <p>Editorの「Open Support Matrix」は、base packageに同梱したHTMLをブラウザーで開きます。
 両パッケージにこの文書と参照資料のMarkdown／HTMLを同梱しており、公開タグやネット接続は不要です。
 GitHub Actionsや外部仕様へのリンクを開く場合はネット接続が必要です。</p>
@@ -26,20 +26,20 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 <table>
 <thead>
 <tr>
-<th>Status</th>
+<th>対応状況</th>
 <th>意味</th>
 </tr>
 </thead>
 <tbody><tr>
-<td>Supported</td>
+<td>対応</td>
 <td>記載した条件で生成・実行対象です。</td>
 </tr>
 <tr>
-<td>Partial</td>
+<td>一部対応</td>
 <td>記載した部分だけを生成します。条件外は診断となります。</td>
 </tr>
 <tr>
-<td>Unsupported</td>
+<td>非対応</td>
 <td>MVPの対象外です。診断となります。</td>
 </tr>
 </tbody></table>
@@ -48,100 +48,100 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 <thead>
 <tr>
 <th>項目</th>
-<th>Status</th>
+<th>対応状況</th>
 <th>条件・制約</th>
 </tr>
 </thead>
 <tbody><tr>
 <td>入力document</td>
-<td>Supported</td>
+<td>対応</td>
 <td>localの<code>.json</code>、<code>.yaml</code>、<code>.yml</code> file、またはHTTP(S) URL。local extensionはcase-insensitive。</td>
 </tr>
 <tr>
 <td>OpenAPI version</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td><code>3.0.*</code>と<code>3.1.*</code>のみ。</td>
 </tr>
 <tr>
 <td>OpenAPI 3.1 schema dialect</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>既定または明示的な<code>https://spec.openapis.org/oas/3.1/dialect/base</code>のみ。rootの<code>jsonSchemaDialect</code>とschemaの<code>$schema</code>で別dialectを指定すると<code>OACG101</code>、不正なURIは<code>OACG100</code>です。</td>
 </tr>
 <tr>
 <td>OpenAPI 3.2 / Swagger 2</td>
-<td>Unsupported</td>
+<td>非対応</td>
 <td>document versionは受け付けません。</td>
 </tr>
 <tr>
 <td>URL入力</td>
-<td>Supported</td>
+<td>対応</td>
 <td>public/private/loopback、cross-host redirectを許可。userinfo、空白、非HTTP(S)、HTTPS-to-HTTP direct/redirectは拒否。Generateが明示的なfetch/refresh操作で、Docker fallbackはありません。</td>
 </tr>
 <tr>
 <td>JSON/YAML semantic parity</td>
-<td>Supported</td>
+<td>対応</td>
 <td>各normalizerがshared <code>SpecNode</code>へ正規化し、同じsemantic/generation pipelineを通ります。</td>
 </tr>
 <tr>
 <td><code>$ref</code></td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>OpenAPI/Schema上の参照位置にあるinternal reference、またはEditorがBundle v2のedgeへ解決したexternal reference。example/default/enum/拡張データ内の同名キーはデータとして保持。fragmentはemptyまたはJSON Pointer。</td>
 </tr>
 <tr>
 <td>external <code>$ref</code></td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>local external fileはreal/symbolic-link解決後もUnity project内。remote documentからlocal fileは不可。bare Schemaは可。</td>
 </tr>
 <tr>
 <td>unresolved / cyclic <code>$ref</code></td>
-<td>Unsupported</td>
+<td>非対応</td>
 <td>それぞれ<code>OACG102</code>、<code>OACG103</code>を報告します。<code>OACG104</code>はBundle v1のexternal-reference互換診断です。</td>
 </tr>
 <tr>
 <td>URL query / fragment</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>queryはfetch identityに使いますが平文永続化しません。root URL fragment、userinfo、explicit <code>file:</code>は拒否。</td>
 </tr>
 <tr>
 <td>URL format detection</td>
-<td>Supported</td>
+<td>対応</td>
 <td>final URL extensionとContent-Typeが既知なら一致必須。片方だけ既知は可、両方不明・競合は拒否。content sniffing/hintはなし。</td>
 </tr>
 </tbody></table>
-<h3 id="external-graph-limits">External graph limits</h3>
+<h3 id="外部参照グラフの上限">外部参照グラフの上限</h3>
 <table>
 <thead>
 <tr>
-<th>Limit</th>
-<th align="right">Value</th>
+<th>上限</th>
+<th align="right">値</th>
 </tr>
 </thead>
 <tbody><tr>
-<td>Request timeout</td>
-<td align="right">30 seconds</td>
+<td>1リクエストのタイムアウト</td>
+<td align="right">30秒</td>
 </tr>
 <tr>
-<td>Graph timeout</td>
-<td align="right">120 seconds</td>
+<td>グラフ全体のタイムアウト</td>
+<td align="right">120秒</td>
 </tr>
 <tr>
-<td>Maximum document size</td>
+<td>1文書の最大サイズ</td>
 <td align="right">4 MiB</td>
 </tr>
 <tr>
-<td>Maximum graph size</td>
+<td>グラフ全体の最大サイズ</td>
 <td align="right">32 MiB</td>
 </tr>
 <tr>
-<td>Maximum documents</td>
+<td>最大文書数</td>
 <td align="right">64</td>
 </tr>
 <tr>
-<td>Maximum redirects</td>
+<td>最大リダイレクト数</td>
 <td align="right">5</td>
 </tr>
 <tr>
-<td>Maximum reference depth</td>
+<td>最大参照深度</td>
 <td align="right">256</td>
 </tr>
 </tbody></table>
@@ -152,7 +152,7 @@ AnalyzerはAdditionalFile内のBundleとedge mapだけを読みます。Bundle�
 </code></pre>
 <p>詳細なfield、ordering、manifest、publication failureの扱いは
 <a href="NormalizedSpecBundleV2.html">Normalized Spec Bundle v2</a>を参照してください。</p>
-<h2 id="yaml-subset">YAML subset</h2>
+<h2 id="yamlの対応範囲">YAMLの対応範囲</h2>
 <p>YAMLは全仕様対応ではなく、source generatorが安全に正規化できる bounded
 YAML 1.2-compatible subsetです。subset外は黙ってJSONへ変換したり無視したり
 せず、<code>YAML001</code>–<code>YAML015</code>のsource-located diagnosticで拒否します。</p>
@@ -160,114 +160,114 @@ YAML 1.2-compatible subsetです。subset外は黙ってJSONへ変換したり�
 <thead>
 <tr>
 <th>項目</th>
-<th>Status</th>
+<th>対応状況</th>
 <th>条件・制約</th>
 </tr>
 </thead>
 <tbody><tr>
 <td>block mapping / sequence</td>
-<td>Supported</td>
+<td>対応</td>
 <td>indentationを使うmapping・sequence、nested/compact composition。compact continuationは2-space step。indentless sequenceと任意幅のcompact indentationは対象外。tabsはindentationに使用不可。</td>
 </tr>
 <tr>
 <td>flow mapping / sequence</td>
-<td>Supported</td>
+<td>対応</td>
 <td>nested、multiline、source orderを保持。flow collection内のblock scalarは対象外。</td>
 </tr>
 <tr>
 <td>mapping key</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>simple string keyのみ。duplicate、complex/non-string key、merge key <code>&lt;&lt;</code>は拒否。</td>
 </tr>
 <tr>
 <td>comments / encoding</td>
-<td>Supported</td>
+<td>対応</td>
 <td>comments、UTF-8 BOM、LF、CRLF。BOMはtreeから除きraw hashには含めます。</td>
 </tr>
 <tr>
 <td>quoted / plain scalar</td>
-<td>Supported</td>
+<td>対応</td>
 <td>single/double quoteとplain scalar。YAML 1.1 implicit bool/date等はstringとして保持。</td>
 </tr>
 <tr>
 <td>JSON-compatible scalar</td>
-<td>Supported</td>
+<td>対応</td>
 <td><code>null</code>、<code>true</code>/<code>false</code>、RFC 8259 number（integer/real）、string。</td>
 </tr>
 <tr>
 <td>literal / folded block scalar</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>`</td>
 </tr>
 <tr>
 <td>flow plain delimiter</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>plain valueに<code>,</code>, <code>[</code>, <code>]</code>, <code>{</code>, <code>}</code>を含める場合はquote必須。URL scheme colon（<code>https://</code>）は受理。</td>
 </tr>
 <tr>
 <td>anchor / alias</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>anchor定義とalias展開をサポート。alias rootにはalias位置を付与。undefined/cycle/redefinitionは拒否。同一行のcompact anchor mapping（<code>- &amp;a key: value</code>）は対象外で、nestedまたはflow valueとして記述する。</td>
 </tr>
 <tr>
 <td>tags / directives</td>
-<td>Unsupported</td>
+<td>非対応</td>
 <td>explicit/custom tagとdirectiveは拒否。</td>
 </tr>
 <tr>
 <td>document stream</td>
-<td>Unsupported</td>
+<td>非対応</td>
 <td>multiple document（<code>---</code>/<code>...</code>による複数document）は拒否。</td>
 </tr>
 </tbody></table>
-<h3 id="yaml-source-locations-and-limits">YAML source locations and limits</h3>
+<h3 id="yamlの入力位置と上限">YAMLの入力位置と上限</h3>
 <p>Lexer tokenはsource path、1-based line/column、UTF-16 offset/lengthを持ちます。
 bundleへ保存するのはsource pathと1-based line/columnで、offset/lengthはlexer/parser
 内部の診断情報です。syntax diagnosticのlogical pathはroot（empty）で、semantic
 diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
-<p>Parser limits are hard bounds:</p>
+<p>パーサーには次の上限があります。</p>
 <table>
 <thead>
 <tr>
-<th>Limit</th>
-<th align="right">Value</th>
+<th>上限</th>
+<th align="right">値</th>
 </tr>
 </thead>
 <tbody><tr>
-<td>Maximum input characters</td>
+<td>最大入力文字数</td>
 <td align="right">4,194,304</td>
 </tr>
 <tr>
-<td>Maximum tokens</td>
+<td>最大トークン数</td>
 <td align="right">1,000,000</td>
 </tr>
 <tr>
-<td>Maximum scalar characters</td>
+<td>最大scalar文字数</td>
 <td align="right">1,048,576</td>
 </tr>
 <tr>
-<td>Maximum aliases</td>
+<td>最大alias数</td>
 <td align="right">4,096</td>
 </tr>
 <tr>
-<td>Maximum anchors</td>
+<td>最大anchor数</td>
 <td align="right">4,096</td>
 </tr>
 <tr>
-<td>Maximum expanded nodes</td>
+<td>最大展開ノード数</td>
 <td align="right">1,000,000</td>
 </tr>
 <tr>
-<td>Maximum nesting depth</td>
+<td>最大ネスト深度</td>
 <td align="right">256</td>
 </tr>
 </tbody></table>
-<p>YAML diagnostic IDs are stable within Phase 5:</p>
+<p>YAMLの診断IDは次のとおりです。</p>
 <table>
 <thead>
 <tr>
 <th>ID</th>
-<th>Meaning</th>
+<th>意味</th>
 </tr>
 </thead>
 <tbody><tr>
@@ -331,155 +331,155 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>Limit exceeded</td>
 </tr>
 </tbody></table>
-<h2 id="operationsparametersresponses">Operations、parameters、responses</h2>
+<h2 id="操作パラメーターレスポンス">操作・パラメーター・レスポンス</h2>
 <table>
 <thead>
 <tr>
 <th>項目</th>
-<th>Status</th>
+<th>対応状況</th>
 <th>条件・制約</th>
 </tr>
 </thead>
 <tbody><tr>
 <td>HTTP method</td>
-<td>Supported</td>
+<td>対応</td>
 <td><code>GET</code>、<code>POST</code>、<code>PUT</code>、<code>DELETE</code>、<code>PATCH</code>、<code>HEAD</code>、<code>OPTIONS</code>、<code>TRACE</code>。</td>
 </tr>
 <tr>
 <td><code>servers</code></td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>URLは0個または1個、variablesなし。</td>
 </tr>
 <tr>
 <td>parameter location</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>path、query、headerのscalar parameterのみ。cookieは対象外です。</td>
 </tr>
 <tr>
 <td>parameter serialization</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>defaultの<code>style</code>/<code>explode</code>のみ。<code>allowReserved: true</code>は対象外です。</td>
 </tr>
 <tr>
 <td>complex parameter</td>
-<td>Unsupported</td>
+<td>非対応</td>
 <td>直接定義・多段<code>$ref</code>ともarray/object等のcomplex parameterは対象外です。</td>
 </tr>
 <tr>
 <td>required nullable parameter</td>
-<td>Unsupported</td>
+<td>非対応</td>
 <td>path/query/headerの<code>required: true</code>とnullableの組み合わせは<code>OACG101</code>です。参照チェーン全体を確認します。任意parameterのnull省略とDTOのnullableは維持します。</td>
 </tr>
 <tr>
 <td>dot-only path segment</td>
-<td>Unsupported</td>
+<td>非対応</td>
 <td>引数置換後のpath segmentが<code>.</code>／<code>..</code>（1回percent-decodeした表現を含む）なら、HTTP送信前に<code>ArgumentException</code>です。<code>.hidden</code>、<code>a.b</code>、<code>...</code>や通常の複合segmentは使用できます。</td>
 </tr>
 <tr>
 <td>header identity</td>
-<td>Supported</td>
+<td>対応</td>
 <td>header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。</td>
 </tr>
 <tr>
 <td>request body</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>パラメーター付きも含む<code>application/json</code>または<code>application/*+json</code>。type/subtypeを正規化して判定します。</td>
 </tr>
 <tr>
 <td>request charset</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。</td>
 </tr>
 <tr>
 <td>successful response</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>少なくとも1つの<code>2xx</code> responseが必要です。複数ある場合、contractは一致する必要があります。</td>
 </tr>
 <tr>
 <td>error/default response</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。</td>
 </tr>
 <tr>
 <td>response extension</td>
-<td>Supported</td>
+<td>対応</td>
 <td>operationのResponses Objectでは<code>x-*</code>を除外します。<code>components.responses</code>の<code>x-*</code>名は通常のResponse/Referenceです。</td>
 </tr>
 <tr>
 <td>response header</td>
-<td>Unsupported</td>
+<td>非対応</td>
 <td>nonempty response headerは対象外です。</td>
 </tr>
 </tbody></table>
 <p>status codeはASCII数字で検証します。属性付きのジェネリックclassは<code>OACG005</code>で拒否します。</p>
-<h2 id="schema">Schema</h2>
+<h2 id="スキーマ">スキーマ</h2>
 <p>以下は生成するrequest／成功response／DTOの制限です。非2xxと<code>default</code>の本文は構造・参照検証の対象です。</p>
 <table>
 <thead>
 <tr>
 <th>項目</th>
-<th>Status</th>
+<th>対応状況</th>
 <th>条件・制約</th>
 </tr>
 </thead>
 <tbody><tr>
 <td>scalar</td>
-<td>Supported</td>
+<td>対応</td>
 <td><code>string</code>、<code>integer</code>、<code>number</code>、<code>boolean</code>。</td>
 </tr>
 <tr>
 <td>object</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>named propertiesと<code>required</code>を持つobject。</td>
 </tr>
 <tr>
 <td>array</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>supported schemaのarray。</td>
 </tr>
 <tr>
 <td>string enum</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>generated C# enumに<code>StringEnumConverter</code>を付与します。OpenAPI 3.1の<code>type: [string, null]</code>でも<code>enum</code>に文字列しかなければ非nullableです。<code>null</code>を含むenumは<code>OACG101</code>です。</td>
 </tr>
 <tr>
 <td>direct schema reference</td>
-<td>Supported</td>
+<td>対応</td>
 <td>supported schemaへの参照。多段参照のscalar／enumもnullableを保持します。</td>
 </tr>
 <tr>
 <td><code>$ref</code> sibling</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>注釈、literalデータ、<code>x-*</code>と既存の3.0 <code>nullable</code>は保持します。合成が必要な<code>type</code>、<code>properties</code>、<code>required</code>などは、該当位置の<code>OACG101</code>で拒否します。</td>
 </tr>
 <tr>
 <td>nullable</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td>OpenAPI 3.0の<code>nullable</code>、OpenAPI 3.1の<code>type: [&lt;type&gt;, null]</code>。</td>
 </tr>
 <tr>
 <td>optional nullable DTO property</td>
-<td>Supported</td>
+<td>対応</td>
 <td>未代入はJSONから省略し、<code>null</code>代入は明示的なJSON <code>null</code>、値の代入はその値を送ります。生成される<code>&lt;PropertyName&gt;Specified</code>を<code>false</code>へ戻すと再び省略します。</td>
 </tr>
 <tr>
 <td>scalar format</td>
-<td>Partial</td>
+<td>一部対応</td>
 <td><code>integer</code>は通常<code>int</code>、<code>int64</code>は<code>long</code>。<code>number</code>は通常<code>double</code>、<code>float</code>は<code>float</code>、<code>decimal</code>は<code>decimal</code>。<code>date</code>、<code>date-time</code>、<code>uuid</code>は<code>DateTime</code>、<code>DateTimeOffset</code>、<code>Guid</code>へmappingします。</td>
 </tr>
 <tr>
 <td>map / free-form object</td>
-<td>Unsupported</td>
+<td>非対応</td>
 <td><code>additionalProperties</code>などのmap/free-form表現は対象外です。</td>
 </tr>
 <tr>
 <td>composition</td>
-<td>Unsupported</td>
+<td>非対応</td>
 <td><code>allOf</code>、<code>anyOf</code>、<code>oneOf</code>、<code>not</code>、discriminatorは対象外です。</td>
 </tr>
 <tr>
 <td>binary / readOnly / writeOnly</td>
-<td>Unsupported</td>
+<td>非対応</td>
 <td>生成contractでは対象外です。</td>
 </tr>
 </tbody></table>
@@ -488,7 +488,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 OpenAPI 3.0では既存互換として<code>nullable</code>も扱います。</p>
 <p>リクエストJSONの<code>format: date</code>は<code>yyyy-MM-dd</code>へ変換します。公開型の<code>DateTime</code>は維持し、
 <code>date-time</code>の<code>DateTimeOffset</code>にはdate用converterを適用しません。</p>
-<h2 id="generated-outputと利用上の制約">Generated outputと利用上の制約</h2>
+<h2 id="生成結果と利用上の制約">生成結果と利用上の制約</h2>
 <p>生成結果は次のpublic API contractです。</p>
 <ul>
 <li>public mutable sealed DTO（Json.NET attribute使用）</li>

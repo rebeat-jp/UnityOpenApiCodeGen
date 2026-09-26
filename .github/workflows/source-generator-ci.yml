@@ -15,7 +15,34 @@ permissions:
   contents: read
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate manual target SHA before checkout
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TARGET_COMMIT: ${{ inputs.commit || github.sha }}
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo 'Manual CI must run from main.' >&2; exit 1; }
+          [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'Exact commit SHA required.' >&2; exit 1; }
+      - uses: actions/checkout@v4
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enforce main ancestry before manual Unity verification
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TARGET_COMMIT: ${{ inputs.commit || github.sha }}
+        run: |
+          [[ "$(git rev-parse HEAD)" == "$TARGET_COMMIT" ]] || { echo 'Checkout differs from selected commit.' >&2; exit 1; }
+          if ! git merge-base --is-ancestor "$TARGET_COMMIT" origin/main; then
+            echo 'Manual CI target must be an ancestor of origin/main.' >&2
+            exit 1
+          fi
   verify:
+    needs: preflight
     uses: ./.github/workflows/source-generator-verify.yml
     # Environment secrets in reusable workflows require caller inheritance:
     # https://github.com/actions/runner/issues/4453

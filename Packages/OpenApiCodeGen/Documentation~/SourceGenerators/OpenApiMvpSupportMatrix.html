@@ -6,6 +6,7 @@
 <style>body{font:16px/1.7 system-ui,sans-serif;color:#20242c;background:#fff;max-width:1080px;margin:0 auto;padding:32px 24px;overflow-wrap:anywhere}a{color:#0756a5}h1,h2,h3{line-height:1.3}h2{margin-top:2em}table{display:block;overflow:auto;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #ccd2da;padding:9px 12px;text-align:left;vertical-align:top}th{background:#f1f4f8}pre{padding:16px;background:#f1f4f8;overflow:auto}code{font-family:ui-monospace,monospace}blockquote{border-left:4px solid #ccd2da;margin-left:0;padding-left:16px}img{max-width:100%}</style>
 </head><body><main>
 <h1 id="openapi-mvp-support-matrix">OpenAPI MVP support matrix</h1>
+<p><a href="OpenApiMvpSupportMatrix.ja.html">日本語版</a></p>
 <p><strong>Source Generator (Beta)</strong> による生成はベータです。
 Source Generator generation is in beta. Review the supported features before use.</p>
 <p>Editorの「Open Support Matrix」は、base packageに同梱したHTMLをブラウザーで開きます。
@@ -60,6 +61,11 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 <td>OpenAPI version</td>
 <td>Partial</td>
 <td><code>3.0.*</code>と<code>3.1.*</code>のみ。</td>
+</tr>
+<tr>
+<td>OpenAPI 3.1 schema dialect</td>
+<td>Partial</td>
+<td>既定または明示的な<code>https://spec.openapis.org/oas/3.1/dialect/base</code>のみ。rootの<code>jsonSchemaDialect</code>とschemaの<code>$schema</code>で別dialectを指定すると<code>OACG101</code>、不正なURIは<code>OACG100</code>です。</td>
 </tr>
 <tr>
 <td>OpenAPI 3.2 / Swagger 2</td>
@@ -433,8 +439,8 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 </tr>
 <tr>
 <td>string enum</td>
-<td>Supported</td>
-<td>generated C# enumに<code>StringEnumConverter</code>を付与します。</td>
+<td>Partial</td>
+<td>generated C# enumに<code>StringEnumConverter</code>を付与します。OpenAPI 3.1の<code>type: [string, null]</code>でも<code>enum</code>に文字列しかなければ非nullableです。<code>null</code>を含むenumは<code>OACG101</code>です。</td>
 </tr>
 <tr>
 <td>direct schema reference</td>
@@ -450,6 +456,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>nullable</td>
 <td>Partial</td>
 <td>OpenAPI 3.0の<code>nullable</code>、OpenAPI 3.1の<code>type: [&lt;type&gt;, null]</code>。</td>
+</tr>
+<tr>
+<td>optional nullable DTO property</td>
+<td>Supported</td>
+<td>未代入はJSONから省略し、<code>null</code>代入は明示的なJSON <code>null</code>、値の代入はその値を送ります。生成される<code>&lt;PropertyName&gt;Specified</code>を<code>false</code>へ戻すと再び省略します。</td>
 </tr>
 <tr>
 <td>scalar format</td>
@@ -481,6 +492,7 @@ OpenAPI 3.0では既存互換として<code>nullable</code>も扱います。</p
 <p>生成結果は次のpublic API contractです。</p>
 <ul>
 <li>public mutable sealed DTO（Json.NET attribute使用）</li>
+<li>任意かつschema上nullableなDTO propertyの<code>&lt;PropertyName&gt;Specified</code>による存在状態の管理</li>
 <li><code>StringEnumConverter</code>付きのstring enumと<code>List&lt;T&gt;</code></li>
 <li>injected <code>HttpClient</code>を使うasync client API。documentまたはexplicit base URLを指定するconstructorを使用可能</li>
 <li>path/query/header/body、<code>JsonConvert</code>、<code>CancellationToken</code>、宣言された<code>2xx</code> response handling</li>

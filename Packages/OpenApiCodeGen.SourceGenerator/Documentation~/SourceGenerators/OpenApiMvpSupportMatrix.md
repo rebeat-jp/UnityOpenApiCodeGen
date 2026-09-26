@@ -1,5 +1,7 @@
 # OpenAPI MVP support matrix
 
+[日本語版](OpenApiMvpSupportMatrix.ja.md)
+
 **Source Generator (Beta)** による生成はベータです。
 Source Generator generation is in beta. Review the supported features before use.
 
@@ -33,6 +35,7 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 | --- | --- | --- |
 | 入力document | Supported | localの`.json`、`.yaml`、`.yml` file、またはHTTP(S) URL。local extensionはcase-insensitive。 |
 | OpenAPI version | Partial | `3.0.*`と`3.1.*`のみ。 |
+| OpenAPI 3.1 schema dialect | Partial | 既定または明示的な`https://spec.openapis.org/oas/3.1/dialect/base`のみ。rootの`jsonSchemaDialect`とschemaの`$schema`で別dialectを指定すると`OACG101`、不正なURIは`OACG100`です。 |
 | OpenAPI 3.2 / Swagger 2 | Unsupported | document versionは受け付けません。 |
 | URL入力 | Supported | public/private/loopback、cross-host redirectを許可。userinfo、空白、非HTTP(S)、HTTPS-to-HTTP direct/redirectは拒否。Generateが明示的なfetch/refresh操作で、Docker fallbackはありません。 |
 | JSON/YAML semantic parity | Supported | 各normalizerがshared `SpecNode`へ正規化し、同じsemantic/generation pipelineを通ります。 |
@@ -154,10 +157,11 @@ status codeはASCII数字で検証します。属性付きのジェネリックc
 | scalar | Supported | `string`、`integer`、`number`、`boolean`。 |
 | object | Partial | named propertiesと`required`を持つobject。 |
 | array | Partial | supported schemaのarray。 |
-| string enum | Supported | generated C# enumに`StringEnumConverter`を付与します。 |
+| string enum | Partial | generated C# enumに`StringEnumConverter`を付与します。OpenAPI 3.1の`type: [string, null]`でも`enum`に文字列しかなければ非nullableです。`null`を含むenumは`OACG101`です。 |
 | direct schema reference | Supported | supported schemaへの参照。多段参照のscalar／enumもnullableを保持します。 |
 | `$ref` sibling | Partial | 注釈、literalデータ、`x-*`と既存の3.0 `nullable`は保持します。合成が必要な`type`、`properties`、`required`などは、該当位置の`OACG101`で拒否します。 |
 | nullable | Partial | OpenAPI 3.0の`nullable`、OpenAPI 3.1の`type: [<type>, null]`。 |
+| optional nullable DTO property | Supported | 未代入はJSONから省略し、`null`代入は明示的なJSON `null`、値の代入はその値を送ります。生成される`<PropertyName>Specified`を`false`へ戻すと再び省略します。 |
 | scalar format | Partial | `integer`は通常`int`、`int64`は`long`。`number`は通常`double`、`float`は`float`、`decimal`は`decimal`。`date`、`date-time`、`uuid`は`DateTime`、`DateTimeOffset`、`Guid`へmappingします。 |
 | map / free-form object | Unsupported | `additionalProperties`などのmap/free-form表現は対象外です。 |
 | composition | Unsupported | `allOf`、`anyOf`、`oneOf`、`not`、discriminatorは対象外です。 |
@@ -175,6 +179,7 @@ OpenAPI 3.0では既存互換として`nullable`も扱います。
 生成結果は次のpublic API contractです。
 
 - public mutable sealed DTO（Json.NET attribute使用）
+- 任意かつschema上nullableなDTO propertyの`<PropertyName>Specified`による存在状態の管理
 - `StringEnumConverter`付きのstring enumと`List<T>`
 - injected `HttpClient`を使うasync client API。documentまたはexplicit base URLを指定するconstructorを使用可能
 - path/query/header/body、`JsonConvert`、`CancellationToken`、宣言された`2xx` response handling

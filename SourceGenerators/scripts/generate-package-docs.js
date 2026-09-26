@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 
 const repositoryRoot = path.resolve(__dirname, '../..');
 const entry = 'SourceGenerators/OpenApiMvpSupportMatrix.md';
+const japaneseEntry = 'SourceGenerators/OpenApiMvpSupportMatrix.ja.md';
 const packageDirectories = ['Packages/OpenApiCodeGen', 'Packages/OpenApiCodeGen.SourceGenerator'];
 const manifestName = 'documentation-manifest.json';
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -111,7 +112,10 @@ function verifyPackage(packageRoot) {
     names.add(file.path);
     if (hash(fs.readFileSync(path.join(root, file.path))) !== file.sha256) throw new Error(`Packaged documentation hash mismatch: ${file.path}`);
   }
-  if (!names.has(entry) || !names.has(manifest.entry)) throw new Error('Support Matrix is missing from package');
+  if (!names.has(entry) || !names.has(manifest.entry) ||
+      !names.has(japaneseEntry) || !names.has(japaneseEntry.replace(/\.md$/, '.html'))) {
+    throw new Error('Support Matrix or its Japanese version is missing from package');
+  }
   for (const name of names) {
     if (!name.endsWith('.html')) continue;
     const html = fs.readFileSync(path.join(root, name), 'utf8');
@@ -122,6 +126,10 @@ function verifyPackage(packageRoot) {
   }
   const readme = fs.readFileSync(path.join(packageRoot, 'README.md'), 'utf8');
   if (!readme.includes(`Documentation~/${entry}`)) throw new Error('Package README must link to the bundled Support Matrix');
+  const japaneseReadme = fs.readFileSync(path.join(packageRoot, 'README.ja.md'), 'utf8');
+  if (!japaneseReadme.includes(`Documentation~/${japaneseEntry}`)) {
+    throw new Error('Japanese package README must link to the bundled Japanese Support Matrix');
+  }
 }
 
 if (require.main === module) {

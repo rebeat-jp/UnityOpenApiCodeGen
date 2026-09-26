@@ -470,17 +470,24 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     throw new NotSupportedException(
                         "A remote document must not reference a local file: " + sourceDocument.SourcePath);
                 }
-                string localPath = owner.ResolveLocalPath(fetchUri.LocalPath, !sameDocument);
+                if (sameDocument)
+                {
+                    return SourceRequest.Local(
+                        fetchUri.LocalPath,
+                        sourceDocument.FetchKey,
+                        string.Equals(sourceDocument.Format, "yaml", StringComparison.Ordinal)
+                            ? OpenApiDocumentFormat.Yaml
+                            : OpenApiDocumentFormat.Json,
+                        false);
+                }
+
+                string localPath = owner.ResolveLocalPath(fetchUri.LocalPath, true);
 
                 OpenApiDocumentFormat format = DetectLocalFormat(localPath);
                 return SourceRequest.Local(
                     localPath,
                     new Uri(localPath, UriKind.Absolute).AbsoluteUri,
-                    sameDocument
-                        ? (string.Equals(sourceDocument.Format, "yaml", StringComparison.Ordinal)
-                            ? OpenApiDocumentFormat.Yaml
-                            : OpenApiDocumentFormat.Json)
-                        : format,
+                    format,
                     false);
             }
 

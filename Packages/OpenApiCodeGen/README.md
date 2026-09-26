@@ -1,5 +1,7 @@
 # Unity OpenAPI CodeGen
 
+[日本語](README.ja.md) · [日本語の対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)
+
 ## Purpose and audience
 
 This base Unity package provides the OpenAPI CodeGen Editor windows and the

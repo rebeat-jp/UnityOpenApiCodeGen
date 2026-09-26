@@ -15,11 +15,13 @@ function fixture(t) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, contents);
   };
-  write('SourceGenerators/OpenApiMvpSupportMatrix.md', '# Source Generator (Beta)\n\n| Feature | Support |\n| --- | --- |\n| JSON | Yes |\n\n[Guide](../guide.md#日本語)\n');
+  write('SourceGenerators/OpenApiMvpSupportMatrix.ja.md', '# 日本語の対応表\n\n[English](OpenApiMvpSupportMatrix.md)\n');
+  write('SourceGenerators/OpenApiMvpSupportMatrix.md', '# Source Generator (Beta)\n\n[日本語](OpenApiMvpSupportMatrix.ja.md)\n\n| Feature | Support |\n| --- | --- |\n| JSON | Yes |\n\n[Guide](../guide.md#日本語)\n');
   write('guide.md', '# 日本語\n\n[Return](SourceGenerators/OpenApiMvpSupportMatrix.md)\n\n[Data](data.json)\n');
   write('data.json', '{"version":1}\n');
   for (const name of ['OpenApiCodeGen', 'OpenApiCodeGen.SourceGenerator']) {
     write(`Packages/${name}/README.md`, '[Support Matrix](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.md)\n');
+    write(`Packages/${name}/README.ja.md`, '[日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)\n');
   }
   return { root, write, packageRoot: path.join(root, 'Packages/OpenApiCodeGen') };
 }
@@ -34,7 +36,9 @@ test('bundled documentation remains complete after moving a package outside the 
   verifyPackage(moved);
   const html = fs.readFileSync(path.join(moved, 'Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.html'), 'utf8');
   assert.match(html, /<table>/);
-  assert.equal(decodeURI(html.match(/href="([^"]+)"/)[1]), '../guide.html#日本語');
+  assert.match(fs.readFileSync(path.join(moved, 'Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.html'), 'utf8'), /日本語の対応表/);
+  assert.match(html, /href="OpenApiMvpSupportMatrix\.ja\.html"/);
+  assert.equal(decodeURI([...html.matchAll(/href="([^"]+)"/g)].map(match => match[1]).find(href => href.includes('guide.html'))), '../guide.html#日本語');
   assert.doesNotMatch(html, /<script|<link|https?:\/\/.*\.(?:js|css)/);
 });
 

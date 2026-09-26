@@ -111,13 +111,15 @@ candidate fingerprint、全証拠hash、test XMLと終了コードを照合し�
 手動dispatchで共通の`source-generator-verify.yml`を呼びます。共通処理は.NET/package検証、
 Unity matrix、証拠集約の後に、実際の公開スクリプトを`PUBLISH=false`で実行します。
 これによりdefault branchへworkflowが入る前のPRでもCD dry-runを確認できます。
+手動CIは`main` refから、`main`の祖先SHAだけを検証します。未マージ変更は通常のPR CIで検証します。
 
 DLL更新は`source-generator-update-dll.yml`を`main`から手動実行し、
 `base_branch=develop`または`main`を選びます。変更がある場合のみDLL専用PRと明示CIを作成し、
 version・`.meta`・GUIDは維持します。
 
 公開は`source-generator-release.yml`の`commit`・`version`・`publish`を指定します。
-既定はdry-runです。公開時はmainに含まれるcommitだけを許可し、タグ・既存assetを上書きしません。
+既定はdry-runです。dry-runと公開の両方で`main` refとその祖先commitだけを許可し、
+タグ・既存assetを上書きしません。
 OpenUPM確認はOIDCのためタグrefの別workflowへ渡します。
 [リリース・再開・rollback手順](../RELEASE.md)と
 [初回OpenUPM登録](OpenUPM/README.md)を参照してください。

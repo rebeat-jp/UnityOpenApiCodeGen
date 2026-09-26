@@ -278,7 +278,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Theory]
         [InlineData("path", "{\"type\":[\"string\",\"null\"]}")]
         [InlineData("query", "{\"type\":[\"integer\",\"null\"],\"format\":\"int32\"}")]
-        [InlineData("header", "{\"type\":[\"string\",\"null\"],\"enum\":[\"ready\",\"done\"]}")]
         public void RequiredNullableParameterSchemasAreRejected(string location, string schema)
         {
             string path = location == "path" ? "/values/{value}" : "/values";
@@ -306,7 +305,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
         [Theory]
         [InlineData("NullableScalar")]
-        [InlineData("NullableEnum")]
         public void RequiredNullableParameterFollowsTheCompleteReferenceChain(string target)
         {
             string document = @"{
@@ -323,8 +321,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
   ""components"": { ""schemas"": {
     ""Alias"": { ""$ref"": ""#/components/schemas/SecondAlias"" },
     ""SecondAlias"": { ""$ref"": ""#/components/schemas/" + target + @""" },
-    ""NullableScalar"": { ""type"": [""integer"", ""null""], ""format"": ""int32"" },
-    ""NullableEnum"": { ""type"": [""string"", ""null""], ""enum"": [""ready"", ""done""] }
+    ""NullableScalar"": { ""type"": [""integer"", ""null""], ""format"": ""int32"" }
   } }
 }";
 
@@ -337,7 +334,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
         [Theory]
         [InlineData("{\"type\":[\"integer\",\"null\"],\"format\":\"int32\"}")]
-        [InlineData("{\"type\":[\"string\",\"null\"],\"enum\":[\"ready\",\"done\"]}")]
         public void RequiredNullableParameterFollowsExternalYamlReferenceChain(string valueSchema)
         {
             const string Root = @"{
@@ -438,7 +434,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     ""CountAlias"": { ""$ref"": ""#/components/schemas/NullableCount"" },
     ""NullableCount"": { ""type"": [""integer"", ""null""], ""format"": ""int32"" },
     ""StateAlias"": { ""$ref"": ""#/components/schemas/NullableState"" },
-    ""NullableState"": { ""type"": [""string"", ""null""], ""enum"": [""ready"", ""done""] }
+    ""NullableState"": { ""type"": [""string"", ""null""] }
   } }
 }";
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(Document);
@@ -453,7 +449,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 .Single(value => value.Identifier.ValueText != "cancellationToken");
 
             Assert.Equal("int?", body.Type!.ToString());
-            Assert.Contains("NullableState?", method.ReturnType.ToString());
+            Assert.Contains("string?", method.ReturnType.ToString());
         }
 
         [Theory]

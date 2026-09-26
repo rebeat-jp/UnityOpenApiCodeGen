@@ -1,9 +1,9 @@
-# OpenAPI MVP support matrix
+# OpenAPI MVP 対応表
 
-[日本語版](OpenApiMvpSupportMatrix.ja.md)
+[元の対応表](OpenApiMvpSupportMatrix.md)
 
 **Source Generator (Beta)** による生成はベータです。
-Source Generator generation is in beta. Review the supported features before use.
+利用前にこの対応表で入力仕様と生成されるAPIの制約を確認してください。
 
 Editorの「Open Support Matrix」は、base packageに同梱したHTMLをブラウザーで開きます。
 両パッケージにこの文書と参照資料のMarkdown／HTMLを同梱しており、公開タグやネット接続は不要です。
@@ -23,39 +23,39 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 入力・bundle・definitionの既存診断`OACG001`–`OACG009`に加え、semantic generationでは
 `OACG100`–`OACG106`を使用します。型名の重複をsuffixで解消した場合はwarning `OACG107`を報告します。
 
-| Status | 意味 |
+| 対応状況 | 意味 |
 | --- | --- |
-| Supported | 記載した条件で生成・実行対象です。 |
-| Partial | 記載した部分だけを生成します。条件外は診断となります。 |
-| Unsupported | MVPの対象外です。診断となります。 |
+| 対応 | 記載した条件で生成・実行対象です。 |
+| 一部対応 | 記載した部分だけを生成します。条件外は診断となります。 |
+| 非対応 | MVPの対象外です。診断となります。 |
 
 ## 入力と参照
 
-| 項目 | Status | 条件・制約 |
+| 項目 | 対応状況 | 条件・制約 |
 | --- | --- | --- |
-| 入力document | Supported | localの`.json`、`.yaml`、`.yml` file、またはHTTP(S) URL。local extensionはcase-insensitive。 |
-| OpenAPI version | Partial | `3.0.*`と`3.1.*`のみ。 |
-| OpenAPI 3.1 schema dialect | Partial | 既定または明示的な`https://spec.openapis.org/oas/3.1/dialect/base`のみ。rootの`jsonSchemaDialect`とschemaの`$schema`で別dialectを指定すると`OACG101`、不正なURIは`OACG100`です。 |
-| OpenAPI 3.2 / Swagger 2 | Unsupported | document versionは受け付けません。 |
-| URL入力 | Supported | public/private/loopback、cross-host redirectを許可。userinfo、空白、非HTTP(S)、HTTPS-to-HTTP direct/redirectは拒否。Generateが明示的なfetch/refresh操作で、Docker fallbackはありません。 |
-| JSON/YAML semantic parity | Supported | 各normalizerがshared `SpecNode`へ正規化し、同じsemantic/generation pipelineを通ります。 |
-| `$ref` | Partial | OpenAPI/Schema上の参照位置にあるinternal reference、またはEditorがBundle v2のedgeへ解決したexternal reference。example/default/enum/拡張データ内の同名キーはデータとして保持。fragmentはemptyまたはJSON Pointer。 |
-| external `$ref` | Partial | local external fileはreal/symbolic-link解決後もUnity project内。remote documentからlocal fileは不可。bare Schemaは可。 |
-| unresolved / cyclic `$ref` | Unsupported | それぞれ`OACG102`、`OACG103`を報告します。`OACG104`はBundle v1のexternal-reference互換診断です。 |
-| URL query / fragment | Partial | queryはfetch identityに使いますが平文永続化しません。root URL fragment、userinfo、explicit `file:`は拒否。 |
-| URL format detection | Supported | final URL extensionとContent-Typeが既知なら一致必須。片方だけ既知は可、両方不明・競合は拒否。content sniffing/hintはなし。 |
+| 入力document | 対応 | localの`.json`、`.yaml`、`.yml` file、またはHTTP(S) URL。local extensionはcase-insensitive。 |
+| OpenAPI version | 一部対応 | `3.0.*`と`3.1.*`のみ。 |
+| OpenAPI 3.1 schema dialect | 一部対応 | 既定または明示的な`https://spec.openapis.org/oas/3.1/dialect/base`のみ。rootの`jsonSchemaDialect`とschemaの`$schema`で別dialectを指定すると`OACG101`、不正なURIは`OACG100`です。 |
+| OpenAPI 3.2 / Swagger 2 | 非対応 | document versionは受け付けません。 |
+| URL入力 | 対応 | public/private/loopback、cross-host redirectを許可。userinfo、空白、非HTTP(S)、HTTPS-to-HTTP direct/redirectは拒否。Generateが明示的なfetch/refresh操作で、Docker fallbackはありません。 |
+| JSON/YAML semantic parity | 対応 | 各normalizerがshared `SpecNode`へ正規化し、同じsemantic/generation pipelineを通ります。 |
+| `$ref` | 一部対応 | OpenAPI/Schema上の参照位置にあるinternal reference、またはEditorがBundle v2のedgeへ解決したexternal reference。example/default/enum/拡張データ内の同名キーはデータとして保持。fragmentはemptyまたはJSON Pointer。 |
+| external `$ref` | 一部対応 | local external fileはreal/symbolic-link解決後もUnity project内。remote documentからlocal fileは不可。bare Schemaは可。 |
+| unresolved / cyclic `$ref` | 非対応 | それぞれ`OACG102`、`OACG103`を報告します。`OACG104`はBundle v1のexternal-reference互換診断です。 |
+| URL query / fragment | 一部対応 | queryはfetch identityに使いますが平文永続化しません。root URL fragment、userinfo、explicit `file:`は拒否。 |
+| URL format detection | 対応 | final URL extensionとContent-Typeが既知なら一致必須。片方だけ既知は可、両方不明・競合は拒否。content sniffing/hintはなし。 |
 
-### External graph limits
+### 外部参照グラフの上限
 
-| Limit | Value |
+| 上限 | 値 |
 | --- | ---: |
-| Request timeout | 30 seconds |
-| Graph timeout | 120 seconds |
-| Maximum document size | 4 MiB |
-| Maximum graph size | 32 MiB |
-| Maximum documents | 64 |
-| Maximum redirects | 5 |
-| Maximum reference depth | 256 |
+| 1リクエストのタイムアウト | 30秒 |
+| グラフ全体のタイムアウト | 120秒 |
+| 1文書の最大サイズ | 4 MiB |
+| グラフ全体の最大サイズ | 32 MiB |
+| 最大文書数 | 64 |
+| 最大リダイレクト数 | 5 |
+| 最大参照深度 | 256 |
 
 Editorはfetch、filesystem read/write、format parsing、reference resolutionを担当します。
 AnalyzerはAdditionalFile内のBundleとedge mapだけを読みます。Bundleは次のtop-level field順を
@@ -68,48 +68,48 @@ formatVersion, specId, rawSha256, rootDocumentId, documents, referenceEdges
 詳細なfield、ordering、manifest、publication failureの扱いは
 [Normalized Spec Bundle v2](NormalizedSpecBundleV2.md)を参照してください。
 
-## YAML subset
+## YAMLの対応範囲
 
 YAMLは全仕様対応ではなく、source generatorが安全に正規化できる bounded
 YAML 1.2-compatible subsetです。subset外は黙ってJSONへ変換したり無視したり
 せず、`YAML001`–`YAML015`のsource-located diagnosticで拒否します。
 
-| 項目 | Status | 条件・制約 |
+| 項目 | 対応状況 | 条件・制約 |
 | --- | --- | --- |
-| block mapping / sequence | Supported | indentationを使うmapping・sequence、nested/compact composition。compact continuationは2-space step。indentless sequenceと任意幅のcompact indentationは対象外。tabsはindentationに使用不可。 |
-| flow mapping / sequence | Supported | nested、multiline、source orderを保持。flow collection内のblock scalarは対象外。 |
-| mapping key | Partial | simple string keyのみ。duplicate、complex/non-string key、merge key `<<`は拒否。 |
-| comments / encoding | Supported | comments、UTF-8 BOM、LF、CRLF。BOMはtreeから除きraw hashには含めます。 |
-| quoted / plain scalar | Supported | single/double quoteとplain scalar。YAML 1.1 implicit bool/date等はstringとして保持。 |
-| JSON-compatible scalar | Supported | `null`、`true`/`false`、RFC 8259 number（integer/real）、string。 |
-| literal / folded block scalar | Partial | `|`/`>`、`+`/`-` chomping、explicit indent `1`–`9`。flow内は拒否。 |
-| flow plain delimiter | Partial | plain valueに`,`, `[`, `]`, `{`, `}`を含める場合はquote必須。URL scheme colon（`https://`）は受理。 |
-| anchor / alias | Partial | anchor定義とalias展開をサポート。alias rootにはalias位置を付与。undefined/cycle/redefinitionは拒否。同一行のcompact anchor mapping（`- &a key: value`）は対象外で、nestedまたはflow valueとして記述する。 |
-| tags / directives | Unsupported | explicit/custom tagとdirectiveは拒否。 |
-| document stream | Unsupported | multiple document（`---`/`...`による複数document）は拒否。 |
+| block mapping / sequence | 対応 | indentationを使うmapping・sequence、nested/compact composition。compact continuationは2-space step。indentless sequenceと任意幅のcompact indentationは対象外。tabsはindentationに使用不可。 |
+| flow mapping / sequence | 対応 | nested、multiline、source orderを保持。flow collection内のblock scalarは対象外。 |
+| mapping key | 一部対応 | simple string keyのみ。duplicate、complex/non-string key、merge key `<<`は拒否。 |
+| comments / encoding | 対応 | comments、UTF-8 BOM、LF、CRLF。BOMはtreeから除きraw hashには含めます。 |
+| quoted / plain scalar | 対応 | single/double quoteとplain scalar。YAML 1.1 implicit bool/date等はstringとして保持。 |
+| JSON-compatible scalar | 対応 | `null`、`true`/`false`、RFC 8259 number（integer/real）、string。 |
+| literal / folded block scalar | 一部対応 | `|`/`>`、`+`/`-` chomping、explicit indent `1`–`9`。flow内は拒否。 |
+| flow plain delimiter | 一部対応 | plain valueに`,`, `[`, `]`, `{`, `}`を含める場合はquote必須。URL scheme colon（`https://`）は受理。 |
+| anchor / alias | 一部対応 | anchor定義とalias展開をサポート。alias rootにはalias位置を付与。undefined/cycle/redefinitionは拒否。同一行のcompact anchor mapping（`- &a key: value`）は対象外で、nestedまたはflow valueとして記述する。 |
+| tags / directives | 非対応 | explicit/custom tagとdirectiveは拒否。 |
+| document stream | 非対応 | multiple document（`---`/`...`による複数document）は拒否。 |
 
-### YAML source locations and limits
+### YAMLの入力位置と上限
 
 Lexer tokenはsource path、1-based line/column、UTF-16 offset/lengthを持ちます。
 bundleへ保存するのはsource pathと1-based line/columnで、offset/lengthはlexer/parser
 内部の診断情報です。syntax diagnosticのlogical pathはroot（empty）で、semantic
 diagnosticのlogical pathはnormalized treeのtraversalで復元します。
 
-Parser limits are hard bounds:
+パーサーには次の上限があります。
 
-| Limit | Value |
+| 上限 | 値 |
 | --- | ---: |
-| Maximum input characters | 4,194,304 |
-| Maximum tokens | 1,000,000 |
-| Maximum scalar characters | 1,048,576 |
-| Maximum aliases | 4,096 |
-| Maximum anchors | 4,096 |
-| Maximum expanded nodes | 1,000,000 |
-| Maximum nesting depth | 256 |
+| 最大入力文字数 | 4,194,304 |
+| 最大トークン数 | 1,000,000 |
+| 最大scalar文字数 | 1,048,576 |
+| 最大alias数 | 4,096 |
+| 最大anchor数 | 4,096 |
+| 最大展開ノード数 | 1,000,000 |
+| 最大ネスト深度 | 256 |
 
-YAML diagnostic IDs are stable within Phase 5:
+YAMLの診断IDは次のとおりです。
 
-| ID | Meaning |
+| ID | 意味 |
 | --- | --- |
 | `YAML001` | Lexical error（invalid UTF-8など） |
 | `YAML002` | Invalid indentation |
@@ -127,45 +127,45 @@ YAML diagnostic IDs are stable within Phase 5:
 | `YAML014` | Anchor redefinition |
 | `YAML015` | Limit exceeded |
 
-## Operations、parameters、responses
+## 操作・パラメーター・レスポンス
 
-| 項目 | Status | 条件・制約 |
+| 項目 | 対応状況 | 条件・制約 |
 | --- | --- | --- |
-| HTTP method | Supported | `GET`、`POST`、`PUT`、`DELETE`、`PATCH`、`HEAD`、`OPTIONS`、`TRACE`。 |
-| `servers` | Partial | URLは0個または1個、variablesなし。 |
-| parameter location | Partial | path、query、headerのscalar parameterのみ。cookieは対象外です。 |
-| parameter serialization | Partial | defaultの`style`/`explode`のみ。`allowReserved: true`は対象外です。 |
-| complex parameter | Unsupported | 直接定義・多段`$ref`ともarray/object等のcomplex parameterは対象外です。 |
-| required nullable parameter | Unsupported | path/query/headerの`required: true`とnullableの組み合わせは`OACG101`です。参照チェーン全体を確認します。任意parameterのnull省略とDTOのnullableは維持します。 |
-| dot-only path segment | Unsupported | 引数置換後のpath segmentが`.`／`..`（1回percent-decodeした表現を含む）なら、HTTP送信前に`ArgumentException`です。`.hidden`、`a.b`、`...`や通常の複合segmentは使用できます。 |
-| header identity | Supported | header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。 |
-| request body | Partial | パラメーター付きも含む`application/json`または`application/*+json`。type/subtypeを正規化して判定します。 |
-| request charset | Partial | UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。 |
-| successful response | Partial | 少なくとも1つの`2xx` responseが必要です。複数ある場合、contractは一致する必要があります。 |
-| error/default response | Partial | JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。 |
-| response extension | Supported | operationのResponses Objectでは`x-*`を除外します。`components.responses`の`x-*`名は通常のResponse/Referenceです。 |
-| response header | Unsupported | nonempty response headerは対象外です。 |
+| HTTP method | 対応 | `GET`、`POST`、`PUT`、`DELETE`、`PATCH`、`HEAD`、`OPTIONS`、`TRACE`。 |
+| `servers` | 一部対応 | URLは0個または1個、variablesなし。 |
+| parameter location | 一部対応 | path、query、headerのscalar parameterのみ。cookieは対象外です。 |
+| parameter serialization | 一部対応 | defaultの`style`/`explode`のみ。`allowReserved: true`は対象外です。 |
+| complex parameter | 非対応 | 直接定義・多段`$ref`ともarray/object等のcomplex parameterは対象外です。 |
+| required nullable parameter | 非対応 | path/query/headerの`required: true`とnullableの組み合わせは`OACG101`です。参照チェーン全体を確認します。任意parameterのnull省略とDTOのnullableは維持します。 |
+| dot-only path segment | 非対応 | 引数置換後のpath segmentが`.`／`..`（1回percent-decodeした表現を含む）なら、HTTP送信前に`ArgumentException`です。`.hidden`、`a.b`、`...`や通常の複合segmentは使用できます。 |
+| header identity | 対応 | header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。 |
+| request body | 一部対応 | パラメーター付きも含む`application/json`または`application/*+json`。type/subtypeを正規化して判定します。 |
+| request charset | 一部対応 | UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。 |
+| successful response | 一部対応 | 少なくとも1つの`2xx` responseが必要です。複数ある場合、contractは一致する必要があります。 |
+| error/default response | 一部対応 | JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。 |
+| response extension | 対応 | operationのResponses Objectでは`x-*`を除外します。`components.responses`の`x-*`名は通常のResponse/Referenceです。 |
+| response header | 非対応 | nonempty response headerは対象外です。 |
 
 status codeはASCII数字で検証します。属性付きのジェネリックclassは`OACG005`で拒否します。
 
-## Schema
+## スキーマ
 
 以下は生成するrequest／成功response／DTOの制限です。非2xxと`default`の本文は構造・参照検証の対象です。
 
-| 項目 | Status | 条件・制約 |
+| 項目 | 対応状況 | 条件・制約 |
 | --- | --- | --- |
-| scalar | Supported | `string`、`integer`、`number`、`boolean`。 |
-| object | Partial | named propertiesと`required`を持つobject。 |
-| array | Partial | supported schemaのarray。 |
-| string enum | Partial | generated C# enumに`StringEnumConverter`を付与します。OpenAPI 3.1の`type: [string, null]`でも`enum`に文字列しかなければ非nullableです。`null`を含むenumは`OACG101`です。 |
-| direct schema reference | Supported | supported schemaへの参照。多段参照のscalar／enumもnullableを保持します。 |
-| `$ref` sibling | Partial | 注釈、literalデータ、`x-*`と既存の3.0 `nullable`は保持します。合成が必要な`type`、`properties`、`required`などは、該当位置の`OACG101`で拒否します。 |
-| nullable | Partial | OpenAPI 3.0の`nullable`、OpenAPI 3.1の`type: [<type>, null]`。 |
-| optional nullable DTO property | Supported | 未代入はJSONから省略し、`null`代入は明示的なJSON `null`、値の代入はその値を送ります。生成される`<PropertyName>Specified`を`false`へ戻すと再び省略します。 |
-| scalar format | Partial | `integer`は通常`int`、`int64`は`long`。`number`は通常`double`、`float`は`float`、`decimal`は`decimal`。`date`、`date-time`、`uuid`は`DateTime`、`DateTimeOffset`、`Guid`へmappingします。 |
-| map / free-form object | Unsupported | `additionalProperties`などのmap/free-form表現は対象外です。 |
-| composition | Unsupported | `allOf`、`anyOf`、`oneOf`、`not`、discriminatorは対象外です。 |
-| binary / readOnly / writeOnly | Unsupported | 生成contractでは対象外です。 |
+| scalar | 対応 | `string`、`integer`、`number`、`boolean`。 |
+| object | 一部対応 | named propertiesと`required`を持つobject。 |
+| array | 一部対応 | supported schemaのarray。 |
+| string enum | 一部対応 | generated C# enumに`StringEnumConverter`を付与します。OpenAPI 3.1の`type: [string, null]`でも`enum`に文字列しかなければ非nullableです。`null`を含むenumは`OACG101`です。 |
+| direct schema reference | 対応 | supported schemaへの参照。多段参照のscalar／enumもnullableを保持します。 |
+| `$ref` sibling | 一部対応 | 注釈、literalデータ、`x-*`と既存の3.0 `nullable`は保持します。合成が必要な`type`、`properties`、`required`などは、該当位置の`OACG101`で拒否します。 |
+| nullable | 一部対応 | OpenAPI 3.0の`nullable`、OpenAPI 3.1の`type: [<type>, null]`。 |
+| optional nullable DTO property | 対応 | 未代入はJSONから省略し、`null`代入は明示的なJSON `null`、値の代入はその値を送ります。生成される`<PropertyName>Specified`を`false`へ戻すと再び省略します。 |
+| scalar format | 一部対応 | `integer`は通常`int`、`int64`は`long`。`number`は通常`double`、`float`は`float`、`decimal`は`decimal`。`date`、`date-time`、`uuid`は`DateTime`、`DateTimeOffset`、`Guid`へmappingします。 |
+| map / free-form object | 非対応 | `additionalProperties`などのmap/free-form表現は対象外です。 |
+| composition | 非対応 | `allOf`、`anyOf`、`oneOf`、`not`、discriminatorは対象外です。 |
+| binary / readOnly / writeOnly | 非対応 | 生成contractでは対象外です。 |
 
 `$ref`と併記できる注釈・データのキーは`$comment`、`default`、`deprecated`、
 `description`、`example`、`examples`、`externalDocs`、`summary`、`title`、`xml`、`x-*`です。
@@ -174,7 +174,7 @@ OpenAPI 3.0では既存互換として`nullable`も扱います。
 リクエストJSONの`format: date`は`yyyy-MM-dd`へ変換します。公開型の`DateTime`は維持し、
 `date-time`の`DateTimeOffset`にはdate用converterを適用しません。
 
-## Generated outputと利用上の制約
+## 生成結果と利用上の制約
 
 生成結果は次のpublic API contractです。
 

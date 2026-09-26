@@ -1,5 +1,7 @@
 # OpenApiCodeGen Source Generator (Beta)
 
+[日本語](README.ja.md) · [日本語の対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)
+
 Source Generator generation is in beta. Review the supported features before use. See the
 [Support Matrix](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.md). The Editor provider is named **Source Generator (Beta)**.
 
@@ -136,6 +138,13 @@ mutable sealed Newtonsoft.Json DTOs, string enums with `StringEnumConverter`,
 `<ApiName>Exception`. Generated source is a regenerated public contract, not a
 hand-edited file. The full operation, parameter, schema, and response surface
 is documented in the [support matrix](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.md).
+
+For an optional schema-nullable DTO property, assignment marks the property as
+present: an assigned `null` writes JSON `null`, while an untouched property is
+omitted. Set the generated `<PropertyName>Specified` flag to `false` to omit it
+again. OpenAPI 3.1 supports the default or explicitly declared OAS base schema
+dialect; unsupported dialects and string enums containing `null` receive
+source-located diagnostics.
 
 Bundle and semantic failures use stable diagnostics including:
 
