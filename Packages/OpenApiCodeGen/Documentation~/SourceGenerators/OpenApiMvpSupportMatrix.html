@@ -348,7 +348,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td><code>servers</code></td>
 <td>Partial</td>
-<td>URLは0個または1個、variablesなし。<code>//host/path</code>は<code>HttpClient.BaseAddress</code>のschemeで解決し、server URLのhost/pathを使います。<code>BaseAddress</code>がなければ送信前に<code>InvalidOperationException</code>です。</td>
+<td>URLは0個または1個、variablesなし。<code>//host/path</code>は<code>HttpClient.BaseAddress</code>のschemeで解決します。<code>/path</code>は同じoriginのrootから解決し、<code>BaseAddress</code>のpathとqueryを引き継ぎません。どちらも<code>BaseAddress</code>がなければ送信前に<code>InvalidOperationException</code>です。</td>
 </tr>
 <tr>
 <td>parameter location</td>
@@ -394,6 +394,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>required non-nullable request body</td>
 <td>Supported</td>
 <td>参照型の本文に<code>null</code>を渡すとHTTP送信前に<code>ArgumentNullException</code>です。schemaがnullableな必須本文はJSON <code>null</code>を送信できます。</td>
+</tr>
+<tr>
+<td>request array items</td>
+<td>Supported</td>
+<td>非nullableな参照型要素が<code>null</code>なら、本文直下・入れ子の配列・DTO内の配列とも、シリアライズ前に<code>JsonSerializationException</code>で拒否します。nullableな要素の<code>null</code>は送信できます。</td>
 </tr>
 <tr>
 <td>optional nullable request body</td>
@@ -445,7 +450,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>object</td>
 <td>Partial</td>
-<td>named propertiesと<code>required</code>を持つobject。</td>
+<td>named propertiesと<code>required</code>を持ち、<code>additionalProperties: false</code>を明示したobject。省略、<code>true</code>、schema値はDTOを生成できず<code>OACG101</code>です。既存仕様で省略していた場合は明示してください。</td>
 </tr>
 <tr>
 <td>array</td>
@@ -455,7 +460,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>string enum</td>
 <td>Partial</td>
-<td>generated C# enumに数値入出力を許さない<code>StringEnumConverter</code>を付与します。OpenAPI 3.1の<code>type: [string, null]</code>でも<code>enum</code>に文字列しかなければ非nullableです。<code>null</code>を含むenumは<code>OACG101</code>です。</td>
+<td>generated C# enumは宣言したwire文字列だけを大小文字・空白も含め完全一致で読み書きします。JSON数値と未宣言のC# enum値は拒否します。OpenAPI 3.1の<code>type: [string, null]</code>でも<code>enum</code>に文字列しかなければ非nullableです。<code>null</code>や重複値を含むenumは<code>OACG101</code>です。</td>
 </tr>
 <tr>
 <td>direct schema reference</td>
@@ -498,6 +503,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td><code>additionalProperties</code>などのmap/free-form表現は対象外です。</td>
 </tr>
 <tr>
+<td>schema assertions</td>
+<td>Unsupported</td>
+<td>生成モデルが保持しない<code>const</code>、<code>pattern</code>、<code>minLength</code>、<code>minimum</code>、<code>minItems</code>などのassertionは、そのkeywordの位置で<code>OACG101</code>です。説明用annotation、<code>default</code>、<code>x-*</code>は許可します。</td>
+</tr>
+<tr>
 <td>composition</td>
 <td>Unsupported</td>
 <td><code>allOf</code>、<code>anyOf</code>、<code>oneOf</code>、<code>not</code>、discriminatorは対象外です。</td>
@@ -519,7 +529,7 @@ OpenAPI 3.0では既存互換として<code>nullable</code>も扱います。</p
 <li>public mutable sealed DTO（Json.NET attribute使用）</li>
 <li>任意かつschema上nullableなDTO propertyの<code>&lt;PropertyName&gt;Specified</code>による存在状態の管理</li>
 <li>任意かつschema上nullableなrequest bodyの<code>&lt;BodyParameterName&gt;Specified</code>による明示的なJSON <code>null</code>送信</li>
-<li><code>StringEnumConverter</code>付きのstring enumと<code>List&lt;T&gt;</code></li>
+<li>宣言したwire文字列を完全一致で扱うstring enum converterと<code>List&lt;T&gt;</code></li>
 <li>injected <code>HttpClient</code>を使うasync client API。documentまたはexplicit base URLを指定するconstructorを使用可能</li>
 <li>path/query/header/body、<code>JsonConvert</code>、<code>CancellationToken</code>、宣言された<code>2xx</code> response handling</li>
 <li>generated <code>&lt;ApiName&gt;Exception</code></li>

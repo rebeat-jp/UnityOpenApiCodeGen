@@ -40,6 +40,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 "xml"
             };
 
+        private static readonly HashSet<string> SupportedSchemaKeywords =
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "$comment", "$ref", "$schema", "additionalProperties", "default", "deprecated",
+                "description", "enum", "example", "examples", "externalDocs", "format", "items",
+                "nullable", "properties", "required", "summary", "title", "type", "xml",
+                "contentEncoding", "contentMediaType"
+            };
+
         private readonly SpecNode _root;
         private readonly JsonPointerResolver _resolver;
         private readonly int _minorVersion;
@@ -1217,6 +1226,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     throw Invalid(enumNode, "An enum must contain at least one value.");
                 }
 
+                var seenEnumValues = new HashSet<string>(StringComparer.Ordinal);
+                int enumIndex = 0;
+                foreach (SpecNode enumValue in enumNode.EnumerateArray())
+                {
+                    if (!seenEnumValues.Add(enumValues[enumIndex++]))
+                    {
+                        throw Unsupported(
+                            enumValue,
+                            "String enum values must be unique for the Phase 4 generated C# enum contract.");
+                    }
+                }
+
                 if (_minorVersion == 1)
                 {
                     nullable = false;
@@ -1286,6 +1307,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             RequireKind(propertiesNode, SpecValueKind.Object, "The schema properties field must be an object.");
+            if (additionalProperties is null)
+            {
+                throw Unsupported(
+                    node,
+                    "Named object schemas must set additionalProperties to false for the Phase 4 closed DTO contract.");
+            }
+
             var required = new HashSet<string>(StringComparer.Ordinal);
             var requiredLocations = new Dictionary<string, SpecNode>(StringComparer.Ordinal);
             SpecNode? requiredNode = GetProperty(node, "required");
@@ -1350,17 +1378,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private void ValidateUnsupportedSchemaKeywords(SpecNode node)
         {
             ValidateSchemaDialect(node);
-            string[] unsupported =
+            foreach (SpecProperty property in node.EnumerateObject())
             {
-                "allOf", "anyOf", "oneOf", "not", "discriminator", "patternProperties",
-                "unevaluatedProperties", "unevaluatedItems", "contains", "prefixItems",
-                "dependentSchemas", "dependentRequired", "if", "then", "else", "$id", "$anchor",
-                "$dynamicAnchor", "$dynamicRef",
-                "readOnly", "writeOnly"
-            };
-            foreach (string name in unsupported)
-            {
-                ThrowIfPresent(node, name, "Schema keyword '" + name + "' is not supported by the Phase 4 MVP.");
+                if (!SupportedSchemaKeywords.Contains(property.Name) &&
+                    !property.Name.StartsWith("x-", StringComparison.Ordinal))
+                {
+                    throw Unsupported(
+                        property.Value,
+                        "Schema keyword '" + property.Name + "' is not supported by the Phase 4 MVP.");
+                }
             }
         }
 

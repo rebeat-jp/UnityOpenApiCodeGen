@@ -25,10 +25,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         private const string NullableStringArray = @"{ ""type"": ""array"", ""items"": { ""type"": [""string"", ""null""] } }";
         private const string NestedArray = @"{ ""type"": ""array"", ""items"": { ""type"": ""array"", ""items"": { ""type"": ""string"" } } }";
         private const string EnvelopeRef = @"{ ""$ref"": ""#/components/schemas/Envelope"" }";
-        private const string EnvelopeSchema = @"{ ""Envelope"": { ""type"": ""object"", ""properties"": { ""values"": { ""type"": ""array"", ""items"": { ""type"": ""string"" } } } } }";
+        private const string EnvelopeSchema = @"{ ""Envelope"": { ""type"": ""object"", ""additionalProperties"": false, ""properties"": { ""values"": { ""type"": ""array"", ""items"": { ""type"": ""string"" } } } } }";
         private const string DtoArray = @"{ ""type"": ""array"", ""items"": { ""$ref"": ""#/components/schemas/Item"" } }";
         private const string NullableDtoArray = @"{ ""type"": ""array"", ""items"": { ""$ref"": ""#/components/schemas/NullableItem"" } }";
-        private const string ItemSchemas = @"{ ""Item"": { ""type"": ""object"", ""properties"": { ""name"": { ""type"": ""string"" } } }, ""NullableItem"": { ""type"": [""object"", ""null""], ""properties"": { ""name"": { ""type"": ""string"" } } } }";
+        private const string ItemSchemas = @"{ ""Item"": { ""type"": ""object"", ""additionalProperties"": false, ""properties"": { ""name"": { ""type"": ""string"" } } }, ""NullableItem"": { ""type"": [""object"", ""null""], ""additionalProperties"": false, ""properties"": { ""name"": { ""type"": ""string"" } } } }";
         private const string EnvelopeArray = @"{ ""type"": ""array"", ""items"": { ""$ref"": ""#/components/schemas/Envelope"" } }";
 
         public static TheoryData<string, string, string, string?> Cases => new()
@@ -105,7 +105,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         {
             const string schema = @"{ ""$ref"": ""#/components/schemas/__OacgResponseValidator_Comparer"" }";
             const string components = @"{ ""__OacgResponseValidator_Comparer"": {
-  ""type"": ""object"", ""properties"": {
+  ""type"": ""object"", ""additionalProperties"": false, ""properties"": {
     ""values"": { ""type"": ""array"", ""items"": { ""type"": ""string"" } }
   }
 } }";
@@ -125,6 +125,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 components["Node" + index] = new JObject
                 {
                     ["type"] = "object",
+                    ["additionalProperties"] = false,
                     ["properties"] = new JObject
                     {
                         ["left"] = new JObject { ["$ref"] = nextReference },
@@ -136,6 +137,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             components["Node32"] = new JObject
             {
                 ["type"] = "object",
+                ["additionalProperties"] = false,
                 ["properties"] = new JObject
                 {
                     ["value"] = new JObject { ["type"] = "string" }
@@ -163,6 +165,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 components["Node" + index] = new JObject
                 {
                     ["type"] = "object",
+                    ["additionalProperties"] = false,
                     ["properties"] = new JObject
                     {
                         ["left"] = new JObject { ["$ref"] = nextReference },
@@ -174,6 +177,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             components["Node" + depth] = new JObject
             {
                 ["type"] = "object",
+                ["additionalProperties"] = false,
                 ["properties"] = new JObject
                 {
                     ["values"] = JToken.Parse(StringArray)
@@ -221,7 +225,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         {
             const string schema = @"{ ""$ref"": ""#/components/schemas/Envelope"" }";
             const string components = @"{ ""Envelope"": {
-  ""type"": ""object"", ""properties"": {
+  ""type"": ""object"", ""additionalProperties"": false, ""properties"": {
     ""aPermissive"": { ""type"": ""array"", ""items"": {
       ""type"": [""array"", ""null""], ""items"": { ""type"": ""string"" }
     } },

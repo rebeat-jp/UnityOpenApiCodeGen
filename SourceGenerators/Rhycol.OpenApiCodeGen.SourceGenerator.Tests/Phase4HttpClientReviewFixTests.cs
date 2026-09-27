@@ -133,10 +133,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Theory]
-        [InlineData("/v1?api-version=1")]
-        [InlineData("v1?api-version=1")]
+        [InlineData("/v1?api-version=1", "https://fallback.example.test/v1/pets/a%2Fb?api-version=1&limit=5")]
+        [InlineData("v1?api-version=1", "https://fallback.example.test/root/v1/pets/a%2Fb?token=abc&api-version=1&limit=5")]
         public async Task RelativeServerUrlUsesHttpClientBaseAddressWithoutLosingPathsOrQueries(
-            string serverUrl)
+            string serverUrl,
+            string expectedUri)
         {
             string document = @"{
   ""openapi"": ""3.1.0"",
@@ -163,9 +164,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
             await Invoke(client, "getPet", "a/b", 5, CancellationToken.None);
 
-            Assert.Equal(
-                "https://fallback.example.test/root/v1/pets/a%2Fb?token=abc&api-version=1&limit=5",
-                handler.RequestUri!.AbsoluteUri);
+            Assert.Equal(expectedUri, handler.RequestUri!.AbsoluteUri);
             Assert.Equal(Uri.UriSchemeHttps, handler.RequestUri.Scheme);
         }
 
@@ -185,11 +184,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
   } } },
   ""components"": { ""schemas"": {
     ""NestedDate"": {
-      ""type"": ""object"", ""required"": [""day""],
+      ""type"": ""object"", ""additionalProperties"": false, ""required"": [""day""],
       ""properties"": { ""day"": { ""type"": ""string"", ""format"": ""date"" } }
     },
     ""DatePayload"": {
-      ""type"": ""object"",
+      ""type"": ""object"", ""additionalProperties"": false,
       ""required"": [""day"", ""occurredAt"", ""days"", ""nested""],
       ""properties"": {
         ""day"": { ""type"": ""string"", ""format"": ""date"" },

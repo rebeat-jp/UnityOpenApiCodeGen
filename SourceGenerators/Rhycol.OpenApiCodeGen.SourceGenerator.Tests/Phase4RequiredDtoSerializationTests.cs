@@ -27,7 +27,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
   } } },
   ""components"": { ""schemas"": {
     ""Outer"": {
-      ""type"": ""object"",
+      ""type"": ""object"", ""additionalProperties"": false,
       ""required"": [""name"", ""child"", ""nullableName"", ""count"", ""enabled"", ""tags""],
       ""properties"": {
         ""name"": { ""type"": ""string"" },
@@ -41,7 +41,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         ""validateRequiredPropertiesOnSerializing"": { ""type"": ""string"" }
       }
     },
-    ""Child"": { ""type"": ""object"", ""required"": [""token""],
+    ""Child"": { ""type"": ""object"", ""additionalProperties"": false, ""required"": [""token""],
       ""properties"": { ""token"": { ""type"": ""string"" } } }
   } }
 }";

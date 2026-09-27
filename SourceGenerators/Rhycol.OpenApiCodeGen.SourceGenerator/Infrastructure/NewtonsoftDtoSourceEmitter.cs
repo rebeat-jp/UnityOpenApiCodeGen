@@ -15,11 +15,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             var files = new List<GeneratedFile>();
+            var usedTypeNames = new HashSet<string>(model.Enums.Select(static value => value.Name),
+                StringComparer.Ordinal);
+            usedTypeNames.UnionWith(model.Dtos.Select(static value => value.Name));
+            usedTypeNames.Add(model.ApiName);
+            usedTypeNames.Add(model.ApiName + "Exception");
             foreach (GeneratedEnumModel enumModel in model.Enums.OrderBy(
                          static value => value.Name,
                          StringComparer.Ordinal))
             {
-                files.Add(EmitEnum(model.GeneratedNamespace, enumModel));
+                string converterName = enumModel.Name + "WireConverter";
+                int suffix = 2;
+                while (!usedTypeNames.Add(converterName))
+                {
+                    converterName = enumModel.Name + "WireConverter" + suffix++;
+                }
+
+                files.Add(EmitEnum(model.GeneratedNamespace, enumModel, converterName));
             }
 
             foreach (GeneratedDtoModel dto in model.Dtos.OrderBy(
@@ -32,11 +44,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return files;
         }
 
-        private static GeneratedFile EmitEnum(string generatedNamespace, GeneratedEnumModel model)
+        private static GeneratedFile EmitEnum(
+            string generatedNamespace,
+            GeneratedEnumModel model,
+            string converterName)
         {
             var source = new StringBuilder();
             AppendHeader(source, generatedNamespace);
-            source.AppendLine("    [global::Newtonsoft.Json.JsonConverter(typeof(global::Newtonsoft.Json.Converters.StringEnumConverter), typeof(global::Newtonsoft.Json.Serialization.DefaultNamingStrategy), new object[0], false)]");
+            source.Append("    [global::Newtonsoft.Json.JsonConverter(typeof(")
+                .Append(converterName).AppendLine("))]");
             source.Append("    public enum ").Append(model.Name).AppendLine();
             source.AppendLine("    {");
             for (int index = 0; index < model.Members.Count; index++)
@@ -49,6 +65,66 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 source.AppendLine(index + 1 == model.Members.Count ? string.Empty : ",");
             }
 
+            source.AppendLine("    }");
+            source.AppendLine();
+            source.Append("    internal sealed class ").Append(converterName)
+                .AppendLine(" : global::Newtonsoft.Json.JsonConverter");
+            source.AppendLine("    {");
+            source.AppendLine("        public override bool CanConvert(global::System.Type objectType)");
+            source.AppendLine("        {");
+            source.Append("            return objectType == typeof(").Append(model.Name)
+                .Append(") || objectType == typeof(").Append(model.Name).AppendLine("?);");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        public override object? ReadJson(global::Newtonsoft.Json.JsonReader reader, global::System.Type objectType, object? existingValue, global::Newtonsoft.Json.JsonSerializer serializer)");
+            source.AppendLine("        {");
+            source.AppendLine("            if (reader.TokenType == global::Newtonsoft.Json.JsonToken.Null)");
+            source.AppendLine("            {");
+            source.Append("                if (objectType == typeof(").Append(model.Name).AppendLine("?)) return null;");
+            source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"A non-null string enum value is required.\");");
+            source.AppendLine("            }");
+            source.AppendLine("            if (reader.TokenType != global::Newtonsoft.Json.JsonToken.String)");
+            source.AppendLine("            {");
+            source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"A declared string enum wire value is required.\");");
+            source.AppendLine("            }");
+            source.AppendLine("            string wireValue = (string)reader.Value!;");
+            foreach (GeneratedEnumMemberModel member in model.Members)
+            {
+                source.Append("            if (global::System.String.Equals(wireValue, ")
+                    .Append(GeneratedSourceEmitter.StringLiteral(member.WireValue))
+                    .Append(", global::System.StringComparison.Ordinal)) return ")
+                    .Append(model.Name).Append('.').Append(member.Name).AppendLine(";");
+            }
+
+            source.AppendLine("            throw new global::Newtonsoft.Json.JsonSerializationException(\"The string enum wire value is not declared.\");");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        public override void WriteJson(global::Newtonsoft.Json.JsonWriter writer, object? value, global::Newtonsoft.Json.JsonSerializer serializer)");
+            source.AppendLine("        {");
+            source.AppendLine("            if (value is null)");
+            source.AppendLine("            {");
+            source.AppendLine("                writer.WriteNull();");
+            source.AppendLine("                return;");
+            source.AppendLine("            }");
+            source.Append("            if (!(value is ").Append(model.Name).AppendLine(" enumValue))");
+            source.AppendLine("            {");
+            source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"A string enum value is required.\");");
+            source.AppendLine("            }");
+            source.AppendLine("            switch (enumValue)");
+            source.AppendLine("            {");
+            foreach (GeneratedEnumMemberModel member in model.Members)
+            {
+                source.Append("                case ").Append(model.Name).Append('.')
+                    .Append(member.Name).AppendLine(":");
+                source.Append("                    writer.WriteValue(")
+                    .Append(GeneratedSourceEmitter.StringLiteral(member.WireValue)).AppendLine(");");
+                source.AppendLine("                    return;");
+            }
+
+            source.AppendLine("                default:");
+            source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"The string enum value is not declared.\");");
+            source.AppendLine("            }");
+            source.AppendLine("        }");
             source.AppendLine("    }");
             source.AppendLine("}");
             return GeneratedSourceEmitter.Create(model.Name + ".g.cs", source.ToString());

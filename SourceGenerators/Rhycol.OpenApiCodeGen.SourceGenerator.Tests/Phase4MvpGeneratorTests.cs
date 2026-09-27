@@ -70,7 +70,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
   ""components"": {
     ""schemas"": {
       ""Pet"": {
-        ""type"": ""object"",
+        ""type"": ""object"", ""additionalProperties"": false,
         ""properties"": { ""name"": { ""type"": ""string"" } }
       }
     }
@@ -99,7 +99,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     } } }
   },
   ""components"": { ""schemas"": {
-    ""A/B~C"": { ""type"": ""object"", ""properties"": {
+    ""A/B~C"": { ""type"": ""object"", ""additionalProperties"": false, ""properties"": {
       ""value"": { ""type"": ""string"" }
     } }
   } }
@@ -315,7 +315,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     } } }
   } } },
   ""components"": { ""schemas"": {
-    ""Pet"": { ""type"": ""object"", ""required"": [""pet"", ""status""], ""properties"": {
+    ""Pet"": { ""type"": ""object"", ""additionalProperties"": false, ""required"": [""pet"", ""status""], ""properties"": {
       ""pet"": { ""type"": ""string"" },
       ""status"": { ""$ref"": ""#/components/schemas/Status"" }
     } },
@@ -364,7 +364,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
   ""info"": { ""title"": ""Required"", ""version"": ""1"" },
   ""paths"": {},
   ""components"": { ""schemas"": { ""Payload"": {
-    ""type"": ""object"",
+    ""type"": ""object"", ""additionalProperties"": false,
     ""required"": [""missing""],
     ""properties"": { ""present"": { ""type"": ""string"" } }
   } } }
@@ -388,7 +388,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
   ""info"": { ""title"": ""Required duplicate"", ""version"": ""1"" },
   ""paths"": {},
   ""components"": { ""schemas"": { ""Payload"": {
-    ""type"": ""object"",
+    ""type"": ""object"", ""additionalProperties"": false,
     ""required"": [""id"", ""id""],
     ""properties"": { ""id"": { ""type"": ""integer"" } }
   } } }
@@ -414,7 +414,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
   ""info"": { ""title"": ""Directional property"", ""version"": ""1"" },
   ""paths"": {},
   ""components"": { ""schemas"": { ""Payload"": {
-    ""type"": ""object"",
+    ""type"": ""object"", ""additionalProperties"": false,
     ""properties"": { ""value"": { ""type"": ""string"", """ + keyword + @""": true } }
   } } }
 }";
@@ -463,14 +463,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     ], ""responses"": { ""204"": { ""description"": ""OK"" } } } }
   },
   ""components"": { ""schemas"": {
-    ""foo-bar"": { ""type"": ""object"", ""properties"": {} },
-    ""foo bar"": { ""type"": ""object"", ""properties"": {} }
+    ""foo-bar"": { ""type"": ""object"", ""additionalProperties"": false, ""properties"": {} },
+    ""foo bar"": { ""type"": ""object"", ""additionalProperties"": false, ""properties"": {} }
   } }
 }";
             const string DocumentB = @"{
   ""components"": { ""schemas"": {
-    ""foo bar"": { ""properties"": {}, ""type"": ""object"" },
-    ""foo-bar"": { ""properties"": {}, ""type"": ""object"" }
+    ""foo bar"": { ""properties"": {}, ""type"": ""object"", ""additionalProperties"": false },
+    ""foo-bar"": { ""properties"": {}, ""type"": ""object"", ""additionalProperties"": false }
   } },
   ""paths"": {
     ""/a"": { ""get"": { ""responses"": { ""204"": { ""description"": ""OK"" } }, ""parameters"": [
@@ -533,7 +533,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
   },
   ""components"": { ""schemas"": {
     ""Pet"": {
-      ""type"": ""object"",
+      ""type"": ""object"", ""additionalProperties"": false,
       ""required"": [""id"", ""nullableName"", ""status""],
       ""properties"": {
         ""id"": { ""type"": ""integer"", ""format"": ""int64"" },
@@ -559,7 +559,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Contains("public string? NullableName { get; set; }", source);
             Assert.Contains("JsonProperty(\"nickname\", Required = global::Newtonsoft.Json.Required.DisallowNull, NullValueHandling = global::Newtonsoft.Json.NullValueHandling.Ignore)", source);
             Assert.Contains("public global::System.Collections.Generic.List<string>? Tags { get; set; }", source);
-            Assert.Contains("StringEnumConverter", source);
+            Assert.Contains("internal sealed class StatusWireConverter : global::Newtonsoft.Json.JsonConverter", source);
             Assert.Contains("EnumMember(Value = \"in-progress\")", source);
             Assert.DoesNotContain("System.Text.Json", source);
 

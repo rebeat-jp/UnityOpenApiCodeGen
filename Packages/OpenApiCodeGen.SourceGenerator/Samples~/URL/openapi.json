@@ -30,6 +30,7 @@
     "schemas": {
       "Item": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "id",
           "label"

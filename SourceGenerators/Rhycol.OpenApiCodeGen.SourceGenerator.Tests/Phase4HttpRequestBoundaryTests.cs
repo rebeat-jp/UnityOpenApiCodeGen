@@ -24,8 +24,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             string? expectedJson)
         {
             string schema = nullable
-                ? "{ \"type\": [\"object\", \"null\"], \"properties\": { \"name\": { \"type\": \"string\" } } }"
-                : "{ \"type\": \"object\", \"properties\": { \"name\": { \"type\": \"string\" } } }";
+                ? "{ \"type\": [\"object\", \"null\"], \"additionalProperties\": false, \"properties\": { \"name\": { \"type\": \"string\" } } }"
+                : "{ \"type\": \"object\", \"additionalProperties\": false, \"properties\": { \"name\": { \"type\": \"string\" } } }";
             string document = @"{
   ""openapi"": ""3.1.0"",
   ""info"": { ""title"": ""Request body"", ""version"": ""1"" },
@@ -107,7 +107,28 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Equal(0, handler.SendCount);
         }
 
+        [Fact]
+        public async Task RootRelativeServerWithoutBaseAddressFailsBeforeSending()
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                CreateGetDocument("/v1?server=1"));
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = execution.EmitAssembly();
+            var handler = new RecordingHandler();
+            using var httpClient = new HttpClient(handler);
+            object api = Activator.CreateInstance(assembly.GetType("Generated.Phase4.Phase4Api")!, httpClient)!;
+
+            InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => InvokeGet(api));
+
+            Assert.Contains("HttpClient.BaseAddress", exception.Message);
+            Assert.Contains("root-relative", exception.Message);
+            Assert.Equal(0, handler.SendCount);
+        }
+
         [Theory]
+        [InlineData("/v1?server=1", "https://fallback.example.test/v1/pets?server=1&limit=5")]
         [InlineData("v1?server=1", "https://fallback.example.test/root/v1/pets?base=0&server=1&limit=5")]
         [InlineData("https://api.example.test/v1?server=1", "https://api.example.test/v1/pets?server=1&limit=5")]
         public async Task RelativeAndAbsoluteServerUrlsKeepExistingResolution(

@@ -48,7 +48,9 @@ manifest、診断へ平文保存しません。次回の`Generate`時にはquery
 
 対応するOpenAPI要素、YAMLの範囲、診断は[日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)に記載しています。
 OpenAPI 3.1は標準schema dialectのみを受け付けます。独自dialectや`null`入りstring enumは診断で拒否します。
-string enumは文字列として送受信し、JSON数値の読み取りと整数値としての書き出しを拒否します。
+string enumは宣言したwire文字列と大小文字・空白も含め完全一致で送受信します。重複値、JSON数値、未宣言値は拒否します。
+名前付きobjectのDTO生成には`additionalProperties: false`の明示が必要です。省略や追加プロパティの許可、
+`pattern`・`minimum`・`minItems`などの未対応assertionは`OACG101`になります。
 header parameterはscalarに対応しますが、`Content-Language`や`Content-Encoding`などの
 content専用headerは位置付き診断で拒否します。対象名は[日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)を参照してください。
 
@@ -78,13 +80,16 @@ JSON `null`を送ります。本文に値があれば通常どおり送信しま
 必須かつschema上非nullableな参照型の本文に`null`を渡すと、送信前に
 `ArgumentNullException`になります。必須でもschema上nullableならJSON `null`を送信できます。
 server URLが`//host/path`形式の場合は`HttpClient.BaseAddress`のschemeで解決します。
-`BaseAddress`が未設定なら送信前に`InvalidOperationException`になります。
+`/path`形式は同じoriginのrootから解決し、`BaseAddress`のpathとqueryを引き継ぎません。
+どちらも`BaseAddress`が未設定なら送信前に`InvalidOperationException`になります。
 
 成功レスポンスのschemaが非nullableの場合、空本文またはJSON `null`は
 `JsonSerializationException`になります。nullableなschemaではJSON `null`を受け取れます。
 レスポンス配列の非nullableな参照型要素がJSON `null`の場合も、入れ子の配列やDTO内の配列を含めて
 `JsonSerializationException`になります。複数の成功レスポンス間でinline enum値の宣言順だけが
 異なる場合は、同じ契約として扱います。
+リクエスト配列の非nullableな参照型要素も、入れ子の配列やDTO内の配列を含めて送信前に検査します。
+nullableな要素にはJSON `null`を使用できます。
 必須nullableパラメーターや、対応表の範囲外のwire formatは位置付き診断で拒否します。
 
 成功した`Generate`では、`Library/OpenApiCodeGen/SourceGenerator/SpecCache/<specId>/`に

@@ -42,12 +42,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
   },
   ""components"": { ""schemas"": {
     ""PetInput"": {
-      ""type"": ""object"",
+      ""type"": ""object"", ""additionalProperties"": false,
       ""required"": [""name""],
       ""properties"": { ""name"": { ""type"": ""string"" } }
     },
     ""PetResponse"": {
-      ""type"": ""object"",
+      ""type"": ""object"", ""additionalProperties"": false,
       ""required"": [""id"", ""name""],
       ""properties"": {
         ""id"": { ""type"": ""integer"" },

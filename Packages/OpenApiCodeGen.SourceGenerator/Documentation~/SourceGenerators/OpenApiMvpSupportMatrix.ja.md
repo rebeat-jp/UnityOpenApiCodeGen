@@ -132,7 +132,7 @@ YAMLの診断IDは次のとおりです。
 | 項目 | 対応状況 | 条件・制約 |
 | --- | --- | --- |
 | HTTP method | 対応 | `GET`、`POST`、`PUT`、`DELETE`、`PATCH`、`HEAD`、`OPTIONS`、`TRACE`。 |
-| `servers` | 一部対応 | URLは0個または1個、variablesなし。`//host/path`形式は`HttpClient.BaseAddress`のschemeで解決し、hostとpathはserver URLを使います。`BaseAddress`未設定なら送信前に`InvalidOperationException`です。 |
+| `servers` | 一部対応 | URLは0個または1個、variablesなし。`//host/path`は`HttpClient.BaseAddress`のschemeで解決します。`/path`は同じoriginのrootから解決し、`BaseAddress`のpathとqueryを引き継ぎません。どちらも`BaseAddress`未設定なら送信前に`InvalidOperationException`です。 |
 | parameter location | 一部対応 | path、query、headerのscalar parameterのみ。cookieは対象外です。 |
 | parameter serialization | 一部対応 | defaultの`style`/`explode`のみ。`allowReserved: true`は対象外です。 |
 | complex parameter | 非対応 | 直接定義・多段`$ref`ともarray/object等のcomplex parameterは対象外です。 |
@@ -142,6 +142,7 @@ YAMLの診断IDは次のとおりです。
 | content専用header parameter | 非対応 | `Allow`、`Content-Disposition`、`Content-Encoding`、`Content-Language`、`Content-Length`、`Content-Location`、`Content-MD5`、`Content-Range`、`Content-Type`、`Expires`、`Last-Modified`は大小文字を問わず`OACG101`で拒否します。独自の`Content-*`名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に`InvalidOperationException`です。 |
 | request body | 一部対応 | パラメーター付きも含む`application/json`または`application/*+json`。type/subtypeを正規化して判定します。 |
 | required non-nullable request body | 対応 | 参照型の本文に`null`を渡すと、HTTP送信前に`ArgumentNullException`です。schemaがnullableな必須本文はJSON `null`を送信できます。 |
+| request array items | 対応 | 非nullableな参照型要素が`null`なら、本文直下・入れ子の配列・DTO内の配列とも、シリアライズ前に`JsonSerializationException`で拒否します。nullableな要素の`null`は送信できます。 |
 | optional nullable request body | 対応 | `requestBody.required: false`かつschemaがnullableの場合、`null`引数は本文省略、非`null`引数はJSON本文を送信します。生成メソッドの`<BodyParameterName>Specified`を`true`にすると、`null`引数でも明示的なJSON `null`を送信します。名前が衝突する場合は番号を付けます。 |
 | request charset | 一部対応 | UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。 |
 | successful response | 一部対応 | 少なくとも1つの`2xx` responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの値の宣言順は比較に影響しません。非nullableな成功本文が空・JSON `null`、または非nullableな配列要素がJSON `null`なら実行時に`JsonSerializationException`です。入れ子の配列やDTO内の配列も検査します。 |
@@ -158,9 +159,9 @@ status codeはASCII数字で検証します。属性付きのジェネリックc
 | 項目 | 対応状況 | 条件・制約 |
 | --- | --- | --- |
 | scalar | 対応 | `string`、`integer`、`number`、`boolean`。 |
-| object | 一部対応 | named propertiesと`required`を持つobject。 |
+| object | 一部対応 | named propertiesと`required`を持ち、`additionalProperties: false`を明示したobject。省略、`true`、schema値はDTOを生成できず`OACG101`です。既存仕様で省略していた場合は明示してください。 |
 | array | 一部対応 | supported schemaのarray。 |
-| string enum | 一部対応 | generated C# enumに数値入出力を許さない`StringEnumConverter`を付与します。OpenAPI 3.1の`type: [string, null]`でも`enum`に文字列しかなければ非nullableです。`null`を含むenumは`OACG101`です。 |
+| string enum | 一部対応 | generated C# enumは宣言したwire文字列だけを大小文字・空白も含め完全一致で読み書きします。JSON数値と未宣言のC# enum値は拒否します。OpenAPI 3.1の`type: [string, null]`でも`enum`に文字列しかなければ非nullableです。`null`や重複値を含むenumは`OACG101`です。 |
 | direct schema reference | 対応 | supported schemaへの参照。多段参照のscalar／enumもnullableを保持します。 |
 | `$ref` sibling | 一部対応 | 注釈、literalデータ、`x-*`と既存の3.0 `nullable`は保持します。合成が必要な`type`、`properties`、`required`などは、該当位置の`OACG101`で拒否します。 |
 | nullable | 一部対応 | OpenAPI 3.0の`nullable`、OpenAPI 3.1の`type: [<type>, null]`。 |
@@ -169,6 +170,7 @@ status codeはASCII数字で検証します。属性付きのジェネリックc
 | required non-nullable DTO property | 対応 | 参照型の必須項目が`null`ならシリアライズ中に検出し、リクエストを送信しません。入れ子のDTOにも適用します。必須nullable項目のJSON `null`と必須値型の既定値は送信できます。 |
 | scalar format | 一部対応 | `integer`は通常`int`、`int64`は`long`。`number`は通常`double`、`float`は`float`、`decimal`は`decimal`。`date`、`date-time`、`uuid`は`DateTime`、`DateTimeOffset`、`Guid`へmappingします。 |
 | map / free-form object | 非対応 | `additionalProperties`などのmap/free-form表現は対象外です。 |
+| schema assertions | 非対応 | 生成モデルが保持しない`const`、`pattern`、`minLength`、`minimum`、`minItems`などのassertionは、そのkeywordの位置で`OACG101`です。説明用annotation、`default`、`x-*`は許可します。 |
 | composition | 非対応 | `allOf`、`anyOf`、`oneOf`、`not`、discriminatorは対象外です。 |
 | binary / readOnly / writeOnly | 非対応 | 生成contractでは対象外です。 |
 
@@ -186,7 +188,7 @@ OpenAPI 3.0では既存互換として`nullable`も扱います。
 - public mutable sealed DTO（Json.NET attribute使用）
 - 任意かつschema上nullableなDTO propertyの`<PropertyName>Specified`による存在状態の管理
 - 任意かつschema上nullableなrequest bodyの`<BodyParameterName>Specified`による明示的なJSON `null`送信
-- `StringEnumConverter`付きのstring enumと`List<T>`
+- 宣言したwire文字列を完全一致で扱うstring enum converterと`List<T>`
 - injected `HttpClient`を使うasync client API。documentまたはexplicit base URLを指定するconstructorを使用可能
 - path/query/header/body、`JsonConvert`、`CancellationToken`、宣言された`2xx` response handling
 - generated `<ApiName>Exception`

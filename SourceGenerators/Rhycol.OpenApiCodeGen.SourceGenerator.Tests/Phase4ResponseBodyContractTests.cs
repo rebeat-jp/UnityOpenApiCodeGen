@@ -68,7 +68,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     } } }
   } } },
   ""components"": { ""schemas"": {
-    ""Value"": { ""type"": ""object"", ""properties"": {
+    ""Value"": { ""type"": ""object"", ""additionalProperties"": false, ""properties"": {
       ""name"": { ""type"": ""string"" }
     } }
   } }
@@ -228,8 +228,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
   ""components"": { ""schemas"": {
     ""FirstAlias"": { ""$ref"": ""#/components/schemas/FirstType"" },
     ""SecondAlias"": { ""$ref"": ""#/components/schemas/SecondType"" },
-    ""FirstType"": { ""type"": ""object"", ""properties"": { ""id"": { ""type"": ""integer"" } } },
-    ""SecondType"": { ""type"": ""object"", ""properties"": { ""id"": { ""type"": ""integer"" } } }
+    ""FirstType"": { ""type"": ""object"", ""additionalProperties"": false, ""properties"": { ""id"": { ""type"": ""integer"" } } },
+    ""SecondType"": { ""type"": ""object"", ""additionalProperties"": false, ""properties"": { ""id"": { ""type"": ""integer"" } } }
   } }
 }";
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(Document);

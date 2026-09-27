@@ -436,6 +436,7 @@ namespace Generated
     ""schemas"": {
       ""Pet"": {
         ""type"": ""object"",
+        ""additionalProperties"": false,
         ""required"": [ ""id"" ],
         ""properties"": {
           ""id"": { ""type"": ""integer"", ""format"": ""int64"" },
@@ -467,6 +468,7 @@ components:
   schemas:
     Pet:
       type: object
+      additionalProperties: false
       required:
         - id
       properties:

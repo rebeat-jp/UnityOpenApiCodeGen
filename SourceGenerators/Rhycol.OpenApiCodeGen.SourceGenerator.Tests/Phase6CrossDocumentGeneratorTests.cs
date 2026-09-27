@@ -24,7 +24,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             string root = CreateRootWithReference("pet.json#/components/schemas/Pet");
             string external = CreateOpenApiDocument(
                 "Pet document",
-                "\"Pet\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}}}");
+                "\"Pet\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"name\":{\"type\":\"string\"}}}");
             string bundle = TestBundleFactory.CreateV2(
                 root,
                 new[]
@@ -94,7 +94,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         public void ExternalBareSchemaRootUsesDocumentFileStemAsTypeName()
         {
             string root = CreateRootWithReference("pet.yaml");
-            string external = "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}}}";
+            string external = "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"name\":{\"type\":\"string\"}}}";
             string bundle = TestBundleFactory.CreateV2(
                 root,
                 new[]
@@ -132,7 +132,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         public void ExternalBareSchemaRootIdentityKeywordsReportOacg101(string keyword)
         {
             string root = CreateRootWithReference("pet.yaml");
-            string external = "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}}," +
+            string external = "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"name\":{\"type\":\"string\"}}," +
                               System.Text.Json.JsonSerializer.Serialize(keyword) + ":\"value\"}";
             string bundle = TestBundleFactory.CreateV2(
                 root,
@@ -170,7 +170,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "pet.json#/components/schemas/Pet");
             string external = CreateOpenApiDocument(
                 "External Pet document",
-                "\"Pet\":{\"type\":\"object\",\"properties\":{\"externalName\":{\"type\":\"string\"}}}");
+                "\"Pet\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"externalName\":{\"type\":\"string\"}}}");
             string bundle = TestBundleFactory.CreateV2(
                 root,
                 new[]
@@ -300,10 +300,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             string root = CreateRootWithReference("pet.json#/components/schemas/Pet");
             string originalExternal = CreateOpenApiDocument(
                 "External Pet document",
-                "\"Pet\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}}}");
+                "\"Pet\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"name\":{\"type\":\"string\"}}}");
             string changedExternal = CreateOpenApiDocument(
                 "External Pet document",
-                "\"Pet\":{\"type\":\"object\",\"properties\":{\"nickname\":{\"type\":\"string\"}}}");
+                "\"Pet\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"nickname\":{\"type\":\"string\"}}}");
             InMemoryAdditionalText original = Phase4GeneratorTestHarness.CreateBundleText(
                 TestBundleFactory.SpecId,
                 CreateExternalBundle(root, originalExternal));
@@ -342,13 +342,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 .Replace("getPet", "getOrder", StringComparison.Ordinal);
             string firstExternal = CreateOpenApiDocument(
                 "First external",
-                "\"Pet\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}}}");
+                "\"Pet\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"name\":{\"type\":\"string\"}}}");
             string secondExternal = CreateOpenApiDocument(
                 "Second external",
-                "\"Order\":{\"type\":\"object\",\"properties\":{\"number\":{\"type\":\"string\"}}}");
+                "\"Order\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"number\":{\"type\":\"string\"}}}");
             string changedSecondExternal = CreateOpenApiDocument(
                 "Second external",
-                "\"Order\":{\"type\":\"object\",\"properties\":{\"code\":{\"type\":\"string\"}}}");
+                "\"Order\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"code\":{\"type\":\"string\"}}}");
 
             InMemoryAdditionalText firstBundle = Phase4GeneratorTestHarness.CreateBundleText(
                 TestBundleFactory.SpecId,
@@ -482,7 +482,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                    "\"paths\":{" +
                    "\"/external\":" + CreateOperation("getExternal", externalReference) + "}," +
                    "\"/root\":" + CreateOperation("getRoot", rootReference) +
-                   "}},\"components\":{\"schemas\":{\"Pet\":{\"type\":\"object\",\"properties\":{" +
+                   "}},\"components\":{\"schemas\":{\"Pet\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{" +
                    "\"rootName\":{\"type\":\"string\"}}}}}}";
         }
 
@@ -506,13 +506,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         private static string CreateSharedSchemaDag(int depth)
         {
             var schemas = new System.Text.StringBuilder();
-            schemas.Append("\"Leaf\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}}}");
+            schemas.Append("\"Leaf\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"value\":{\"type\":\"string\"}}}");
             for (int index = 0; index < depth; index++)
             {
                 string target = index == 0 ? "Leaf" : "Node" + (index - 1);
                 schemas.Append(",\"Node");
                 schemas.Append(index);
-                schemas.Append("\":{\"type\":\"object\",\"properties\":{");
+                schemas.Append("\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{");
                 schemas.Append("\"left\":{\"$ref\":\"#/components/schemas/");
                 schemas.Append(target);
                 schemas.Append("\"},\"right\":{\"$ref\":\"#/components/schemas/");

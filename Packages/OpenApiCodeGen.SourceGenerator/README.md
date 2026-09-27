@@ -133,7 +133,7 @@ kind, status, redirect count, and bundle hash.
 ## Generated contract and diagnostics
 
 For supported OpenAPI 3.0.* and 3.1.* input, the generator emits public
-mutable sealed Newtonsoft.Json DTOs, string enums with `StringEnumConverter`,
+mutable sealed Newtonsoft.Json DTOs, string enums with an exact wire-value converter,
 `List<T>` collections, an async `HttpClient` client, and
 `<ApiName>Exception`. Generated source is a regenerated public contract, not a
 hand-edited file. The full operation, parameter, schema, and response surface
@@ -145,13 +145,19 @@ omitted. Set the generated `<PropertyName>Specified` flag to `false` to omit it
 again. OpenAPI 3.1 supports the default or explicitly declared OAS base schema
 dialect; unsupported dialects and string enums containing `null` receive
 source-located diagnostics.
+Named object DTO schemas must explicitly set `additionalProperties: false`.
+Schemas that omit it, allow extra properties, or use unsupported assertions
+such as `pattern`, `minimum`, and `minItems` receive `OACG101` instead of
+generating a weaker contract. Duplicate string-enum wire values also receive
+`OACG101`.
 
 An optional non-nullable DTO property may be absent from JSON, but an explicit
 JSON `null` raises `JsonSerializationException`. An unset property is omitted
 when serialized. Passing `null` for a required non-nullable reference-type
 request body raises `ArgumentNullException` before sending; a nullable required
 body can send JSON `null`. A `//host/path` server URL uses the scheme from
-`HttpClient.BaseAddress`, and requires that base address to be set.
+`HttpClient.BaseAddress`; a `/path` server URL starts at the origin root,
+ignoring the base address path and query. Both forms require a base address.
 
 Serialization checks required non-nullable reference properties in request
 DTOs, including nested DTOs, before the HTTP request is sent. Required nullable
@@ -159,6 +165,10 @@ members may send JSON `null`, and required value members may send their default
 values. A non-nullable reference item in a successful response array cannot be
 JSON `null`, including items in nested arrays or DTO properties. Inline enum
 declaration order does not affect response contract comparison.
+Request arrays with non-nullable reference items are checked before sending,
+including nested arrays and DTO properties. Nullable items may be JSON `null`.
+String enums accept only declared wire strings with exact case and spacing;
+undeclared strings and JSON numbers are rejected.
 
 Bundle and semantic failures use stable diagnostics including:
 

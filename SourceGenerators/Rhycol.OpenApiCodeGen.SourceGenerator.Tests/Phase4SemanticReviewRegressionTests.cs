@@ -169,7 +169,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
         [Theory]
         [InlineData("array", "\"items\": { \"type\": \"string\" }")]
-        [InlineData("object", "\"properties\": { \"value\": { \"type\": \"string\" } }")]
+        [InlineData("object", "\"additionalProperties\": false, \"properties\": { \"value\": { \"type\": \"string\" } }")]
         public void ReferencedComplexParameterSchemaIsRejected(string type, string shape)
         {
             string document = @"{
@@ -473,7 +473,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     } } }
   } } },
   ""components"": { ""schemas"": {
-    ""Base"": { ""type"": ""object"", ""properties"": {
+    ""Base"": { ""type"": ""object"", ""additionalProperties"": false, ""properties"": {
       ""id"": { ""type"": ""integer"" }
     } }
   } }
@@ -834,7 +834,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             for (int index = 1; index <= depth; index++)
             {
                 schemas.Append(",\"S").Append(index).Append("\":{");
-                schemas.Append("\"type\":\"object\",\"properties\":{");
+                schemas.Append("\"type\":\"object\",\"additionalProperties\":false,\"properties\":{");
                 schemas.Append("\"a\":{\"$ref\":\"#/components/schemas/S")
                     .Append(index - 1)
                     .Append("\"},");

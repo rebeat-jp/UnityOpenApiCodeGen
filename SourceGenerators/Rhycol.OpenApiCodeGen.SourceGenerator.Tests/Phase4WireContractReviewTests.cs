@@ -90,8 +90,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         public void PropertyNamesCannotImpersonateObjectSignatureDelimiters()
         {
             string document = TwoResponseDocument(
-                "{\"type\":\"object\",\"properties\":{\"a:False:String:,b\":{\"type\":\"string\"}}}",
-                "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"string\"}," +
+                "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"a:False:String:,b\":{\"type\":\"string\"}}}",
+                "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"a\":{\"type\":\"string\"}," +
                 "\"b\":{\"type\":\"string\"}}}");
 
             Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(document)

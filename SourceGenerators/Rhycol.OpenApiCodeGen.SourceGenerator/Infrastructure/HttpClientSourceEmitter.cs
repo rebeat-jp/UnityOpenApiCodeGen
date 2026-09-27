@@ -136,7 +136,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 .AppendLine(", requestUri))");
             source.AppendLine("            {");
             AppendHeaderParameters(source, operation);
-            AppendRequestBody(source, operation.RequestBody);
+            AppendRequestBody(source, operation.RequestBody, responseValidators);
             source.AppendLine("                using (var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false))");
             source.AppendLine("                {");
             source.AppendLine("                    string responseBody = response.Content == null");
@@ -166,7 +166,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
                 source.Append("                    var deserializedResponse = global::Newtonsoft.Json.JsonConvert.DeserializeObject<")
                     .Append(GeneratedSourceEmitter.TypeName(operation.ResponseType))
-                    .AppendLine(">(responseBody);");
+                    .AppendLine(">(responseBody, new global::Newtonsoft.Json.JsonSerializerSettings { DateParseHandling = global::Newtonsoft.Json.DateParseHandling.None });");
                 if (!operation.ResponseType.Nullable && !operation.ResponseType.IsValueType)
                 {
                     source.AppendLine("                    if (deserializedResponse is null)");
@@ -177,7 +177,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 if (responseValidators.TryGetMethodName(operation.ResponseType, out string? validatorName))
                 {
                     source.Append("                    ").Append(validatorName)
-                        .Append("(deserializedResponse, \"$\", new global::System.Collections.Generic.Dictionary<object, global::System.Collections.Generic.HashSet<int>>(new ")
+                        .Append("(deserializedResponse, \"$\", \"response\", new global::System.Collections.Generic.Dictionary<object, global::System.Collections.Generic.HashSet<int>>(new ")
                         .Append(responseValidators.ComparerName).AppendLine("()));");
                 }
                 source.AppendLine("                    return deserializedResponse!;");
@@ -258,7 +258,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("            }");
         }
 
-        private static void AppendRequestBody(StringBuilder source, GeneratedRequestBodyModel? body)
+        private static void AppendRequestBody(
+            StringBuilder source,
+            GeneratedRequestBodyModel? body,
+            ResponseValidatorPlan validators)
         {
             if (body is null)
             {
@@ -277,6 +280,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             string indent = body.Required ? "                " : "                    ";
+            if (validators.TryGetMethodName(body.Type, out string? validatorName))
+            {
+                source.Append(indent).Append(validatorName).Append('(')
+                    .Append(body.ParameterName)
+                    .Append(", \"$\", \"request\", new global::System.Collections.Generic.Dictionary<object, global::System.Collections.Generic.HashSet<int>>(new ")
+                    .Append(validators.ComparerName).AppendLine("()));");
+            }
             source.Append(indent).Append("string requestJson = global::Newtonsoft.Json.JsonConvert.SerializeObject(")
                 .Append(body.ParameterName)
                 .AppendLine(", DateOnlyJsonConverterInstance);");
@@ -375,6 +385,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("                }");
             source.AppendLine("                var networkBaseUri = new global::System.Uri(_httpClient.BaseAddress, _baseUrl);");
             source.AppendLine("                return CombineAbsoluteUri(networkBaseUri, operationPath, operationQuery);");
+            source.AppendLine("            }");
+            source.AppendLine();
+            source.AppendLine("            if (_baseUrl.StartsWith(\"/\", global::System.StringComparison.Ordinal))");
+            source.AppendLine("            {");
+            source.AppendLine("                if (_httpClient.BaseAddress is null)");
+            source.AppendLine("                {");
+            source.AppendLine("                    throw new global::System.InvalidOperationException(\"A HttpClient.BaseAddress is required for a root-relative server URL.\");");
+            source.AppendLine("                }");
+            source.AppendLine("                var rootBaseUri = new global::System.Uri(_httpClient.BaseAddress, _baseUrl);");
+            source.AppendLine("                return CombineAbsoluteUri(rootBaseUri, operationPath, operationQuery);");
             source.AppendLine("            }");
             source.AppendLine();
             source.AppendLine("            if (global::System.Uri.TryCreate(_baseUrl, global::System.UriKind.Absolute, out var absoluteBaseUri) &&");
@@ -535,7 +555,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("            if (value is global::System.Enum)");
             source.AppendLine("            {");
             source.AppendLine("                string json = global::Newtonsoft.Json.JsonConvert.SerializeObject(value);");
-            source.AppendLine("                return global::Newtonsoft.Json.JsonConvert.DeserializeObject<string>(json) ?? string.Empty;");
+            source.AppendLine("                return global::Newtonsoft.Json.JsonConvert.DeserializeObject<string>(json, new global::Newtonsoft.Json.JsonSerializerSettings { DateParseHandling = global::Newtonsoft.Json.DateParseHandling.None }) ?? string.Empty;");
             source.AppendLine("            }");
             source.AppendLine();
             source.AppendLine("            return value is global::System.IFormattable formattable");
@@ -645,6 +665,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     {
                         Register(responseType);
                     }
+
+                    if (operation.RequestBody is GeneratedRequestBodyModel requestBody &&
+                        RequiresValidation(requestBody.Type, new HashSet<string>(StringComparer.Ordinal)))
+                    {
+                        Register(requestBody.Type);
+                    }
                 }
             }
 
@@ -739,7 +765,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 int validatorIndex = _indices[type.WithNullable(false)];
                 source.Append("        private static void ").Append(methodName).Append('(')
                     .Append(GeneratedSourceEmitter.TypeName(type.WithNullable(true)))
-                    .AppendLine(" value, string path, global::System.Collections.Generic.Dictionary<object, global::System.Collections.Generic.HashSet<int>> visited)");
+                    .AppendLine(" value, string path, string contract, global::System.Collections.Generic.Dictionary<object, global::System.Collections.Generic.HashSet<int>> visited)");
                 source.AppendLine("        {");
                 source.AppendLine("            if (value is null)");
                 source.AppendLine("            {");
@@ -767,14 +793,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     {
                         source.AppendLine("                if (item is null)");
                         source.AppendLine("                {");
-                        source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-nullable response array element was null at \" + itemPath + \".\");");
+                        source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-nullable \" + contract + \" array element was null at \" + itemPath + \".\");");
                         source.AppendLine("                }");
                     }
 
                     if (TryGetMethodName(itemType, out string? itemMethodName))
                     {
                         source.Append("                ").Append(itemMethodName)
-                            .AppendLine("(item, itemPath, visited);");
+                            .AppendLine("(item, itemPath, contract, visited);");
                     }
 
                     source.AppendLine("            }");
@@ -785,10 +811,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     {
                         if (TryGetMethodName(property.Type, out string? propertyMethodName))
                         {
-                            source.Append("            ").Append(propertyMethodName)
+                            if (property.UseSpecified)
+                            {
+                                source.Append("            if (contract != \"request\" || value.")
+                                    .Append(property.Name).AppendLine("Specified)");
+                                source.AppendLine("            {");
+                            }
+
+                            string indent = property.UseSpecified ? "                " : "            ";
+                            source.Append(indent).Append(propertyMethodName)
                                 .Append("(value.").Append(property.Name).Append(", path + \".\" + ")
                                 .Append(GeneratedSourceEmitter.StringLiteral(property.WireName))
-                                .AppendLine(", visited);");
+                                .AppendLine(", contract, visited);");
+                            if (property.UseSpecified)
+                            {
+                                source.AppendLine("            }");
+                            }
                         }
                     }
                 }

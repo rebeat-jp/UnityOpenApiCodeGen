@@ -24,13 +24,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Theory]
         [InlineData(false, "{\"type\":\"string\",\"enum\":[\"a\",\"b\"]}",
             "{\"type\":\"string\",\"enum\":[\"a\",\"c\"]}")]
-        [InlineData(false, "{\"type\":\"string\",\"enum\":[\"a\",\"a\",\"b\"]}",
-            "{\"type\":\"string\",\"enum\":[\"a\",\"b\"]}")]
         [InlineData(true, "{\"type\":\"string\",\"enum\":[\"a\",\"b\"]}",
             "{\"type\":\"string\",\"enum\":[\"a\",\"c\"]}")]
-        [InlineData(true, "{\"type\":\"string\",\"enum\":[\"a\",\"a\",\"b\"]}",
-            "{\"type\":\"string\",\"enum\":[\"a\",\"b\"]}")]
-        public void DifferentValuesOrDuplicateCountsRemainIncompatible(
+        public void DifferentValuesRemainIncompatible(
             bool multipleMediaTypes,
             string firstSchema,
             string secondSchema)
