@@ -108,7 +108,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             var handler = new RecordingHandler(static (_, _) => Task.FromResult(
                 new HttpResponseMessage(HttpStatusCode.Created)
                 {
-                    Content = new StringContent("{\"id\":1,\"name\":\"ok\"}")
+                    Content = new StringContent("{\"id\":1,\"name\":\"ok\"}", Encoding.UTF8, "application/json")
                 }));
             using var httpClient = new HttpClient(handler);
             object client = CreateClient(assembly, httpClient, "https://override.example/root");
@@ -131,7 +131,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             var handler = new RecordingHandler(static (_, _) => Task.FromResult(
                 new HttpResponseMessage(HttpStatusCode.Created)
                 {
-                    Content = new StringContent("{\"id\":1,\"name\":\"ok\"}")
+                    Content = new StringContent("{\"id\":1,\"name\":\"ok\"}", Encoding.UTF8, "application/json")
                 }));
             using var httpClient = new HttpClient(handler);
             object client = CreateClient(assembly, httpClient);
@@ -160,7 +160,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             var handler = new RecordingHandler(static (_, _) => Task.FromResult(
                 new HttpResponseMessage(HttpStatusCode.Created)
                 {
-                    Content = new StringContent("{\"id\":1,\"name\":\"ok\"}")
+                    Content = new StringContent("{\"id\":1,\"name\":\"ok\"}", Encoding.UTF8, "application/json")
                 }));
             using var httpClient = new HttpClient(handler);
             object client = CreateClient(assembly, httpClient);

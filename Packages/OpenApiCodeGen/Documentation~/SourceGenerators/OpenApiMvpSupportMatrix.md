@@ -132,7 +132,7 @@ YAML diagnostic IDs are stable within Phase 5:
 | 項目 | Status | 条件・制約 |
 | --- | --- | --- |
 | HTTP method | Supported | `GET`、`POST`、`PUT`、`DELETE`、`PATCH`、`HEAD`、`OPTIONS`、`TRACE`。 |
-| `servers` | Partial | URLは0個または1個、variablesなし。`//host/path`は`HttpClient.BaseAddress`のschemeで解決します。`/path`は同じoriginのrootから解決し、`BaseAddress`のpathとqueryを引き継ぎません。どちらも`BaseAddress`がなければ送信前に`InvalidOperationException`です。 |
+| `servers` | Partial | URLは0個または1個、variablesなし。`//host/path`は`HttpClient.BaseAddress`のschemeで解決します。`/path`は同じoriginのrootから解決し、`BaseAddress`のpathとqueryを引き継ぎません。どちらも`BaseAddress`がなければ送信前に`InvalidOperationException`です。相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。 |
 | parameter location | Partial | path、query、headerのscalar parameterのみ。cookieは対象外です。 |
 | parameter serialization | Partial | defaultの`style`/`explode`のみ。`allowReserved: true`は対象外です。 |
 | complex parameter | Unsupported | 直接定義・多段`$ref`ともarray/object等のcomplex parameterは対象外です。 |
@@ -140,12 +140,13 @@ YAML diagnostic IDs are stable within Phase 5:
 | dot-only path segment | Unsupported | 引数置換後のpath segmentが`.`／`..`（1回percent-decodeした表現を含む）なら、HTTP送信前に`ArgumentException`です。`.hidden`、`a.b`、`...`や通常の複合segmentは使用できます。 |
 | header identity | Supported | header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。 |
 | content専用header parameter | Unsupported | `Allow`、`Content-Disposition`、`Content-Encoding`、`Content-Language`、`Content-Length`、`Content-Location`、`Content-MD5`、`Content-Range`、`Content-Type`、`Expires`、`Last-Modified`は大小文字を問わず`OACG101`で拒否します。独自の`Content-*`名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に`InvalidOperationException`です。 |
-| request body | Partial | パラメーター付きも含む`application/json`または`application/*+json`。type/subtypeを正規化して判定します。 |
+| request body | Partial | パラメーター付きも含む具体的な`application/json`または`application/<subtype>+json`を送信します。`application/*+json`だけの宣言は`OACG101`で拒否し、具体型と併記された場合は具体型を選びます。type/subtypeを正規化して判定します。 |
 | required non-nullable request body | Supported | 参照型の本文に`null`を渡すとHTTP送信前に`ArgumentNullException`です。schemaがnullableな必須本文はJSON `null`を送信できます。 |
 | request array items | Supported | 非nullableな参照型要素が`null`なら、本文直下・入れ子の配列・DTO内の配列とも、シリアライズ前に`JsonSerializationException`で拒否します。nullableな要素の`null`は送信できます。 |
 | optional nullable request body | Supported | `requestBody.required: false`かつschemaがnullableの場合、`null`引数は本文省略、非`null`引数はJSON本文を送信します。生成メソッドの`<BodyParameterName>Specified`を`true`にすると、`null`引数でも明示的なJSON `null`を送信します。名前が衝突する場合は番号を付けます。 |
 | request charset | Partial | UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。 |
 | successful response | Partial | 少なくとも1つの`2xx` responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの宣言順は比較に影響しません。非nullableな成功本文が空・JSON `null`、または非nullableな配列要素がJSON `null`なら実行時に`JsonSerializationException`です。入れ子の配列とDTO内の配列も検査します。 |
+| successful response `Content-Type` | Partial | headerがある場合はstatus別の宣言media typeと照合し、不一致・不正・複数値は`JsonSerializationException`です。個別statusの宣言は`2XX`より優先します。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。 |
 | error/default response | Partial | JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。 |
 | response extension | Supported | operationのResponses Objectでは`x-*`を除外します。`components.responses`の`x-*`名は通常のResponse/Referenceです。 |
 | response header | Unsupported | nonempty response headerは対象外です。 |
@@ -169,6 +170,7 @@ status codeはASCII数字で検証します。属性付きのジェネリックc
 | optional non-nullable DTO property | Supported | JSONからの省略は許可し、明示的なJSON `null`は`JsonSerializationException`です。未設定値はシリアライズ時に省略します。 |
 | required non-nullable DTO property | Supported | 参照型の必須項目が`null`ならシリアライズ中に検出し、HTTP送信を止めます。入れ子のDTOも対象です。必須nullable項目のJSON `null`と必須値型の既定値は送信できます。 |
 | scalar format | Partial | `integer`は通常`int`、`int64`は`long`。`number`は通常`double`、`float`は`float`、`decimal`は`decimal`。`date`、`date-time`、`uuid`は`DateTime`、`DateTimeOffset`、`Guid`へmappingします。 |
+| request number | Supported | `float`／`double`の`NaN`・正負の無限大は本文直下・配列・DTO内ともHTTP送信前に`JsonSerializationException`で拒否します。省略指定した任意項目は検査しません。 |
 | map / free-form object | Unsupported | `additionalProperties`などのmap/free-form表現は対象外です。 |
 | schema assertions | Unsupported | 生成モデルが保持しない`const`、`pattern`、`minLength`、`minimum`、`minItems`などのassertionは、そのkeywordの位置で`OACG101`です。説明用annotation、`default`、`x-*`は許可します。 |
 | composition | Unsupported | `allOf`、`anyOf`、`oneOf`、`not`、discriminatorは対象外です。 |

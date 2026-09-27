@@ -430,6 +430,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 requestBody,
                 responses.Schema,
                 responses.StatusCodes,
+                responses.MediaTypes,
                 CreateLocation(operationNode));
         }
 
@@ -687,6 +688,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             RequireKind(responsesNode, SpecValueKind.Object, "The responses field must be an object.");
             var successCodes = new List<string>();
+            var responseMediaTypes = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
             OpenApiSemanticSchema? successSchema = null;
             string? successSignature = null;
 
@@ -700,7 +702,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
                 ValidateResponseStatusCode(responseProperty);
                 bool isSuccess = IsSuccessStatusCode(responseProperty.Name);
-                OpenApiSemanticSchema? schema = ParseResponse(
+                ParsedContent content = ParseResponse(
                     responseProperty.Value,
                     new HashSet<NormalizedSpecNodeIdentity>(),
                     suggestedName,
@@ -709,6 +711,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 {
                     continue;
                 }
+
+                OpenApiSemanticSchema? schema = content.Schema;
 
                 string signature = GetSchemaSignature(schema);
                 if (successSignature is not null && !string.Equals(successSignature, signature, StringComparison.Ordinal))
@@ -722,6 +726,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 successSignature = signature;
                 successSchema = schema;
                 successCodes.Add(responseProperty.Name.ToUpperInvariant());
+                responseMediaTypes.Add(responseProperty.Name.ToUpperInvariant(), content.MediaTypes);
             }
 
             if (successCodes.Count == 0)
@@ -729,10 +734,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 throw Invalid(responsesNode, "At least one 2xx response is required by the Phase 4 MVP.");
             }
 
-            return new ParsedResponses(successSchema, successCodes.OrderBy(static value => value, StringComparer.Ordinal).ToArray());
+            return new ParsedResponses(successSchema, successCodes.OrderBy(static value => value, StringComparer.Ordinal).ToArray(), responseMediaTypes);
         }
 
-        private OpenApiSemanticSchema? ParseResponse(
+        private ParsedContent ParseResponse(
             SpecNode node,
             HashSet<NormalizedSpecNodeIdentity> referenceStack,
             string suggestedName,
@@ -760,19 +765,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             SpecNode? contentNode = GetProperty(node, "content");
             if (contentNode is null)
             {
-                return null;
+                return new ParsedContent(string.Empty, null, Array.Empty<string>());
             }
 
             if (!parseJsonBody)
             {
                 ValidateResponseContent(contentNode);
-                return null;
+                return new ParsedContent(string.Empty, null, Array.Empty<string>());
             }
 
             return ParseContent(
                 contentNode,
                 suggestedName,
-                validateRequestEncoding: false).Schema;
+                validateRequestEncoding: false);
         }
 
         private ParsedContent ParseContent(
@@ -781,7 +786,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             bool validateRequestEncoding)
         {
             RequireKind(contentNode, SpecValueKind.Object, "The content field must be an object.");
-            var supported = new List<(string MediaType, OpenApiSemanticSchema Schema)>();
+            var supported = new List<(string MediaType, OpenApiSemanticSchema Schema, bool Wildcard, SpecNode Node)>();
             foreach (SpecProperty mediaProperty in contentNode.EnumerateObject()
                          .OrderBy(static value => value.Name, StringComparer.Ordinal))
             {
@@ -802,12 +807,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 string? normalizedCharset = validateRequestEncoding
                     ? GetSupportedRequestCharset(mediaType, mediaProperty.Value)
                     : null;
-                supported.Add((mediaType.ToNormalizedString(normalizedCharset), schema));
+                supported.Add((mediaType.ToNormalizedString(normalizedCharset), schema,
+                    mediaType.Subtype.IndexOf('*') >= 0, mediaProperty.Value));
             }
 
             if (supported.Count == 0)
             {
-                return new ParsedContent(string.Empty, null);
+                return new ParsedContent(string.Empty, null, Array.Empty<string>());
             }
 
             string signature = GetSchemaSignature(supported[0].Schema);
@@ -823,7 +829,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
             }
 
-            return new ParsedContent(supported[0].MediaType, supported[0].Schema);
+            var selected = supported[0];
+            if (validateRequestEncoding)
+            {
+                var concrete = supported.FirstOrDefault(static item => !item.Wildcard);
+                if (concrete.MediaType is null)
+                {
+                    throw Unsupported(selected.Node,
+                        "A request body must declare a concrete JSON media type; application/*+json is a response range only.");
+                }
+
+                selected = concrete;
+            }
+
+            return new ParsedContent(selected.MediaType, selected.Schema,
+                supported.Select(static item => item.MediaType).ToArray());
         }
 
         private void ValidateResponseContent(SpecNode contentNode)
@@ -1975,28 +1995,35 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private readonly struct ParsedContent
         {
-            internal ParsedContent(string mediaType, OpenApiSemanticSchema? schema)
+            internal ParsedContent(string mediaType, OpenApiSemanticSchema? schema, IReadOnlyList<string> mediaTypes)
             {
                 MediaType = mediaType;
                 Schema = schema;
+                MediaTypes = mediaTypes;
             }
 
             internal string MediaType { get; }
 
             internal OpenApiSemanticSchema? Schema { get; }
+
+            internal IReadOnlyList<string> MediaTypes { get; }
         }
 
         private readonly struct ParsedResponses
         {
-            internal ParsedResponses(OpenApiSemanticSchema? schema, IReadOnlyList<string> statusCodes)
+            internal ParsedResponses(OpenApiSemanticSchema? schema, IReadOnlyList<string> statusCodes,
+                IReadOnlyDictionary<string, IReadOnlyList<string>> mediaTypes)
             {
                 Schema = schema;
                 StatusCodes = statusCodes;
+                MediaTypes = mediaTypes;
             }
 
             internal OpenApiSemanticSchema? Schema { get; }
 
             internal IReadOnlyList<string> StatusCodes { get; }
+
+            internal IReadOnlyDictionary<string, IReadOnlyList<string>> MediaTypes { get; }
         }
     }
 }

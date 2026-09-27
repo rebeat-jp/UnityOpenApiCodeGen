@@ -132,7 +132,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<GeneratedParameterModel> parameters,
             GeneratedRequestBodyModel? requestBody,
             GeneratedTypeModel? responseType,
-            IReadOnlyList<string> successStatusCodes)
+            IReadOnlyList<string> successStatusCodes,
+            IReadOnlyDictionary<string, IReadOnlyList<string>> responseMediaTypes)
         {
             Name = name;
             Summary = summary;
@@ -142,6 +143,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             RequestBody = requestBody;
             ResponseType = responseType;
             SuccessStatusCodes = successStatusCodes;
+            ResponseMediaTypes = responseMediaTypes;
         }
 
         internal string Name { get; }
@@ -159,6 +161,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal GeneratedTypeModel? ResponseType { get; }
 
         internal IReadOnlyList<string> SuccessStatusCodes { get; }
+
+        internal IReadOnlyDictionary<string, IReadOnlyList<string>> ResponseMediaTypes { get; }
     }
 
     internal sealed class GeneratedParameterModel

@@ -348,7 +348,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td><code>servers</code></td>
 <td>一部対応</td>
-<td>URLは0個または1個、variablesなし。<code>//host/path</code>は<code>HttpClient.BaseAddress</code>のschemeで解決します。<code>/path</code>は同じoriginのrootから解決し、<code>BaseAddress</code>のpathとqueryを引き継ぎません。どちらも<code>BaseAddress</code>未設定なら送信前に<code>InvalidOperationException</code>です。</td>
+<td>URLは0個または1個、variablesなし。<code>//host/path</code>は<code>HttpClient.BaseAddress</code>のschemeで解決します。<code>/path</code>は同じoriginのrootから解決し、<code>BaseAddress</code>のpathとqueryを引き継ぎません。どちらも<code>BaseAddress</code>未設定なら送信前に<code>InvalidOperationException</code>です。相対server URLとoperation pathが<code>/</code>の場合、<code>BaseAddress</code>のqueryは1回だけ付加します。</td>
 </tr>
 <tr>
 <td>parameter location</td>
@@ -388,7 +388,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>request body</td>
 <td>一部対応</td>
-<td>パラメーター付きも含む<code>application/json</code>または<code>application/*+json</code>。type/subtypeを正規化して判定します。</td>
+<td>パラメーター付きも含む具体的な<code>application/json</code>または<code>application/&lt;subtype&gt;+json</code>を送信します。<code>application/*+json</code>だけの宣言は<code>OACG101</code>で拒否し、具体型と併記された場合は具体型を選びます。type/subtypeを正規化して判定します。</td>
 </tr>
 <tr>
 <td>required non-nullable request body</td>
@@ -414,6 +414,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>successful response</td>
 <td>一部対応</td>
 <td>少なくとも1つの<code>2xx</code> responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの値の宣言順は比較に影響しません。非nullableな成功本文が空・JSON <code>null</code>、または非nullableな配列要素がJSON <code>null</code>なら実行時に<code>JsonSerializationException</code>です。入れ子の配列やDTO内の配列も検査します。</td>
+</tr>
+<tr>
+<td>成功レスポンスの<code>Content-Type</code></td>
+<td>一部対応</td>
+<td>headerがある場合はstatus別の宣言media typeと照合し、不一致・不正・複数値は<code>JsonSerializationException</code>です。個別statusの宣言は<code>2XX</code>より優先します。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。</td>
 </tr>
 <tr>
 <td>error/default response</td>
@@ -496,6 +501,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>scalar format</td>
 <td>一部対応</td>
 <td><code>integer</code>は通常<code>int</code>、<code>int64</code>は<code>long</code>。<code>number</code>は通常<code>double</code>、<code>float</code>は<code>float</code>、<code>decimal</code>は<code>decimal</code>。<code>date</code>、<code>date-time</code>、<code>uuid</code>は<code>DateTime</code>、<code>DateTimeOffset</code>、<code>Guid</code>へmappingします。</td>
+</tr>
+<tr>
+<td>リクエスト数値</td>
+<td>対応</td>
+<td><code>float</code>／<code>double</code>の<code>NaN</code>・正負の無限大は本文直下・配列・DTO内ともHTTP送信前に<code>JsonSerializationException</code>で拒否します。省略指定した任意項目は検査しません。</td>
 </tr>
 <tr>
 <td>map / free-form object</td>

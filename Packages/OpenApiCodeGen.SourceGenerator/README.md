@@ -158,6 +158,10 @@ request body raises `ArgumentNullException` before sending; a nullable required
 body can send JSON `null`. A `//host/path` server URL uses the scheme from
 `HttpClient.BaseAddress`; a `/path` server URL starts at the origin root,
 ignoring the base address path and query. Both forms require a base address.
+With a relative server URL, an operation at `/` includes a base address query once.
+Request bodies send a concrete `application/json` or `application/<subtype>+json`
+media type. A request that declares only `application/*+json` receives `OACG101`;
+when a concrete type is also declared, that type is selected.
 
 Serialization checks required non-nullable reference properties in request
 DTOs, including nested DTOs, before the HTTP request is sent. Required nullable
@@ -169,6 +173,13 @@ Request arrays with non-nullable reference items are checked before sending,
 including nested arrays and DTO properties. Nullable items may be JSON `null`.
 String enums accept only declared wire strings with exact case and spacing;
 undeclared strings and JSON numbers are rejected.
+Request `float` and `double` values must be finite, including values nested in
+arrays and DTOs. `NaN` and either infinity raise `JsonSerializationException`
+before the HTTP request is sent. For a successful response that supplies a
+`Content-Type`, the client checks it against the media types declared for that
+status before deserializing; malformed, multiple, and conflicting values raise
+`JsonSerializationException`. A specific status declaration takes precedence
+over `2XX`. Responses without a `Content-Type` retain the existing behavior.
 
 Bundle and semantic failures use stable diagnostics including:
 

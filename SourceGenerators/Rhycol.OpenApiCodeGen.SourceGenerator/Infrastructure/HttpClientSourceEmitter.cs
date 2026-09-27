@@ -33,7 +33,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             source.AppendLine();
-            AppendHelpers(source);
+            AppendHelpers(source, responseValidators);
             responseValidators.AppendMethods(source);
             source.AppendLine("    }");
             source.AppendLine();
@@ -149,6 +149,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append("                        throw new ").Append(model.ApiName)
                 .AppendLine("Exception(response.StatusCode, responseBody);");
             source.AppendLine("                    }");
+
+            AppendResponseContentTypeValidation(source, operation, responseValidators);
 
             if (operation.ResponseType is null)
             {
@@ -348,6 +350,40 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         : "((int)response.StatusCode == " + code + ")"));
         }
 
+        private static void AppendResponseContentTypeValidation(
+            StringBuilder source, GeneratedOperationModel operation, ResponseValidatorPlan validators)
+        {
+            source.Append("                    string[] ").Append(validators.MediaTypesLocalName).AppendLine(";");
+            source.AppendLine("                    switch ((int)response.StatusCode)");
+            source.AppendLine("                    {");
+            foreach (var entry in operation.ResponseMediaTypes.OrderBy(static item => item.Key, StringComparer.Ordinal))
+            {
+                if (entry.Key == "2XX")
+                {
+                    continue;
+                }
+
+                source.Append("                        case ").Append(entry.Key).AppendLine(":");
+                AppendDeclaredResponseMediaTypes(source, validators.MediaTypesLocalName, entry.Value);
+            }
+
+            source.AppendLine("                        default:");
+            operation.ResponseMediaTypes.TryGetValue("2XX", out IReadOnlyList<string>? rangeMediaTypes);
+            AppendDeclaredResponseMediaTypes(source, validators.MediaTypesLocalName, rangeMediaTypes ?? Array.Empty<string>());
+            source.AppendLine("                    }");
+            source.Append("                    ").Append(validators.MediaTypeValidatorName)
+                .Append("(response, ").Append(validators.MediaTypesLocalName).AppendLine(");");
+        }
+
+        private static void AppendDeclaredResponseMediaTypes(
+            StringBuilder source, string localName, IReadOnlyList<string> mediaTypes)
+        {
+            source.Append("                            ").Append(localName).Append(" = new string[] { ");
+            source.Append(string.Join(", ", mediaTypes.Select(GeneratedSourceEmitter.StringLiteral)));
+            source.AppendLine(" }; ");
+            source.AppendLine("                            break;");
+        }
+
         private static string GetHttpMethod(string method)
         {
             switch (method)
@@ -370,9 +406,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private static void AppendHelpers(StringBuilder source)
+        private static void AppendHelpers(StringBuilder source, ResponseValidatorPlan validators)
         {
             source.AppendLine("        private static readonly global::Newtonsoft.Json.JsonConverter DateOnlyJsonConverterInstance = new DateOnlyJsonConverter();");
+            AppendResponseContentTypeHelper(source, validators.MediaTypeValidatorName);
             source.AppendLine();
             source.AppendLine("        private global::System.Uri CreateRequestUri(string relativePath)");
             source.AppendLine("        {");
@@ -411,7 +448,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("            {");
             source.AppendLine("                var resolvedUri = new global::System.Uri(_httpClient.BaseAddress, combinedPath.TrimStart('/')); ");
             source.AppendLine("                string resolvedQuery = CombineQueries(_httpClient.BaseAddress.Query.TrimStart('?'), combinedQuery);");
-            source.AppendLine("                return CombineAbsoluteUri(resolvedUri, string.Empty, resolvedQuery);");
+            source.AppendLine("                var resolvedBuilder = new global::System.UriBuilder(resolvedUri) { Query = resolvedQuery };");
+            source.AppendLine("                return resolvedBuilder.Uri;");
             source.AppendLine("            }");
             source.AppendLine();
             source.AppendLine("            string combined = AppendQuery(combinedPath, combinedQuery);");
@@ -592,6 +630,126 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        }");
         }
 
+        private static void AppendResponseContentTypeHelper(StringBuilder source, string methodName)
+        {
+            string decodeMethodName = methodName + "DecodeParameter";
+            string validHeadMethodName = methodName + "HasValidHead";
+            string tokenMethodName = methodName + "IsTokenCharacter";
+            source.AppendLine();
+            source.Append("        private static void ").Append(methodName)
+                .AppendLine("(global::System.Net.Http.HttpResponseMessage response, string[] declaredMediaTypes)");
+            source.AppendLine("        {");
+            source.AppendLine("            if (response.Content == null || !response.Content.Headers.TryGetValues(\"Content-Type\", out var headerValues)) return;");
+            source.AppendLine("            string? header = null;");
+            source.AppendLine("            foreach (string value in headerValues)");
+            source.AppendLine("            {");
+            source.AppendLine("                if (header != null) throw new global::Newtonsoft.Json.JsonSerializationException(\"The response contains multiple Content-Type values.\");");
+            source.AppendLine("                header = value;");
+            source.AppendLine("            }");
+            source.Append("            if (string.IsNullOrWhiteSpace(header) || !")
+                .Append(validHeadMethodName).AppendLine("(header) ||");
+            source.AppendLine("                !global::System.Net.Http.Headers.MediaTypeHeaderValue.TryParse(header, out var actual) ||");
+            source.AppendLine("                actual.MediaType == null || actual.MediaType.IndexOf('*') >= 0)");
+            source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"The response Content-Type is malformed.\");");
+            source.AppendLine("            var actualParameters = new global::System.Collections.Generic.Dictionary<string, string>(global::System.StringComparer.OrdinalIgnoreCase);");
+            source.AppendLine("            foreach (var parameter in actual.Parameters)");
+            source.AppendLine("            {");
+            source.Append("                if (parameter.Value == null || actualParameters.ContainsKey(parameter.Name) || !")
+                .Append(decodeMethodName).AppendLine("(parameter.Value, out string decodedValue))");
+            source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"The response Content-Type is malformed.\");");
+            source.AppendLine("                actualParameters.Add(parameter.Name, decodedValue);");
+            source.AppendLine("            }");
+            source.AppendLine("            foreach (string declaredValue in declaredMediaTypes)");
+            source.AppendLine("            {");
+            source.AppendLine("                if (!global::System.Net.Http.Headers.MediaTypeHeaderValue.TryParse(declaredValue, out var declared) || declared.MediaType == null) continue;");
+            source.AppendLine("                int separator = declared.MediaType.IndexOf('/');");
+            source.AppendLine("                int actualSeparator = actual.MediaType.IndexOf('/');");
+            source.AppendLine("                if (separator <= 0 || actualSeparator <= 0 ||");
+            source.AppendLine("                    !global::System.String.Equals(declared.MediaType.Substring(0, separator), actual.MediaType.Substring(0, actualSeparator), global::System.StringComparison.OrdinalIgnoreCase)) continue;");
+            source.AppendLine("                string subtype = declared.MediaType.Substring(separator + 1);");
+            source.AppendLine("                string actualSubtype = actual.MediaType.Substring(actualSeparator + 1);");
+            source.AppendLine("                bool subtypeMatches = global::System.String.Equals(subtype, actualSubtype, global::System.StringComparison.OrdinalIgnoreCase) ||");
+            source.AppendLine("                    (global::System.String.Equals(subtype, \"*+json\", global::System.StringComparison.OrdinalIgnoreCase) &&");
+            source.AppendLine("                     actualSubtype.Length > 5 && actualSubtype.EndsWith(\"+json\", global::System.StringComparison.OrdinalIgnoreCase));");
+            source.AppendLine("                if (!subtypeMatches) continue;");
+            source.AppendLine("                bool parametersMatch = true;");
+            source.AppendLine("                foreach (var parameter in declared.Parameters)");
+            source.AppendLine("                {");
+            source.Append("                    if (parameter.Value == null || !").Append(decodeMethodName)
+                .AppendLine("(parameter.Value, out string expected)) { parametersMatch = false; break; }");
+            source.AppendLine("                    if (!actualParameters.TryGetValue(parameter.Name, out string? actualValue) ||");
+            source.AppendLine("                        !global::System.String.Equals(expected, actualValue, global::System.String.Equals(parameter.Name, \"charset\", global::System.StringComparison.OrdinalIgnoreCase)");
+            source.AppendLine("                            ? global::System.StringComparison.OrdinalIgnoreCase : global::System.StringComparison.Ordinal))");
+            source.AppendLine("                    { parametersMatch = false; break; }");
+            source.AppendLine("                }");
+            source.AppendLine("                if (parametersMatch) return;");
+            source.AppendLine("            }");
+            source.AppendLine("            throw new global::Newtonsoft.Json.JsonSerializationException(\"The response Content-Type '" + "\" + header + \"' does not match the declared media type.\");");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.Append("        private static bool ").Append(decodeMethodName)
+                .AppendLine("(string value, out string decoded)");
+            source.AppendLine("        {");
+            source.AppendLine("            decoded = string.Empty;");
+            source.AppendLine("            if (value.Length > 0 && (value[0] == (char)34 || value[value.Length - 1] == (char)34))");
+            source.AppendLine("            {");
+            source.AppendLine("                if (value.Length < 2 || value[0] != (char)34 || value[value.Length - 1] != (char)34) return false;");
+            source.AppendLine("                var builder = new global::System.Text.StringBuilder(value.Length - 2);");
+            source.AppendLine("                for (int index = 1; index < value.Length - 1; index++)");
+            source.AppendLine("                {");
+            source.AppendLine("                    char character = value[index];");
+            source.AppendLine("                    if (character == (char)92)");
+            source.AppendLine("                    {");
+            source.AppendLine("                        if (++index >= value.Length - 1) return false;");
+            source.AppendLine("                        character = value[index];");
+            source.AppendLine("                        if (!(character == (char)9 || (character >= (char)32 && character <= (char)126) ||");
+            source.AppendLine("                              (character >= (char)128 && character <= (char)255))) return false;");
+            source.AppendLine("                    }");
+            source.AppendLine("                    else if (!(character == (char)9 || character == (char)32 || character == (char)33 ||");
+            source.AppendLine("                               (character >= (char)35 && character <= (char)91) ||");
+            source.AppendLine("                               (character >= (char)93 && character <= (char)126) ||");
+            source.AppendLine("                               (character >= (char)128 && character <= (char)255))) return false;");
+            source.AppendLine("                    builder.Append(character);");
+            source.AppendLine("                }");
+            source.AppendLine("                decoded = builder.ToString();");
+            source.AppendLine("                return true;");
+            source.AppendLine("            }");
+            source.AppendLine("            if (value.IndexOf((char)34) >= 0 || value.IndexOf((char)92) >= 0) return false;");
+            source.AppendLine("            decoded = value;");
+            source.AppendLine("            return true;");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.Append("        private static bool ").Append(validHeadMethodName)
+                .AppendLine("(string value)");
+            source.AppendLine("        {");
+            source.AppendLine("            int index = 0;");
+            source.AppendLine("            while (index < value.Length && (value[index] == (char)32 || value[index] == (char)9)) index++;");
+            source.AppendLine("            int start = index;");
+            source.Append("            while (index < value.Length && ").Append(tokenMethodName)
+                .AppendLine("(value[index])) index++;");
+            source.AppendLine("            if (index == start || index >= value.Length || value[index] != (char)47) return false;");
+            source.AppendLine("            index++;");
+            source.AppendLine("            start = index;");
+            source.Append("            while (index < value.Length && ").Append(tokenMethodName)
+                .AppendLine("(value[index])) index++;");
+            source.AppendLine("            return index > start && (index == value.Length || value[index] == (char)59 ||");
+            source.AppendLine("                value[index] == (char)32 || value[index] == (char)9);");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.Append("        private static bool ").Append(tokenMethodName)
+                .AppendLine("(char character)");
+            source.AppendLine("        {");
+            source.AppendLine("            return (character >= (char)48 && character <= (char)57) ||");
+            source.AppendLine("                   (character >= (char)65 && character <= (char)90) ||");
+            source.AppendLine("                   (character >= (char)97 && character <= (char)122) ||");
+            source.AppendLine("                   character == (char)33 || character == (char)35 || character == (char)36 ||");
+            source.AppendLine("                   character == (char)37 || character == (char)38 || character == (char)39 ||");
+            source.AppendLine("                   character == (char)42 || character == (char)43 || character == (char)45 ||");
+            source.AppendLine("                   character == (char)46 || character == (char)94 || character == (char)95 ||");
+            source.AppendLine("                   character == (char)96 || character == (char)124 || character == (char)126;");
+            source.AppendLine("        }");
+        }
+
         private static void AppendException(StringBuilder source, string apiName)
         {
             source.Append("    public sealed class ").Append(apiName)
@@ -618,6 +776,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             private readonly Dictionary<GeneratedTypeModel, int> _indices =
                 new Dictionary<GeneratedTypeModel, int>();
             private readonly string _methodPrefix;
+            private readonly string _mediaTypePrefix;
 
             internal ResponseValidatorPlan(OpenApiGenerationModel model)
             {
@@ -658,6 +817,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
 
                 _methodPrefix = prefix;
+                prefix = "__OacgContentType_";
+                while (occupiedNames.Any(name => name.StartsWith(prefix, StringComparison.Ordinal)))
+                {
+                    prefix += "_";
+                }
+
+                _mediaTypePrefix = prefix;
                 foreach (GeneratedOperationModel operation in model.Operations)
                 {
                     if (operation.ResponseType is GeneratedTypeModel responseType &&
@@ -675,6 +841,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             internal string ComparerName => _methodPrefix + "Comparer";
+
+            internal string MediaTypeValidatorName => _mediaTypePrefix + "Validate";
+
+            internal string MediaTypesLocalName => _mediaTypePrefix + "DeclaredMediaTypes";
 
             internal bool TryGetMethodName(GeneratedTypeModel type, out string? methodName)
             {
@@ -712,6 +882,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             private bool RequiresValidation(GeneratedTypeModel type, HashSet<string> visited)
             {
+                if (type.Kind == GeneratedTypeKind.Single || type.Kind == GeneratedTypeKind.Double)
+                {
+                    return true;
+                }
+
                 if (type.Kind == GeneratedTypeKind.Array)
                 {
                     GeneratedTypeModel itemType = type.ItemType!;
@@ -771,6 +946,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 source.AppendLine("            {");
                 source.AppendLine("                return;");
                 source.AppendLine("            }");
+                if (type.Kind == GeneratedTypeKind.Single || type.Kind == GeneratedTypeKind.Double)
+                {
+                    string numberType = type.Kind == GeneratedTypeKind.Single ? "Single" : "Double";
+                    source.Append("            if (contract == \"request\" && value.HasValue && (global::System.")
+                        .Append(numberType).Append(".IsNaN(value.Value) || global::System.")
+                        .Append(numberType).AppendLine(".IsInfinity(value.Value)))");
+                    source.AppendLine("            {");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-finite request number at \" + path + \".\");");
+                    source.AppendLine("            }");
+                    source.AppendLine("            return;");
+                    source.AppendLine("        }");
+                    return;
+                }
+
                 source.AppendLine("            if (!visited.TryGetValue(value, out var validatedTypes))");
                 source.AppendLine("            {");
                 source.AppendLine("                validatedTypes = new global::System.Collections.Generic.HashSet<int>();");

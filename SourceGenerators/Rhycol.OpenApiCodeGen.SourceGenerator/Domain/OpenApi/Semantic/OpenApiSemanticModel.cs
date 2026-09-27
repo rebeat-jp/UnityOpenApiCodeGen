@@ -128,6 +128,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiSemanticRequestBody? requestBody,
             OpenApiSemanticSchema? responseSchema,
             IReadOnlyList<string> successStatusCodes,
+            IReadOnlyDictionary<string, IReadOnlyList<string>> responseMediaTypes,
             OpenApiSourceLocation location)
         {
             OperationId = operationId;
@@ -138,6 +139,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             RequestBody = requestBody;
             ResponseSchema = responseSchema;
             SuccessStatusCodes = successStatusCodes;
+            ResponseMediaTypes = responseMediaTypes;
             Location = location;
         }
 
@@ -156,6 +158,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal OpenApiSemanticSchema? ResponseSchema { get; }
 
         internal IReadOnlyList<string> SuccessStatusCodes { get; }
+
+        internal IReadOnlyDictionary<string, IReadOnlyList<string>> ResponseMediaTypes { get; }
 
         internal OpenApiSourceLocation Location { get; }
     }

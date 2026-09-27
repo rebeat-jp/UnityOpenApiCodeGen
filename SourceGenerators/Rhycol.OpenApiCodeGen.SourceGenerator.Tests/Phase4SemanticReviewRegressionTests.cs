@@ -893,7 +893,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
                 return new HttpResponseMessage(_statusCode)
                 {
-                    Content = new StringContent(_responseBody)
+                    Content = _statusCode == HttpStatusCode.NoContent ? null : new StringContent(_responseBody)
                 };
             }
         }

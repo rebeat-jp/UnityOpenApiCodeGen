@@ -183,7 +183,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     parameters,
                     requestBody,
                     responseType,
-                    operation.SuccessStatusCodes));
+                    operation.SuccessStatusCodes,
+                    operation.ResponseMediaTypes));
             }
 
             return result;
