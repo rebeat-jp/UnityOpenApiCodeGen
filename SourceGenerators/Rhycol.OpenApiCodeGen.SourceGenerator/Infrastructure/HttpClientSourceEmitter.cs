@@ -119,6 +119,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
             source.AppendLine(")");
             source.AppendLine("        {");
+            AppendRequestBodyValidation(source, operation.RequestBody);
             source.Append("            string relativePath = ")
                 .Append(GeneratedSourceEmitter.StringLiteral(operation.Path))
                 .AppendLine(";");
@@ -231,6 +232,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
+        private static void AppendRequestBodyValidation(
+            StringBuilder source,
+            GeneratedRequestBodyModel? body)
+        {
+            if (body is null || !body.Required || body.Type.Nullable || body.Type.IsValueType)
+            {
+                return;
+            }
+
+            source.Append("            if (").Append(body.ParameterName).AppendLine(" is null)");
+            source.AppendLine("            {");
+            source.Append("                throw new global::System.ArgumentNullException(nameof(")
+                .Append(body.ParameterName).AppendLine("));");
+            source.AppendLine("            }");
+        }
+
         private static void AppendRequestBody(StringBuilder source, GeneratedRequestBodyModel? body)
         {
             if (body is null)
@@ -340,6 +357,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        private global::System.Uri CreateRequestUri(string relativePath)");
             source.AppendLine("        {");
             source.AppendLine("            SplitPathAndQuery(relativePath, out string operationPath, out string operationQuery);");
+            source.AppendLine("            if (_baseUrl.StartsWith(\"//\", global::System.StringComparison.Ordinal))");
+            source.AppendLine("            {");
+            source.AppendLine("                if (_httpClient.BaseAddress is null)");
+            source.AppendLine("                {");
+            source.AppendLine("                    throw new global::System.InvalidOperationException(\"A HttpClient.BaseAddress is required for a network-path server URL.\");");
+            source.AppendLine("                }");
+            source.AppendLine("                var networkBaseUri = new global::System.Uri(_httpClient.BaseAddress, _baseUrl);");
+            source.AppendLine("                return CombineAbsoluteUri(networkBaseUri, operationPath, operationQuery);");
+            source.AppendLine("            }");
+            source.AppendLine();
             source.AppendLine("            if (global::System.Uri.TryCreate(_baseUrl, global::System.UriKind.Absolute, out var absoluteBaseUri) &&");
             source.AppendLine("                (absoluteBaseUri.Scheme == global::System.Uri.UriSchemeHttp ||");
             source.AppendLine("                 absoluteBaseUri.Scheme == global::System.Uri.UriSchemeHttps))");

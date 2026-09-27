@@ -132,7 +132,7 @@ YAMLの診断IDは次のとおりです。
 | 項目 | 対応状況 | 条件・制約 |
 | --- | --- | --- |
 | HTTP method | 対応 | `GET`、`POST`、`PUT`、`DELETE`、`PATCH`、`HEAD`、`OPTIONS`、`TRACE`。 |
-| `servers` | 一部対応 | URLは0個または1個、variablesなし。 |
+| `servers` | 一部対応 | URLは0個または1個、variablesなし。`//host/path`形式は`HttpClient.BaseAddress`のschemeで解決し、hostとpathはserver URLを使います。`BaseAddress`未設定なら送信前に`InvalidOperationException`です。 |
 | parameter location | 一部対応 | path、query、headerのscalar parameterのみ。cookieは対象外です。 |
 | parameter serialization | 一部対応 | defaultの`style`/`explode`のみ。`allowReserved: true`は対象外です。 |
 | complex parameter | 非対応 | 直接定義・多段`$ref`ともarray/object等のcomplex parameterは対象外です。 |
@@ -141,6 +141,7 @@ YAMLの診断IDは次のとおりです。
 | header identity | 対応 | header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。 |
 | content専用header parameter | 非対応 | `Allow`、`Content-Disposition`、`Content-Encoding`、`Content-Language`、`Content-Length`、`Content-Location`、`Content-MD5`、`Content-Range`、`Content-Type`、`Expires`、`Last-Modified`は大小文字を問わず`OACG101`で拒否します。独自の`Content-*`名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に`InvalidOperationException`です。 |
 | request body | 一部対応 | パラメーター付きも含む`application/json`または`application/*+json`。type/subtypeを正規化して判定します。 |
+| required non-nullable request body | 対応 | 参照型の本文に`null`を渡すと、HTTP送信前に`ArgumentNullException`です。schemaがnullableな必須本文はJSON `null`を送信できます。 |
 | optional nullable request body | 対応 | `requestBody.required: false`かつschemaがnullableの場合、`null`引数は本文省略、非`null`引数はJSON本文を送信します。生成メソッドの`<BodyParameterName>Specified`を`true`にすると、`null`引数でも明示的なJSON `null`を送信します。名前が衝突する場合は番号を付けます。 |
 | request charset | 一部対応 | UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。 |
 | successful response | 一部対応 | 少なくとも1つの`2xx` responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。非nullableな成功本文が空またはJSON `null`なら実行時に`JsonSerializationException`です。 |
@@ -164,6 +165,7 @@ status codeはASCII数字で検証します。属性付きのジェネリックc
 | `$ref` sibling | 一部対応 | 注釈、literalデータ、`x-*`と既存の3.0 `nullable`は保持します。合成が必要な`type`、`properties`、`required`などは、該当位置の`OACG101`で拒否します。 |
 | nullable | 一部対応 | OpenAPI 3.0の`nullable`、OpenAPI 3.1の`type: [<type>, null]`。 |
 | optional nullable DTO property | 対応 | 未代入はJSONから省略し、`null`代入は明示的なJSON `null`、値の代入はその値を送ります。生成される`<PropertyName>Specified`を`false`へ戻すと再び省略します。 |
+| optional non-nullable DTO property | 対応 | JSONで省略できますが、明示的なJSON `null`を受信すると`JsonSerializationException`です。未設定値をシリアライズすると省略します。 |
 | scalar format | 一部対応 | `integer`は通常`int`、`int64`は`long`。`number`は通常`double`、`float`は`float`、`decimal`は`decimal`。`date`、`date-time`、`uuid`は`DateTime`、`DateTimeOffset`、`Guid`へmappingします。 |
 | map / free-form object | 非対応 | `additionalProperties`などのmap/free-form表現は対象外です。 |
 | composition | 非対応 | `allOf`、`anyOf`、`oneOf`、`not`、discriminatorは対象外です。 |

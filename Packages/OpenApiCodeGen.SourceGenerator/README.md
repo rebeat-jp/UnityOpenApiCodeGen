@@ -146,6 +146,13 @@ again. OpenAPI 3.1 supports the default or explicitly declared OAS base schema
 dialect; unsupported dialects and string enums containing `null` receive
 source-located diagnostics.
 
+An optional non-nullable DTO property may be absent from JSON, but an explicit
+JSON `null` raises `JsonSerializationException`. An unset property is omitted
+when serialized. Passing `null` for a required non-nullable reference-type
+request body raises `ArgumentNullException` before sending; a nullable required
+body can send JSON `null`. A `//host/path` server URL uses the scheme from
+`HttpClient.BaseAddress`, and requires that base address to be set.
+
 Bundle and semantic failures use stable diagnostics including:
 
 | ID | Meaning |

@@ -28,7 +28,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         ""label"": { ""type"": [""string"", ""null""] },
         ""count"": { ""type"": [""integer"", ""null""] },
         ""reference"": { ""$ref"": ""#/components/schemas/MaybeLabel"" },
-        ""plain"": { ""type"": ""string"" }
+        ""plain"": { ""type"": ""string"" },
+        ""amount"": { ""type"": ""integer"" }
       }
     }
   } }
@@ -92,6 +93,46 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
             type.GetProperty("Plain")!.SetValue(absent, null);
             Assert.False(JObject.Parse(JsonConvert.SerializeObject(absent)).ContainsKey("plain"));
+        }
+
+        [Fact]
+        public void OptionalNonNullablePropertiesRejectExplicitNullButAllowMissingAndValues()
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(DtoDocument);
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Type type = execution.EmitAssembly().GetType("Generated.Phase4.Payload", throwOnError: true)!;
+            var ignoreNulls = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
+
+            object absent = JsonConvert.DeserializeObject("{\"requiredName\":\"r\"}", type)!;
+            Assert.Null(type.GetProperty("Plain")!.GetValue(absent));
+            Assert.Null(type.GetProperty("Amount")!.GetValue(absent));
+            JObject absentJson = JObject.Parse(JsonConvert.SerializeObject(absent));
+            Assert.False(absentJson.ContainsKey("plain"));
+            Assert.False(absentJson.ContainsKey("amount"));
+
+            foreach (string property in new[] { "plain", "amount" })
+            {
+                string json = "{\"requiredName\":\"r\",\"" + property + "\":null}";
+                Assert.Throws<JsonSerializationException>(() =>
+                    JsonConvert.DeserializeObject(json, type));
+                Assert.Throws<JsonSerializationException>(() =>
+                    JsonConvert.DeserializeObject(json, type, ignoreNulls));
+            }
+
+            object values = JsonConvert.DeserializeObject(
+                "{\"requiredName\":\"r\",\"plain\":\"text\",\"amount\":0}", type)!;
+            Assert.Equal("text", type.GetProperty("Plain")!.GetValue(values));
+            Assert.Equal(0, type.GetProperty("Amount")!.GetValue(values));
+            JObject valuesJson = JObject.Parse(JsonConvert.SerializeObject(values));
+            Assert.Equal("text", (string?)valuesJson["plain"]);
+            Assert.Equal(0, (int?)valuesJson["amount"]);
+
+            type.GetProperty("Plain")!.SetValue(values, null);
+            type.GetProperty("Amount")!.SetValue(values, null);
+            JObject clearedJson = JObject.Parse(JsonConvert.SerializeObject(values));
+            Assert.False(clearedJson.ContainsKey("plain"));
+            Assert.False(clearedJson.ContainsKey("amount"));
         }
 
         [Fact]

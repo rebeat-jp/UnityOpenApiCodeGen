@@ -557,7 +557,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Contains("public long Id { get; set; }", source);
             Assert.Contains("JsonProperty(\"nullableName\", Required = global::Newtonsoft.Json.Required.AllowNull)", source);
             Assert.Contains("public string? NullableName { get; set; }", source);
-            Assert.Contains("JsonProperty(\"nickname\", Required = global::Newtonsoft.Json.Required.Default, NullValueHandling = global::Newtonsoft.Json.NullValueHandling.Ignore)", source);
+            Assert.Contains("JsonProperty(\"nickname\", Required = global::Newtonsoft.Json.Required.DisallowNull, NullValueHandling = global::Newtonsoft.Json.NullValueHandling.Ignore)", source);
             Assert.Contains("public global::System.Collections.Generic.List<string>? Tags { get; set; }", source);
             Assert.Contains("StringEnumConverter", source);
             Assert.Contains("EnumMember(Value = \"in-progress\")", source);

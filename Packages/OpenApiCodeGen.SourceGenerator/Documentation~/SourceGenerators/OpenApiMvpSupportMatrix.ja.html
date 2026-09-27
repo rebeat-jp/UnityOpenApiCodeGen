@@ -348,7 +348,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td><code>servers</code></td>
 <td>一部対応</td>
-<td>URLは0個または1個、variablesなし。</td>
+<td>URLは0個または1個、variablesなし。<code>//host/path</code>形式は<code>HttpClient.BaseAddress</code>のschemeで解決し、hostとpathはserver URLを使います。<code>BaseAddress</code>未設定なら送信前に<code>InvalidOperationException</code>です。</td>
 </tr>
 <tr>
 <td>parameter location</td>
@@ -389,6 +389,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>request body</td>
 <td>一部対応</td>
 <td>パラメーター付きも含む<code>application/json</code>または<code>application/*+json</code>。type/subtypeを正規化して判定します。</td>
+</tr>
+<tr>
+<td>required non-nullable request body</td>
+<td>対応</td>
+<td>参照型の本文に<code>null</code>を渡すと、HTTP送信前に<code>ArgumentNullException</code>です。schemaがnullableな必須本文はJSON <code>null</code>を送信できます。</td>
 </tr>
 <tr>
 <td>optional nullable request body</td>
@@ -471,6 +476,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>optional nullable DTO property</td>
 <td>対応</td>
 <td>未代入はJSONから省略し、<code>null</code>代入は明示的なJSON <code>null</code>、値の代入はその値を送ります。生成される<code>&lt;PropertyName&gt;Specified</code>を<code>false</code>へ戻すと再び省略します。</td>
+</tr>
+<tr>
+<td>optional non-nullable DTO property</td>
+<td>対応</td>
+<td>JSONで省略できますが、明示的なJSON <code>null</code>を受信すると<code>JsonSerializationException</code>です。未設定値をシリアライズすると省略します。</td>
 </tr>
 <tr>
 <td>scalar format</td>

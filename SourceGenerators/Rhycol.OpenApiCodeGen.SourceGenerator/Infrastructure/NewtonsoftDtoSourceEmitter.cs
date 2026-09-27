@@ -92,7 +92,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     ? property.Type.Nullable
                         ? "global::Newtonsoft.Json.Required.AllowNull"
                         : "global::Newtonsoft.Json.Required.Always"
-                    : "global::Newtonsoft.Json.Required.Default";
+                    : property.UseSpecified
+                        ? "global::Newtonsoft.Json.Required.Default"
+                        : "global::Newtonsoft.Json.Required.DisallowNull";
                 source.Append("        [global::Newtonsoft.Json.JsonProperty(")
                     .Append(GeneratedSourceEmitter.StringLiteral(property.WireName))
                     .Append(", Required = ")

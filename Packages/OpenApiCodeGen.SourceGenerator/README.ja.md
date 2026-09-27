@@ -58,6 +58,8 @@ content専用headerは位置付き診断で拒否します。対象名は[日本
 任意かつschema上nullableなDTOプロパティは、未代入ならJSONから省略され、`null`を代入すると
 明示的なJSON `null`を送ります。生成された`<PropertyName>Specified`を`false`へ戻すと、
 同じDTOを再利用するときもそのプロパティを省略できます。
+任意でもschema上非nullableなDTOプロパティは、JSONからの省略を許可しますが、
+明示的なJSON `null`を受け取ると`JsonSerializationException`になります。
 
 ```csharp
 var body = new UpdatePetRequest();
@@ -70,6 +72,10 @@ body.NicknameSpecified = false;   // "nickname" を省略する
 追加されます。`body: null`だけなら本文を省略し、`body: null, bodySpecified: true`なら
 JSON `null`を送ります。本文に値があれば通常どおり送信します。本文の引数名が異なる場合は
 `<本文の引数名>Specified`となり、名前が衝突すると番号が付きます。
+必須かつschema上非nullableな参照型の本文に`null`を渡すと、送信前に
+`ArgumentNullException`になります。必須でもschema上nullableならJSON `null`を送信できます。
+server URLが`//host/path`形式の場合は`HttpClient.BaseAddress`のschemeで解決します。
+`BaseAddress`が未設定なら送信前に`InvalidOperationException`になります。
 
 成功レスポンスのschemaが非nullableの場合、空本文またはJSON `null`は
 `JsonSerializationException`になります。nullableなschemaではJSON `null`を受け取れます。
