@@ -553,9 +553,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Empty(execution.RunResult.Diagnostics);
             Assert.Empty(execution.CompilationErrors);
             Assert.Contains("JsonObject(global::Newtonsoft.Json.MemberSerialization.OptIn)", source);
-            Assert.Contains("JsonProperty(\"id\", Required = global::Newtonsoft.Json.Required.Always)", source);
+            Assert.Contains("JsonProperty(\"id\", Required = global::Newtonsoft.Json.Required.Always, NullValueHandling = global::Newtonsoft.Json.NullValueHandling.Include, DefaultValueHandling = global::Newtonsoft.Json.DefaultValueHandling.Include)", source);
             Assert.Contains("public long Id { get; set; }", source);
-            Assert.Contains("JsonProperty(\"nullableName\", Required = global::Newtonsoft.Json.Required.AllowNull)", source);
+            Assert.Contains("JsonProperty(\"nullableName\", Required = global::Newtonsoft.Json.Required.AllowNull, NullValueHandling = global::Newtonsoft.Json.NullValueHandling.Include, DefaultValueHandling = global::Newtonsoft.Json.DefaultValueHandling.Include)", source);
             Assert.Contains("public string? NullableName { get; set; }", source);
             Assert.Contains("JsonProperty(\"nickname\", Required = global::Newtonsoft.Json.Required.DisallowNull, NullValueHandling = global::Newtonsoft.Json.NullValueHandling.Ignore)", source);
             Assert.Contains("public global::System.Collections.Generic.List<string>? Tags { get; set; }", source);

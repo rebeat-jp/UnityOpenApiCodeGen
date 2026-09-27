@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
@@ -23,15 +24,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        private readonly string _baseUrl;");
             source.AppendLine();
             AppendConstructors(source, model);
+            var responseValidators = new ResponseValidatorPlan(model);
 
             foreach (GeneratedOperationModel operation in model.Operations)
             {
                 source.AppendLine();
-                AppendOperation(source, model, operation);
+                AppendOperation(source, model, operation, responseValidators);
             }
 
             source.AppendLine();
             AppendHelpers(source);
+            responseValidators.AppendMethods(source);
             source.AppendLine("    }");
             source.AppendLine();
             AppendException(source, model.ApiName);
@@ -59,7 +62,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private static void AppendOperation(
             StringBuilder source,
             OpenApiGenerationModel model,
-            GeneratedOperationModel operation)
+            GeneratedOperationModel operation,
+            ResponseValidatorPlan responseValidators)
         {
             string summary = string.IsNullOrWhiteSpace(operation.Summary)
                 ? operation.Name
@@ -169,6 +173,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     source.AppendLine("                    {");
                     source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response requires a non-null JSON body.\");");
                     source.AppendLine("                    }");
+                }
+                if (responseValidators.TryGetMethodName(operation.ResponseType, out string? validatorName))
+                {
+                    source.Append("                    ").Append(validatorName)
+                        .Append("(deserializedResponse, \"$\", new global::System.Collections.Generic.Dictionary<object, global::System.Collections.Generic.HashSet<int>>(new ")
+                        .Append(responseValidators.ComparerName).AppendLine("()));");
                 }
                 source.AppendLine("                    return deserializedResponse!;");
             }
@@ -579,6 +589,212 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine();
             source.AppendLine("        public string ResponseBody { get; }");
             source.AppendLine("    }");
+        }
+
+        private sealed class ResponseValidatorPlan
+        {
+            private readonly IReadOnlyDictionary<string, GeneratedDtoModel> _dtos;
+            private readonly List<GeneratedTypeModel> _types = new List<GeneratedTypeModel>();
+            private readonly Dictionary<GeneratedTypeModel, int> _indices =
+                new Dictionary<GeneratedTypeModel, int>();
+            private readonly string _methodPrefix;
+
+            internal ResponseValidatorPlan(OpenApiGenerationModel model)
+            {
+                _dtos = model.Dtos.ToDictionary(static dto => dto.Name, StringComparer.Ordinal);
+                var occupiedNames = new HashSet<string>(StringComparer.Ordinal) { model.ApiName };
+                foreach (GeneratedOperationModel operation in model.Operations)
+                {
+                    occupiedNames.Add(operation.Name);
+                    foreach (GeneratedParameterModel parameter in operation.Parameters)
+                    {
+                        occupiedNames.Add(parameter.Name);
+                    }
+
+                    if (operation.RequestBody is GeneratedRequestBodyModel requestBody)
+                    {
+                        occupiedNames.Add(requestBody.ParameterName);
+                        if (requestBody.SpecifiedParameterName is string specifiedParameterName)
+                        {
+                            occupiedNames.Add(specifiedParameterName);
+                        }
+                    }
+                }
+
+                foreach (GeneratedDtoModel dto in model.Dtos)
+                {
+                    occupiedNames.Add(dto.Name);
+                }
+
+                foreach (GeneratedEnumModel generatedEnum in model.Enums)
+                {
+                    occupiedNames.Add(generatedEnum.Name);
+                }
+
+                string prefix = "__OacgResponseValidator_";
+                while (occupiedNames.Any(name => name.StartsWith(prefix, StringComparison.Ordinal)))
+                {
+                    prefix += "_";
+                }
+
+                _methodPrefix = prefix;
+                foreach (GeneratedOperationModel operation in model.Operations)
+                {
+                    if (operation.ResponseType is GeneratedTypeModel responseType &&
+                        RequiresValidation(responseType, new HashSet<string>(StringComparer.Ordinal)))
+                    {
+                        Register(responseType);
+                    }
+                }
+            }
+
+            internal string ComparerName => _methodPrefix + "Comparer";
+
+            internal bool TryGetMethodName(GeneratedTypeModel type, out string? methodName)
+            {
+                if (_indices.TryGetValue(type.WithNullable(false), out int index))
+                {
+                    methodName = _methodPrefix + index;
+                    return true;
+                }
+
+                methodName = null;
+                return false;
+            }
+
+            internal void AppendMethods(StringBuilder source)
+            {
+                if (_types.Count == 0)
+                {
+                    return;
+                }
+
+                foreach (GeneratedTypeModel type in _types)
+                {
+                    source.AppendLine();
+                    AppendMethod(source, type);
+                }
+
+                source.AppendLine();
+                source.Append("        private sealed class ").Append(ComparerName)
+                    .AppendLine(" : global::System.Collections.Generic.IEqualityComparer<object>");
+                source.AppendLine("        {");
+                source.AppendLine("            public bool Equals(object? left, object? right) => global::System.Object.ReferenceEquals(left, right);");
+                source.AppendLine("            public int GetHashCode(object value) => global::System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(value);");
+                source.AppendLine("        }");
+            }
+
+            private bool RequiresValidation(GeneratedTypeModel type, HashSet<string> visited)
+            {
+                if (type.Kind == GeneratedTypeKind.Array)
+                {
+                    GeneratedTypeModel itemType = type.ItemType!;
+                    return (!itemType.Nullable && !itemType.IsValueType) ||
+                           RequiresValidation(itemType, visited);
+                }
+
+                if (type.Kind != GeneratedTypeKind.Named ||
+                    !_dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto) ||
+                    !visited.Add(type.Name))
+                {
+                    return false;
+                }
+
+                // A shared DTO only needs to be searched once during this reachability check.
+                return dto.Properties.Any(property => RequiresValidation(property.Type, visited));
+            }
+
+            private void Register(GeneratedTypeModel type)
+            {
+                if (!RequiresValidation(type, new HashSet<string>(StringComparer.Ordinal)))
+                {
+                    return;
+                }
+
+                type = type.WithNullable(false);
+                if (_indices.ContainsKey(type))
+                {
+                    return;
+                }
+
+                _indices.Add(type, _types.Count);
+                _types.Add(type);
+                if (type.Kind == GeneratedTypeKind.Array)
+                {
+                    Register(type.ItemType!);
+                }
+                else if (type.Kind == GeneratedTypeKind.Named &&
+                         _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
+                {
+                    foreach (GeneratedDtoPropertyModel property in dto.Properties)
+                    {
+                        Register(property.Type);
+                    }
+                }
+            }
+
+            private void AppendMethod(StringBuilder source, GeneratedTypeModel type)
+            {
+                TryGetMethodName(type, out string? methodName);
+                int validatorIndex = _indices[type.WithNullable(false)];
+                source.Append("        private static void ").Append(methodName).Append('(')
+                    .Append(GeneratedSourceEmitter.TypeName(type.WithNullable(true)))
+                    .AppendLine(" value, string path, global::System.Collections.Generic.Dictionary<object, global::System.Collections.Generic.HashSet<int>> visited)");
+                source.AppendLine("        {");
+                source.AppendLine("            if (value is null)");
+                source.AppendLine("            {");
+                source.AppendLine("                return;");
+                source.AppendLine("            }");
+                source.AppendLine("            if (!visited.TryGetValue(value, out var validatedTypes))");
+                source.AppendLine("            {");
+                source.AppendLine("                validatedTypes = new global::System.Collections.Generic.HashSet<int>();");
+                source.AppendLine("                visited.Add(value, validatedTypes);");
+                source.AppendLine("            }");
+                source.Append("            if (!validatedTypes.Add(")
+                    .Append(validatorIndex).AppendLine("))");
+                source.AppendLine("            {");
+                source.AppendLine("                return;");
+                source.AppendLine("            }");
+
+                if (type.Kind == GeneratedTypeKind.Array)
+                {
+                    GeneratedTypeModel itemType = type.ItemType!;
+                    source.AppendLine("            for (int index = 0; index < value.Count; index++)");
+                    source.AppendLine("            {");
+                    source.AppendLine("                var item = value[index];");
+                    source.AppendLine("                string itemPath = path + \"[\" + index.ToString(global::System.Globalization.CultureInfo.InvariantCulture) + \"]\";");
+                    if (!itemType.Nullable && !itemType.IsValueType)
+                    {
+                        source.AppendLine("                if (item is null)");
+                        source.AppendLine("                {");
+                        source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-nullable response array element was null at \" + itemPath + \".\");");
+                        source.AppendLine("                }");
+                    }
+
+                    if (TryGetMethodName(itemType, out string? itemMethodName))
+                    {
+                        source.Append("                ").Append(itemMethodName)
+                            .AppendLine("(item, itemPath, visited);");
+                    }
+
+                    source.AppendLine("            }");
+                }
+                else if (type.Kind == GeneratedTypeKind.Named)
+                {
+                    foreach (GeneratedDtoPropertyModel property in _dtos[type.Name].Properties)
+                    {
+                        if (TryGetMethodName(property.Type, out string? propertyMethodName))
+                        {
+                            source.Append("            ").Append(propertyMethodName)
+                                .Append("(value.").Append(property.Name).Append(", path + \".\" + ")
+                                .Append(GeneratedSourceEmitter.StringLiteral(property.WireName))
+                                .AppendLine(", visited);");
+                        }
+                    }
+                }
+
+                source.AppendLine("        }");
+            }
         }
 
         private static void AppendParameterSeparator(StringBuilder source, ref bool first)

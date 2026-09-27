@@ -408,7 +408,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>successful response</td>
 <td>Partial</td>
-<td>少なくとも1つの<code>2xx</code> responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。非nullableな成功本文が空またはJSON <code>null</code>なら実行時に<code>JsonSerializationException</code>です。</td>
+<td>少なくとも1つの<code>2xx</code> responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの宣言順は比較に影響しません。非nullableな成功本文が空・JSON <code>null</code>、または非nullableな配列要素がJSON <code>null</code>なら実行時に<code>JsonSerializationException</code>です。入れ子の配列とDTO内の配列も検査します。</td>
 </tr>
 <tr>
 <td>error/default response</td>
@@ -481,6 +481,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>optional non-nullable DTO property</td>
 <td>Supported</td>
 <td>JSONからの省略は許可し、明示的なJSON <code>null</code>は<code>JsonSerializationException</code>です。未設定値はシリアライズ時に省略します。</td>
+</tr>
+<tr>
+<td>required non-nullable DTO property</td>
+<td>Supported</td>
+<td>参照型の必須項目が<code>null</code>ならシリアライズ中に検出し、HTTP送信を止めます。入れ子のDTOも対象です。必須nullable項目のJSON <code>null</code>と必須値型の既定値は送信できます。</td>
 </tr>
 <tr>
 <td>scalar format</td>

@@ -60,6 +60,9 @@ content専用headerは位置付き診断で拒否します。対象名は[日本
 同じDTOを再利用するときもそのプロパティを省略できます。
 任意でもschema上非nullableなDTOプロパティは、JSONからの省略を許可しますが、
 明示的なJSON `null`を受け取ると`JsonSerializationException`になります。
+必須かつschema上非nullableな参照型プロパティが未設定なら、入れ子のDTOを含めて
+シリアライズ時に検出し、HTTP送信を止めます。必須nullable項目のJSON `null`と
+必須値型の`0`や`false`は送信できます。
 
 ```csharp
 var body = new UpdatePetRequest();
@@ -79,6 +82,9 @@ server URLが`//host/path`形式の場合は`HttpClient.BaseAddress`のschemeで
 
 成功レスポンスのschemaが非nullableの場合、空本文またはJSON `null`は
 `JsonSerializationException`になります。nullableなschemaではJSON `null`を受け取れます。
+レスポンス配列の非nullableな参照型要素がJSON `null`の場合も、入れ子の配列やDTO内の配列を含めて
+`JsonSerializationException`になります。複数の成功レスポンス間でinline enum値の宣言順だけが
+異なる場合は、同じ契約として扱います。
 必須nullableパラメーターや、対応表の範囲外のwire formatは位置付き診断で拒否します。
 
 成功した`Generate`では、`Library/OpenApiCodeGen/SourceGenerator/SpecCache/<specId>/`に

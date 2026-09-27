@@ -1656,7 +1656,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                             property.Required ? "1" : "0",
                             GetSchemaSignature(property.Schema))).ToArray());
                 case OpenApiSemanticSchemaKind.Enum:
-                    return BuildSchemaSignature("enum", nullable, schema.EnumValues.ToArray());
+                    return BuildSchemaSignature(
+                        "enum",
+                        nullable,
+                        schema.EnumValues.OrderBy(static value => value, StringComparer.Ordinal).ToArray());
                 default:
                     return BuildSchemaSignature(schema.Kind.ToString(), nullable, schema.Format);
             }

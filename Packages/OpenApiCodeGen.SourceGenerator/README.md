@@ -153,6 +153,13 @@ request body raises `ArgumentNullException` before sending; a nullable required
 body can send JSON `null`. A `//host/path` server URL uses the scheme from
 `HttpClient.BaseAddress`, and requires that base address to be set.
 
+Serialization checks required non-nullable reference properties in request
+DTOs, including nested DTOs, before the HTTP request is sent. Required nullable
+members may send JSON `null`, and required value members may send their default
+values. A non-nullable reference item in a successful response array cannot be
+JSON `null`, including items in nested arrays or DTO properties. Inline enum
+declaration order does not affect response contract comparison.
+
 Bundle and semantic failures use stable diagnostics including:
 
 | ID | Meaning |

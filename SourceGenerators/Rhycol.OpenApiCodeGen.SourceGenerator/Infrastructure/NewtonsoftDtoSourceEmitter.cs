@@ -69,6 +69,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 usedMemberNames.Add(property.Name + "Specified");
             }
 
+            GeneratedDtoPropertyModel[] requiredReferenceProperties = model.Properties
+                .Where(static property => property.Required && !property.Type.Nullable && !property.Type.IsValueType)
+                .ToArray();
+
             foreach (GeneratedDtoPropertyModel property in model.Properties)
             {
                 string? backingField = null;
@@ -99,13 +103,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     .Append(GeneratedSourceEmitter.StringLiteral(property.WireName))
                     .Append(", Required = ")
                     .Append(required);
-                if (property.UseSpecified)
+                if (property.Required || property.UseSpecified)
                 {
                     source.Append(", NullValueHandling = global::Newtonsoft.Json.NullValueHandling.Include");
                 }
-                else if (!property.Required)
+                else
                 {
                     source.Append(", NullValueHandling = global::Newtonsoft.Json.NullValueHandling.Ignore");
+                }
+
+                if (property.Required || property.UseSpecified)
+                {
+                    source.Append(", DefaultValueHandling = global::Newtonsoft.Json.DefaultValueHandling.Include");
                 }
 
                 source.AppendLine(")]");
@@ -141,6 +150,34 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     source.AppendLine();
                 }
                 source.AppendLine();
+            }
+
+            if (requiredReferenceProperties.Length > 0)
+            {
+                const string CallbackBaseName = "ValidateRequiredPropertiesOnSerializing";
+                string callbackName = CallbackBaseName;
+                int suffix = 2;
+                while (!usedMemberNames.Add(callbackName))
+                {
+                    callbackName = CallbackBaseName + suffix++;
+                }
+
+                source.AppendLine("        [global::System.Runtime.Serialization.OnSerializing]");
+                source.Append("        private void ").Append(callbackName)
+                    .AppendLine("(global::System.Runtime.Serialization.StreamingContext context)");
+                source.AppendLine("        {");
+                foreach (GeneratedDtoPropertyModel property in requiredReferenceProperties)
+                {
+                    source.Append("            if (").Append(property.Name).AppendLine(" == null)");
+                    source.AppendLine("            {");
+                    source.Append("                throw new global::Newtonsoft.Json.JsonSerializationException(")
+                        .Append(GeneratedSourceEmitter.StringLiteral(
+                            "Required property '" + property.WireName + "' cannot be null during serialization."))
+                        .AppendLine(");");
+                    source.AppendLine("            }");
+                }
+
+                source.AppendLine("        }");
             }
 
             source.AppendLine("    }");
