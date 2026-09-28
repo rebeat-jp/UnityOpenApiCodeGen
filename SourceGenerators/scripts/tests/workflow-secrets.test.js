@@ -412,7 +412,7 @@ case "$1" in
 esac
 `;
   const started = Date.now();
-  const { f, result, marker } = runHost(t, [], { docker, env: { SOURCE_GENERATOR_CI_TOTAL_BUDGET_SECONDS: '2', SOURCE_GENERATOR_CI_CLEANUP_TIMEOUT_SECONDS: '3', DOCKER_CHILD_MARKER: childMarker, ...shortTerminationBudget } });
+  const { f, result, marker } = runHost(t, [], { docker, env: { SOURCE_GENERATOR_CI_TOTAL_BUDGET_SECONDS: '2', SOURCE_GENERATOR_CI_CLEANUP_TIMEOUT_SECONDS: '3', DOCKER_CHILD_MARKER: childMarker, ...shortTerminationBudget, SOURCE_GENERATOR_CI_HOST_TERMINATION_MARGIN_SECONDS: '4' } });
   assert.equal(result.status, 1, result.stderr); assert.ok(Date.now() - started < 15000, 'Docker control timeout must remain bounded');
   const commands = fs.readFileSync(marker, 'utf8'); assert.match(commands, /kill --signal TERM/); assert.match(commands, /kill --signal KILL/);
   const children = fs.readFileSync(childMarker, 'utf8').trim().split('\n').map(Number); assert.equal(children.length, 2);
