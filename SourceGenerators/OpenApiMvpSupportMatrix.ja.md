@@ -140,6 +140,7 @@ YAMLの診断IDは次のとおりです。
 | required nullable parameter | 非対応 | path/query/headerの`required: true`とnullableの組み合わせは`OACG101`です。参照チェーン全体を確認します。任意parameterのnull省略とDTOのnullableは維持します。 |
 | dot-only path segment | 非対応 | 引数置換後のpath segmentが`.`／`..`（1回percent-decodeした表現を含む）なら、HTTP送信前に`ArgumentException`です。`.hidden`、`a.b`、`...`や通常の複合segmentは使用できます。 |
 | path template braces | 一部対応 | 対応しない`{`／`}`は位置付き`OACG100`です。`/pets}`や`/pets/{id}}`も生成時に拒否します。 |
+| path keyの区切り文字 | 非対応 | Pathsのキーに生の`?`・`#`があると、キーの位置で`OACG100`です。path内の文字ならpercent-encodeし、query値はquery parameterで宣言します。 |
 | header identity | 対応 | header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。 |
 | header parameter name | 一部対応 | HTTP field-nameのASCII tokenのみを許可し、空白・コロン・非ASCIIなど不正な名前は`name`の位置付き`OACG100`です。 |
 | 予約header parameter | 非対応 | `Accept`と`Authorization`は大小文字を問わず名前の位置で`OACG101`です。`Content-Type`は次のcontent専用header制限に含まれます。 |
@@ -147,6 +148,7 @@ YAMLの診断IDは次のとおりです。
 | content専用header parameter | 非対応 | `Allow`、`Content-Disposition`、`Content-Encoding`、`Content-Language`、`Content-Length`、`Content-Location`、`Content-MD5`、`Content-Range`、`Content-Type`、`Expires`、`Last-Modified`は大小文字を問わず`OACG101`で拒否します。独自の`Content-*`名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に`InvalidOperationException`です。 |
 | request body | 一部対応 | パラメーター付きも含む具体的な`application/json`または`application/<subtype>+json`を送信します。`application/*+json`だけの宣言は`OACG101`で拒否し、具体型と併記された場合は具体型を選びます。type/subtypeを正規化して判定します。 |
 | TRACEのrequest body | 非対応 | `requestBody`を宣言するTRACEは、参照経由も含めてその位置の`OACG101`です。本文のないTRACEは使用できます。 |
+| Reference Objectの隣接項目 | 一部対応 | Parameter・Request Body・Responseの`$ref`と並ぶ未対応項目は、その位置の`OACG101`です。OpenAPI 3.1では文字列の`summary`・`description`を許可し、3.0ではジェネレーターの厳格な入力規則として`$ref`のみを受け付けます。Schema参照の規則は別行を参照してください。 |
 | 引用付きmedia parameter | 一部対応 | 引用文字とescapeはHTAB、またはDELを除くU+0020～U+00FFに限ります。U+00FFを超える文字を含むリクエスト・成功レスポンスのmedia宣言は位置付き`OACG100`です。 |
 | リクエストJSONシリアライズ | 対応 | リクエスト本文は専用のJson.NET serializerで生成し、ホストの`JsonConvert.DefaultSettings`から`$type`／`$id`／`$ref`などのメタデータ設定を引き継ぎません。日付変換と明示的なJSON `null`は維持します。 |
 | wildcard JSON media type | 一部対応 | `application/*+json`のみを認識します。`application/vnd.*+json`など部分的なwildcard subtypeは、リクエスト・成功レスポンスとも生成時に`OACG101`です。 |
@@ -155,12 +157,13 @@ YAMLの診断IDは次のとおりです。
 | optional nullable request body | 対応 | `requestBody.required: false`かつschemaがnullableの場合、`null`引数は本文省略、非`null`引数はJSON本文を送信します。生成メソッドの`<BodyParameterName>Specified`を`true`にすると、`null`引数でも明示的なJSON `null`を送信します。名前が衝突する場合は番号を付けます。 |
 | request charset | 一部対応 | UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。 |
 | successful response | 一部対応 | 少なくとも1つの`2xx` responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの値の宣言順は比較に影響しません。schema付き成功本文の空・空白はnullableでも`JsonSerializationException`です。JSON `null`はnullable schemaだけで許可します。非nullableな配列要素がJSON `null`なら、入れ子の配列やDTO内の配列も含めて拒否します。 |
-| 成功レスポンスの`Content-Type` | 一部対応 | そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は`JsonSerializationException`です。content宣言のない成功応答では`Content-Type`を照合しません。個別statusの宣言は`2XX`より優先します。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。 |
+| 本文を持てないレスポンス | 非対応 | HEADの全status、および成功204・205・`2XX`では非空の`content`宣言を位置付き`OACG101`で拒否します。Response Objectの参照先も検査します。空の`content`と本文なし応答は使用できます。`2XX`には204・205が含まれるため、型付き本文契約は対象外です。 |
+| 成功レスポンスの`Content-Type` | 一部対応 | そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は`JsonSerializationException`です。content宣言のない成功応答では`Content-Type`を照合しません。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。 |
 | 成功レスポンスのJSON | 一部対応 | RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの`$id`／`$ref`／`$values`参照メタデータを互換拡張として維持します。配列schemaでも`$id`／`$values`で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の`1.0`／`1e0`を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限`float`／`double`は`JsonSerializationException`です。 受信JSONの構文検査は通常最大64階層で、ホストが`JsonConvert.DefaultSettings.MaxDepth`に正の値を設定した場合はその値を使い、`null`または未指定なら64階層を維持します。 |
 | 成功レスポンスDTOのメタデータ名 | 非対応 | DTO propertyに`$id`、`$ref`、`$type`、`$values`を宣言すると、そのpropertyの位置で`OACG100`です。リクエスト専用DTOでは使用できます。schemaで宣言していないJson.NET参照メタデータの互換動作は維持します。 |
 | error/default response | 一部対応 | JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。 |
 | response extension | 対応 | operationのResponses Objectでは`x-*`を除外します。`components.responses`の`x-*`名は通常のResponse/Referenceです。 |
-| response header | 非対応 | nonempty response headerは対象外です。 |
+| response header | 非対応 | 非空の`headers`は`OACG101`です。`headers`がある場合はobjectが必要で、scalar・array・nullは位置付き`OACG100`です。空objectは使用できます。 |
 
 status codeはASCII数字で検証します。属性付きのジェネリックclassは`OACG005`で拒否します。
 

@@ -140,6 +140,7 @@ YAML diagnostic IDs are stable within Phase 5:
 | required nullable parameter | Unsupported | path/query/headerの`required: true`とnullableの組み合わせは`OACG101`です。参照チェーン全体を確認します。任意parameterのnull省略とDTOのnullableは維持します。 |
 | dot-only path segment | Unsupported | 引数置換後のpath segmentが`.`／`..`（1回percent-decodeした表現を含む）なら、HTTP送信前に`ArgumentException`です。`.hidden`、`a.b`、`...`や通常の複合segmentは使用できます。 |
 | path template braces | Partial | 対応しない`{`／`}`は位置付き`OACG100`です。`/pets}`や`/pets/{id}}`も生成時に拒否します。 |
+| path key delimiters | Unsupported | Raw `?` or `#` in a Paths key receives positioned `OACG100`; percent-encoded path data remains available. Declare query values as query parameters. |
 | header identity | Supported | header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。 |
 | header parameter name | Partial | HTTP field-nameのASCII tokenのみを許可し、空白・コロン・非ASCIIなど不正な名前は`name`の位置付き`OACG100`です。 |
 | reserved header parameters | Unsupported | `Accept` and `Authorization` are rejected with positioned `OACG101`, including case variants. `Content-Type` remains covered by the content-only header restriction below. |
@@ -147,6 +148,7 @@ YAML diagnostic IDs are stable within Phase 5:
 | content専用header parameter | Unsupported | `Allow`、`Content-Disposition`、`Content-Encoding`、`Content-Language`、`Content-Length`、`Content-Location`、`Content-MD5`、`Content-Range`、`Content-Type`、`Expires`、`Last-Modified`は大小文字を問わず`OACG101`で拒否します。独自の`Content-*`名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に`InvalidOperationException`です。 |
 | request body | Partial | パラメーター付きも含む具体的な`application/json`または`application/<subtype>+json`を送信します。`application/*+json`だけの宣言は`OACG101`で拒否し、具体型と併記された場合は具体型を選びます。type/subtypeを正規化して判定します。 |
 | TRACE request body | Unsupported | A TRACE operation declaring `requestBody`, including a reference, receives positioned `OACG101`. Bodyless TRACE remains supported. |
+| Reference Object siblings | Partial | Parameter, Request Body, and Response references reject unsupported sibling fields with positioned `OACG101`. OpenAPI 3.1 permits string `summary` and `description` annotations; 3.0 accepts only `$ref` under this generator's strict input policy. Schema reference siblings follow the separate schema rule below. |
 | quoted media parameters | Partial | Quoted HTTP parameter characters and escapes must be HTAB or within U+0020–U+00FF, excluding DEL. A character above U+00FF receives positioned `OACG100` in request and successful response media declarations. |
 | request JSON serialization | Supported | リクエスト本文は専用のJson.NET serializerで生成し、ホストの`JsonConvert.DefaultSettings`から`$type`／`$id`／`$ref`などのメタデータ設定を引き継ぎません。日付変換と明示的なJSON `null`は維持します。 |
 | wildcard JSON media type | Partial | `application/*+json`のみを認識します。`application/vnd.*+json`など部分的なwildcard subtypeは、リクエスト・成功レスポンスとも生成時に`OACG101`です。 |
@@ -155,12 +157,13 @@ YAML diagnostic IDs are stable within Phase 5:
 | optional nullable request body | Supported | `requestBody.required: false`かつschemaがnullableの場合、`null`引数は本文省略、非`null`引数はJSON本文を送信します。生成メソッドの`<BodyParameterName>Specified`を`true`にすると、`null`引数でも明示的なJSON `null`を送信します。名前が衝突する場合は番号を付けます。 |
 | request charset | Partial | UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。 |
 | successful response | Partial | 少なくとも1つの`2xx` responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの宣言順は比較に影響しません。schema付き成功本文の空・空白はnullableでも`JsonSerializationException`です。JSON `null`はnullable schemaだけで許可します。非nullableな配列要素がJSON `null`なら、入れ子の配列とDTO内の配列も含めて拒否します。 |
-| successful response `Content-Type` | Partial | そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は`JsonSerializationException`です。content宣言のない成功応答では`Content-Type`を照合しません。個別statusの宣言は`2XX`より優先します。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。 |
+| bodyless response content | Unsupported | HEAD responses at any status, and successful 204, 205, or `2XX` responses cannot declare nonempty `content`; referenced Response Objects are checked too. The content location receives `OACG101`. Empty `content` and bodyless responses remain supported. `2XX` spans 204 and 205, so a typed `2XX` body contract is unsupported. |
+| successful response `Content-Type` | Partial | そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は`JsonSerializationException`です。content宣言のない成功応答では`Content-Type`を照合しません。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。 |
 | successful response JSON | Partial | RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの`$id`／`$ref`／`$values`参照メタデータを互換拡張として維持します。配列schemaでも`$id`／`$values`で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の`1.0`／`1e0`を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限`float`／`double`は`JsonSerializationException`です。 受信JSONの構文検査は通常最大64階層で、ホストが`JsonConvert.DefaultSettings.MaxDepth`に正の値を設定した場合はその値を使い、`null`または未指定なら64階層を維持します。 |
 | response DTO metadata names | Unsupported | A successful response DTO cannot declare `$id`, `$ref`, `$type`, or `$values` as data properties; the property location receives `OACG100`. Request-only DTOs may declare them. Json.NET reference metadata remains supported where these names are not declared as schema properties. |
 | error/default response | Partial | JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。 |
 | response extension | Supported | operationのResponses Objectでは`x-*`を除外します。`components.responses`の`x-*`名は通常のResponse/Referenceです。 |
-| response header | Unsupported | nonempty response headerは対象外です。 |
+| response header | Unsupported | Nonempty response `headers` is unsupported (`OACG101`). If present, `headers` must be an object; scalar, array, and null values receive positioned `OACG100`. Empty objects are accepted. |
 
 status codeはASCII数字で検証します。属性付きのジェネリックclassは`OACG005`で拒否します。
 

@@ -386,6 +386,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>対応しない<code>{</code>／<code>}</code>は位置付き<code>OACG100</code>です。<code>/pets}</code>や<code>/pets/{id}}</code>も生成時に拒否します。</td>
 </tr>
 <tr>
+<td>path key delimiters</td>
+<td>Unsupported</td>
+<td>Raw <code>?</code> or <code>#</code> in a Paths key receives positioned <code>OACG100</code>; percent-encoded path data remains available. Declare query values as query parameters.</td>
+</tr>
+<tr>
 <td>header identity</td>
 <td>Supported</td>
 <td>header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。</td>
@@ -419,6 +424,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>TRACE request body</td>
 <td>Unsupported</td>
 <td>A TRACE operation declaring <code>requestBody</code>, including a reference, receives positioned <code>OACG101</code>. Bodyless TRACE remains supported.</td>
+</tr>
+<tr>
+<td>Reference Object siblings</td>
+<td>Partial</td>
+<td>Parameter, Request Body, and Response references reject unsupported sibling fields with positioned <code>OACG101</code>. OpenAPI 3.1 permits string <code>summary</code> and <code>description</code> annotations; 3.0 accepts only <code>$ref</code> under this generator&#39;s strict input policy. Schema reference siblings follow the separate schema rule below.</td>
 </tr>
 <tr>
 <td>quoted media parameters</td>
@@ -461,9 +471,14 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>少なくとも1つの<code>2xx</code> responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの宣言順は比較に影響しません。schema付き成功本文の空・空白はnullableでも<code>JsonSerializationException</code>です。JSON <code>null</code>はnullable schemaだけで許可します。非nullableな配列要素がJSON <code>null</code>なら、入れ子の配列とDTO内の配列も含めて拒否します。</td>
 </tr>
 <tr>
+<td>bodyless response content</td>
+<td>Unsupported</td>
+<td>HEAD responses at any status, and successful 204, 205, or <code>2XX</code> responses cannot declare nonempty <code>content</code>; referenced Response Objects are checked too. The content location receives <code>OACG101</code>. Empty <code>content</code> and bodyless responses remain supported. <code>2XX</code> spans 204 and 205, so a typed <code>2XX</code> body contract is unsupported.</td>
+</tr>
+<tr>
 <td>successful response <code>Content-Type</code></td>
 <td>Partial</td>
-<td>そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は<code>JsonSerializationException</code>です。content宣言のない成功応答では<code>Content-Type</code>を照合しません。個別statusの宣言は<code>2XX</code>より優先します。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。</td>
+<td>そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は<code>JsonSerializationException</code>です。content宣言のない成功応答では<code>Content-Type</code>を照合しません。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。</td>
 </tr>
 <tr>
 <td>successful response JSON</td>
@@ -488,7 +503,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>response header</td>
 <td>Unsupported</td>
-<td>nonempty response headerは対象外です。</td>
+<td>Nonempty response <code>headers</code> is unsupported (<code>OACG101</code>). If present, <code>headers</code> must be an object; scalar, array, and null values receive positioned <code>OACG100</code>. Empty objects are accepted.</td>
 </tr>
 </tbody></table>
 <p>status codeはASCII数字で検証します。属性付きのジェネリックclassは<code>OACG005</code>で拒否します。</p>

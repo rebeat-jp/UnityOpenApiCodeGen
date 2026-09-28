@@ -174,6 +174,8 @@ An omitted or empty root `servers` list defaults to `/` and therefore also
 requires a base address. Absolute server URLs must use HTTP or HTTPS; other
 schemes receive a positioned `OACG101`. Unmatched path-template braces and header
 parameter names outside the ASCII HTTP field-name token syntax receive a positioned `OACG100`.
+Raw `?` and `#` in a Paths key also receive positioned `OACG100`; encode path
+data and declare query parameters separately.
 `Accept` and `Authorization` header parameters receive `OACG101`, regardless of
 case. Header values containing ASCII control characters other than HTAB fail
 with `ArgumentException` before sending. A TRACE operation with `requestBody`
@@ -185,6 +187,13 @@ media type. A request that declares only `application/*+json` receives `OACG101`
 when a concrete type is also declared, that type is selected.
 Partial wildcard subtypes such as `application/vnd.*+json` receive `OACG101`
 for request and successful response content.
+HEAD responses and successful 204, 205, or `2XX` responses cannot declare
+body content, including through a response reference (`OACG101`). A typed
+`2XX` contract is unsupported because that range includes 204 and 205.
+Present response `headers` must be an object; nonempty maps remain unsupported.
+Parameter, Request Body, and Response `$ref` siblings are checked: OpenAPI 3.1
+allows string `summary` and `description`, while this generator accepts only
+`$ref` in OpenAPI 3.0 to avoid silently ignored contract fields.
 Quoted media parameters allow HTAB and U+0020–U+00FF except DEL; characters
 above U+00FF receive `OACG100`. Recognized schema formats (`int64`, `float`,
 `decimal`, `date`, `date-time`, `uuid`, and `binary`) require exact lowercase
@@ -208,8 +217,7 @@ omitted optional parameters remain valid. An optional query parameter passed as
 `null` is omitted, while an explicit empty string is sent as `name=`. For a successful response that declares content and supplies a
 `Content-Type`, the client checks it against the media types declared for that
 status before deserializing; malformed, multiple, and conflicting values raise
-`JsonSerializationException`. A specific status declaration takes precedence
-over `2XX`. A successful response without declared content skips this media
+`JsonSerializationException`. A successful response without declared content skips this media
 check; responses without a `Content-Type` retain the existing behavior.
 Every schema-declared successful response requires a nonempty JSON body; a
 nullable schema accepts the JSON token `null`. Response JSON is checked for

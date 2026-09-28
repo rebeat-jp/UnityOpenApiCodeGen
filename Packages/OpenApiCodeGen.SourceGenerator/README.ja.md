@@ -95,6 +95,8 @@ root `servers`を省略するか空配列にした場合は`/`が既定値とな
 絶対server URLはHTTP(S)のみ対応し、FTPなどのschemeは位置付き`OACG101`で拒否します。
 path templateで対応しない`{`／`}`は、`/pets}`や`/pets/{id}}`を含めて位置付き`OACG100`です。
 header parameterの名前はASCIIのHTTP field-name tokenに限り、不正な名前は位置付き`OACG100`です。
+Pathsのキーに生の`?`・`#`がある場合も位置付き`OACG100`です。path内の文字は
+percent-encodeし、query値はquery parameterで宣言します。
 `Accept`と`Authorization`のheader parameterは大小文字を問わず`OACG101`です。
 header値にHTAB以外のASCII制御文字があると、送信前に`ArgumentException`になります。
 `requestBody`を宣言したTRACEは、参照経由も含めて`OACG101`です。
@@ -104,6 +106,12 @@ header値にHTAB以外のASCII制御文字があると、送信前に`ArgumentEx
 `application/*+json`のみを宣言すると`OACG101`になり、具体型も宣言すると具体型を選びます。
 `application/vnd.*+json`など部分的なwildcard subtypeは、リクエスト・成功レスポンスとも
 生成時に`OACG101`で拒否します。
+HEADの応答と成功204・205・`2XX`には、参照先を含めて本文の`content`を宣言できません
+（`OACG101`）。`2XX`は204・205を含むため、型付き本文契約は対象外です。
+responseの`headers`を宣言する場合はobjectが必要で、非空のmapは対象外です。
+Parameter・Request Body・Responseの`$ref`と並ぶ項目も検査します。OpenAPI 3.1では
+文字列の`summary`・`description`を許可し、3.0では契約項目の黙示的な無視を避けるため
+ジェネレーターの入力規則として`$ref`のみを受け付けます。
 引用付きmedia parameterはHTABと、DELを除くU+0020～U+00FFを許可します。
 U+00FFを超える文字は`OACG100`です。`int64`、`float`、`decimal`、`date`、
 `date-time`、`uuid`、`binary`のformatは小文字の完全一致だけを特別扱いし、
@@ -123,7 +131,7 @@ HTTP送信前に`ArgumentOutOfRangeException`になります。任意パラメ�
 任意queryに`null`を渡すと省略し、明示的な空文字列は`name=`として送信します。
 成功レスポンスにcontent宣言と`Content-Type`があれば、そのstatusで宣言されたmedia typeと照合してから
 本文を読みます。不正・複数・宣言と不一致の値は`JsonSerializationException`です。
-個別statusの宣言は`2XX`より優先します。content宣言のない成功応答では`Content-Type`を照合せず、
+content宣言のない成功応答では`Content-Type`を照合せず、
 `Content-Type`がない場合も従来どおり本文を読みます。
 成功レスポンスのJSONは、デシリアライズ前にRFC 8259の構文、重複・未知property、
 scalarのJSON token型を検査します。`float`／`double`は有限値に限り、`1.0`や`1e0`のような

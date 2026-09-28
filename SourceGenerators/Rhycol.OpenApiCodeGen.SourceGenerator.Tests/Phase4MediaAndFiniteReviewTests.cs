@@ -61,22 +61,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             }
         }
 
-        [Fact]
-        public async Task SpecificStatusMediaTakesPriorityOverRange()
-        {
-            var document = JObject.Parse(CreateDocument("getValue", "get", "not-used", "application/json",
-                "\"type\": \"string\"", "2XX", "application/*+json"));
-            document["paths"]!["/value"]!["get"]!["responses"]!["200"] =
-                JObject.Parse("{\"description\":\"OK\",\"content\":{\"application/json\":{\"schema\":{\"type\":\"string\"}}}}");
-            Assembly assembly = Compile(document.ToString(Formatting.None));
-            var handler = new ReplyHandler(HttpStatusCode.OK, "\"ok\"", "application/problem+json");
-            using var http = new HttpClient(handler);
-            object api = Activator.CreateInstance(assembly.GetType("Generated.Phase4.Phase4Api")!, http)!;
-            await Assert.ThrowsAsync<JsonSerializationException>(() => Invoke(api, "getValue", CancellationToken.None));
-            handler.ContentType = "application/json";
-            Assert.Equal("ok", await Invoke(api, "getValue", CancellationToken.None));
-        }
-
         [Theory]
         [InlineData("invalid media value")]
         [InlineData("application/json, text/plain")]

@@ -345,6 +345,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     throw Invalid(pathProperty.Value, "OpenAPI path keys must begin with '/'.");
                 }
 
+                if (pathProperty.Name.IndexOf('?') >= 0 || pathProperty.Name.IndexOf('#') >= 0)
+                {
+                    OpenApiSourceLocation valueLocation = CreateLocation(pathProperty.Value);
+                    throw new OpenApiSemanticException(
+                        OpenApiSemanticErrorKind.InvalidDocument,
+                        "OpenAPI path keys cannot contain raw '?' or '#' characters; percent-encode them in the path.",
+                        new OpenApiSourceLocation(
+                            valueLocation.SourcePath,
+                            valueLocation.DocumentId,
+                            pathProperty.Line,
+                            pathProperty.Column,
+                            valueLocation.LogicalPath),
+                        Array.Empty<OpenApiSourceLocation>());
+                }
+
                 SpecNode pathItem = pathProperty.Value;
                 RequireKind(pathItem, SpecValueKind.Object, "Each OpenAPI path item must be an object.");
                 ThrowIfPresent(pathItem, "$ref", "Path Item $ref values are not supported by the Phase 4 MVP.");
@@ -448,7 +463,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 operationId + "Request");
             ParsedResponses responses = ParseResponses(
                 RequireProperty(operationNode, "responses"),
-                operationId + "Response");
+                operationId + "Response",
+                method);
 
             return new OpenApiSemanticOperation(
                 operationId,
@@ -518,6 +534,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             RequireKind(node, SpecValueKind.Object, "Each parameter must be an object or an internal $ref.");
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
+                ValidateReferenceObjectSiblings(node);
                 _resolver.GetComponentName(_currentDocumentId, reference, "parameters", referenceNode);
                 return ParseReferenced(
                     reference,
@@ -728,6 +745,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             RequireKind(node, SpecValueKind.Object, "The requestBody field must be an object or an internal $ref.");
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
+                ValidateReferenceObjectSiblings(node);
                 _resolver.GetComponentName(_currentDocumentId, reference, "requestBodies", referenceNode);
                 return ParseReferenced(
                     reference,
@@ -753,7 +771,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 CreateLocation(node));
         }
 
-        private ParsedResponses ParseResponses(SpecNode responsesNode, string suggestedName)
+        private ParsedResponses ParseResponses(SpecNode responsesNode, string suggestedName, string method)
         {
             RequireKind(responsesNode, SpecValueKind.Object, "The responses field must be an object.");
             var successCodes = new List<string>();
@@ -775,7 +793,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     responseProperty.Value,
                     new HashSet<NormalizedSpecNodeIdentity>(),
                     suggestedName,
-                    parseJsonBody: isSuccess);
+                    parseJsonBody: isSuccess,
+                    forbidBodyContent: method == "head" ||
+                                       (isSuccess &&
+                                        (responseProperty.Name == "204" ||
+                                         responseProperty.Name == "205" ||
+                                         string.Equals(responseProperty.Name, "2XX", StringComparison.OrdinalIgnoreCase))));
                 if (!isSuccess)
                 {
                     continue;
@@ -863,30 +886,47 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             SpecNode node,
             HashSet<NormalizedSpecNodeIdentity> referenceStack,
             string suggestedName,
-            bool parseJsonBody)
+            bool parseJsonBody,
+            bool forbidBodyContent = false)
         {
             RequireKind(node, SpecValueKind.Object, "Each response must be an object or an internal $ref.");
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
+                ValidateReferenceObjectSiblings(node);
                 _resolver.GetComponentName(_currentDocumentId, reference, "responses", referenceNode);
                 return ParseReferenced(
                     reference,
                     referenceNode,
                     referenceStack,
-                    target => ParseResponse(target, referenceStack, suggestedName, parseJsonBody));
+                    target => ParseResponse(target, referenceStack, suggestedName, parseJsonBody, forbidBodyContent));
             }
 
             RequireString(RequireProperty(node, "description"), "The response description must be a string.");
             SpecNode? headers = GetProperty(node, "headers");
-            if (headers is not null && headers.ValueKind == SpecValueKind.Object && headers.EnumerateObject().Any())
+            if (headers is not null)
             {
-                throw Unsupported(headers, "Response headers are not exposed by the Phase 4 client contract.");
+                RequireKind(headers, SpecValueKind.Object, "The response headers field must be an object.");
+                if (headers.EnumerateObject().Any())
+                {
+                    throw Unsupported(headers, "Response headers are not exposed by the Phase 4 client contract.");
+                }
             }
 
             ThrowIfPresent(node, "links", "OpenAPI response links are not supported by the Phase 4 MVP.");
             SpecNode? contentNode = GetProperty(node, "content");
             if (contentNode is null)
             {
+                return new ParsedContent(string.Empty, null, Array.Empty<string>());
+            }
+
+            if (forbidBodyContent)
+            {
+                RequireKind(contentNode, SpecValueKind.Object, "The response content field must be an object.");
+                if (contentNode.EnumerateObject().Any())
+                {
+                    throw Unsupported(contentNode, "HEAD, 204, 205, and 2XX success responses cannot declare body content in the Phase 4 client contract.");
+                }
+
                 return new ParsedContent(string.Empty, null, Array.Empty<string>());
             }
 
@@ -1880,6 +1920,29 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             return values;
+        }
+
+        private void ValidateReferenceObjectSiblings(SpecNode node)
+        {
+            foreach (SpecProperty property in node.EnumerateObject())
+            {
+                if (property.Name == "$ref")
+                {
+                    continue;
+                }
+
+                if (_minorVersion == 1 &&
+                    (property.Name == "summary" || property.Name == "description"))
+                {
+                    RequireString(property.Value, "Reference Object '" + property.Name + "' must be a string.");
+                    continue;
+                }
+
+                throw Unsupported(
+                    property.Value,
+                    "Reference Object field '" + property.Name +
+                    "' is not supported alongside $ref in OpenAPI 3." + _minorVersion + ".");
+            }
         }
 
         private static bool TryGetReference(SpecNode node, out string reference, out SpecNode referenceNode)
