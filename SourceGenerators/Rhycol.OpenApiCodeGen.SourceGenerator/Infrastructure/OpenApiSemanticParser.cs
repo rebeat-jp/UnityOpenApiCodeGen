@@ -239,7 +239,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             SpecNode server = servers[0];
             RequireKind(server, SpecValueKind.Object, "Each server entry must be an object.");
             ThrowIfPresent(server, "variables", "Server URL variables are not supported by the Phase 4 MVP.");
-            return RequireString(RequireProperty(server, "url"), "The server URL must be a string.");
+            SpecNode urlNode = RequireProperty(server, "url");
+            string url = RequireString(urlNode, "The server URL must be a string.");
+            if (!url.StartsWith("/", StringComparison.Ordinal) &&
+                Uri.TryCreate(url, UriKind.Absolute, out Uri? absoluteUrl) &&
+                absoluteUrl.Scheme != Uri.UriSchemeHttp &&
+                absoluteUrl.Scheme != Uri.UriSchemeHttps)
+            {
+                throw Unsupported(urlNode, "Only HTTP and HTTPS absolute server URLs are supported.");
+            }
+
+            return url;
         }
 
         private void ParseComponentSchemas()
@@ -1096,6 +1106,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 throw Invalid(
                     mediaProperty.Value,
                     "Invalid media type '" + mediaProperty.Name + "': " + error);
+            }
+
+            if (mediaType.Subtype.IndexOf('*') >= 0 &&
+                !(string.Equals(mediaType.Type, "application", StringComparison.Ordinal) &&
+                  string.Equals(mediaType.Subtype, "*+json", StringComparison.Ordinal)))
+            {
+                throw Unsupported(
+                    mediaProperty.Value,
+                    "Only application/*+json is supported as a wildcard media subtype: '" +
+                    mediaProperty.Name + "'.");
             }
 
             return mediaType;

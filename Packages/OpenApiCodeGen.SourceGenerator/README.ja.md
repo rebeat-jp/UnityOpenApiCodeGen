@@ -86,10 +86,13 @@ server URLが`//host/path`形式の場合は`HttpClient.BaseAddress`のschemeで
 `/path`形式は同じoriginのrootから解決し、`BaseAddress`のpathとqueryを引き継ぎません。
 どちらも`BaseAddress`が未設定なら送信前に`InvalidOperationException`になります。
 root `servers`を省略するか空配列にした場合は`/`が既定値となり、同様に`BaseAddress`が必要です。
+絶対server URLはHTTP(S)のみ対応し、FTPなどのschemeは位置付き`OACG101`で拒否します。
 明示的な`baseUrl=""`の上書きは相対URLのままです。
 相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。
 リクエスト本文には具体的な`application/json`または`application/<subtype>+json`を送信します。
 `application/*+json`のみを宣言すると`OACG101`になり、具体型も宣言すると具体型を選びます。
+`application/vnd.*+json`など部分的なwildcard subtypeは、リクエスト・成功レスポンスとも
+生成時に`OACG101`で拒否します。
 
 schema付き成功レスポンスの空・空白本文は、nullableでも`JsonSerializationException`になります。
 JSON `null`はnullableなschemaでのみ受け取れます。

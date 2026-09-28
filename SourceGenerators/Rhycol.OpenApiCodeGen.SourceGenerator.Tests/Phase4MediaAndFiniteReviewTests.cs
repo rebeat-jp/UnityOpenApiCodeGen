@@ -148,6 +148,38 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Contains("requestBody/content", diagnostic.GetMessage());
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void UnsupportedWildcardSubtypeReportsLocatedDiagnostic(bool response)
+        {
+            string document = response
+                ? CreateDocument("getValue", "get", "not-used", "application/json",
+                    "\"type\": \"string\"", "200", "application/vnd.*+json")
+                : CreateDocument("sendValue", "post", "application/vnd.*+json", "application/json",
+                    "\"type\": \"string\"", "204", null);
+
+            Diagnostic diagnostic = Assert.Single(
+                Phase4GeneratorTestHarness.GenerateAndCompile(document).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("Only application/*+json", diagnostic.GetMessage());
+            Assert.Contains("content/application~1vnd.*+json", diagnostic.GetMessage());
+        }
+
+        [Theory]
+        [InlineData("application/*+json")]
+        [InlineData("application/vnd.example+json")]
+        public void SupportedResponseJsonMediaRangesCompile(string mediaType)
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                CreateDocument("getValue", "get", "not-used", "application/json",
+                    "\"type\": \"string\"", "200", mediaType));
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+        }
+
         [Fact]
         public async Task ConcreteRequestMediaWinsOverWildcard()
         {

@@ -5,6 +5,8 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Microsoft.CodeAnalysis;
+
 using Newtonsoft.Json;
 
 using Xunit;
@@ -13,6 +15,36 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 {
     public sealed class Phase4HttpRequestBoundaryTests
     {
+        [Theory]
+        [InlineData("ftp://api.example.test/v1")]
+        [InlineData("file:///tmp/api")]
+        [InlineData("wss://api.example.test/v1")]
+        public void NonHttpAbsoluteServerUrlReportsLocatedDiagnostic(string serverUrl)
+        {
+            Diagnostic diagnostic = Assert.Single(
+                Phase4GeneratorTestHarness.GenerateAndCompile(CreateGetDocument(serverUrl))
+                    .RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("Only HTTP and HTTPS", diagnostic.GetMessage());
+            Assert.Contains("logical path '/servers/0/url'", diagnostic.GetMessage());
+        }
+
+        [Theory]
+        [InlineData("http://api.example.test/v1")]
+        [InlineData("https://api.example.test/v1")]
+        [InlineData("//api.example.test/v1")]
+        [InlineData("/v1")]
+        [InlineData("v1")]
+        public void HttpAndRelativeServerUrlsGenerate(string serverUrl)
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                CreateGetDocument(serverUrl));
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+        }
+
         [Theory]
         [InlineData(true, false, true, null)]
         [InlineData(true, true, false, "null")]

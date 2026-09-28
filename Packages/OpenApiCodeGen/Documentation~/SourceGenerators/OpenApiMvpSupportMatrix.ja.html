@@ -348,7 +348,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td><code>servers</code></td>
 <td>一部対応</td>
-<td>URLは0個または1個、variablesなし。root <code>servers</code>の省略・空配列は<code>/</code>を既定値とします。<code>//host/path</code>は<code>HttpClient.BaseAddress</code>のschemeで解決します。<code>/path</code>と既定の<code>/</code>は同じoriginのrootから解決し、<code>BaseAddress</code>のpathとqueryを引き継ぎません。<code>BaseAddress</code>が必要な場合に未設定なら送信前に<code>InvalidOperationException</code>です。明示的な空文字<code>baseUrl</code> overrideは相対URLとして扱います。相対server URLとoperation pathが<code>/</code>の場合、<code>BaseAddress</code>のqueryは1回だけ付加します。</td>
+<td>URLは0個または1個、variablesなし。絶対URLはHTTP(S)のみで、FTPなどは<code>OACG101</code>です。root <code>servers</code>の省略・空配列は<code>/</code>を既定値とします。<code>//host/path</code>は<code>HttpClient.BaseAddress</code>のschemeで解決します。<code>/path</code>と既定の<code>/</code>は同じoriginのrootから解決し、<code>BaseAddress</code>のpathとqueryを引き継ぎません。<code>BaseAddress</code>が必要な場合に未設定なら送信前に<code>InvalidOperationException</code>です。明示的な空文字<code>baseUrl</code> overrideは相対URLとして扱います。相対server URLとoperation pathが<code>/</code>の場合、<code>BaseAddress</code>のqueryは1回だけ付加します。</td>
 </tr>
 <tr>
 <td>parameter location</td>
@@ -394,6 +394,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>request body</td>
 <td>一部対応</td>
 <td>パラメーター付きも含む具体的な<code>application/json</code>または<code>application/&lt;subtype&gt;+json</code>を送信します。<code>application/*+json</code>だけの宣言は<code>OACG101</code>で拒否し、具体型と併記された場合は具体型を選びます。type/subtypeを正規化して判定します。</td>
+</tr>
+<tr>
+<td>wildcard JSON media type</td>
+<td>一部対応</td>
+<td><code>application/*+json</code>のみを認識します。<code>application/vnd.*+json</code>など部分的なwildcard subtypeは、リクエスト・成功レスポンスとも生成時に<code>OACG101</code>です。</td>
 </tr>
 <tr>
 <td>required non-nullable request body</td>

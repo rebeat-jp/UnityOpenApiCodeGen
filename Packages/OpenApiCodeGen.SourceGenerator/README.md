@@ -163,11 +163,14 @@ body can send JSON `null`. A `//host/path` server URL uses the scheme from
 `HttpClient.BaseAddress`; a `/path` server URL starts at the origin root,
 ignoring the base address path and query. Both forms require a base address.
 An omitted or empty root `servers` list defaults to `/` and therefore also
-requires a base address. An explicit `baseUrl=""` override remains relative.
+requires a base address. Absolute server URLs must use HTTP or HTTPS; other
+schemes receive a positioned `OACG101`. An explicit `baseUrl=""` override remains relative.
 With a relative server URL, an operation at `/` includes a base address query once.
 Request bodies send a concrete `application/json` or `application/<subtype>+json`
 media type. A request that declares only `application/*+json` receives `OACG101`;
 when a concrete type is also declared, that type is selected.
+Partial wildcard subtypes such as `application/vnd.*+json` receive `OACG101`
+for request and successful response content.
 
 Serialization checks required non-nullable reference properties in request
 DTOs, including nested DTOs, before the HTTP request is sent. Required nullable
