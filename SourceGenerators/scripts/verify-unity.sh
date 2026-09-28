@@ -158,7 +158,8 @@ if [[ ! -f "${base_archive}" || ! -f "${source_generator_archive}" ]]; then
   if [[ "${SOURCE_GENERATOR_CI:-0}" == "1" ]]; then
     fail_not_run "the CI candidate tarball is missing; repacking is forbidden"
   fi
-  if ! "${scripts_directory}/pack-release.sh" "${pack_release_args[@]}"; then
+  # Bash 3.2 treats an empty array expansion as unbound under set -u.
+  if ! "${scripts_directory}/pack-release.sh" ${pack_release_args[@]+"${pack_release_args[@]}"}; then
     fail_not_run "release-candidate packing failed before the Unity gate"
   fi
 fi

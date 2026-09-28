@@ -38,7 +38,7 @@ fi
 
 if [[ "${dotnet_status}" -eq 0 ]]; then
   if SOURCE_GENERATOR_RELEASE_OUTPUT="${release_output}" \
-      "${scripts_directory}/pack-release.sh" "${pack_release_args[@]}"; then
+      "${scripts_directory}/pack-release.sh" ${pack_release_args[@]+"${pack_release_args[@]}"}; then
     :
   else
     dotnet_status=$?
@@ -61,7 +61,7 @@ run_gate() {
   if SOURCE_GENERATOR_SKIP_DOTNET_VERIFY=1 \
       SOURCE_GENERATOR_RELEASE_OUTPUT="${release_output}" \
       SOURCE_GENERATOR_EVIDENCE_ROOT="${evidence_root}/${version}" \
-      "${gate_script}" "${version}" "${pack_release_args[@]}"; then
+      "${gate_script}" "${version}" ${pack_release_args[@]+"${pack_release_args[@]}"}; then
     :
   else
     gate_status=$?
