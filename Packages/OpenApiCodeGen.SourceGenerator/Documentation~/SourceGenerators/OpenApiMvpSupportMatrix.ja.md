@@ -153,6 +153,7 @@ YAMLの診断IDは次のとおりです。
 | successful response | 一部対応 | 少なくとも1つの`2xx` responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの値の宣言順は比較に影響しません。schema付き成功本文の空・空白はnullableでも`JsonSerializationException`です。JSON `null`はnullable schemaだけで許可します。非nullableな配列要素がJSON `null`なら、入れ子の配列やDTO内の配列も含めて拒否します。 |
 | 成功レスポンスの`Content-Type` | 一部対応 | そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は`JsonSerializationException`です。content宣言のない成功応答では`Content-Type`を照合しません。個別statusの宣言は`2XX`より優先します。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。 |
 | 成功レスポンスのJSON | 一部対応 | RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの`$id`／`$ref`／`$values`参照メタデータを互換拡張として維持します。配列schemaでも`$id`／`$values`で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の`1.0`／`1e0`を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限`float`／`double`は`JsonSerializationException`です。 受信JSONの構文検査は通常最大64階層で、ホストが`JsonConvert.DefaultSettings.MaxDepth`に正の値を設定した場合はその値を使い、`null`または未指定なら64階層を維持します。 |
+| 成功レスポンスDTOのメタデータ名 | 非対応 | DTO propertyに`$id`、`$ref`、`$type`、`$values`を宣言すると、そのpropertyの位置で`OACG100`です。リクエスト専用DTOでは使用できます。schemaで宣言していないJson.NET参照メタデータの互換動作は維持します。 |
 | error/default response | 一部対応 | JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。 |
 | response extension | 対応 | operationのResponses Objectでは`x-*`を除外します。`components.responses`の`x-*`名は通常のResponse/Referenceです。 |
 | response header | 非対応 | nonempty response headerは対象外です。 |
@@ -212,10 +213,17 @@ stableで、generated nameはordinalのdeterministic namingとsuffixによるcol
 複数specでDTO名が重なる場合は、generated namespaceを分けてください。current generated typeは
 namespace-levelのため、同じnamespaceには共存できません。
 
+`apiName`が生成クライアントの固定メンバー名と一致すると`OACG005`です。予約名は
+`_httpClient`、`_baseUrl`、`DateOnlyJsonConverterInstance`、`CreateRequestUri`、
+`CombineAbsoluteUri`、`CombinePaths`、`CombineQueries`、`AppendQuery`、
+`SplitPathAndQuery`、`ValidatePathSegments`、`CreateJsonContent`、
+`ConvertToString`、`DateOnlyJsonConverter`です。
+
 ## 診断
 
 | ID | 意味 |
 | --- | --- |
+| `OACG005` | 生成メンバーの予約名を`apiName`に使う場合など、不正なクライアント定義 |
 | `OACG100` | InvalidDocument |
 | `OACG101` | UnsupportedElement（bare non-Schema、`$id`/`$anchor`/`$dynamicAnchor`/`$dynamicRef`など） |
 | `OACG102` | Unresolved document or JSON Pointer target |

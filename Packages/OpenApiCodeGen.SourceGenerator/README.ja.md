@@ -26,6 +26,8 @@ Unity 6000.0以降のプロジェクトの`Packages/manifest.json`に両パッ�
    またはHTTP(S) URLと、`Assets`配下の出力フォルダーを指定して`Generate`を押します。
 3. 生成先asmdefから`Unity.OpenApiCodeGen.SourceGenerator`を直接参照します。
 
+生成クライアントの固定メンバー名と同じAPI名は`OACG005`で拒否します。予約名の一覧は対応表を参照してください。
+
 `Generate`はURLの明示的な取得・更新操作です。バックグラウンド取得やDockerへの自動切替はありません。
 失敗時は最後に成功したキャッシュとコンパイラー入力を保持します。内容が同一なら再コンパイルを要求しません。
 
@@ -119,6 +121,8 @@ scalarのJSON token型を検査します。`float`／`double`は有限値に限�
 数学的整数は生成CLR型の範囲内で受け入れます。Json.NETの`$id`／`$ref`／`$values`参照メタデータは
 配列を包むJSON objectも含めて互換拡張として維持します。`date`／`date-time`／`uuid`は受信時に
 字句形式を検査します。字句が正しくてもCLRで表せない時刻やうるう秒は変換時に拒否される場合があります。
+成功レスポンスDTOに`$id`、`$ref`、`$type`、`$values`をデータpropertyとして宣言すると、
+その位置で`OACG100`を報告します。リクエスト専用DTOではこれらの名前を使用できます。
 受信JSONの深さ上限は通常64階層です。ホストが`JsonConvert.DefaultSettings.MaxDepth`に正の値を設定した場合はその値を使い、
 `null`または未指定なら64階層を維持します。
 必須nullableパラメーターや、対応表の範囲外のwire formatは位置付き診断で拒否します。

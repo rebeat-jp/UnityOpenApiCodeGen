@@ -31,6 +31,10 @@ Docker方式には基本パッケージだけを使用できます。追加パ�
 
 URL入力のSource Generatorは、`Generate`の操作時に取得・更新します。providerが利用できない場合や
 生成が失敗した場合にDockerへ自動切替はしません。進捗、警告、キャンセルはGenerator画面に表示します。
+Settingsの編集とprovider変更は発生順に保存し、保存に失敗した場合はUnity Consoleに例外を記録します。
+Docker方式の生成中にキャンセルするとDocker CLIを停止し、この実行のコンテナ削除を試みます。
+Dockerが応答せずコンテナが残った場合は、`docker ps -a --filter name=openapi-codegen-`で確認し、
+該当するコンテナを削除してください。
 
 Source Generatorの入力と生成結果の詳細は[追加パッケージの日本語README](../OpenApiCodeGen.SourceGenerator/README.ja.md)と
 [同梱した対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)を参照してください。

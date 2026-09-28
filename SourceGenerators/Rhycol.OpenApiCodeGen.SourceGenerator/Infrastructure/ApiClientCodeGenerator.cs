@@ -26,6 +26,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private const int JsonDocumentFormat = 0;
         private const int YamlDocumentFormat = 1;
 
+        private static readonly HashSet<string> ReservedApiNames = new(StringComparer.Ordinal)
+        {
+            "_httpClient", "_baseUrl", "DateOnlyJsonConverterInstance",
+            "CreateRequestUri", "CombineAbsoluteUri", "CombinePaths", "CombineQueries",
+            "AppendQuery", "SplitPathAndQuery", "ValidatePathSegments",
+            "CreateJsonContent", "ConvertToString", "DateOnlyJsonConverter"
+        };
+
         private static readonly DiagnosticDescriptor MalformedBundle = new(
             "OACG001",
             "Malformed normalized spec bundle",
@@ -296,6 +304,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 return OpenApiClientDefinitionInput.CreateInvalid(
                     targetDisplayName,
                     "apiName must be a valid C# identifier",
+                    diagnosticLocation);
+            }
+
+            if (ReservedApiNames.Contains(apiName))
+            {
+                return OpenApiClientDefinitionInput.CreateInvalid(
+                    targetDisplayName,
+                    "apiName '" + apiName + "' conflicts with a generated client member",
                     diagnosticLocation);
             }
 

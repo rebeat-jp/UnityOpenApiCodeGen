@@ -37,6 +37,8 @@ The target assembly definition must directly reference
 `Unity.OpenApiCodeGen.SourceGenerator`. Generated output must be under
 `Assets`. `Generate` is the explicit fetch/refresh operation; the provider
 does not fetch in the background and never falls back to Docker.
+An API name that matches a fixed generated client member is rejected with
+`OACG005`; the reserved names are listed in the support matrix.
 
 ## Input and external references
 
@@ -208,6 +210,9 @@ metadata, including object wrappers around arrays, remains a documented
 compatibility extension. Known `date`, `date-time`, and `uuid` response strings
 are checked for their wire spelling before CLR conversion. Lexically valid
 leap seconds or times outside CLR ranges can still fail during conversion.
+Successful response DTOs cannot declare `$id`, `$ref`, `$type`, or `$values`
+as data properties; generation reports positioned `OACG100`. Request-only
+DTOs may declare these names.
 Successful response JSON has a default syntax depth limit of 64. An explicitly configured
 positive `JsonConvert.DefaultSettings.MaxDepth` overrides it; `null` or an
 unset value keeps 64.
@@ -217,6 +222,8 @@ Bundle and semantic failures use stable diagnostics including:
 | ID | Meaning |
 | --- | --- |
 | `OACG001` | Invalid Bundle structure or reference edge |
+| `OACG005` | Invalid client definition, including a reserved API name |
+| `OACG100` | Invalid document, including response DTO metadata name conflicts |
 | `OACG101` | Unsupported element or identity keyword |
 | `OACG102` | Unresolved document or JSON Pointer target |
 | `OACG103` | Cyclic reference |

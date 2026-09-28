@@ -240,6 +240,48 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         }
 
         [Theory]
+        [InlineData("CreateRequestUri")]
+        [InlineData("ConvertToString")]
+        [InlineData("DateOnlyJsonConverterInstance")]
+        [InlineData("DateOnlyJsonConverter")]
+        [InlineData("_httpClient")]
+        [InlineData("_baseUrl")]
+        [InlineData("CombineAbsoluteUri")]
+        [InlineData("CombinePaths")]
+        [InlineData("CombineQueries")]
+        [InlineData("AppendQuery")]
+        [InlineData("SplitPathAndQuery")]
+        [InlineData("ValidatePathSegments")]
+        [InlineData("CreateJsonContent")]
+        public void ClientNameConflictingWithGeneratedMemberReportsOacg005(string apiName)
+        {
+            CSharpCompilation compilation = CreateCompilation(
+                CreateDefinition(TestBundleFactory.SpecId, apiName, "Generated", apiName));
+
+            GeneratorDriverRunResult result = Run(compilation, ImmutableArray<AdditionalText>.Empty);
+            Diagnostic diagnostic = Assert.Single(result.Diagnostics);
+
+            Assert.Equal("OACG005", diagnostic.Id);
+            Assert.Contains(apiName, diagnostic.GetMessage());
+            Assert.Contains("conflicts with a generated client member", diagnostic.GetMessage());
+            Assert.Empty(result.GeneratedTrees);
+        }
+
+        [Fact]
+        public void SimilarNonconflictingClientNameStillGenerates()
+        {
+            const string document = "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Names\",\"version\":\"1\"}," +
+                "\"paths\":{\"/items\":{\"get\":{\"operationId\":\"getItems\"," +
+                "\"responses\":{\"204\":{\"description\":\"Done\"}}}}}}";
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                document,
+                apiName: "CreateRequestUriClient");
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+        }
+
+        [Theory]
         [InlineData("WrongApi", null, true, "apiName")]
         [InlineData("Api", "Other.Namespace", true, "generatedNamespace")]
         [InlineData("Api", null, false, "partial class")]

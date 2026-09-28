@@ -451,6 +451,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの<code>$id</code>／<code>$ref</code>／<code>$values</code>参照メタデータを互換拡張として維持します。配列schemaでも<code>$id</code>／<code>$values</code>で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の<code>1.0</code>／<code>1e0</code>を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限<code>float</code>／<code>double</code>は<code>JsonSerializationException</code>です。 受信JSONの構文検査は通常最大64階層で、ホストが<code>JsonConvert.DefaultSettings.MaxDepth</code>に正の値を設定した場合はその値を使い、<code>null</code>または未指定なら64階層を維持します。</td>
 </tr>
 <tr>
+<td>response DTO metadata names</td>
+<td>Unsupported</td>
+<td>A successful response DTO cannot declare <code>$id</code>, <code>$ref</code>, <code>$type</code>, or <code>$values</code> as data properties; the property location receives <code>OACG100</code>. Request-only DTOs may declare them. Json.NET reference metadata remains supported where these names are not declared as schema properties.</td>
+</tr>
+<tr>
 <td>error/default response</td>
 <td>Partial</td>
 <td>JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。</td>
@@ -583,6 +588,11 @@ fallbackまたは切替は行いません。</p>
 stableで、generated nameはordinalのdeterministic namingとsuffixによるcollision resolutionを使用します。
 複数specでDTO名が重なる場合は、generated namespaceを分けてください。current generated typeは
 namespace-levelのため、同じnamespaceには共存できません。</p>
+<p>An <code>apiName</code> equal to a fixed generated client member receives <code>OACG005</code>.
+Reserved names are <code>_httpClient</code>, <code>_baseUrl</code>, <code>DateOnlyJsonConverterInstance</code>,
+<code>CreateRequestUri</code>, <code>CombineAbsoluteUri</code>, <code>CombinePaths</code>, <code>CombineQueries</code>,
+<code>AppendQuery</code>, <code>SplitPathAndQuery</code>, <code>ValidatePathSegments</code>, <code>CreateJsonContent</code>,
+<code>ConvertToString</code>, and <code>DateOnlyJsonConverter</code>.</p>
 <h2 id="診断">診断</h2>
 <table>
 <thead>
@@ -592,6 +602,10 @@ namespace-levelのため、同じnamespaceには共存できません。</p>
 </tr>
 </thead>
 <tbody><tr>
+<td><code>OACG005</code></td>
+<td>Invalid client definition, including an <code>apiName</code> reserved by a generated member</td>
+</tr>
+<tr>
 <td><code>OACG100</code></td>
 <td>InvalidDocument</td>
 </tr>

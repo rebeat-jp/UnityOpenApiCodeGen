@@ -764,6 +764,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
 
                 OpenApiSemanticSchema? schema = content.Schema;
+                if (schema is not null)
+                {
+                    ValidateResponseMetadataProperties(
+                        schema,
+                        new HashSet<NormalizedSpecNodeIdentity>());
+                }
 
                 string signature = GetSchemaSignature(schema);
                 if (successSignature is not null && !string.Equals(successSignature, signature, StringComparison.Ordinal))
@@ -786,6 +792,53 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             return new ParsedResponses(successSchema, successCodes.OrderBy(static value => value, StringComparer.Ordinal).ToArray(), responseMediaTypes);
+        }
+
+        private void ValidateResponseMetadataProperties(
+            OpenApiSemanticSchema schema,
+            HashSet<NormalizedSpecNodeIdentity> visited)
+        {
+            if (schema.Kind == OpenApiSemanticSchemaKind.Reference)
+            {
+                if (visited.Add(schema.ReferenceIdentity) &&
+                    _schemas.TryGetValue(schema.ReferenceIdentity, out OpenApiSemanticSchema? target))
+                {
+                    ValidateResponseMetadataProperties(target, visited);
+                }
+
+                return;
+            }
+
+            if (schema.Kind == OpenApiSemanticSchemaKind.Array)
+            {
+                if (schema.ItemSchema is not null)
+                {
+                    ValidateResponseMetadataProperties(schema.ItemSchema, visited);
+                }
+
+                return;
+            }
+
+            if (schema.Kind != OpenApiSemanticSchemaKind.Object)
+            {
+                return;
+            }
+
+            foreach (OpenApiSemanticProperty property in schema.Properties)
+            {
+                if (property.WireName == "$id" || property.WireName == "$ref" ||
+                    property.WireName == "$values" || property.WireName == "$type")
+                {
+                    throw new OpenApiSemanticException(
+                        OpenApiSemanticErrorKind.InvalidDocument,
+                        "Response DTO property '" + property.WireName +
+                        "' conflicts with Json.NET reference metadata.",
+                        property.Location,
+                        Array.Empty<OpenApiSourceLocation>());
+                }
+
+                ValidateResponseMetadataProperties(property.Schema, visited);
+            }
         }
 
         private ParsedContent ParseResponse(

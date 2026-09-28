@@ -153,6 +153,7 @@ YAML diagnostic IDs are stable within Phase 5:
 | successful response | Partial | 少なくとも1つの`2xx` responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの宣言順は比較に影響しません。schema付き成功本文の空・空白はnullableでも`JsonSerializationException`です。JSON `null`はnullable schemaだけで許可します。非nullableな配列要素がJSON `null`なら、入れ子の配列とDTO内の配列も含めて拒否します。 |
 | successful response `Content-Type` | Partial | そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は`JsonSerializationException`です。content宣言のない成功応答では`Content-Type`を照合しません。個別statusの宣言は`2XX`より優先します。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。 |
 | successful response JSON | Partial | RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの`$id`／`$ref`／`$values`参照メタデータを互換拡張として維持します。配列schemaでも`$id`／`$values`で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の`1.0`／`1e0`を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限`float`／`double`は`JsonSerializationException`です。 受信JSONの構文検査は通常最大64階層で、ホストが`JsonConvert.DefaultSettings.MaxDepth`に正の値を設定した場合はその値を使い、`null`または未指定なら64階層を維持します。 |
+| response DTO metadata names | Unsupported | A successful response DTO cannot declare `$id`, `$ref`, `$type`, or `$values` as data properties; the property location receives `OACG100`. Request-only DTOs may declare them. Json.NET reference metadata remains supported where these names are not declared as schema properties. |
 | error/default response | Partial | JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。 |
 | response extension | Supported | operationのResponses Objectでは`x-*`を除外します。`components.responses`の`x-*`名は通常のResponse/Referenceです。 |
 | response header | Unsupported | nonempty response headerは対象外です。 |
@@ -212,10 +213,17 @@ stableで、generated nameはordinalのdeterministic namingとsuffixによるcol
 複数specでDTO名が重なる場合は、generated namespaceを分けてください。current generated typeは
 namespace-levelのため、同じnamespaceには共存できません。
 
+An `apiName` equal to a fixed generated client member receives `OACG005`.
+Reserved names are `_httpClient`, `_baseUrl`, `DateOnlyJsonConverterInstance`,
+`CreateRequestUri`, `CombineAbsoluteUri`, `CombinePaths`, `CombineQueries`,
+`AppendQuery`, `SplitPathAndQuery`, `ValidatePathSegments`, `CreateJsonContent`,
+`ConvertToString`, and `DateOnlyJsonConverter`.
+
 ## 診断
 
 | ID | 意味 |
 | --- | --- |
+| `OACG005` | Invalid client definition, including an `apiName` reserved by a generated member |
 | `OACG100` | InvalidDocument |
 | `OACG101` | UnsupportedElement（bare non-Schema、`$id`/`$anchor`/`$dynamicAnchor`/`$dynamicRef`など） |
 | `OACG102` | Unresolved document or JSON Pointer target |

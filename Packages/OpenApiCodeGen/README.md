@@ -52,6 +52,11 @@ The window displays progress, warnings, and cancellation separately. Closing
 or rebinding the window cancels its outstanding generation and ignores stale
 callbacks. URL query sanitization applies to Source Generator settings;
 existing Docker URL settings retain their original value.
+Settings edits and provider changes are saved in event order; a failed save is
+reported in the Unity Console. Canceling an active Docker generation stops the
+Docker CLI and attempts to remove its named container. If Docker is unavailable
+and a container remains, inspect it with
+`docker ps -a --filter name=openapi-codegen-` and remove that container.
 
 When Source Generator is selected and available, the base package synchronizes
 `OPENAPI_CODEGEN_SOURCE_GENERATOR` for the active `NamedBuildTarget`. Removing
