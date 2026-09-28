@@ -126,6 +126,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
             source.AppendLine(")");
             source.AppendLine("        {");
+            AppendNumericParameterValidation(source, operation);
             AppendRequestBodyValidation(source, operation.RequestBody);
             source.Append("            string relativePath = ")
                 .Append(GeneratedSourceEmitter.StringLiteral(operation.Path))
@@ -272,6 +273,37 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append("                throw new global::System.ArgumentNullException(nameof(")
                 .Append(body.ParameterName).AppendLine("));");
             source.AppendLine("            }");
+        }
+
+        private static void AppendNumericParameterValidation(
+            StringBuilder source,
+            GeneratedOperationModel operation)
+        {
+            foreach (GeneratedParameterModel parameter in operation.Parameters)
+            {
+                if (parameter.Type.Kind != GeneratedTypeKind.Single &&
+                    parameter.Type.Kind != GeneratedTypeKind.Double)
+                {
+                    continue;
+                }
+
+                string numberType = parameter.Type.Kind == GeneratedTypeKind.Single ? "Single" : "Double";
+                string value = GetValueExpression(parameter);
+                source.Append("            if (");
+                if (!parameter.Required)
+                {
+                    source.Append(parameter.Name).Append(".HasValue && ");
+                }
+
+                source.Append("(global::System.").Append(numberType).Append(".IsNaN(").Append(value)
+                    .Append(") || global::System.").Append(numberType).Append(".IsInfinity(")
+                    .Append(value).AppendLine(")))");
+                source.AppendLine("            {");
+                source.Append("                throw new global::System.ArgumentOutOfRangeException(nameof(")
+                    .Append(parameter.Name)
+                    .AppendLine("), \"A finite number is required.\");");
+                source.AppendLine("            }");
+            }
         }
 
         private static void AppendRequestBody(

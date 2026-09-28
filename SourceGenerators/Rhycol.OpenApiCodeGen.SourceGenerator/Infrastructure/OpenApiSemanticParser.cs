@@ -59,6 +59,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             new Dictionary<NormalizedSpecNodeIdentity, OpenApiSemanticSchema>();
         private readonly HashSet<NormalizedSpecNodeIdentity> _validatedResponseSchemas =
             new HashSet<NormalizedSpecNodeIdentity>();
+        private readonly HashSet<string> _validatedExternalDocuments =
+            new HashSet<string>(StringComparer.Ordinal);
         private string _currentDocumentId = "root";
 
         private OpenApiSemanticParser(SpecNode root, int minorVersion)
@@ -163,15 +165,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private void ValidateRootFeatures()
         {
-            SpecNode? dialectNode = GetProperty(_root, "jsonSchemaDialect");
-            if (dialectNode is not null)
-            {
-                string dialect = RequireAbsoluteDialectUri(dialectNode, "jsonSchemaDialect");
-                if (_minorVersion != 1 || !string.Equals(dialect, OpenApi31BaseDialect, StringComparison.Ordinal))
-                {
-                    throw Unsupported(dialectNode, "The jsonSchemaDialect '" + dialect + "' is not supported by the Phase 4 MVP.");
-                }
-            }
+            ValidateDocumentDialect(_root, _minorVersion);
 
             ThrowIfPresent(_root, "swagger", "Swagger 2.0 documents are not supported by the Phase 4 Source Generator.");
             ThrowIfPresent(_root, "security", "OpenAPI security requirements are not supported by the Phase 4 MVP.");
@@ -198,6 +192,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 throw Unsupported(
                     property.Value,
                     "The components section '" + property.Name + "' is not supported by the Phase 4 MVP.");
+            }
+        }
+
+        private static void ValidateDocumentDialect(SpecNode documentRoot, int minorVersion)
+        {
+            SpecNode? dialectNode = GetProperty(documentRoot, "jsonSchemaDialect");
+            if (dialectNode is not null)
+            {
+                string dialect = RequireAbsoluteDialectUri(dialectNode, "jsonSchemaDialect");
+                if (minorVersion != 1 || !string.Equals(dialect, OpenApi31BaseDialect, StringComparison.Ordinal))
+                {
+                    throw Unsupported(dialectNode, "The jsonSchemaDialect '" + dialect + "' is not supported by the Phase 4 MVP.");
+                }
             }
         }
 
@@ -1835,7 +1842,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             try
             {
-                return _resolver.ResolveReference(_currentDocumentId, reference, referenceNode);
+                ResolvedSpecReference resolved = _resolver.ResolveReference(
+                    _currentDocumentId, reference, referenceNode);
+                ValidateExternalDocument(resolved, referenceNode);
+                return resolved;
             }
             catch (OpenApiSemanticException exception)
             {
@@ -1851,6 +1861,42 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     referenceNode,
                     exception.AdditionalLocations);
             }
+        }
+
+        private void ValidateExternalDocument(
+            ResolvedSpecReference resolved,
+            SpecNode referenceNode)
+        {
+            if (resolved.Document is null ||
+                string.Equals(resolved.DocumentId, "root", StringComparison.Ordinal) ||
+                _validatedExternalDocuments.Contains(resolved.DocumentId) ||
+                !resolved.Document.Root.TryGetProperty("openapi", out SpecNode versionNode))
+            {
+                return;
+            }
+
+            try
+            {
+                string version = RequireString(versionNode, "The 'openapi' field must be a string.");
+                int minorVersion = ParseSupportedVersion(version, versionNode);
+                if (minorVersion != _minorVersion)
+                {
+                    throw Unsupported(
+                        versionNode,
+                        "Referenced OpenAPI documents must use the same major.minor version as the entry document.");
+                }
+
+                ValidateDocumentDialect(resolved.Document.Root, minorVersion);
+            }
+            catch (OpenApiSemanticException exception)
+            {
+                throw RebaseException(
+                    exception,
+                    resolved.DocumentId,
+                    CreateLocation(referenceNode));
+            }
+
+            _validatedExternalDocuments.Add(resolved.DocumentId);
         }
 
         private OpenApiSourceLocation CreateLocation(SpecNode node)

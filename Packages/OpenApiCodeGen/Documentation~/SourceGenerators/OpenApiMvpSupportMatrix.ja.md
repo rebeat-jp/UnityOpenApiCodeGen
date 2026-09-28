@@ -35,12 +35,12 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 | --- | --- | --- |
 | 入力document | 対応 | localの`.json`、`.yaml`、`.yml` file、またはHTTP(S) URL。local extensionはcase-insensitive。 |
 | OpenAPI version | 一部対応 | `3.0.*`と`3.1.*`のみ。 |
-| OpenAPI 3.1 schema dialect | 一部対応 | 既定または明示的な`https://spec.openapis.org/oas/3.1/dialect/base`のみ。rootの`jsonSchemaDialect`とschemaの`$schema`で別dialectを指定すると`OACG101`、不正なURIは`OACG100`です。 |
+| OpenAPI 3.1 schema dialect | 一部対応 | 既定または明示的な`https://spec.openapis.org/oas/3.1/dialect/base`のみ。入口・外部完全OpenAPI文書の`jsonSchemaDialect`とschemaの`$schema`で別dialectを指定すると`OACG101`、不正なURIは`OACG100`です。 |
 | OpenAPI 3.2 / Swagger 2 | 非対応 | document versionは受け付けません。 |
 | URL入力 | 対応 | public/private/loopback、cross-host redirectを許可。userinfo、空白、非HTTP(S)、HTTPS-to-HTTP direct/redirectは拒否。Generateが明示的なfetch/refresh操作で、Docker fallbackはありません。 |
 | JSON/YAML semantic parity | 対応 | 各normalizerがshared `SpecNode`へ正規化し、同じsemantic/generation pipelineを通ります。 |
 | `$ref` | 一部対応 | OpenAPI/Schema上の参照位置にあるinternal reference、またはEditorがBundle v2のedgeへ解決したexternal reference。example/default/enum/拡張データ内の同名キーはデータとして保持。fragmentはemptyまたはJSON Pointer。 |
-| external `$ref` | 一部対応 | local external fileはreal/symbolic-link解決後もUnity project内。remote documentからlocal fileは不可。bare Schemaは可。 |
+| external `$ref` | 一部対応 | local external fileはreal/symbolic-link解決後もUnity project内。remote documentからlocal fileは不可。bare Schemaは可。参照先が完全なOpenAPI文書ならその`openapi`版と`jsonSchemaDialect`を検証し、入口とmajor.minor版が異なる場合は`OACG101`で拒否します。patch差は可。 |
 | unresolved / cyclic `$ref` | 非対応 | それぞれ`OACG102`、`OACG103`を報告します。`OACG104`はBundle v1のexternal-reference互換診断です。 |
 | URL query / fragment | 一部対応 | queryはfetch identityに使いますが平文永続化しません。root URL fragment、userinfo、explicit `file:`は拒否。 |
 | URL format detection | 対応 | final URL extensionとContent-Typeが既知なら一致必須。片方だけ既知は可、両方不明・競合は拒否。content sniffing/hintはなし。 |
@@ -135,6 +135,7 @@ YAMLの診断IDは次のとおりです。
 | `servers` | 一部対応 | URLは0個または1個、variablesなし。root `servers`の省略・空配列は`/`を既定値とします。`//host/path`は`HttpClient.BaseAddress`のschemeで解決します。`/path`と既定の`/`は同じoriginのrootから解決し、`BaseAddress`のpathとqueryを引き継ぎません。`BaseAddress`が必要な場合に未設定なら送信前に`InvalidOperationException`です。明示的な空文字`baseUrl` overrideは相対URLとして扱います。相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。 |
 | parameter location | 一部対応 | path、query、headerのscalar parameterのみ。cookieは対象外です。 |
 | parameter serialization | 一部対応 | defaultの`style`/`explode`のみ。`allowReserved: true`は対象外です。 |
+| 非有限数値parameter | 非対応 | path／query／headerの`float`／`double`に`NaN`・正負の無限大を渡すと、HTTP送信前に`ArgumentOutOfRangeException`です。任意parameterの省略と有限値は使用できます。 |
 | complex parameter | 非対応 | 直接定義・多段`$ref`ともarray/object等のcomplex parameterは対象外です。 |
 | required nullable parameter | 非対応 | path/query/headerの`required: true`とnullableの組み合わせは`OACG101`です。参照チェーン全体を確認します。任意parameterのnull省略とDTOのnullableは維持します。 |
 | dot-only path segment | 非対応 | 引数置換後のpath segmentが`.`／`..`（1回percent-decodeした表現を含む）なら、HTTP送信前に`ArgumentException`です。`.hidden`、`a.b`、`...`や通常の複合segmentは使用できます。 |

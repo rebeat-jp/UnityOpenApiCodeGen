@@ -48,6 +48,9 @@ manifest、診断へ平文保存しません。次回の`Generate`時にはquery
 
 対応するOpenAPI要素、YAMLの範囲、診断は[日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)に記載しています。
 OpenAPI 3.1は標準schema dialectのみを受け付けます。独自dialectや`null`入りstring enumは診断で拒否します。
+参照先が完全なOpenAPI文書の場合、その文書の`openapi`版と`jsonSchemaDialect`も確認します。
+入口文書とmajor.minor版が異なる参照先、および未対応dialectは位置付き診断で拒否します。
+版のpatch差と、`openapi`を持たない外部bare schemaは許可します。
 string enumは宣言したwire文字列と大小文字・空白も含め完全一致で送受信します。重複値、JSON数値、未宣言値は拒否します。
 名前付きobjectのDTO生成には`additionalProperties: false`の明示が必要です。省略や追加プロパティの許可、
 `pattern`・`minimum`・`minItems`などの未対応assertionは`OACG101`になります。
@@ -97,6 +100,8 @@ JSON `null`はnullableなschemaでのみ受け取れます。
 nullableな要素にはJSON `null`を使用できます。
 リクエスト中の`float`／`double`は、配列やDTO内も含めて有限値である必要があります。
 `NaN`と正負の無限大はHTTP送信前に`JsonSerializationException`になります。
+path／query／headerの`float`／`double`パラメーターも有限値に限り、非有限値は
+HTTP送信前に`ArgumentOutOfRangeException`になります。任意パラメーターの省略は維持します。
 成功レスポンスに`Content-Type`があれば、そのstatusで宣言されたmedia typeと照合してから
 本文を読みます。不正・複数・宣言と不一致の値は`JsonSerializationException`です。
 個別statusの宣言は`2XX`より優先します。`Content-Type`がない場合は従来どおり本文を読みます。

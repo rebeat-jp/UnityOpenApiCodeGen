@@ -4,11 +4,11 @@
   "files": [
     {
       "path": "RELEASE.html",
-      "sha256": "df6e5aa760a4e9f2865e031004b5e1a420029da1cc587ee63c9508641ad0b391"
+      "sha256": "5543bef6dd87d81858c373746cc99c304411f0ba8eb74ce483e957d35a011b99"
     },
     {
       "path": "RELEASE.md",
-      "sha256": "6f6464dd48e76470aa24347627c5e21ccf8430fec1a61ff459835126463398fa"
+      "sha256": "167d77e65fa7c62b3645bae893821ad69e4dd9ee2fe7e90558599ffca71ca522"
     },
     {
       "path": "SourceGenerators/BuildTools/CI/unity-images.json",
@@ -24,19 +24,19 @@
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.html",
-      "sha256": "4b044cd04d1b7085a37894a824dda2de8af153435f9ca01949b7928af9d5ca7b"
+      "sha256": "0d632af6a49f09caec63e249c6e9717a84500325ce9d0c6a6b1488d2d48aace8"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.ja.html",
-      "sha256": "17bce3daa2a03661536375b7ca4e0f497e64c02de1020df71afe59257319d9c2"
+      "sha256": "ea06092b071bbc3052c77a24dd1aa1c7a38f969095d25b91868c42e8ac93e6dc"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.ja.md",
-      "sha256": "ec677f9e64b7ec24975968cc2834c8086618c5e3737e941e9edc73a5fd173521"
+      "sha256": "dc1f13f58d592c857bd97c726a9e54d83cdec33871e32e586e59a7022e1214ba"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.md",
-      "sha256": "e6b5455b53e5449b1a51eee2b304d693cb1a877106801209b33c855577dd6e26"
+      "sha256": "3a353e87bc51974fb843567ecdb57d2af3a35397e86d6baf4cf0125d94bf0801"
     },
     {
       "path": "SourceGenerators/OpenUPM/jp.rhycol.openapicodegen.source-generator.yml",
@@ -44,11 +44,11 @@
     },
     {
       "path": "SourceGenerators/OpenUPM/README.html",
-      "sha256": "cebb6c9a174cd41eabad25b5692272d61278bddcb03cf7fc70aac26ae0035b9e"
+      "sha256": "cfa9234f7d05e155212e8da3ee6d82027d0499f47a637de6b1954e7fa2418489"
     },
     {
       "path": "SourceGenerators/OpenUPM/README.md",
-      "sha256": "88fcdae805d1a9a2a12faf8de5b3d2012b5a79b8cdb0f9682f95cd572e33da3d"
+      "sha256": "fc4f5b310be1c6b0ef2755e189c097f0bdb1f44cf3b50d41736268fe95628b79"
     }
   ]
 }

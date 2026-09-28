@@ -24,9 +24,14 @@ prebuilt package rather than building the analyzer. See the official
 
 Follow [RELEASE.md](../../RELEASE.md). The tag-ref follow-up uses the
 [official OIDC action](https://openupm.com/docs/github-action-publish) to check
-base publication before add-on publication, then compares the registry
-tarball with the verified Release asset. No OpenUPM Secret is required.
+base publication before add-on publication. The follow-up compares the base
+registry tarball's file tree and contents with the Unity-validated candidate,
+allowing only OpenUPM-managed `package.json` repository and registry fields;
+the repository revision must match the verified commit. The add-on registry
+tarball must match the verified Release asset byte-for-byte. No OpenUPM Secret
+is required.
 
 Keep the accepted registration, first Release, follow-up Actions run and byte
-comparison result as publication evidence. Missing registration or mismatched
-bytes is a failure. Dry-run results alone do not prove production CD success.
+and content-comparison results as publication evidence. Missing registration
+or a mismatch is a failure. Dry-run results alone do not prove production CD
+success.

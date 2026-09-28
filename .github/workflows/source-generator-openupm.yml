@@ -48,5 +48,5 @@ jobs:
         with:
           package: jp.rhycol.openapicodegen.source-generator
           tag: ${{ github.ref_name }}
-      - name: Compare registry tarball with validated Release asset
+      - name: Compare both registry packages with validated Release candidates
         run: node SourceGenerators/scripts/verify-openupm.js compare

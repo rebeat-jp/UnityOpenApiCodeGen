@@ -65,6 +65,10 @@ only one canonical Bundle v2 AdditionalFile for the `specId`, so a graph is
 published as one generation unit. Bare root Schema documents are supported for
 external schema references. Bare non-Schema documents and `$id`, `$anchor`,
 `$dynamicAnchor`, and `$dynamicRef` are not supported.
+For a referenced full OpenAPI document, the analyzer checks its own `openapi`
+version and `jsonSchemaDialect`. A different major.minor version or unsupported
+dialect receives a positioned diagnostic. Patch-version differences and bare
+external schemas remain supported.
 
 Hard limits are 30 seconds per request, 120 seconds per graph, 4 MiB per
 document, 32 MiB per graph, 64 documents, five redirects, and reference depth
@@ -177,7 +181,9 @@ String enums accept only declared wire strings with exact case and spacing;
 undeclared strings and JSON numbers are rejected.
 Request `float` and `double` values must be finite, including values nested in
 arrays and DTOs. `NaN` and either infinity raise `JsonSerializationException`
-before the HTTP request is sent. For a successful response that supplies a
+before the HTTP request is sent. Non-finite `float` and `double` path, query,
+and header parameters raise `ArgumentOutOfRangeException` before sending;
+omitted optional parameters remain valid. For a successful response that supplies a
 `Content-Type`, the client checks it against the media types declared for that
 status before deserializing; malformed, multiple, and conflicting values raise
 `JsonSerializationException`. A specific status declaration takes precedence

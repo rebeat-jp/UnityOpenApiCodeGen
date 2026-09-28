@@ -208,8 +208,13 @@ The publisher dispatches `source-generator-openupm.yml` using the **tag as its
 ref**. OpenUPM's OIDC token must refer to that exact tag, so this cannot run in
 the original main-ref job. No extra OpenUPM Secret is needed. The follow-up
 verifies the Release, waits for the base package through the official OpenUPM
-action, then does the same for the add-on, and compares the registry add-on
-tarball byte-for-byte with the verified asset.
+action, then does the same for the add-on. It checks the base registry package's
+file tree and contents against the Unity-validated candidate, allowing only
+OpenUPM-managed `repository.url`, `repository.revision`, and
+`publishConfig.registry` differences in `package.json`. The revision must
+match the verified Release commit. OpenUPM repacks the Git-tag-tracked base
+package, so its tarball bytes can differ. The add-on uses Release-asset
+tracking and must match the verified tarball byte-for-byte.
 
 ## Failures and resuming
 

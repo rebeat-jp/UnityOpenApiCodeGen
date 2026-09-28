@@ -27,9 +27,14 @@ prebuilt package rather than building the analyzer. See the official
 <h2 id="first-publication-check">First publication check</h2>
 <p>Follow <a href="../../RELEASE.html">RELEASE.md</a>. The tag-ref follow-up uses the
 <a href="https://openupm.com/docs/github-action-publish">official OIDC action</a> to check
-base publication before add-on publication, then compares the registry
-tarball with the verified Release asset. No OpenUPM Secret is required.</p>
+base publication before add-on publication. The follow-up compares the base
+registry tarball&#39;s file tree and contents with the Unity-validated candidate,
+allowing only OpenUPM-managed <code>package.json</code> repository and registry fields;
+the repository revision must match the verified commit. The add-on registry
+tarball must match the verified Release asset byte-for-byte. No OpenUPM Secret
+is required.</p>
 <p>Keep the accepted registration, first Release, follow-up Actions run and byte
-comparison result as publication evidence. Missing registration or mismatched
-bytes is a failure. Dry-run results alone do not prove production CD success.</p>
+and content-comparison results as publication evidence. Missing registration
+or a mismatch is a failure. Dry-run results alone do not prove production CD
+success.</p>
 </main></body></html>

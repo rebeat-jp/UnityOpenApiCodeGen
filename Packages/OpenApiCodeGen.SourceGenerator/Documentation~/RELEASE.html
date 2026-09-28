@@ -230,8 +230,13 @@ Release. Only the publication job receives repository write permissions.</p>
 ref</strong>. OpenUPM&#39;s OIDC token must refer to that exact tag, so this cannot run in
 the original main-ref job. No extra OpenUPM Secret is needed. The follow-up
 verifies the Release, waits for the base package through the official OpenUPM
-action, then does the same for the add-on, and compares the registry add-on
-tarball byte-for-byte with the verified asset.</p>
+action, then does the same for the add-on. It checks the base registry package&#39;s
+file tree and contents against the Unity-validated candidate, allowing only
+OpenUPM-managed <code>repository.url</code>, <code>repository.revision</code>, and
+<code>publishConfig.registry</code> differences in <code>package.json</code>. The revision must
+match the verified Release commit. OpenUPM repacks the Git-tag-tracked base
+package, so its tarball bytes can differ. The add-on uses Release-asset
+tracking and must match the verified tarball byte-for-byte.</p>
 <h2 id="failures-and-resuming">Failures and resuming</h2>
 <ul>
 <li><strong>CI/activation failure:</strong> inspect the failed gate and sanitized logs, fix

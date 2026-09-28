@@ -65,7 +65,7 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 <tr>
 <td>OpenAPI 3.1 schema dialect</td>
 <td>Partial</td>
-<td>既定または明示的な<code>https://spec.openapis.org/oas/3.1/dialect/base</code>のみ。rootの<code>jsonSchemaDialect</code>とschemaの<code>$schema</code>で別dialectを指定すると<code>OACG101</code>、不正なURIは<code>OACG100</code>です。</td>
+<td>既定または明示的な<code>https://spec.openapis.org/oas/3.1/dialect/base</code>のみ。入口・外部完全OpenAPI文書の<code>jsonSchemaDialect</code>とschemaの<code>$schema</code>で別dialectを指定すると<code>OACG101</code>、不正なURIは<code>OACG100</code>です。</td>
 </tr>
 <tr>
 <td>OpenAPI 3.2 / Swagger 2</td>
@@ -90,7 +90,7 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 <tr>
 <td>external <code>$ref</code></td>
 <td>Partial</td>
-<td>local external fileはreal/symbolic-link解決後もUnity project内。remote documentからlocal fileは不可。bare Schemaは可。</td>
+<td>local external fileはreal/symbolic-link解決後もUnity project内。remote documentからlocal fileは不可。bare Schemaは可。参照先が完全なOpenAPI文書ならその<code>openapi</code>版と<code>jsonSchemaDialect</code>を検証し、入口とmajor.minor版が異なる場合は<code>OACG101</code>で拒否します。patch差は可。</td>
 </tr>
 <tr>
 <td>unresolved / cyclic <code>$ref</code></td>
@@ -359,6 +359,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>parameter serialization</td>
 <td>Partial</td>
 <td>defaultの<code>style</code>/<code>explode</code>のみ。<code>allowReserved: true</code>は対象外です。</td>
+</tr>
+<tr>
+<td>non-finite numeric parameter</td>
+<td>Unsupported</td>
+<td>path／query／headerの<code>float</code>／<code>double</code>に<code>NaN</code>・正負の無限大を渡すと、HTTP送信前に<code>ArgumentOutOfRangeException</code>です。任意parameterの省略と有限値は使用できます。</td>
 </tr>
 <tr>
 <td>complex parameter</td>

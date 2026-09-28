@@ -6,6 +6,7 @@ const path = require('path');
 const { fixture, commit } = require('./release-fixture');
 const { publish, publicationPlan } = require('../publish-release');
 const { safeEvidenceEntries, compareRegistry } = require('../verify-openupm');
+const { archive } = require('./tar-fixture');
 function use(t) { const f = fixture(); t.after(f.remove); fs.writeFileSync(path.join(f.output, 'verification-evidence.tar.gz'), 'verified logs'); return f; }
 class FakeGitHub {
   constructor() { this.tag = null; this.savedRelease = null; this.contents = new Map(); this.events = []; this.failOnUpload = undefined; this.uploadCount = 0; }
@@ -47,10 +48,69 @@ test('reject unsafe archive paths, links and special files before extraction', (
   for (const entry of ['/etc/passwd', '../leak', 'unity-gate/../leak', 'unrelated']) assert.throws(() => safeEvidenceEntries([entry], ['-']), /unsafe/);
   for (const type of ['l', 'h', 'b']) assert.throws(() => safeEvidenceEntries(['unity-gate/log'], [type]), /links or special/);
 });
-test('registry comparison requires exact Source Generator version and bytes', async t => {
-  const f = use(t); const name = 'jp.rhycol.openapicodegen.source-generator'; const bytes = fs.readFileSync(path.join(f.output, `${name}-0.5.0.tgz`));
-  const request = (version, payload) => async url => url.endsWith('/0.5.0') ? { ok: true, json: async () => ({ name, version, dist: { tarball: 'https://package.openupm.com/addon.tgz' } }) } : { ok: true, arrayBuffer: async () => payload };
-  await compareRegistry(f.output, '0.5.0', request('0.5.0', bytes)); await assert.rejects(compareRegistry(f.output, '0.5.0', request('0.5.0', Buffer.from('different'))), /differs/); await assert.rejects(compareRegistry(f.output, '0.5.0', request('0.4.0', bytes)), /metadata/);
+function registryFixture(t) {
+  const f = use(t);
+  const base = 'jp.rhycol.openapicodegen';
+  const addon = `${base}.source-generator`;
+  const manifest = { name: base, version: '0.5.0', displayName: 'Base', repository: { type: 'git', url: 'https://github.com/rebeat-jp/UnityOpenApiCodeGen/tree/0.5.0/Packages/OpenApiCodeGen' }, dependencies: {} };
+  const published = { ...manifest, repository: { type: 'git', url: 'https://github.com/rebeat-jp/UnityOpenApiCodeGen', revision: commit }, publishConfig: { registry: 'https://package.openupm.com' } };
+  const entries = (json = manifest, files = [{ name: 'package/Runtime/code.cs', content: 'validated code' }]) => [{ name: 'package/package.json', content: JSON.stringify(json) }, ...files];
+  fs.writeFileSync(path.join(f.output, `${base}-0.5.0.tgz`), archive(entries()));
+  const addonBytes = fs.readFileSync(path.join(f.output, `${addon}-0.5.0.tgz`));
+  const request = (baseBytes = archive(entries(published)), options = {}) => async raw => {
+    const url = new URL(raw);
+    const name = url.pathname.includes(addon) ? addon : base;
+    if (url.pathname.endsWith('/0.5.0')) return options.metadataResponse || { ok: true, json: async () => ({ name, version: options.version || '0.5.0', dist: { tarball: `https://package.openupm.com/${name}.tgz` } }) };
+    if (options.tarballResponse) return options.tarballResponse;
+    return { ok: true, arrayBuffer: async () => name === base ? baseBytes : options.addonBytes || addonBytes };
+  };
+  return { f, manifest, published, entries, request, addonBytes };
+}
+test('registry comparison accepts OpenUPM base manifest patch and exact Source Generator bytes', async t => {
+  const { f, request } = registryFixture(t);
+  await compareRegistry(f.output, '0.5.0', request());
+});
+test('registry comparison rejects changed base content, missing and extra files', async t => {
+  const { f, published, entries, request } = registryFixture(t);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive(entries(published, [{ name: 'package/Runtime/code.cs', content: 'changed' }])))), /content differs/);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive(entries(published, [])))), /file tree differs/);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive(entries(published, [{ name: 'package/Runtime/code.cs', content: 'validated code' }, { name: 'package/extra', content: 'extra' }])))), /file tree differs/);
+});
+test('registry comparison rejects unsafe, duplicate and special tar entries', async t => {
+  const { f, published, entries, request } = registryFixture(t);
+  for (const item of [
+    { name: 'package/../escape', content: 'bad' },
+    { name: '/absolute', content: 'bad' },
+    { name: 'package/link', type: '2' },
+    { name: 'package/Runtime/code.cs', content: 'duplicate' }
+  ]) await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive([...entries(published), item]))), /unsafe path|link|duplicate path/);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive([...entries(published), { name: 'package/empty/', type: '5' }]))), /file tree differs/);
+});
+test('registry comparison rejects tar names whose prefix or BOM has a different extraction meaning', async t => {
+  const { f, published, entries, request } = registryFixture(t);
+  const [manifest, code] = entries(published);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive([
+    { ...manifest, name: 'package.json', prefix: 'package', magic: '', version: '' }, code
+  ]))), /unsupported tar format/);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive([
+    { ...manifest, name: '\uFEFFpackage.json', prefix: 'package' }, code
+  ]))), /unsafe path/);
+});
+test('registry comparison rejects unrelated manifest edits and invalid OpenUPM metadata', async t => {
+  const { f, published, entries, request } = registryFixture(t);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive(entries({ ...published, displayName: 'Tampered' })))), /package.json has unexpected differences/);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive(entries({ ...published, publishConfig: { registry: 'https://elsewhere.invalid' } })))), /publishConfig/);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive(entries({ ...published, repository: { type: 'git', url: 'https://github.com/other/repo', revision: '0.5.0' } })))), /repository metadata/);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive(entries({ ...published, repository: { ...published.repository, revision: 'b'.repeat(40) } })))), /repository metadata/);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive(entries({ ...published, repository: { ...published.repository, revision: undefined } })))), /repository metadata/);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(undefined, { version: '0.4.0' })), /metadata/);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(undefined, { metadataResponse: { ok: false, status: 503 } })), /HTTP 503/);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(undefined, { metadataResponse: { ok: true, json: async () => ({ name: 'jp.rhycol.openapicodegen', version: '0.5.0', dist: { tarball: 'http://example.invalid/a.tgz' } }) } })), /metadata/);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(undefined, { tarballResponse: { ok: false, status: 502 } })), /HTTP 502/);
+});
+test('registry comparison still requires exact Source Generator tarball bytes', async t => {
+  const { f, request } = registryFixture(t);
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(undefined, { addonBytes: Buffer.from('different') })), /Source Generator tarball differs/);
 });
 test('trusted release workflow rejects non-main code even when target contract is a no-op', t => {
   const os = require('os'); const { execFileSync, spawnSync } = require('child_process');

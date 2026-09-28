@@ -54,6 +54,115 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Contains("Task<Pet> getPet", execution.GeneratedSource);
         }
 
+        [Theory]
+        [InlineData("3.1.0", "3.0.3")]
+        [InlineData("3.0.3", "3.1.0")]
+        public void MixedMinorExternalDocumentReportsVersionAtExternalLocation(
+            string entryVersion,
+            string externalVersion)
+        {
+            string root = CreateRootWithReference(
+                "pet.json#/components/schemas/Pet", entryVersion);
+            string external = CreateOpenApiDocument(
+                "External Pet", "\"Pet\":{\"type\":\"string\"}", externalVersion);
+
+            Diagnostic diagnostic = Assert.Single(
+                Phase4GeneratorTestHarness.GenerateAndCompile(
+                    root,
+                    bundle: CreateExternalBundle(root, external)).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("same major.minor", diagnostic.GetMessage());
+            Assert.Contains("logical path '/openapi'", diagnostic.GetMessage());
+            Assert.Equal("Assets/Specs/pet.json", diagnostic.Location.GetLineSpan().Path);
+            Assert.Contains(diagnostic.AdditionalLocations,
+                location => location.GetLineSpan().Path == TestBundleFactory.SourcePath);
+        }
+
+        [Theory]
+        [InlineData("3.2.0", "OACG101")]
+        [InlineData("3.1", "OACG100")]
+        public void UnsupportedExternalVersionReportsExternalLocation(
+            string externalVersion,
+            string expectedId)
+        {
+            string root = CreateRootWithReference("pet.json#/components/schemas/Pet");
+            string external = CreateOpenApiDocument(
+                "External Pet", "\"Pet\":{\"type\":\"string\"}", externalVersion);
+
+            Diagnostic diagnostic = Assert.Single(
+                Phase4GeneratorTestHarness.GenerateAndCompile(
+                    root,
+                    bundle: CreateExternalBundle(root, external)).RunResult.Diagnostics);
+
+            Assert.Equal(expectedId, diagnostic.Id);
+            Assert.Contains("logical path '/openapi'", diagnostic.GetMessage());
+            Assert.Equal("Assets/Specs/pet.json", diagnostic.Location.GetLineSpan().Path);
+        }
+
+        [Theory]
+        [InlineData("https://json-schema.org/draft/2020-12/schema", "OACG101")]
+        [InlineData("relative/dialect", "OACG100")]
+        public void UnsupportedExternalDialectReportsExternalLocation(
+            string dialect,
+            string expectedId)
+        {
+            string root = CreateRootWithReference("pet.json#/components/schemas/Pet");
+            string external = CreateOpenApiDocument(
+                "External Pet",
+                "\"Pet\":{\"type\":\"string\"}",
+                dialectField: "\"jsonSchemaDialect\":"
+                    + System.Text.Json.JsonSerializer.Serialize(dialect) + ",");
+
+            Diagnostic diagnostic = Assert.Single(
+                Phase4GeneratorTestHarness.GenerateAndCompile(
+                    root,
+                    bundle: CreateExternalBundle(root, external)).RunResult.Diagnostics);
+
+            Assert.Equal(expectedId, diagnostic.Id);
+            Assert.Contains("logical path '/jsonSchemaDialect'", diagnostic.GetMessage());
+            Assert.Equal("Assets/Specs/pet.json", diagnostic.Location.GetLineSpan().Path);
+            Assert.Contains(diagnostic.AdditionalLocations,
+                location => location.GetLineSpan().Path == TestBundleFactory.SourcePath);
+        }
+
+        [Theory]
+        [InlineData("3.1.0", "3.1.1")]
+        [InlineData("3.0.1", "3.0.3")]
+        public void ExternalDocumentWithSameMinorAndDifferentPatchCompiles(
+            string entryVersion,
+            string externalVersion)
+        {
+            string root = CreateRootWithReference(
+                "pet.json#/components/schemas/Pet", entryVersion);
+            string external = CreateOpenApiDocument(
+                "External Pet", "\"Pet\":{\"type\":\"string\"}", externalVersion);
+
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                root,
+                bundle: CreateExternalBundle(root, external));
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+        }
+
+        [Fact]
+        public void ExternalDocumentWithSupportedBaseDialectCompiles()
+        {
+            string root = CreateRootWithReference("pet.json#/components/schemas/Pet");
+            string external = CreateOpenApiDocument(
+                "External Pet",
+                "\"Pet\":{\"type\":\"string\"}",
+                dialectField: "\"jsonSchemaDialect\":\"https://spec.openapis.org/oas/3.1/dialect/base\",");
+
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                root,
+                bundle: CreateExternalBundle(root, external));
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+        }
+
         [Fact]
         public void MissingTargetPointerInExistingExternalDocumentReportsOacg102()
         {
@@ -467,9 +576,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                     .Select(source => source.SourceText.ToString()));
         }
 
-        private static string CreateRootWithReference(string reference)
+        private static string CreateRootWithReference(
+            string reference,
+            string version = "3.1.0")
         {
-            return "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Sample\",\"version\":\"1\"}," +
+            return "{\"openapi\":\"" + version + "\",\"info\":{\"title\":\"Sample\",\"version\":\"1\"}," +
                    "\"paths\":{\"/pets\":{\"get\":{\"operationId\":\"getPet\",\"responses\":{" +
                    "\"200\":{\"description\":\"OK\",\"content\":{\"application/json\":{" +
                    "\"schema\":{\"$ref\":" + System.Text.Json.JsonSerializer.Serialize(reference) +
@@ -495,9 +606,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                    System.Text.Json.JsonSerializer.Serialize(reference) + "}}}}}}";
         }
 
-        private static string CreateOpenApiDocument(string title, string schemaEntry)
+        private static string CreateOpenApiDocument(
+            string title,
+            string schemaEntry,
+            string version = "3.1.0",
+            string dialectField = "")
         {
-            return "{\"openapi\":\"3.1.0\",\"info\":{\"title\":" +
+            return "{\"openapi\":\"" + version + "\"," + dialectField + "\"info\":{\"title\":" +
                    System.Text.Json.JsonSerializer.Serialize(title) +
                    ",\"version\":\"1\"},\"paths\":{},\"components\":{\"schemas\":{" +
                    schemaEntry + "}}}";
