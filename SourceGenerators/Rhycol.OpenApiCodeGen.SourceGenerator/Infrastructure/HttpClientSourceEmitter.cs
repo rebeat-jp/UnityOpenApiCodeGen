@@ -335,9 +335,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     .Append(", \"$\", \"request\", new global::System.Collections.Generic.Dictionary<object, global::System.Collections.Generic.HashSet<int>>(new ")
                     .Append(validators.ComparerName).AppendLine("()));");
             }
-            source.Append(indent).Append("string requestJson = global::Newtonsoft.Json.JsonConvert.SerializeObject(")
+            source.Append(indent).Append("string requestJson = ")
+                .Append(validators.RequestJsonSerializerName).Append('(')
                 .Append(body.ParameterName)
-                .AppendLine(", DateOnlyJsonConverterInstance);");
+                .AppendLine(");");
             source.Append(indent).Append("request.Content = CreateJsonContent(requestJson, ")
                 .Append(GeneratedSourceEmitter.StringLiteral(body.MediaType))
                 .AppendLine(");");
@@ -455,6 +456,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private static void AppendHelpers(StringBuilder source, ResponseValidatorPlan validators)
         {
             source.AppendLine("        private static readonly global::Newtonsoft.Json.JsonConverter DateOnlyJsonConverterInstance = new DateOnlyJsonConverter();");
+            AppendRequestJsonSerializationHelper(source, validators.RequestJsonSerializerName);
             AppendResponseContentTypeHelper(source, validators.MediaTypeValidatorName);
             source.AppendLine();
             source.AppendLine("        private global::System.Uri CreateRequestUri(string relativePath)");
@@ -685,6 +687,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append("        private static void ").Append(methodName)
                 .AppendLine("(global::System.Net.Http.HttpResponseMessage response, string[] declaredMediaTypes)");
             source.AppendLine("        {");
+            source.AppendLine("            if (declaredMediaTypes.Length == 0) return;");
             source.AppendLine("            if (response.Content == null || !response.Content.Headers.TryGetValues(\"Content-Type\", out var headerValues)) return;");
             source.AppendLine("            string? header = null;");
             source.AppendLine("            foreach (string value in headerValues)");
@@ -793,6 +796,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("                   character == (char)42 || character == (char)43 || character == (char)45 ||");
             source.AppendLine("                   character == (char)46 || character == (char)94 || character == (char)95 ||");
             source.AppendLine("                   character == (char)96 || character == (char)124 || character == (char)126;");
+            source.AppendLine("        }");
+        }
+
+        private static void AppendRequestJsonSerializationHelper(StringBuilder source, string methodName)
+        {
+            source.AppendLine();
+            source.Append("        private static string ").Append(methodName).AppendLine("(object? value)");
+            source.AppendLine("        {");
+            source.AppendLine("            var serializer = global::Newtonsoft.Json.JsonSerializer.Create();");
+            source.AppendLine("            serializer.Converters.Add(DateOnlyJsonConverterInstance);");
+            source.AppendLine("            using (var textWriter = new global::System.IO.StringWriter(global::System.Globalization.CultureInfo.InvariantCulture))");
+            source.AppendLine("            using (var jsonWriter = new global::Newtonsoft.Json.JsonTextWriter(textWriter))");
+            source.AppendLine("            {");
+            source.AppendLine("                serializer.Serialize(jsonWriter, value);");
+            source.AppendLine("                jsonWriter.Flush();");
+            source.AppendLine("                return textWriter.ToString();");
+            source.AppendLine("            }");
             source.AppendLine("        }");
         }
 
@@ -1349,6 +1369,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             internal string ComparerName => _methodPrefix + "Comparer";
 
             internal string MediaTypeValidatorName => _mediaTypePrefix + "Validate";
+
+            internal string RequestJsonSerializerName => _mediaTypePrefix + "SerializeRequestJson";
 
             internal string MediaTypesLocalName => _mediaTypePrefix + "DeclaredMediaTypes";
 

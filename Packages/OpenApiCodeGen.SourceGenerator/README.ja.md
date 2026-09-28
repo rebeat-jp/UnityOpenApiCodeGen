@@ -60,6 +60,8 @@ content専用headerは位置付き診断で拒否します。対象名は[日本
 ## 生成されたDTOとHTTPクライアント
 
 クライアントは注入された`HttpClient`を使用します。DTOはJson.NETでシリアライズします。
+リクエストJSON本文は専用のserializerで生成し、ホストの`JsonConvert.DefaultSettings`による
+`$type`／`$id`／`$ref`などの追加を受けません。日付変換と明示的なJSON `null`は維持します。
 任意かつschema上nullableなDTOプロパティは、未代入ならJSONから省略され、`null`を代入すると
 明示的なJSON `null`を送ります。生成された`<PropertyName>Specified`を`false`へ戻すと、
 同じDTOを再利用するときもそのプロパティを省略できます。
@@ -105,9 +107,11 @@ nullableな要素にはJSON `null`を使用できます。
 `NaN`と正負の無限大はHTTP送信前に`JsonSerializationException`になります。
 path／query／headerの`float`／`double`パラメーターも有限値に限り、非有限値は
 HTTP送信前に`ArgumentOutOfRangeException`になります。任意パラメーターの省略は維持します。
-成功レスポンスに`Content-Type`があれば、そのstatusで宣言されたmedia typeと照合してから
+任意queryに`null`を渡すと省略し、明示的な空文字列は`name=`として送信します。
+成功レスポンスにcontent宣言と`Content-Type`があれば、そのstatusで宣言されたmedia typeと照合してから
 本文を読みます。不正・複数・宣言と不一致の値は`JsonSerializationException`です。
-個別statusの宣言は`2XX`より優先します。`Content-Type`がない場合は従来どおり本文を読みます。
+個別statusの宣言は`2XX`より優先します。content宣言のない成功応答では`Content-Type`を照合せず、
+`Content-Type`がない場合も従来どおり本文を読みます。
 成功レスポンスのJSONは、デシリアライズ前にRFC 8259の構文、重複・未知property、
 scalarのJSON token型を検査します。`float`／`double`は有限値に限り、`1.0`や`1e0`のような
 数学的整数は生成CLR型の範囲内で受け入れます。Json.NETの参照メタデータは維持します。

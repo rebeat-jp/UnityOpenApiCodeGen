@@ -358,7 +358,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>parameter serialization</td>
 <td>一部対応</td>
-<td>defaultの<code>style</code>/<code>explode</code>のみ。<code>allowReserved: true</code>は対象外です。</td>
+<td>defaultの<code>style</code>/<code>explode</code>のみ。<code>allowReserved: true</code>は対象外です。任意queryの<code>null</code>は省略し、明示的な空文字列は<code>name=</code>として送信します。<code>allowEmptyValue</code>は省略される値の代替を表し、明示的な空文字列には適用しません。</td>
 </tr>
 <tr>
 <td>非有限数値parameter</td>
@@ -396,6 +396,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>パラメーター付きも含む具体的な<code>application/json</code>または<code>application/&lt;subtype&gt;+json</code>を送信します。<code>application/*+json</code>だけの宣言は<code>OACG101</code>で拒否し、具体型と併記された場合は具体型を選びます。type/subtypeを正規化して判定します。</td>
 </tr>
 <tr>
+<td>リクエストJSONシリアライズ</td>
+<td>対応</td>
+<td>リクエスト本文は専用のJson.NET serializerで生成し、ホストの<code>JsonConvert.DefaultSettings</code>から<code>$type</code>／<code>$id</code>／<code>$ref</code>などのメタデータ設定を引き継ぎません。日付変換と明示的なJSON <code>null</code>は維持します。</td>
+</tr>
+<tr>
 <td>wildcard JSON media type</td>
 <td>一部対応</td>
 <td><code>application/*+json</code>のみを認識します。<code>application/vnd.*+json</code>など部分的なwildcard subtypeは、リクエスト・成功レスポンスとも生成時に<code>OACG101</code>です。</td>
@@ -428,7 +433,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>成功レスポンスの<code>Content-Type</code></td>
 <td>一部対応</td>
-<td>headerがある場合はstatus別の宣言media typeと照合し、不一致・不正・複数値は<code>JsonSerializationException</code>です。個別statusの宣言は<code>2XX</code>より優先します。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。</td>
+<td>そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は<code>JsonSerializationException</code>です。content宣言のない成功応答では<code>Content-Type</code>を照合しません。個別statusの宣言は<code>2XX</code>より優先します。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。</td>
 </tr>
 <tr>
 <td>成功レスポンスのJSON</td>

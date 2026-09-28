@@ -134,7 +134,7 @@ YAML diagnostic IDs are stable within Phase 5:
 | HTTP method | Supported | `GET`、`POST`、`PUT`、`DELETE`、`PATCH`、`HEAD`、`OPTIONS`、`TRACE`。 |
 | `servers` | Partial | URLは0個または1個、variablesなし。絶対URLはHTTP(S)のみで、FTPなどは`OACG101`です。root `servers`の省略・空配列は`/`を既定値とします。`//host/path`は`HttpClient.BaseAddress`のschemeで解決します。`/path`と既定の`/`は同じoriginのrootから解決し、`BaseAddress`のpathとqueryを引き継ぎません。`BaseAddress`が必要な場合に未設定なら送信前に`InvalidOperationException`です。明示的な空文字`baseUrl` overrideは相対URLとして扱います。相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。 |
 | parameter location | Partial | path、query、headerのscalar parameterのみ。cookieは対象外です。 |
-| parameter serialization | Partial | defaultの`style`/`explode`のみ。`allowReserved: true`は対象外です。 |
+| parameter serialization | Partial | defaultの`style`/`explode`のみ。`allowReserved: true`は対象外です。任意queryの`null`は省略し、明示的な空文字列は`name=`として送信します。`allowEmptyValue`は省略される値の代替を表し、明示的な空文字列には適用しません。 |
 | non-finite numeric parameter | Unsupported | path／query／headerの`float`／`double`に`NaN`・正負の無限大を渡すと、HTTP送信前に`ArgumentOutOfRangeException`です。任意parameterの省略と有限値は使用できます。 |
 | complex parameter | Unsupported | 直接定義・多段`$ref`ともarray/object等のcomplex parameterは対象外です。 |
 | required nullable parameter | Unsupported | path/query/headerの`required: true`とnullableの組み合わせは`OACG101`です。参照チェーン全体を確認します。任意parameterのnull省略とDTOのnullableは維持します。 |
@@ -142,13 +142,14 @@ YAML diagnostic IDs are stable within Phase 5:
 | header identity | Supported | header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。 |
 | content専用header parameter | Unsupported | `Allow`、`Content-Disposition`、`Content-Encoding`、`Content-Language`、`Content-Length`、`Content-Location`、`Content-MD5`、`Content-Range`、`Content-Type`、`Expires`、`Last-Modified`は大小文字を問わず`OACG101`で拒否します。独自の`Content-*`名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に`InvalidOperationException`です。 |
 | request body | Partial | パラメーター付きも含む具体的な`application/json`または`application/<subtype>+json`を送信します。`application/*+json`だけの宣言は`OACG101`で拒否し、具体型と併記された場合は具体型を選びます。type/subtypeを正規化して判定します。 |
+| request JSON serialization | Supported | リクエスト本文は専用のJson.NET serializerで生成し、ホストの`JsonConvert.DefaultSettings`から`$type`／`$id`／`$ref`などのメタデータ設定を引き継ぎません。日付変換と明示的なJSON `null`は維持します。 |
 | wildcard JSON media type | Partial | `application/*+json`のみを認識します。`application/vnd.*+json`など部分的なwildcard subtypeは、リクエスト・成功レスポンスとも生成時に`OACG101`です。 |
 | required non-nullable request body | Supported | 参照型の本文に`null`を渡すとHTTP送信前に`ArgumentNullException`です。schemaがnullableな必須本文はJSON `null`を送信できます。 |
 | request array items | Supported | 非nullableな参照型要素が`null`なら、本文直下・入れ子の配列・DTO内の配列とも、シリアライズ前に`JsonSerializationException`で拒否します。nullableな要素の`null`は送信できます。 |
 | optional nullable request body | Supported | `requestBody.required: false`かつschemaがnullableの場合、`null`引数は本文省略、非`null`引数はJSON本文を送信します。生成メソッドの`<BodyParameterName>Specified`を`true`にすると、`null`引数でも明示的なJSON `null`を送信します。名前が衝突する場合は番号を付けます。 |
 | request charset | Partial | UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。 |
 | successful response | Partial | 少なくとも1つの`2xx` responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの宣言順は比較に影響しません。schema付き成功本文の空・空白はnullableでも`JsonSerializationException`です。JSON `null`はnullable schemaだけで許可します。非nullableな配列要素がJSON `null`なら、入れ子の配列とDTO内の配列も含めて拒否します。 |
-| successful response `Content-Type` | Partial | headerがある場合はstatus別の宣言media typeと照合し、不一致・不正・複数値は`JsonSerializationException`です。個別statusの宣言は`2XX`より優先します。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。 |
+| successful response `Content-Type` | Partial | そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は`JsonSerializationException`です。content宣言のない成功応答では`Content-Type`を照合しません。個別statusの宣言は`2XX`より優先します。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。 |
 | successful response JSON | Partial | RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの`$id`／`$ref`／`$values`参照メタデータを維持します。整数は数学的整数値の`1.0`／`1e0`を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限`float`／`double`は`JsonSerializationException`です。 |
 | error/default response | Partial | JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。 |
 | response extension | Supported | operationのResponses Objectでは`x-*`を除外します。`components.responses`の`x-*`名は通常のResponse/Referenceです。 |

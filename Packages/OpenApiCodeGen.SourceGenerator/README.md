@@ -159,7 +159,10 @@ An optional non-nullable DTO property may be absent from JSON, but an explicit
 JSON `null` raises `JsonSerializationException`. An unset property is omitted
 when serialized. Passing `null` for a required non-nullable reference-type
 request body raises `ArgumentNullException` before sending; a nullable required
-body can send JSON `null`. A `//host/path` server URL uses the scheme from
+body can send JSON `null`. Request JSON bodies use a dedicated Json.NET serializer
+that does not inherit the host's `JsonConvert.DefaultSettings` metadata options;
+the generated date converter and explicit JSON `null` values are retained.
+A `//host/path` server URL uses the scheme from
 `HttpClient.BaseAddress`; a `/path` server URL starts at the origin root,
 ignoring the base address path and query. Both forms require a base address.
 An omitted or empty root `servers` list defaults to `/` and therefore also
@@ -186,11 +189,13 @@ Request `float` and `double` values must be finite, including values nested in
 arrays and DTOs. `NaN` and either infinity raise `JsonSerializationException`
 before the HTTP request is sent. Non-finite `float` and `double` path, query,
 and header parameters raise `ArgumentOutOfRangeException` before sending;
-omitted optional parameters remain valid. For a successful response that supplies a
+omitted optional parameters remain valid. An optional query parameter passed as
+`null` is omitted, while an explicit empty string is sent as `name=`. For a successful response that declares content and supplies a
 `Content-Type`, the client checks it against the media types declared for that
 status before deserializing; malformed, multiple, and conflicting values raise
 `JsonSerializationException`. A specific status declaration takes precedence
-over `2XX`. Responses without a `Content-Type` retain the existing behavior.
+over `2XX`. A successful response without declared content skips this media
+check; responses without a `Content-Type` retain the existing behavior.
 Every schema-declared successful response requires a nonempty JSON body; a
 nullable schema accepts the JSON token `null`. Response JSON is checked for
 RFC 8259 syntax, duplicate and unknown object properties, and scalar token
