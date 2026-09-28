@@ -186,7 +186,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private static bool IsQuotedCharacter(char character)
         {
             return character == '\t' ||
-                   (character >= ' ' && character != (char)127);
+                   (character >= ' ' && character <= (char)255 && character != (char)127);
         }
 
         private static void SkipOptionalWhitespace(string value, ref int index)

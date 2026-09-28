@@ -139,7 +139,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 .Append(GetHttpMethod(operation.HttpMethod))
                 .AppendLine(", requestUri))");
             source.AppendLine("            {");
-            AppendHeaderParameters(source, operation);
+            AppendHeaderParameters(source, operation, responseValidators);
             AppendRequestBody(source, operation.RequestBody, responseValidators);
             source.AppendLine("                using (var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false))");
             source.AppendLine("                {");
@@ -244,14 +244,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("            }");
         }
 
-        private static void AppendHeaderParameters(StringBuilder source, GeneratedOperationModel operation)
+        private static void AppendHeaderParameters(
+            StringBuilder source,
+            GeneratedOperationModel operation,
+            ResponseValidatorPlan validators)
         {
             foreach (GeneratedParameterModel parameter in operation.Parameters.Where(
                          static value => value.LocationName == "header"))
             {
                 string statement = "if (!request.Headers.TryAddWithoutValidation(" +
                                    GeneratedSourceEmitter.StringLiteral(parameter.WireName) +
-                                   ", ConvertToString(" + GetValueExpression(parameter) + "))) " +
+                                   ", " + validators.HeaderValueValidatorName + "(ConvertToString(" +
+                                   GetValueExpression(parameter) + "), " +
+                                   GeneratedSourceEmitter.StringLiteral(parameter.WireName) + "))) " +
                                    "throw new global::System.InvalidOperationException(" +
                                    GeneratedSourceEmitter.StringLiteral(
                                        "Unable to add request header '" + parameter.WireName + "'.") + ");";
@@ -458,6 +463,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        private static readonly global::Newtonsoft.Json.JsonConverter DateOnlyJsonConverterInstance = new DateOnlyJsonConverter();");
             AppendRequestJsonSerializationHelper(source, validators.RequestJsonSerializerName);
             AppendResponseContentTypeHelper(source, validators.MediaTypeValidatorName);
+            source.AppendLine();
+            source.Append("        private static string ").Append(validators.HeaderValueValidatorName)
+                .AppendLine("(string value, string name)");
+            source.AppendLine("        {");
+            source.AppendLine("            foreach (char character in value)");
+            source.AppendLine("            {");
+            source.AppendLine("                if ((character < (char)32 && character != (char)9) || character == (char)127)");
+            source.AppendLine("                    throw new global::System.ArgumentException(\"Request header '\" + name + \"' contains a forbidden control character.\", nameof(value));");
+            source.AppendLine("            }");
+            source.AppendLine("            return value;");
+            source.AppendLine("        }");
             source.AppendLine();
             source.AppendLine("        private global::System.Uri CreateRequestUri(string relativePath)");
             source.AppendLine("        {");
@@ -1450,6 +1466,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             internal string ComparerName => _methodPrefix + "Comparer";
 
             internal string MediaTypeValidatorName => _mediaTypePrefix + "Validate";
+
+            internal string HeaderValueValidatorName => _mediaTypePrefix + "ValidateHeaderValue";
 
             internal string RequestJsonSerializerName => _mediaTypePrefix + "SerializeRequestJson";
 

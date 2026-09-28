@@ -151,6 +151,9 @@ omitted. Set the generated `<PropertyName>Specified` flag to `false` to omit it
 again. OpenAPI 3.1 supports the default or explicitly declared OAS base schema
 dialect; unsupported dialects and string enums containing `null` receive
 source-located diagnostics.
+When a schema member's generated CLR name would be interpreted as another
+member's `Specified` flag by Json.NET, the generator assigns a unique CLR name
+and keeps its JSON property name.
 Named object DTO schemas must explicitly set `additionalProperties: false`.
 Schemas that omit it, allow extra properties, or use unsupported assertions
 such as `pattern`, `minimum`, and `minItems` receive `OACG101` instead of
@@ -171,6 +174,10 @@ An omitted or empty root `servers` list defaults to `/` and therefore also
 requires a base address. Absolute server URLs must use HTTP or HTTPS; other
 schemes receive a positioned `OACG101`. Unmatched path-template braces and header
 parameter names outside the ASCII HTTP field-name token syntax receive a positioned `OACG100`.
+`Accept` and `Authorization` header parameters receive `OACG101`, regardless of
+case. Header values containing ASCII control characters other than HTAB fail
+with `ArgumentException` before sending. A TRACE operation with `requestBody`
+receives `OACG101`, including when the body is referenced.
 An explicit `baseUrl=""` override remains relative.
 With a relative server URL, an operation at `/` includes a base address query once.
 Request bodies send a concrete `application/json` or `application/<subtype>+json`
@@ -178,6 +185,10 @@ media type. A request that declares only `application/*+json` receives `OACG101`
 when a concrete type is also declared, that type is selected.
 Partial wildcard subtypes such as `application/vnd.*+json` receive `OACG101`
 for request and successful response content.
+Quoted media parameters allow HTAB and U+0020–U+00FF except DEL; characters
+above U+00FF receive `OACG100`. Recognized schema formats (`int64`, `float`,
+`decimal`, `date`, `date-time`, `uuid`, and `binary`) require exact lowercase
+spelling; other casing uses the base schema type.
 
 Serialization checks required non-nullable reference properties in request
 DTOs, including nested DTOs, before the HTTP request is sent. Required nullable

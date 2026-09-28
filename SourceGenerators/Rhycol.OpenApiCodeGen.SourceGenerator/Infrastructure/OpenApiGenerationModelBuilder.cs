@@ -201,7 +201,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     return ResolveStringType(schema);
                 case OpenApiSemanticSchemaKind.Integer:
                     return new GeneratedTypeModel(
-                        string.Equals(schema.Format, "int64", StringComparison.OrdinalIgnoreCase)
+                        string.Equals(schema.Format, "int64", StringComparison.Ordinal)
                             ? GeneratedTypeKind.Int64
                             : GeneratedTypeKind.Int32,
                         schema.Nullable);
@@ -261,15 +261,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private GeneratedTypeModel ResolveStringType(OpenApiSemanticSchema schema)
         {
             GeneratedTypeKind kind;
-            if (string.Equals(schema.Format, "date-time", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(schema.Format, "date-time", StringComparison.Ordinal))
             {
                 kind = GeneratedTypeKind.DateTimeOffset;
             }
-            else if (string.Equals(schema.Format, "date", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(schema.Format, "date", StringComparison.Ordinal))
             {
                 kind = GeneratedTypeKind.DateTime;
             }
-            else if (string.Equals(schema.Format, "uuid", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(schema.Format, "uuid", StringComparison.Ordinal))
             {
                 kind = GeneratedTypeKind.Guid;
             }
@@ -283,12 +283,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private static GeneratedTypeKind ResolveNumberKind(string format)
         {
-            if (string.Equals(format, "float", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(format, "float", StringComparison.Ordinal))
             {
                 return GeneratedTypeKind.Single;
             }
 
-            if (string.Equals(format, "decimal", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(format, "decimal", StringComparison.Ordinal))
             {
                 return GeneratedTypeKind.Decimal;
             }
@@ -354,6 +354,24 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         property.Required,
                         useSpecified,
                         type));
+                }
+
+                // Json.NET treats any CLR member named FooSpecified as Foo's presence flag,
+                // even when that member came from the schema instead of our generated marker.
+                foreach (OpenApiSemanticProperty property in orderedProperties)
+                {
+                    GeneratedDtoPropertyModel member = allocatedProperties[property];
+                    if (!allocatedProperties.Values.Any(other =>
+                            !ReferenceEquals(other, member) &&
+                            string.Equals(member.Name, other.Name + "Specified", StringComparison.Ordinal)))
+                    {
+                        continue;
+                    }
+
+                    string safeName = AllocateJsonNetSafePropertyName(
+                        member, usedPropertyNames, allocatedProperties.Values);
+                    allocatedProperties[property] = new GeneratedDtoPropertyModel(
+                        safeName, member.WireName, member.Required, member.UseSpecified, member.Type);
                 }
 
                 _dtos.Add(new GeneratedDtoModel(
@@ -476,6 +494,32 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             usedNames.Add(candidate);
             // Json.NET discovers this exact suffix when deciding whether to write a property.
             usedNames.Add(candidate + "Specified");
+            return candidate;
+        }
+
+        private static string AllocateJsonNetSafePropertyName(
+            GeneratedDtoPropertyModel member,
+            HashSet<string> usedNames,
+            IEnumerable<GeneratedDtoPropertyModel> members)
+        {
+            string baseName = member.Name;
+            string candidate = baseName;
+            int suffix = 2;
+            while (usedNames.Contains(candidate) ||
+                   (member.UseSpecified && usedNames.Contains(candidate + "Specified")) ||
+                   members.Any(other =>
+                       !ReferenceEquals(other, member) &&
+                       (string.Equals(candidate, other.Name + "Specified", StringComparison.Ordinal) ||
+                        string.Equals(other.Name, candidate + "Specified", StringComparison.Ordinal))))
+            {
+                candidate = baseName + suffix++;
+            }
+
+            usedNames.Add(candidate);
+            if (member.UseSpecified)
+            {
+                usedNames.Add(candidate + "Specified");
+            }
             return candidate;
         }
 

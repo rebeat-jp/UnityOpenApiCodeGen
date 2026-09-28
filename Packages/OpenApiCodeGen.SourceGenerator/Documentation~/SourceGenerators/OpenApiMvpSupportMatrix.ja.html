@@ -396,6 +396,16 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>HTTP field-nameのASCII tokenのみを許可し、空白・コロン・非ASCIIなど不正な名前は<code>name</code>の位置付き<code>OACG100</code>です。</td>
 </tr>
 <tr>
+<td>予約header parameter</td>
+<td>非対応</td>
+<td><code>Accept</code>と<code>Authorization</code>は大小文字を問わず名前の位置で<code>OACG101</code>です。<code>Content-Type</code>は次のcontent専用header制限に含まれます。</td>
+</tr>
+<tr>
+<td>header parameterの値</td>
+<td>一部対応</td>
+<td>文字列化した値にCR・LFを含む禁止ASCII制御文字（HTABを除く）があれば、<code>HttpClient.SendAsync</code>より前に<code>ArgumentException</code>です。省略した任意値は検査しません。</td>
+</tr>
+<tr>
 <td>content専用header parameter</td>
 <td>非対応</td>
 <td><code>Allow</code>、<code>Content-Disposition</code>、<code>Content-Encoding</code>、<code>Content-Language</code>、<code>Content-Length</code>、<code>Content-Location</code>、<code>Content-MD5</code>、<code>Content-Range</code>、<code>Content-Type</code>、<code>Expires</code>、<code>Last-Modified</code>は大小文字を問わず<code>OACG101</code>で拒否します。独自の<code>Content-*</code>名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に<code>InvalidOperationException</code>です。</td>
@@ -404,6 +414,16 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>request body</td>
 <td>一部対応</td>
 <td>パラメーター付きも含む具体的な<code>application/json</code>または<code>application/&lt;subtype&gt;+json</code>を送信します。<code>application/*+json</code>だけの宣言は<code>OACG101</code>で拒否し、具体型と併記された場合は具体型を選びます。type/subtypeを正規化して判定します。</td>
+</tr>
+<tr>
+<td>TRACEのrequest body</td>
+<td>非対応</td>
+<td><code>requestBody</code>を宣言するTRACEは、参照経由も含めてその位置の<code>OACG101</code>です。本文のないTRACEは使用できます。</td>
+</tr>
+<tr>
+<td>引用付きmedia parameter</td>
+<td>一部対応</td>
+<td>引用文字とescapeはHTAB、またはDELを除くU+0020～U+00FFに限ります。U+00FFを超える文字を含むリクエスト・成功レスポンスのmedia宣言は位置付き<code>OACG100</code>です。</td>
 </tr>
 <tr>
 <td>リクエストJSONシリアライズ</td>
@@ -538,6 +558,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td><code>integer</code>は通常<code>int</code>、<code>int64</code>は<code>long</code>。<code>number</code>は通常<code>double</code>、<code>float</code>は<code>float</code>、<code>decimal</code>は<code>decimal</code>。<code>date</code>、<code>date-time</code>、<code>uuid</code>は<code>DateTime</code>、<code>DateTimeOffset</code>、<code>Guid</code>へmappingします。成功レスポンスでは変換前にそれぞれ日付、タイムゾーン付き日時、ASCIIの8-4-4-4-12形式を字句検査します。字句が正しくてもCLRで表せない時刻・うるう秒などは変換時に拒否される場合があります。</td>
 </tr>
 <tr>
+<td>formatの綴り</td>
+<td>一部対応</td>
+<td><code>int64</code>、<code>float</code>、<code>decimal</code>、<code>date</code>、<code>date-time</code>、<code>uuid</code>、<code>binary</code>は小文字の完全一致だけを特別扱いします。大文字を含む未知の綴りはschemaの基底型として扱います。</td>
+</tr>
+<tr>
 <td>リクエスト数値</td>
 <td>対応</td>
 <td><code>float</code>／<code>double</code>の<code>NaN</code>・正負の無限大は本文直下・配列・DTO内ともHTTP送信前に<code>JsonSerializationException</code>で拒否します。省略指定した任意項目は検査しません。</td>
@@ -592,7 +617,9 @@ namespace-levelのため、同じnamespaceには共存できません。</p>
 <code>_httpClient</code>、<code>_baseUrl</code>、<code>DateOnlyJsonConverterInstance</code>、<code>CreateRequestUri</code>、
 <code>CombineAbsoluteUri</code>、<code>CombinePaths</code>、<code>CombineQueries</code>、<code>AppendQuery</code>、
 <code>SplitPathAndQuery</code>、<code>ValidatePathSegments</code>、<code>CreateJsonContent</code>、
-<code>ConvertToString</code>、<code>DateOnlyJsonConverter</code>です。</p>
+<code>ConvertToString</code>、<code>DateOnlyJsonConverter</code>です。
+schemaの項目名が別項目のCLR名に<code>Specified</code>を付けた名前と衝突する場合、JSON上の名前を保ったまま
+CLR名に番号を付けます。Json.NETがschemaのboolean値を存在フラグと誤認することを防ぎます。</p>
 <h2 id="診断">診断</h2>
 <table>
 <thead>

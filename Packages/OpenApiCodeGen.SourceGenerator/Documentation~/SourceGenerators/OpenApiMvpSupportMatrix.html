@@ -396,6 +396,16 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>HTTP field-nameのASCII tokenのみを許可し、空白・コロン・非ASCIIなど不正な名前は<code>name</code>の位置付き<code>OACG100</code>です。</td>
 </tr>
 <tr>
+<td>reserved header parameters</td>
+<td>Unsupported</td>
+<td><code>Accept</code> and <code>Authorization</code> are rejected with positioned <code>OACG101</code>, including case variants. <code>Content-Type</code> remains covered by the content-only header restriction below.</td>
+</tr>
+<tr>
+<td>header parameter value</td>
+<td>Partial</td>
+<td>Converted values containing ASCII control characters other than HTAB, including CR and LF, fail with <code>ArgumentException</code> before <code>HttpClient.SendAsync</code>. Omitted optional values are not checked.</td>
+</tr>
+<tr>
 <td>content専用header parameter</td>
 <td>Unsupported</td>
 <td><code>Allow</code>、<code>Content-Disposition</code>、<code>Content-Encoding</code>、<code>Content-Language</code>、<code>Content-Length</code>、<code>Content-Location</code>、<code>Content-MD5</code>、<code>Content-Range</code>、<code>Content-Type</code>、<code>Expires</code>、<code>Last-Modified</code>は大小文字を問わず<code>OACG101</code>で拒否します。独自の<code>Content-*</code>名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に<code>InvalidOperationException</code>です。</td>
@@ -404,6 +414,16 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>request body</td>
 <td>Partial</td>
 <td>パラメーター付きも含む具体的な<code>application/json</code>または<code>application/&lt;subtype&gt;+json</code>を送信します。<code>application/*+json</code>だけの宣言は<code>OACG101</code>で拒否し、具体型と併記された場合は具体型を選びます。type/subtypeを正規化して判定します。</td>
+</tr>
+<tr>
+<td>TRACE request body</td>
+<td>Unsupported</td>
+<td>A TRACE operation declaring <code>requestBody</code>, including a reference, receives positioned <code>OACG101</code>. Bodyless TRACE remains supported.</td>
+</tr>
+<tr>
+<td>quoted media parameters</td>
+<td>Partial</td>
+<td>Quoted HTTP parameter characters and escapes must be HTAB or within U+0020–U+00FF, excluding DEL. A character above U+00FF receives positioned <code>OACG100</code> in request and successful response media declarations.</td>
 </tr>
 <tr>
 <td>request JSON serialization</td>
@@ -538,6 +558,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td><code>integer</code>は通常<code>int</code>、<code>int64</code>は<code>long</code>。<code>number</code>は通常<code>double</code>、<code>float</code>は<code>float</code>、<code>decimal</code>は<code>decimal</code>。<code>date</code>、<code>date-time</code>、<code>uuid</code>は<code>DateTime</code>、<code>DateTimeOffset</code>、<code>Guid</code>へmappingします。成功レスポンスでは変換前にそれぞれ日付、タイムゾーン付き日時、ASCIIの8-4-4-4-12形式を字句検査します。字句が正しくてもCLRで表せない時刻・うるう秒などは変換時に拒否される場合があります。</td>
 </tr>
 <tr>
+<td>format spelling</td>
+<td>Partial</td>
+<td>Only exact lowercase <code>int64</code>, <code>float</code>, <code>decimal</code>, <code>date</code>, <code>date-time</code>, <code>uuid</code>, and <code>binary</code> trigger their special handling. Other casing is treated as an unrecognized format and uses the base schema type.</td>
+</tr>
+<tr>
 <td>request number</td>
 <td>Supported</td>
 <td><code>float</code>／<code>double</code>の<code>NaN</code>・正負の無限大は本文直下・配列・DTO内ともHTTP送信前に<code>JsonSerializationException</code>で拒否します。省略指定した任意項目は検査しません。</td>
@@ -592,7 +617,10 @@ namespace-levelのため、同じnamespaceには共存できません。</p>
 Reserved names are <code>_httpClient</code>, <code>_baseUrl</code>, <code>DateOnlyJsonConverterInstance</code>,
 <code>CreateRequestUri</code>, <code>CombineAbsoluteUri</code>, <code>CombinePaths</code>, <code>CombineQueries</code>,
 <code>AppendQuery</code>, <code>SplitPathAndQuery</code>, <code>ValidatePathSegments</code>, <code>CreateJsonContent</code>,
-<code>ConvertToString</code>, and <code>DateOnlyJsonConverter</code>.</p>
+<code>ConvertToString</code>, and <code>DateOnlyJsonConverter</code>.
+Schema members whose CLR names would match another member&#39;s <code>Name + &quot;Specified&quot;</code>
+are assigned a unique CLR name while retaining their JSON wire names. This
+prevents Json.NET from mistaking a schema boolean for a presence flag.</p>
 <h2 id="診断">診断</h2>
 <table>
 <thead>

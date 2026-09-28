@@ -142,8 +142,12 @@ YAML diagnostic IDs are stable within Phase 5:
 | path template braces | Partial | 対応しない`{`／`}`は位置付き`OACG100`です。`/pets}`や`/pets/{id}}`も生成時に拒否します。 |
 | header identity | Supported | header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。 |
 | header parameter name | Partial | HTTP field-nameのASCII tokenのみを許可し、空白・コロン・非ASCIIなど不正な名前は`name`の位置付き`OACG100`です。 |
+| reserved header parameters | Unsupported | `Accept` and `Authorization` are rejected with positioned `OACG101`, including case variants. `Content-Type` remains covered by the content-only header restriction below. |
+| header parameter value | Partial | Converted values containing ASCII control characters other than HTAB, including CR and LF, fail with `ArgumentException` before `HttpClient.SendAsync`. Omitted optional values are not checked. |
 | content専用header parameter | Unsupported | `Allow`、`Content-Disposition`、`Content-Encoding`、`Content-Language`、`Content-Length`、`Content-Location`、`Content-MD5`、`Content-Range`、`Content-Type`、`Expires`、`Last-Modified`は大小文字を問わず`OACG101`で拒否します。独自の`Content-*`名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に`InvalidOperationException`です。 |
 | request body | Partial | パラメーター付きも含む具体的な`application/json`または`application/<subtype>+json`を送信します。`application/*+json`だけの宣言は`OACG101`で拒否し、具体型と併記された場合は具体型を選びます。type/subtypeを正規化して判定します。 |
+| TRACE request body | Unsupported | A TRACE operation declaring `requestBody`, including a reference, receives positioned `OACG101`. Bodyless TRACE remains supported. |
+| quoted media parameters | Partial | Quoted HTTP parameter characters and escapes must be HTAB or within U+0020–U+00FF, excluding DEL. A character above U+00FF receives positioned `OACG100` in request and successful response media declarations. |
 | request JSON serialization | Supported | リクエスト本文は専用のJson.NET serializerで生成し、ホストの`JsonConvert.DefaultSettings`から`$type`／`$id`／`$ref`などのメタデータ設定を引き継ぎません。日付変換と明示的なJSON `null`は維持します。 |
 | wildcard JSON media type | Partial | `application/*+json`のみを認識します。`application/vnd.*+json`など部分的なwildcard subtypeは、リクエスト・成功レスポンスとも生成時に`OACG101`です。 |
 | required non-nullable request body | Supported | 参照型の本文に`null`を渡すとHTTP送信前に`ArgumentNullException`です。schemaがnullableな必須本文はJSON `null`を送信できます。 |
@@ -177,6 +181,7 @@ status codeはASCII数字で検証します。属性付きのジェネリックc
 | optional non-nullable DTO property | Supported | JSONからの省略は許可し、明示的なJSON `null`は`JsonSerializationException`です。未設定値はシリアライズ時に省略します。 |
 | required non-nullable DTO property | Supported | 参照型の必須項目が`null`ならシリアライズ中に検出し、HTTP送信を止めます。入れ子のDTOも対象です。必須nullable項目のJSON `null`と必須値型の既定値は送信できます。 |
 | scalar format | Partial | `integer`は通常`int`、`int64`は`long`。`number`は通常`double`、`float`は`float`、`decimal`は`decimal`。`date`、`date-time`、`uuid`は`DateTime`、`DateTimeOffset`、`Guid`へmappingします。成功レスポンスでは変換前にそれぞれ日付、タイムゾーン付き日時、ASCIIの8-4-4-4-12形式を字句検査します。字句が正しくてもCLRで表せない時刻・うるう秒などは変換時に拒否される場合があります。 |
+| format spelling | Partial | Only exact lowercase `int64`, `float`, `decimal`, `date`, `date-time`, `uuid`, and `binary` trigger their special handling. Other casing is treated as an unrecognized format and uses the base schema type. |
 | request number | Supported | `float`／`double`の`NaN`・正負の無限大は本文直下・配列・DTO内ともHTTP送信前に`JsonSerializationException`で拒否します。省略指定した任意項目は検査しません。 |
 | map / free-form object | Unsupported | `additionalProperties`などのmap/free-form表現は対象外です。 |
 | schema assertions | Unsupported | 生成モデルが保持しない`const`、`pattern`、`minLength`、`minimum`、`minItems`などのassertionは、そのkeywordの位置で`OACG101`です。説明用annotation、`default`、`x-*`は許可します。 |
@@ -218,6 +223,9 @@ Reserved names are `_httpClient`, `_baseUrl`, `DateOnlyJsonConverterInstance`,
 `CreateRequestUri`, `CombineAbsoluteUri`, `CombinePaths`, `CombineQueries`,
 `AppendQuery`, `SplitPathAndQuery`, `ValidatePathSegments`, `CreateJsonContent`,
 `ConvertToString`, and `DateOnlyJsonConverter`.
+Schema members whose CLR names would match another member's `Name + "Specified"`
+are assigned a unique CLR name while retaining their JSON wire names. This
+prevents Json.NET from mistaking a schema boolean for a presence flag.
 
 ## 診断
 

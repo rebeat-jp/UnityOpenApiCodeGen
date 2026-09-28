@@ -142,8 +142,12 @@ YAMLの診断IDは次のとおりです。
 | path template braces | 一部対応 | 対応しない`{`／`}`は位置付き`OACG100`です。`/pets}`や`/pets/{id}}`も生成時に拒否します。 |
 | header identity | 対応 | header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。 |
 | header parameter name | 一部対応 | HTTP field-nameのASCII tokenのみを許可し、空白・コロン・非ASCIIなど不正な名前は`name`の位置付き`OACG100`です。 |
+| 予約header parameter | 非対応 | `Accept`と`Authorization`は大小文字を問わず名前の位置で`OACG101`です。`Content-Type`は次のcontent専用header制限に含まれます。 |
+| header parameterの値 | 一部対応 | 文字列化した値にCR・LFを含む禁止ASCII制御文字（HTABを除く）があれば、`HttpClient.SendAsync`より前に`ArgumentException`です。省略した任意値は検査しません。 |
 | content専用header parameter | 非対応 | `Allow`、`Content-Disposition`、`Content-Encoding`、`Content-Language`、`Content-Length`、`Content-Location`、`Content-MD5`、`Content-Range`、`Content-Type`、`Expires`、`Last-Modified`は大小文字を問わず`OACG101`で拒否します。独自の`Content-*`名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に`InvalidOperationException`です。 |
 | request body | 一部対応 | パラメーター付きも含む具体的な`application/json`または`application/<subtype>+json`を送信します。`application/*+json`だけの宣言は`OACG101`で拒否し、具体型と併記された場合は具体型を選びます。type/subtypeを正規化して判定します。 |
+| TRACEのrequest body | 非対応 | `requestBody`を宣言するTRACEは、参照経由も含めてその位置の`OACG101`です。本文のないTRACEは使用できます。 |
+| 引用付きmedia parameter | 一部対応 | 引用文字とescapeはHTAB、またはDELを除くU+0020～U+00FFに限ります。U+00FFを超える文字を含むリクエスト・成功レスポンスのmedia宣言は位置付き`OACG100`です。 |
 | リクエストJSONシリアライズ | 対応 | リクエスト本文は専用のJson.NET serializerで生成し、ホストの`JsonConvert.DefaultSettings`から`$type`／`$id`／`$ref`などのメタデータ設定を引き継ぎません。日付変換と明示的なJSON `null`は維持します。 |
 | wildcard JSON media type | 一部対応 | `application/*+json`のみを認識します。`application/vnd.*+json`など部分的なwildcard subtypeは、リクエスト・成功レスポンスとも生成時に`OACG101`です。 |
 | required non-nullable request body | 対応 | 参照型の本文に`null`を渡すと、HTTP送信前に`ArgumentNullException`です。schemaがnullableな必須本文はJSON `null`を送信できます。 |
@@ -177,6 +181,7 @@ status codeはASCII数字で検証します。属性付きのジェネリックc
 | optional non-nullable DTO property | 対応 | JSONで省略できますが、明示的なJSON `null`を受信すると`JsonSerializationException`です。未設定値をシリアライズすると省略します。 |
 | required non-nullable DTO property | 対応 | 参照型の必須項目が`null`ならシリアライズ中に検出し、リクエストを送信しません。入れ子のDTOにも適用します。必須nullable項目のJSON `null`と必須値型の既定値は送信できます。 |
 | scalar format | 一部対応 | `integer`は通常`int`、`int64`は`long`。`number`は通常`double`、`float`は`float`、`decimal`は`decimal`。`date`、`date-time`、`uuid`は`DateTime`、`DateTimeOffset`、`Guid`へmappingします。成功レスポンスでは変換前にそれぞれ日付、タイムゾーン付き日時、ASCIIの8-4-4-4-12形式を字句検査します。字句が正しくてもCLRで表せない時刻・うるう秒などは変換時に拒否される場合があります。 |
+| formatの綴り | 一部対応 | `int64`、`float`、`decimal`、`date`、`date-time`、`uuid`、`binary`は小文字の完全一致だけを特別扱いします。大文字を含む未知の綴りはschemaの基底型として扱います。 |
 | リクエスト数値 | 対応 | `float`／`double`の`NaN`・正負の無限大は本文直下・配列・DTO内ともHTTP送信前に`JsonSerializationException`で拒否します。省略指定した任意項目は検査しません。 |
 | map / free-form object | 非対応 | `additionalProperties`などのmap/free-form表現は対象外です。 |
 | schema assertions | 非対応 | 生成モデルが保持しない`const`、`pattern`、`minLength`、`minimum`、`minItems`などのassertionは、そのkeywordの位置で`OACG101`です。説明用annotation、`default`、`x-*`は許可します。 |
@@ -218,6 +223,8 @@ namespace-levelのため、同じnamespaceには共存できません。
 `CombineAbsoluteUri`、`CombinePaths`、`CombineQueries`、`AppendQuery`、
 `SplitPathAndQuery`、`ValidatePathSegments`、`CreateJsonContent`、
 `ConvertToString`、`DateOnlyJsonConverter`です。
+schemaの項目名が別項目のCLR名に`Specified`を付けた名前と衝突する場合、JSON上の名前を保ったまま
+CLR名に番号を付けます。Json.NETがschemaのboolean値を存在フラグと誤認することを防ぎます。
 
 ## 診断
 

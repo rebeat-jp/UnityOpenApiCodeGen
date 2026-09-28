@@ -37,6 +37,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Theory]
+        [InlineData("Accept")]
+        [InlineData("aCcEpT")]
+        [InlineData("Authorization")]
+        [InlineData("AUTHORIZATION")]
+        public void IgnoredHeaderParameterReportsSourceLocation(string name)
+        {
+            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+                HeaderDocument(name)).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("ignored by OpenAPI", diagnostic.GetMessage());
+            Assert.Contains("/paths/~1value/get/parameters/0/name", diagnostic.GetMessage());
+            Assert.Equal(TestBundleFactory.SourcePath, diagnostic.Location.GetLineSpan().Path);
+        }
+
+        [Theory]
         [InlineData("")]
         [InlineData("Bad Name")]
         [InlineData("Bad:Name")]
@@ -117,6 +133,143 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.False(handler.HadContent);
         }
 
+        [Theory]
+        [InlineData("safe\r\nInjected: true")]
+        [InlineData("safe\nInjected: true")]
+        [InlineData("safe\rInjected: true")]
+        [InlineData("safe\0")]
+        [InlineData("safe\u001f")]
+        [InlineData("safe\u007f")]
+        public async Task HeaderControlCharactersAreRejectedBeforeHttpSend(string value)
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                HeaderDocument("X-Trace"));
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = execution.EmitAssembly();
+            var handler = new HeaderHandler();
+            using var httpClient = new HttpClient(handler)
+            {
+                BaseAddress = new Uri("https://example.test/")
+            };
+            object client = Activator.CreateInstance(
+                assembly.GetType("Generated.Phase4.Phase4Api")!, httpClient)!;
+            var task = (Task)client.GetType().GetMethod("readValue")!
+                .Invoke(client, new object[] { value, CancellationToken.None })!;
+
+            ArgumentException error = await Assert.ThrowsAsync<ArgumentException>(async () => await task);
+            Assert.Contains("X-Trace", error.Message);
+            Assert.Equal(0, handler.SendCount);
+        }
+
+        [Fact]
+        public async Task HeaderHorizontalTabIsNotRejectedByGeneratedValidation()
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                HeaderDocument("X-Trace"));
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = execution.EmitAssembly();
+            var handler = new HeaderHandler();
+            using var httpClient = new HttpClient(handler)
+            {
+                BaseAddress = new Uri("https://example.test/")
+            };
+            object client = Activator.CreateInstance(
+                assembly.GetType("Generated.Phase4.Phase4Api")!, httpClient)!;
+            var task = (Task)client.GetType().GetMethod("readValue")!
+                .Invoke(client, new object[] { "before\tafter", CancellationToken.None })!;
+
+            await task;
+            Assert.Equal(1, handler.SendCount);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void TraceRequestBodyReportsPositionedUnsupportedDiagnostic(bool reference)
+        {
+            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+                TraceDocument(reference)).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("TRACE operations cannot declare a requestBody", diagnostic.GetMessage());
+            Assert.Contains("/paths/~1value/trace/requestBody", diagnostic.GetMessage());
+            Assert.Equal(TestBundleFactory.SourcePath, diagnostic.Location.GetLineSpan().Path);
+        }
+
+        [Fact]
+        public void BodylessTraceStillCompiles()
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                TraceDocument(reference: null));
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+        }
+
+        [Theory]
+        [InlineData(true, "application/json; profile=\"Ā\"", false)]
+        [InlineData(false, "application/json; profile=\"Ā\"", false)]
+        [InlineData(true, "application/json; profile=\"\\Ā\"", false)]
+        [InlineData(false, "application/json; profile=\"\\Ā\"", false)]
+        [InlineData(true, "application/json; profile=\"ÿ\"", true)]
+        [InlineData(false, "application/json; profile=\"ÿ\"", true)]
+        [InlineData(true, "application/json; profile=\"\\ÿ\"", true)]
+        [InlineData(false, "application/json; profile=\"\\ÿ\"", true)]
+        public void QuotedMediaParameterUsesByteRange(bool request, string mediaType, bool valid)
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                MediaDocument(request, mediaType));
+            if (valid)
+            {
+                Assert.Empty(execution.RunResult.Diagnostics);
+                Assert.Empty(execution.CompilationErrors);
+                return;
+            }
+
+            Diagnostic diagnostic = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG100", diagnostic.Id);
+            Assert.Contains("invalid value", diagnostic.GetMessage());
+            Assert.Contains(request ? "/requestBody/content/" : "/responses/200/content/",
+                diagnostic.GetMessage());
+            Assert.Equal(TestBundleFactory.SourcePath, diagnostic.Location.GetLineSpan().Path);
+        }
+
+        [Theory]
+        [InlineData(true, "BINARY")]
+        [InlineData(false, "BINARY")]
+        [InlineData(true, "Binary")]
+        [InlineData(false, "Binary")]
+        public void NoncanonicalBinaryFormatIsOrdinaryString(bool request, string format)
+        {
+            string document = MediaDocument(request, "application/json").Replace(
+                "\"schema\":{\"type\":\"string\"}",
+                "\"schema\":{\"type\":\"string\",\"format\":\"" + format + "\"}",
+                StringComparison.Ordinal);
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.Contains(request ? "string? body" : "Task<string>", execution.GeneratedSource);
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void LowercaseBinaryFormatRemainsUnsupported(bool request)
+        {
+            string document = MediaDocument(request, "application/json").Replace(
+                "\"schema\":{\"type\":\"string\"}",
+                "\"schema\":{\"type\":\"string\",\"format\":\"binary\"}",
+                StringComparison.Ordinal);
+            Diagnostic diagnostic = Assert.Single(
+                Phase4GeneratorTestHarness.GenerateAndCompile(document).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("Binary schemas", diagnostic.GetMessage());
+        }
+
         [Fact]
         public void GeneratedStringEnumRoundTripsNamesAndRejectsNumbers()
         {
@@ -180,6 +333,33 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "\"responses\":{\"204\":{\"description\":\"OK\"}}}}}}";
         }
 
+        private static string TraceDocument(bool? reference)
+        {
+            string requestBody = reference is null
+                ? string.Empty
+                : "\"requestBody\":" + (reference.Value
+                    ? "{\"$ref\":\"#/components/requestBodies/Payload\"}"
+                    : "{\"content\":{\"application/json\":{\"schema\":{\"type\":\"string\"}}}}") + ",";
+            return "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Trace\",\"version\":\"1\"}," +
+                "\"paths\":{\"/value\":{\"trace\":{\"operationId\":\"traceValue\"," +
+                requestBody + "\"responses\":{\"204\":{\"description\":\"Done\"}}}}}," +
+                "\"components\":{\"requestBodies\":{\"Payload\":{\"content\":{\"application/json\":{" +
+                "\"schema\":{\"type\":\"string\"}}}}}}}";
+        }
+
+        private static string MediaDocument(bool request, string mediaType)
+        {
+            string key = JsonConvert.SerializeObject(mediaType);
+            string content = "{\"content\":{" + key + ":{\"schema\":{\"type\":\"string\"}}}}";
+            string operation = request
+                ? "\"requestBody\":" + content + ",\"responses\":{\"204\":{\"description\":\"Done\"}}"
+                : "\"responses\":{\"200\":{\"description\":\"OK\"," +
+                  "\"content\":{" + key + ":{\"schema\":{\"type\":\"string\"}}}}}";
+            return "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Media\",\"version\":\"1\"}," +
+                "\"paths\":{\"/value\":{\"" + (request ? "post" : "get") +
+                "\":{\"operationId\":\"readValue\"," + operation + "}}}}";
+        }
+
         private static string PathDocument(string path)
         {
             string parameter = path.Contains("{id}", StringComparison.Ordinal)
@@ -204,11 +384,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         {
             internal string? Value { get; private set; }
             internal bool HadContent { get; private set; }
+            internal int SendCount { get; private set; }
 
             protected override Task<HttpResponseMessage> SendAsync(
                 HttpRequestMessage request,
                 CancellationToken cancellationToken)
             {
+                SendCount++;
                 Value = request.Headers.Contains("Content-Trace")
                     ? string.Join(",", request.Headers.GetValues("Content-Trace"))
                     : null;

@@ -25,6 +25,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 "Content-Type", "Expires", "Last-Modified"
             };
 
+        private static readonly HashSet<string> IgnoredRequestHeaders =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Accept", "Authorization"
+            };
+
         private static readonly HashSet<string> AllowedReferenceSchemaSiblings =
             new HashSet<string>(StringComparer.Ordinal)
             {
@@ -430,8 +436,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 operationParameters);
             ValidatePathParameters(path, mergedParameters, operationNode);
 
+            SpecNode? requestBodyNode = GetProperty(operationNode, "requestBody");
+            if (method == "trace" && requestBodyNode is not null)
+            {
+                throw Unsupported(requestBodyNode, "TRACE operations cannot declare a requestBody.");
+            }
+
             OpenApiSemanticRequestBody? requestBody = ParseRequestBody(
-                GetProperty(operationNode, "requestBody"),
+                requestBodyNode,
                 new HashSet<NormalizedSpecNodeIdentity>(),
                 operationId + "Request");
             ParsedResponses responses = ParseResponses(
@@ -532,6 +544,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 throw Unsupported(nameNode, "The content-only header parameter '" + name +
                     "' cannot be sent through request headers by the Phase 4 MVP.");
+            }
+
+            if (locationName == "header" && IgnoredRequestHeaders.Contains(name))
+            {
+                throw Unsupported(nameNode, "The header parameter '" + name +
+                    "' is ignored by OpenAPI and cannot be represented by the generated client.");
             }
 
             bool required = GetOptionalBoolean(node, "required") ?? false;
@@ -1335,7 +1353,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             bool nullable = ParseNullable(node);
             string type = ParseSchemaType(node, ref nullable);
             string format = GetOptionalString(node, "format") ?? string.Empty;
-            if (type == "string" && string.Equals(format, "binary", StringComparison.OrdinalIgnoreCase))
+            if (type == "string" && string.Equals(format, "binary", StringComparison.Ordinal))
             {
                 throw Unsupported(node, "Binary schemas are outside the JSON-only Phase 4 MVP.");
             }

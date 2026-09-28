@@ -67,6 +67,8 @@ content専用headerは位置付き診断で拒否します。対象名は[日本
 任意かつschema上nullableなDTOプロパティは、未代入ならJSONから省略され、`null`を代入すると
 明示的なJSON `null`を送ります。生成された`<PropertyName>Specified`を`false`へ戻すと、
 同じDTOを再利用するときもそのプロパティを省略できます。
+schemaの項目名が別項目の`Specified`フラグとCLR名で衝突する場合は、JSON上の名前を保ち、
+生成するCLR名に番号を付けます。
 任意でもschema上非nullableなDTOプロパティは、JSONからの省略を許可しますが、
 明示的なJSON `null`を受け取ると`JsonSerializationException`になります。
 必須かつschema上非nullableな参照型プロパティが未設定なら、入れ子のDTOを含めて
@@ -93,12 +95,19 @@ root `servers`を省略するか空配列にした場合は`/`が既定値とな
 絶対server URLはHTTP(S)のみ対応し、FTPなどのschemeは位置付き`OACG101`で拒否します。
 path templateで対応しない`{`／`}`は、`/pets}`や`/pets/{id}}`を含めて位置付き`OACG100`です。
 header parameterの名前はASCIIのHTTP field-name tokenに限り、不正な名前は位置付き`OACG100`です。
+`Accept`と`Authorization`のheader parameterは大小文字を問わず`OACG101`です。
+header値にHTAB以外のASCII制御文字があると、送信前に`ArgumentException`になります。
+`requestBody`を宣言したTRACEは、参照経由も含めて`OACG101`です。
 明示的な`baseUrl=""`の上書きは相対URLのままです。
 相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。
 リクエスト本文には具体的な`application/json`または`application/<subtype>+json`を送信します。
 `application/*+json`のみを宣言すると`OACG101`になり、具体型も宣言すると具体型を選びます。
 `application/vnd.*+json`など部分的なwildcard subtypeは、リクエスト・成功レスポンスとも
 生成時に`OACG101`で拒否します。
+引用付きmedia parameterはHTABと、DELを除くU+0020～U+00FFを許可します。
+U+00FFを超える文字は`OACG100`です。`int64`、`float`、`decimal`、`date`、
+`date-time`、`uuid`、`binary`のformatは小文字の完全一致だけを特別扱いし、
+大文字を含む綴りはschemaの基底型として扱います。
 
 schema付き成功レスポンスの空・空白本文は、nullableでも`JsonSerializationException`になります。
 JSON `null`はnullableなschemaでのみ受け取れます。
