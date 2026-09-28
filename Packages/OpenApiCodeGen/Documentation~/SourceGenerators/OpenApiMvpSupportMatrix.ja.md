@@ -134,6 +134,7 @@ YAMLの診断IDは次のとおりです。
 | --- | --- | --- |
 | HTTP method | 対応 | `GET`、`POST`、`PUT`、`DELETE`、`PATCH`、`HEAD`、`OPTIONS`、`TRACE`。 |
 | `servers` | 一部対応 | URLは0個または1個、variablesなし。絶対URLはHTTP(S)のみで、FTPなどは`OACG101`です。root `servers`の省略・空配列は`/`を既定値とします。`//host/path`は`HttpClient.BaseAddress`のschemeで解決します。`/path`と既定の`/`は同じoriginのrootから解決し、`BaseAddress`のpathとqueryを引き継ぎません。`BaseAddress`が必要な場合に未設定なら送信前に`InvalidOperationException`です。明示的な空文字`baseUrl` overrideは相対URLとして扱います。相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。 |
+| server URLの検証 | 一部対応 | 不正な絶対URL風・相対URL参照は位置付き`OACG100`、未解決の`{...}`変数は`OACG101`です。不正な絶対URLを相対URLとして扱いません。有効なHTTP(S)・network-path・root-relative・path-relative形式は維持します。生のfragmentはoperation pathとの結合前に除き、エンコード済み`%23`はpath内に保持します。 |
 | parameter location | 一部対応 | path、query、headerのscalar parameterのみ。cookieは対象外です。 |
 | parameter serialization | 一部対応 | defaultの`style`/`explode`のみ。`allowReserved: true`は対象外です。任意queryの`null`は省略し、明示的な空文字列は`name=`として送信します。`allowEmptyValue`は省略される値の代替を表し、明示的な空文字列には適用しません。 |
 | 非有限数値parameter | 非対応 | path／query／headerの`float`／`double`に`NaN`・正負の無限大を渡すと、HTTP送信前に`ArgumentOutOfRangeException`です。任意parameterの省略と有限値は使用できます。 |
@@ -161,10 +162,12 @@ YAMLの診断IDは次のとおりです。
 | 本文を持てないレスポンス | 非対応 | HEADの全status、および成功204・205・`2XX`では非空の`content`宣言を位置付き`OACG101`で拒否します。Response Objectの参照先も検査します。空の`content`と本文なし応答は使用できます。`2XX`には204・205が含まれるため、型付き本文契約は対象外です。 |
 | 成功レスポンスの`Content-Type` | 一部対応 | そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は`JsonSerializationException`です。content宣言のない成功応答では`Content-Type`を照合しません。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。 |
 | 成功レスポンスのJSON | 一部対応 | RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの`$id`／`$ref`／`$values`参照メタデータを互換拡張として維持します。配列schemaでも`$id`／`$values`で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の`1.0`／`1e0`を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限`float`／`double`は`JsonSerializationException`です。 受信JSONの構文検査は通常最大64階層で、ホストが`JsonConvert.DefaultSettings.MaxDepth`に正の値を設定した場合はその値を使い、`null`または未指定なら64階層を維持します。 |
+| レスポンスJSONの変換設定 | 一部対応 | 生成するレスポンスserializerは独立したJson.NET設定を使い、ホストの`JsonConvert.DefaultSettings`にあるconverter・contract resolverは検査済みの値を変えません。引き継ぐのは正の`MaxDepth`だけで、未指定・`null`・不正値なら64です。生成DTOのconverterと対応済みの`$id`／`$ref`／`$values`メタデータは維持します。 |
 | 成功レスポンスDTOのメタデータ名 | 非対応 | DTO propertyに`$id`、`$ref`、`$type`、`$values`を宣言すると、そのpropertyの位置で`OACG100`です。リクエスト専用DTOでは使用できます。schemaで宣言していないJson.NET参照メタデータの互換動作は維持します。 |
 | error/default response | 一部対応 | JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。 |
 | response extension | 対応 | operationのResponses Objectでは`x-*`を除外します。`components.responses`の`x-*`名は通常のResponse/Referenceです。 |
 | response header | 非対応 | 非空の`headers`は`OACG101`です。`headers`がある場合はobjectが必要で、scalar・array・nullは位置付き`OACG100`です。空objectは使用できます。 |
+| Response Objectの項目 | 一部対応 | `description`・`headers`・`content`・`links`・`x-*`拡張だけを認識します。`contents`などの未知項目は、成功・エラー・参照先の応答でも位置付き`OACG101`です。 |
 
 status codeはASCII数字で検証します。属性付きのジェネリックclassは`OACG005`で拒否します。
 

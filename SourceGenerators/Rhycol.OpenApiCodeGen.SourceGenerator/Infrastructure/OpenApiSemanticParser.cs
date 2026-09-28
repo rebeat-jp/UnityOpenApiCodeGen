@@ -247,15 +247,65 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             ThrowIfPresent(server, "variables", "Server URL variables are not supported by the Phase 4 MVP.");
             SpecNode urlNode = RequireProperty(server, "url");
             string url = RequireString(urlNode, "The server URL must be a string.");
-            if (!url.StartsWith("/", StringComparison.Ordinal) &&
-                Uri.TryCreate(url, UriKind.Absolute, out Uri? absoluteUrl) &&
-                absoluteUrl.Scheme != Uri.UriSchemeHttp &&
-                absoluteUrl.Scheme != Uri.UriSchemeHttps)
+            if (url.IndexOf('{') >= 0 || url.IndexOf('}') >= 0)
             {
-                throw Unsupported(urlNode, "Only HTTP and HTTPS absolute server URLs are supported.");
+                throw Unsupported(urlNode, "Server URL variables are not supported by the Phase 4 MVP.");
+            }
+
+            if (url.StartsWith("//", StringComparison.Ordinal))
+            {
+                if (!Uri.TryCreate("https:" + url, UriKind.Absolute, out Uri? networkUrl) ||
+                    !networkUrl.IsWellFormedOriginalString() ||
+                    string.IsNullOrEmpty(networkUrl.Host))
+                {
+                    throw Invalid(urlNode, "The network-path server URL is not a valid URI reference.");
+                }
+            }
+            else if (url.StartsWith("/", StringComparison.Ordinal))
+            {
+                if (!IsWellFormedRelativeServerUrl(url))
+                {
+                    throw Invalid(urlNode, "The root-relative server URL is not a valid URI reference.");
+                }
+            }
+            else if (Uri.TryCreate(url, UriKind.Absolute, out Uri? absoluteUrl))
+            {
+                if (!absoluteUrl.IsWellFormedOriginalString())
+                {
+                    throw Invalid(urlNode, "The absolute server URL is not a valid URI.");
+                }
+
+                if (absoluteUrl.Scheme != Uri.UriSchemeHttp &&
+                    absoluteUrl.Scheme != Uri.UriSchemeHttps)
+                {
+                    throw Unsupported(urlNode, "Only HTTP and HTTPS absolute server URLs are supported.");
+                }
+            }
+            else if (!IsWellFormedRelativeServerUrl(url))
+            {
+                throw Invalid(urlNode, "The server URL is not a valid relative URI reference.");
             }
 
             return url;
+        }
+
+        private static bool IsWellFormedRelativeServerUrl(string url)
+        {
+            if (Uri.IsWellFormedUriString(url, UriKind.Relative))
+            {
+                return true;
+            }
+
+            int fragmentIndex = url.IndexOf('#');
+            if (fragmentIndex < 0 ||
+                !Uri.IsWellFormedUriString(url.Substring(0, fragmentIndex), UriKind.Relative))
+            {
+                return false;
+            }
+
+            // UriKind.Relative rejects fragment-bearing references on some target runtimes.
+            return Uri.IsWellFormedUriString(
+                "https://example.test/" + url.TrimStart('/'), UriKind.Absolute);
         }
 
         private void ParseComponentSchemas()
@@ -901,6 +951,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     target => ParseResponse(target, referenceStack, suggestedName, parseJsonBody, forbidBodyContent));
             }
 
+            ValidateResponseProperties(node);
             RequireString(RequireProperty(node, "description"), "The response description must be a string.");
             SpecNode? headers = GetProperty(node, "headers");
             if (headers is not null)
@@ -940,6 +991,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 contentNode,
                 suggestedName,
                 validateRequestEncoding: false);
+        }
+
+        private static void ValidateResponseProperties(SpecNode node)
+        {
+            foreach (SpecProperty property in node.EnumerateObject())
+            {
+                if (property.Name == "description" ||
+                    property.Name == "headers" ||
+                    property.Name == "content" ||
+                    property.Name == "links" ||
+                    property.Name.StartsWith("x-", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                throw Unsupported(property.Value, "Unsupported Response field: '" + property.Name + "'.");
+            }
         }
 
         private ParsedContent ParseContent(

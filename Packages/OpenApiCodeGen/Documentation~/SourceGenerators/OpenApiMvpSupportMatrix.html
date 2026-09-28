@@ -356,6 +356,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>URLは0個または1個、variablesなし。絶対URLはHTTP(S)のみで、FTPなどは<code>OACG101</code>です。root <code>servers</code>の省略・空配列は<code>/</code>を既定値とします。<code>//host/path</code>は<code>HttpClient.BaseAddress</code>のschemeで解決します。<code>/path</code>と既定の<code>/</code>は同じoriginのrootから解決し、<code>BaseAddress</code>のpathとqueryを引き継ぎません。<code>BaseAddress</code>が必要な場合に未設定なら送信前に<code>InvalidOperationException</code>です。明示的な空文字<code>baseUrl</code> overrideは相対URLとして扱います。相対server URLとoperation pathが<code>/</code>の場合、<code>BaseAddress</code>のqueryは1回だけ付加します。</td>
 </tr>
 <tr>
+<td>server URL validation</td>
+<td>Partial</td>
+<td>Malformed absolute-looking or relative URL references receive positioned <code>OACG100</code>; unresolved <code>{...}</code> variables receive <code>OACG101</code>. Invalid absolute URLs no longer fall back to relative resolution. Valid HTTP(S), network-path, root-relative, and path-relative forms remain supported. A raw fragment is omitted before joining the operation path, while encoded <code>%23</code> remains path data.</td>
+</tr>
+<tr>
 <td>parameter location</td>
 <td>Partial</td>
 <td>path、query、headerのscalar parameterのみ。cookieは対象外です。</td>
@@ -491,6 +496,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの<code>$id</code>／<code>$ref</code>／<code>$values</code>参照メタデータを互換拡張として維持します。配列schemaでも<code>$id</code>／<code>$values</code>で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の<code>1.0</code>／<code>1e0</code>を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限<code>float</code>／<code>double</code>は<code>JsonSerializationException</code>です。 受信JSONの構文検査は通常最大64階層で、ホストが<code>JsonConvert.DefaultSettings.MaxDepth</code>に正の値を設定した場合はその値を使い、<code>null</code>または未指定なら64階層を維持します。</td>
 </tr>
 <tr>
+<td>response JSON conversion settings</td>
+<td>Partial</td>
+<td>The generated response serializer uses its own Json.NET defaults, so host <code>JsonConvert.DefaultSettings</code> converters and contract resolvers cannot change validated values. A positive host <code>MaxDepth</code> is the only inherited setting; absent, null, and invalid values use 64. Generated DTO converters and supported <code>$id</code>/<code>$ref</code>/<code>$values</code> metadata remain active.</td>
+</tr>
+<tr>
 <td>response DTO metadata names</td>
 <td>Unsupported</td>
 <td>A successful response DTO cannot declare <code>$id</code>, <code>$ref</code>, <code>$type</code>, or <code>$values</code> as data properties; the property location receives <code>OACG100</code>. Request-only DTOs may declare them. Json.NET reference metadata remains supported where these names are not declared as schema properties.</td>
@@ -509,6 +519,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>response header</td>
 <td>Unsupported</td>
 <td>Nonempty response <code>headers</code> is unsupported (<code>OACG101</code>). If present, <code>headers</code> must be an object; scalar, array, and null values receive positioned <code>OACG100</code>. Empty objects are accepted.</td>
+</tr>
+<tr>
+<td>Response Object fields</td>
+<td>Partial</td>
+<td>Only <code>description</code>, <code>headers</code>, <code>content</code>, <code>links</code>, and <code>x-*</code> extensions are recognized. Unknown fields, including misspelled <code>contents</code>, receive positioned <code>OACG101</code> in success, error, and referenced responses.</td>
 </tr>
 </tbody></table>
 <p>status codeはASCII数字で検証します。属性付きのジェネリックclassは<code>OACG005</code>で拒否します。</p>

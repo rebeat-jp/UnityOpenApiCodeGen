@@ -176,8 +176,13 @@ A `//host/path` server URL uses the scheme from
 ignoring the base address path and query. Both forms require a base address.
 An omitted or empty root `servers` list defaults to `/` and therefore also
 requires a base address. Absolute server URLs must use HTTP or HTTPS; other
-schemes receive a positioned `OACG101`. Unmatched path-template braces and header
-parameter names outside the ASCII HTTP field-name token syntax receive a positioned `OACG100`.
+schemes receive a positioned `OACG101`. Malformed absolute-looking and relative
+server URL references receive positioned `OACG100`; unresolved `{...}` variables
+receive `OACG101`. A server URL fragment is omitted when combining its base
+path with an operation path; an encoded `%23` stays in the path.
+Unknown Response Object fields such as `contents` receive positioned `OACG101`.
+Unmatched path-template braces and header parameter names outside the ASCII
+HTTP field-name token syntax receive a positioned `OACG100`.
 Raw `?` and `#` in a Paths key also receive positioned `OACG100`; encode path
 data and declare query parameters separately.
 `Accept` and `Authorization` header parameters receive `OACG101`, regardless of
@@ -238,9 +243,11 @@ leap seconds or times outside CLR ranges can still fail during conversion.
 Successful response DTOs cannot declare `$id`, `$ref`, `$type`, or `$values`
 as data properties; generation reports positioned `OACG100`. Request-only
 DTOs may declare these names.
-Successful response JSON has a default syntax depth limit of 64. An explicitly configured
-positive `JsonConvert.DefaultSettings.MaxDepth` overrides it; `null` or an
-unset value keeps 64.
+Successful response JSON has a default syntax depth limit of 64. An explicitly
+configured positive `JsonConvert.DefaultSettings.MaxDepth` overrides it;
+`null` or an unset value keeps 64. Response conversion uses an isolated
+Json.NET serializer, so host converters and contract resolvers cannot change
+values after schema validation.
 
 Bundle and semantic failures use stable diagnostics including:
 

@@ -356,6 +356,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>URLは0個または1個、variablesなし。絶対URLはHTTP(S)のみで、FTPなどは<code>OACG101</code>です。root <code>servers</code>の省略・空配列は<code>/</code>を既定値とします。<code>//host/path</code>は<code>HttpClient.BaseAddress</code>のschemeで解決します。<code>/path</code>と既定の<code>/</code>は同じoriginのrootから解決し、<code>BaseAddress</code>のpathとqueryを引き継ぎません。<code>BaseAddress</code>が必要な場合に未設定なら送信前に<code>InvalidOperationException</code>です。明示的な空文字<code>baseUrl</code> overrideは相対URLとして扱います。相対server URLとoperation pathが<code>/</code>の場合、<code>BaseAddress</code>のqueryは1回だけ付加します。</td>
 </tr>
 <tr>
+<td>server URLの検証</td>
+<td>一部対応</td>
+<td>不正な絶対URL風・相対URL参照は位置付き<code>OACG100</code>、未解決の<code>{...}</code>変数は<code>OACG101</code>です。不正な絶対URLを相対URLとして扱いません。有効なHTTP(S)・network-path・root-relative・path-relative形式は維持します。生のfragmentはoperation pathとの結合前に除き、エンコード済み<code>%23</code>はpath内に保持します。</td>
+</tr>
+<tr>
 <td>parameter location</td>
 <td>一部対応</td>
 <td>path、query、headerのscalar parameterのみ。cookieは対象外です。</td>
@@ -491,6 +496,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの<code>$id</code>／<code>$ref</code>／<code>$values</code>参照メタデータを互換拡張として維持します。配列schemaでも<code>$id</code>／<code>$values</code>で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の<code>1.0</code>／<code>1e0</code>を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限<code>float</code>／<code>double</code>は<code>JsonSerializationException</code>です。 受信JSONの構文検査は通常最大64階層で、ホストが<code>JsonConvert.DefaultSettings.MaxDepth</code>に正の値を設定した場合はその値を使い、<code>null</code>または未指定なら64階層を維持します。</td>
 </tr>
 <tr>
+<td>レスポンスJSONの変換設定</td>
+<td>一部対応</td>
+<td>生成するレスポンスserializerは独立したJson.NET設定を使い、ホストの<code>JsonConvert.DefaultSettings</code>にあるconverter・contract resolverは検査済みの値を変えません。引き継ぐのは正の<code>MaxDepth</code>だけで、未指定・<code>null</code>・不正値なら64です。生成DTOのconverterと対応済みの<code>$id</code>／<code>$ref</code>／<code>$values</code>メタデータは維持します。</td>
+</tr>
+<tr>
 <td>成功レスポンスDTOのメタデータ名</td>
 <td>非対応</td>
 <td>DTO propertyに<code>$id</code>、<code>$ref</code>、<code>$type</code>、<code>$values</code>を宣言すると、そのpropertyの位置で<code>OACG100</code>です。リクエスト専用DTOでは使用できます。schemaで宣言していないJson.NET参照メタデータの互換動作は維持します。</td>
@@ -509,6 +519,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>response header</td>
 <td>非対応</td>
 <td>非空の<code>headers</code>は<code>OACG101</code>です。<code>headers</code>がある場合はobjectが必要で、scalar・array・nullは位置付き<code>OACG100</code>です。空objectは使用できます。</td>
+</tr>
+<tr>
+<td>Response Objectの項目</td>
+<td>一部対応</td>
+<td><code>description</code>・<code>headers</code>・<code>content</code>・<code>links</code>・<code>x-*</code>拡張だけを認識します。<code>contents</code>などの未知項目は、成功・エラー・参照先の応答でも位置付き<code>OACG101</code>です。</td>
 </tr>
 </tbody></table>
 <p>status codeはASCII数字で検証します。属性付きのジェネリックclassは<code>OACG005</code>で拒否します。</p>

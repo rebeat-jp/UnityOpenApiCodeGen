@@ -46,6 +46,37 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Theory]
+        [InlineData("#fragment", "https://fallback.example.test/root/pets?limit=5")]
+        [InlineData("v1#fragment", "https://fallback.example.test/root/v1/pets?limit=5")]
+        [InlineData("/v1#fragment", "https://fallback.example.test/v1/pets?limit=5")]
+        [InlineData("v1?server=1#fragment", "https://fallback.example.test/root/v1/pets?server=1&limit=5")]
+        [InlineData("/v1?server=1#fragment", "https://fallback.example.test/v1/pets?server=1&limit=5")]
+        [InlineData("https://api.example.test/v1?server=1#fragment", "https://api.example.test/v1/pets?server=1&limit=5")]
+        [InlineData("//api.example.test/v1?server=1#fragment", "https://api.example.test/v1/pets?server=1&limit=5")]
+        [InlineData("v1/%23token#fragment", "https://fallback.example.test/root/v1/%23token/pets?limit=5")]
+        public async Task ServerFragmentDoesNotConsumeOperationPathOrEncodedHash(
+            string serverUrl,
+            string expectedUri)
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                CreateGetDocument(serverUrl));
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = execution.EmitAssembly();
+            var handler = new RecordingHandler();
+            using var httpClient = new HttpClient(handler)
+            {
+                BaseAddress = new Uri("https://fallback.example.test/root/")
+            };
+            object api = Activator.CreateInstance(assembly.GetType("Generated.Phase4.Phase4Api")!, httpClient)!;
+
+            await InvokeGet(api);
+
+            Assert.Equal(1, handler.SendCount);
+            Assert.Equal(expectedUri, handler.RequestUri!.AbsoluteUri);
+        }
+
+        [Theory]
         [InlineData(true, false, true, null)]
         [InlineData(true, true, false, "null")]
         [InlineData(false, false, false, null)]

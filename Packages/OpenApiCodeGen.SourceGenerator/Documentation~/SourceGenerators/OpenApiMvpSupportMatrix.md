@@ -134,6 +134,7 @@ YAML diagnostic IDs are stable within Phase 5:
 | --- | --- | --- |
 | HTTP method | Supported | `GET`、`POST`、`PUT`、`DELETE`、`PATCH`、`HEAD`、`OPTIONS`、`TRACE`。 |
 | `servers` | Partial | URLは0個または1個、variablesなし。絶対URLはHTTP(S)のみで、FTPなどは`OACG101`です。root `servers`の省略・空配列は`/`を既定値とします。`//host/path`は`HttpClient.BaseAddress`のschemeで解決します。`/path`と既定の`/`は同じoriginのrootから解決し、`BaseAddress`のpathとqueryを引き継ぎません。`BaseAddress`が必要な場合に未設定なら送信前に`InvalidOperationException`です。明示的な空文字`baseUrl` overrideは相対URLとして扱います。相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。 |
+| server URL validation | Partial | Malformed absolute-looking or relative URL references receive positioned `OACG100`; unresolved `{...}` variables receive `OACG101`. Invalid absolute URLs no longer fall back to relative resolution. Valid HTTP(S), network-path, root-relative, and path-relative forms remain supported. A raw fragment is omitted before joining the operation path, while encoded `%23` remains path data. |
 | parameter location | Partial | path、query、headerのscalar parameterのみ。cookieは対象外です。 |
 | parameter serialization | Partial | defaultの`style`/`explode`のみ。`allowReserved: true`は対象外です。任意queryの`null`は省略し、明示的な空文字列は`name=`として送信します。`allowEmptyValue`は省略される値の代替を表し、明示的な空文字列には適用しません。 |
 | non-finite numeric parameter | Unsupported | path／query／headerの`float`／`double`に`NaN`・正負の無限大を渡すと、HTTP送信前に`ArgumentOutOfRangeException`です。任意parameterの省略と有限値は使用できます。 |
@@ -161,10 +162,12 @@ YAML diagnostic IDs are stable within Phase 5:
 | bodyless response content | Unsupported | HEAD responses at any status, and successful 204, 205, or `2XX` responses cannot declare nonempty `content`; referenced Response Objects are checked too. The content location receives `OACG101`. Empty `content` and bodyless responses remain supported. `2XX` spans 204 and 205, so a typed `2XX` body contract is unsupported. |
 | successful response `Content-Type` | Partial | そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は`JsonSerializationException`です。content宣言のない成功応答では`Content-Type`を照合しません。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。 |
 | successful response JSON | Partial | RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの`$id`／`$ref`／`$values`参照メタデータを互換拡張として維持します。配列schemaでも`$id`／`$values`で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の`1.0`／`1e0`を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限`float`／`double`は`JsonSerializationException`です。 受信JSONの構文検査は通常最大64階層で、ホストが`JsonConvert.DefaultSettings.MaxDepth`に正の値を設定した場合はその値を使い、`null`または未指定なら64階層を維持します。 |
+| response JSON conversion settings | Partial | The generated response serializer uses its own Json.NET defaults, so host `JsonConvert.DefaultSettings` converters and contract resolvers cannot change validated values. A positive host `MaxDepth` is the only inherited setting; absent, null, and invalid values use 64. Generated DTO converters and supported `$id`/`$ref`/`$values` metadata remain active. |
 | response DTO metadata names | Unsupported | A successful response DTO cannot declare `$id`, `$ref`, `$type`, or `$values` as data properties; the property location receives `OACG100`. Request-only DTOs may declare them. Json.NET reference metadata remains supported where these names are not declared as schema properties. |
 | error/default response | Partial | JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。 |
 | response extension | Supported | operationのResponses Objectでは`x-*`を除外します。`components.responses`の`x-*`名は通常のResponse/Referenceです。 |
 | response header | Unsupported | Nonempty response `headers` is unsupported (`OACG101`). If present, `headers` must be an object; scalar, array, and null values receive positioned `OACG100`. Empty objects are accepted. |
+| Response Object fields | Partial | Only `description`, `headers`, `content`, `links`, and `x-*` extensions are recognized. Unknown fields, including misspelled `contents`, receive positioned `OACG101` in success, error, and referenced responses. |
 
 status codeはASCII数字で検証します。属性付きのジェネリックclassは`OACG005`で拒否します。
 

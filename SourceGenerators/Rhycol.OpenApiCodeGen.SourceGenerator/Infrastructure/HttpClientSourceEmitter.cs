@@ -174,9 +174,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     source.AppendLine("                    }");
                 }
                 source.AppendLine("                    var defaultResponseSettings = global::Newtonsoft.Json.JsonConvert.DefaultSettings?.Invoke();");
-                source.AppendLine("                    var responseSerializer = global::Newtonsoft.Json.JsonSerializer.Create(defaultResponseSettings);");
+                source.AppendLine("                    var responseSerializer = global::Newtonsoft.Json.JsonSerializer.Create();");
                 source.AppendLine("                    responseSerializer.DateParseHandling = global::Newtonsoft.Json.DateParseHandling.None;");
-                source.AppendLine("                    responseSerializer.MaxDepth = defaultResponseSettings?.MaxDepth ?? 64;");
+                source.AppendLine("                    responseSerializer.MaxDepth = defaultResponseSettings?.MaxDepth > 0 ? defaultResponseSettings.MaxDepth : 64;");
                 source.Append("                    string validatedResponseBody = ").Append(responseJsonContracts.ParseMethodName)
                     .Append("(responseBody, ").Append(responseJsonContracts.MethodName(operation.ResponseType))
                     .Append(", ").Append(operation.ResponseType.Nullable ? "true" : "false")
@@ -478,34 +478,36 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        private global::System.Uri CreateRequestUri(string relativePath)");
             source.AppendLine("        {");
             source.AppendLine("            SplitPathAndQuery(relativePath, out string operationPath, out string operationQuery);");
-            source.AppendLine("            if (_baseUrl.StartsWith(\"//\", global::System.StringComparison.Ordinal))");
+            source.AppendLine("            int baseFragment = _baseUrl.IndexOf('#');");
+            source.AppendLine("            string baseUrl = baseFragment < 0 ? _baseUrl : _baseUrl.Substring(0, baseFragment);");
+            source.AppendLine("            if (baseUrl.StartsWith(\"//\", global::System.StringComparison.Ordinal))");
             source.AppendLine("            {");
             source.AppendLine("                if (_httpClient.BaseAddress is null)");
             source.AppendLine("                {");
             source.AppendLine("                    throw new global::System.InvalidOperationException(\"A HttpClient.BaseAddress is required for a network-path server URL.\");");
             source.AppendLine("                }");
-            source.AppendLine("                var networkBaseUri = new global::System.Uri(_httpClient.BaseAddress, _baseUrl);");
+            source.AppendLine("                var networkBaseUri = new global::System.Uri(_httpClient.BaseAddress, baseUrl);");
             source.AppendLine("                return CombineAbsoluteUri(networkBaseUri, operationPath, operationQuery);");
             source.AppendLine("            }");
             source.AppendLine();
-            source.AppendLine("            if (_baseUrl.StartsWith(\"/\", global::System.StringComparison.Ordinal))");
+            source.AppendLine("            if (baseUrl.StartsWith(\"/\", global::System.StringComparison.Ordinal))");
             source.AppendLine("            {");
             source.AppendLine("                if (_httpClient.BaseAddress is null)");
             source.AppendLine("                {");
             source.AppendLine("                    throw new global::System.InvalidOperationException(\"A HttpClient.BaseAddress is required for a root-relative server URL.\");");
             source.AppendLine("                }");
-            source.AppendLine("                var rootBaseUri = new global::System.Uri(_httpClient.BaseAddress, _baseUrl);");
+            source.AppendLine("                var rootBaseUri = new global::System.Uri(_httpClient.BaseAddress, baseUrl);");
             source.AppendLine("                return CombineAbsoluteUri(rootBaseUri, operationPath, operationQuery);");
             source.AppendLine("            }");
             source.AppendLine();
-            source.AppendLine("            if (global::System.Uri.TryCreate(_baseUrl, global::System.UriKind.Absolute, out var absoluteBaseUri) &&");
+            source.AppendLine("            if (global::System.Uri.TryCreate(baseUrl, global::System.UriKind.Absolute, out var absoluteBaseUri) &&");
             source.AppendLine("                (absoluteBaseUri.Scheme == global::System.Uri.UriSchemeHttp ||");
             source.AppendLine("                 absoluteBaseUri.Scheme == global::System.Uri.UriSchemeHttps))");
             source.AppendLine("            {");
             source.AppendLine("                return CombineAbsoluteUri(absoluteBaseUri, operationPath, operationQuery);");
             source.AppendLine("            }");
             source.AppendLine();
-            source.AppendLine("            SplitPathAndQuery(_baseUrl, out string basePath, out string baseQuery);");
+            source.AppendLine("            SplitPathAndQuery(baseUrl, out string basePath, out string baseQuery);");
             source.AppendLine("            string combinedPath = CombinePaths(basePath, operationPath);");
             source.AppendLine("            string combinedQuery = CombineQueries(baseQuery, operationQuery);");
             source.AppendLine("            if (_httpClient.BaseAddress != null)");

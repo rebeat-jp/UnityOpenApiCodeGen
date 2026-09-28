@@ -95,6 +95,9 @@ server URLが`//host/path`形式の場合は`HttpClient.BaseAddress`のschemeで
 どちらも`BaseAddress`が未設定なら送信前に`InvalidOperationException`になります。
 root `servers`を省略するか空配列にした場合は`/`が既定値となり、同様に`BaseAddress`が必要です。
 絶対server URLはHTTP(S)のみ対応し、FTPなどのschemeは位置付き`OACG101`で拒否します。
+不正な絶対URL風・相対URL参照は位置付き`OACG100`、未解決の`{...}`変数は`OACG101`です。server URLのfragmentは操作pathとの結合前に除き、
+エンコード済みの`%23`はpath内に保持します。
+Response Objectの`contents`など未知項目も位置付き`OACG101`です。
 path templateで対応しない`{`／`}`は、`/pets}`や`/pets/{id}}`を含めて位置付き`OACG100`です。
 header parameterの名前はASCIIのHTTP field-name tokenに限り、不正な名前は位置付き`OACG100`です。
 Pathsのキーに生の`?`・`#`がある場合も位置付き`OACG100`です。path内の文字は
@@ -147,6 +150,8 @@ scalarのJSON token型を検査します。`float`／`double`は有限値に限�
 その位置で`OACG100`を報告します。リクエスト専用DTOではこれらの名前を使用できます。
 受信JSONの深さ上限は通常64階層です。ホストが`JsonConvert.DefaultSettings.MaxDepth`に正の値を設定した場合はその値を使い、
 `null`または未指定なら64階層を維持します。
+レスポンスの変換は独立したJson.NET serializerを使い、ホストのconverterやcontract resolverに
+検査済みの値を変更させません。
 必須nullableパラメーターや、対応表の範囲外のwire formatは位置付き診断で拒否します。
 
 成功した`Generate`では、`Library/OpenApiCodeGen/SourceGenerator/SpecCache/<specId>/`に
