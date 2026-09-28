@@ -1002,6 +1002,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
 
                 selected = concrete;
+                if (selected.MediaType.Any(static character => character > (char)127))
+                {
+                    throw Invalid(selected.Node,
+                        "A request media type must contain ASCII characters only to be sent as Content-Type.");
+                }
             }
 
             return new ParsedContent(selected.MediaType, selected.Schema,

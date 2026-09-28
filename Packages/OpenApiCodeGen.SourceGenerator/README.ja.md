@@ -100,7 +100,8 @@ header parameterの名前はASCIIのHTTP field-name tokenに限り、不正な�
 Pathsのキーに生の`?`・`#`がある場合も位置付き`OACG100`です。path内の文字は
 percent-encodeし、query値はquery parameterで宣言します。
 `Accept`と`Authorization`のheader parameterは大小文字を問わず`OACG101`です。
-header値にHTAB以外のASCII制御文字があると、送信前に`ArgumentException`になります。
+header値はHTABと印字可能ASCII（U+0020～U+007E）だけを受け付け、
+それ以外は送信前に`ArgumentException`になります。
 `requestBody`を宣言したTRACEは、参照経由も含めて`OACG101`です。
 明示的な`baseUrl=""`の上書きは相対URLのままです。
 相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。
@@ -115,7 +116,9 @@ Parameter・Request Body・Responseの`$ref`と並ぶ項目も検査します。
 文字列の`summary`・`description`を許可し、3.0では契約項目の黙示的な無視を避けるため
 ジェネレーターの入力規則として`$ref`のみを受け付けます。
 引用付きmedia parameterはHTABと、DELを除くU+0020～U+00FFを許可します。
-U+00FFを超える文字は`OACG100`です。`int64`、`float`、`decimal`、`date`、
+U+00FFを超える文字は`OACG100`です。選択されるリクエストの`Content-Type`はASCIIに限り、
+非ASCIIの引用文字も`OACG100`です。成功レスポンスの宣言は元の範囲を維持します。
+`int64`、`float`、`decimal`、`date`、
 `date-time`、`uuid`、`binary`のformatは小文字の完全一致だけを特別扱いし、
 大文字を含む綴りはschemaの基底型として扱います。
 

@@ -413,7 +413,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>header parameterの値</td>
 <td>一部対応</td>
-<td>文字列化した値にCR・LFを含む禁止ASCII制御文字（HTABを除く）があれば、<code>HttpClient.SendAsync</code>より前に<code>ArgumentException</code>です。省略した任意値は検査しません。</td>
+<td>生成クライアントが受け付けるのはHTABと印字可能ASCII（U+0020～U+007E）だけです。CR・LF・DEL・非ASCII・サロゲートは<code>HttpClient.SendAsync</code>より前に<code>ArgumentException</code>です。省略した任意値は送信しません。</td>
 </tr>
 <tr>
 <td>content専用header parameter</td>
@@ -438,7 +438,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>引用付きmedia parameter</td>
 <td>一部対応</td>
-<td>引用文字とescapeはHTAB、またはDELを除くU+0020～U+00FFに限ります。U+00FFを超える文字を含むリクエスト・成功レスポンスのmedia宣言は位置付き<code>OACG100</code>です。</td>
+<td>構文上はHTABとDELを除くU+0020～U+00FFを許可し、U+00FFを超える文字は位置付き<code>OACG100</code>です。選択されるリクエストの<code>Content-Type</code>はさらにASCIIに限り、U+0080～U+00FFも位置付き<code>OACG100</code>です。成功レスポンスの宣言はHTTP quoted-stringの範囲を維持します。</td>
 </tr>
 <tr>
 <td>リクエストJSONシリアライズ</td>

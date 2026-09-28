@@ -413,7 +413,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>header parameter value</td>
 <td>Partial</td>
-<td>Converted values containing ASCII control characters other than HTAB, including CR and LF, fail with <code>ArgumentException</code> before <code>HttpClient.SendAsync</code>. Omitted optional values are not checked.</td>
+<td>Generated clients accept HTAB and printable ASCII U+0020–U+007E only. Other characters, including CR, LF, DEL, non-ASCII and surrogates, raise <code>ArgumentException</code> before <code>HttpClient.SendAsync</code>. Omitted optional values remain omitted.</td>
 </tr>
 <tr>
 <td>content専用header parameter</td>
@@ -438,7 +438,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>quoted media parameters</td>
 <td>Partial</td>
-<td>Quoted HTTP parameter characters and escapes must be HTAB or within U+0020–U+00FF, excluding DEL. A character above U+00FF receives positioned <code>OACG100</code> in request and successful response media declarations.</td>
+<td>Syntax permits HTAB and U+0020–U+00FF except DEL; characters above U+00FF receive positioned <code>OACG100</code>. The selected request <code>Content-Type</code> is further restricted to ASCII, so U+0080–U+00FF also receives positioned <code>OACG100</code> there. Successful response declarations retain the HTTP quoted-string range.</td>
 </tr>
 <tr>
 <td>request JSON serialization</td>

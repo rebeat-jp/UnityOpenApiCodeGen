@@ -469,8 +469,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        {");
             source.AppendLine("            foreach (char character in value)");
             source.AppendLine("            {");
-            source.AppendLine("                if ((character < (char)32 && character != (char)9) || character == (char)127)");
-            source.AppendLine("                    throw new global::System.ArgumentException(\"Request header '\" + name + \"' contains a forbidden control character.\", nameof(value));");
+            source.AppendLine("                if ((character < (char)32 && character != (char)9) || character > (char)126)");
+            source.AppendLine("                    throw new global::System.ArgumentException(\"Request header '\" + name + \"' contains a character outside the supported ASCII HTTP field value range.\", nameof(value));");
             source.AppendLine("            }");
             source.AppendLine("            return value;");
             source.AppendLine("        }");

@@ -140,7 +140,28 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("safe\0")]
         [InlineData("safe\u001f")]
         [InlineData("safe\u007f")]
-        public async Task HeaderControlCharactersAreRejectedBeforeHttpSend(string value)
+        [InlineData("safe\u0080")]
+        [InlineData("safe\u00ff")]
+        [InlineData("safe\u0100")]
+        [InlineData("safe\ud83d\ude00")]
+        public Task HeaderCharactersOutsideFieldValueRangeAreRejectedBeforeHttpSend(string value)
+        {
+            return AssertInvalidHeaderValueIsRejectedBeforeHttpSend(value);
+        }
+
+        [Fact]
+        public Task LoneHighSurrogateInHeaderIsRejectedBeforeHttpSend()
+        {
+            return AssertInvalidHeaderValueIsRejectedBeforeHttpSend("safe\ud83d");
+        }
+
+        [Fact]
+        public Task LoneLowSurrogateInHeaderIsRejectedBeforeHttpSend()
+        {
+            return AssertInvalidHeaderValueIsRejectedBeforeHttpSend("safe\ude00");
+        }
+
+        private static async Task AssertInvalidHeaderValueIsRejectedBeforeHttpSend(string value)
         {
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
                 HeaderDocument("X-Trace"));
@@ -162,8 +183,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Equal(0, handler.SendCount);
         }
 
-        [Fact]
-        public async Task HeaderHorizontalTabIsNotRejectedByGeneratedValidation()
+        [Theory]
+        [InlineData("before\tafter")]
+        [InlineData("before !~after")]
+        public async Task HeaderCharactersWithinFieldValueRangeAreSent(string value)
         {
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
                 HeaderDocument("X-Trace"));
@@ -178,10 +201,34 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             object client = Activator.CreateInstance(
                 assembly.GetType("Generated.Phase4.Phase4Api")!, httpClient)!;
             var task = (Task)client.GetType().GetMethod("readValue")!
-                .Invoke(client, new object[] { "before\tafter", CancellationToken.None })!;
+                .Invoke(client, new object[] { value, CancellationToken.None })!;
 
             await task;
             Assert.Equal(1, handler.SendCount);
+            Assert.True(handler.HadXTrace);
+        }
+
+        [Fact]
+        public async Task OptionalHeaderIsOmittedWhenNull()
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                HeaderDocument("X-Trace", required: false));
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = execution.EmitAssembly();
+            var handler = new HeaderHandler();
+            using var httpClient = new HttpClient(handler)
+            {
+                BaseAddress = new Uri("https://example.test/")
+            };
+            object client = Activator.CreateInstance(
+                assembly.GetType("Generated.Phase4.Phase4Api")!, httpClient)!;
+            var task = (Task)client.GetType().GetMethod("readValue")!
+                .Invoke(client, new object?[] { null, CancellationToken.None })!;
+
+            await task;
+            Assert.Equal(1, handler.SendCount);
+            Assert.False(handler.HadXTrace);
         }
 
         [Theory]
@@ -213,9 +260,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData(false, "application/json; profile=\"Ā\"", false)]
         [InlineData(true, "application/json; profile=\"\\Ā\"", false)]
         [InlineData(false, "application/json; profile=\"\\Ā\"", false)]
-        [InlineData(true, "application/json; profile=\"ÿ\"", true)]
+        [InlineData(false, "application/json; profile=\"\u0080\"", true)]
+        [InlineData(false, "application/json; profile=\"\\\u0080\"", true)]
         [InlineData(false, "application/json; profile=\"ÿ\"", true)]
-        [InlineData(true, "application/json; profile=\"\\ÿ\"", true)]
         [InlineData(false, "application/json; profile=\"\\ÿ\"", true)]
         public void QuotedMediaParameterUsesByteRange(bool request, string mediaType, bool valid)
         {
@@ -234,6 +281,71 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Contains(request ? "/requestBody/content/" : "/responses/200/content/",
                 diagnostic.GetMessage());
             Assert.Equal(TestBundleFactory.SourcePath, diagnostic.Location.GetLineSpan().Path);
+        }
+
+        [Theory]
+        [InlineData("application/json; profile=\"\u0080\"")]
+        [InlineData("application/json; profile=\"\\\u0080\"")]
+        [InlineData("application/json; profile=\"\u00ff\"")]
+        [InlineData("application/json; profile=\"\\\u00ff\"")]
+        public void SelectedRequestMediaTypeWithNonAsciiCharacterReportsPositionedDiagnostic(string mediaType)
+        {
+            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+                MediaDocument(true, mediaType)).RunResult.Diagnostics);
+
+            Assert.Equal("OACG100", diagnostic.Id);
+            Assert.Contains("request media type must contain ASCII characters only", diagnostic.GetMessage());
+            Assert.Contains("/paths/~1value/post/requestBody/content/" + mediaType.Replace("/", "~1", StringComparison.Ordinal),
+                diagnostic.GetMessage());
+            Assert.Equal(TestBundleFactory.SourcePath, diagnostic.Location.GetLineSpan().Path);
+        }
+
+        [Theory]
+        [InlineData("application/json; profile=\"\\~\"")]
+        [InlineData("application/json; profile=\"ASCII-~\"")]
+        public void SelectedRequestMediaTypeWithAsciiParameterCompiles(string mediaType)
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                MediaDocument(true, mediaType));
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+        }
+
+        [Fact]
+        public void NonSelectedNonAsciiRequestMediaTypeDoesNotBlockAsciiContentType()
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                TwoRequestMediaDocument("application/json", "application/problem+json; profile=\"\u00ff\""));
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.Contains("CreateJsonContent(requestJson, \"application/json\")", execution.GeneratedSource);
+        }
+
+        [Fact]
+        public void SelectedNonAsciiRequestMediaTypeIsRejectedWithMultipleEntries()
+        {
+            string selectedMediaType = "application/json; profile=\"\u0080\"";
+            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+                TwoRequestMediaDocument(selectedMediaType, "application/problem+json"))
+                .RunResult.Diagnostics);
+
+            Assert.Equal("OACG100", diagnostic.Id);
+            Assert.Contains("/requestBody/content/application~1json; profile=\"\u0080\"", diagnostic.GetMessage());
+        }
+
+        [Fact]
+        public void NonSelectedMalformedRequestMediaTypeStillReportsDiagnostic()
+        {
+            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+                TwoRequestMediaDocument("application/json", "application/problem+json; profile=\"\u0100\""))
+                .RunResult.Diagnostics);
+
+            Assert.Equal("OACG100", diagnostic.Id);
+            Assert.Contains("invalid value", diagnostic.GetMessage());
+            Assert.Contains("/requestBody/content/application~1problem+json; profile=\"\u0100\"",
+                diagnostic.GetMessage());
         }
 
         [Theory]
@@ -324,11 +436,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 secondSchema + "}}}}}}}}";
         }
 
-        private static string HeaderDocument(string name)
+        private static string HeaderDocument(string name, bool required = true)
         {
             return "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Headers\",\"version\":\"1\"}," +
                 "\"paths\":{\"/value\":{\"get\":{\"operationId\":\"readValue\"," +
-                "\"parameters\":[{\"name\":" + JsonConvert.SerializeObject(name) + ",\"in\":\"header\",\"required\":true," +
+                "\"parameters\":[{\"name\":" + JsonConvert.SerializeObject(name) + ",\"in\":\"header\",\"required\":" +
+                (required ? "true" : "false") + "," +
                 "\"schema\":{\"type\":\"string\"}}]," +
                 "\"responses\":{\"204\":{\"description\":\"OK\"}}}}}}";
         }
@@ -360,6 +473,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "\":{\"operationId\":\"readValue\"," + operation + "}}}}";
         }
 
+        private static string TwoRequestMediaDocument(string firstMediaType, string secondMediaType)
+        {
+            return "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Media\",\"version\":\"1\"}," +
+                "\"paths\":{\"/value\":{\"post\":{\"operationId\":\"readValue\"," +
+                "\"requestBody\":{\"content\":{" + JsonConvert.SerializeObject(firstMediaType) +
+                ":{\"schema\":{\"type\":\"string\"}}," + JsonConvert.SerializeObject(secondMediaType) +
+                ":{\"schema\":{\"type\":\"string\"}}}}," +
+                "\"responses\":{\"204\":{\"description\":\"Done\"}}}}}}";
+        }
+
         private static string PathDocument(string path)
         {
             string parameter = path.Contains("{id}", StringComparison.Ordinal)
@@ -384,6 +507,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         {
             internal string? Value { get; private set; }
             internal bool HadContent { get; private set; }
+            internal bool HadXTrace { get; private set; }
             internal int SendCount { get; private set; }
 
             protected override Task<HttpResponseMessage> SendAsync(
@@ -391,6 +515,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 CancellationToken cancellationToken)
             {
                 SendCount++;
+                HadXTrace = request.Headers.Contains("X-Trace");
                 Value = request.Headers.Contains("Content-Trace")
                     ? string.Join(",", request.Headers.GetValues("Content-Trace"))
                     : null;

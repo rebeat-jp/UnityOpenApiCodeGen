@@ -181,8 +181,8 @@ parameter names outside the ASCII HTTP field-name token syntax receive a positio
 Raw `?` and `#` in a Paths key also receive positioned `OACG100`; encode path
 data and declare query parameters separately.
 `Accept` and `Authorization` header parameters receive `OACG101`, regardless of
-case. Header values containing ASCII control characters other than HTAB fail
-with `ArgumentException` before sending. A TRACE operation with `requestBody`
+case. Header values accept only HTAB and printable ASCII (U+0020–U+007E);
+other characters raise `ArgumentException` before sending. A TRACE operation with `requestBody`
 receives `OACG101`, including when the body is referenced.
 An explicit `baseUrl=""` override remains relative.
 With a relative server URL, an operation at `/` includes a base address query once.
@@ -199,7 +199,9 @@ Parameter, Request Body, and Response `$ref` siblings are checked: OpenAPI 3.1
 allows string `summary` and `description`, while this generator accepts only
 `$ref` in OpenAPI 3.0 to avoid silently ignored contract fields.
 Quoted media parameters allow HTAB and U+0020–U+00FF except DEL; characters
-above U+00FF receive `OACG100`. Recognized schema formats (`int64`, `float`,
+above U+00FF receive `OACG100`. The selected request `Content-Type` must be
+ASCII; non-ASCII quoted characters there also receive `OACG100`. Successful
+response declarations retain the quoted-string range. Recognized schema formats (`int64`, `float`,
 `decimal`, `date`, `date-time`, `uuid`, and `binary`) require exact lowercase
 spelling; other casing uses the base schema type.
 
