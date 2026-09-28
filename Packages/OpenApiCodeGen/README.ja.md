@@ -35,7 +35,9 @@ URL入力のSource Generatorは、`Generate`の操作時に取得・更新しま
 Source Generatorの入力と生成結果の詳細は[追加パッケージの日本語README](../OpenApiCodeGen.SourceGenerator/README.ja.md)と
 [同梱した対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)を参照してください。
 Source Generatorが利用可能なときは有効な`NamedBuildTarget`へ
-`OPENAPI_CODEGEN_SOURCE_GENERATOR`を同期し、追加パッケージを削除するとdefineも取り除きます。
+`OPENAPI_CODEGEN_SOURCE_GENERATOR`を同期します。追加パッケージの削除時は、現在有効でないものも含む
+すべての既知`NamedBuildTarget`から、Unityが削除を適用する前にdefineを取り除きます。
+更新時は有効なターゲットから一時的に取り除きます。
 生成型を参照するコードは、追加パッケージを外した後にコンパイルエラーになることがあります。
 
 ## ライセンス

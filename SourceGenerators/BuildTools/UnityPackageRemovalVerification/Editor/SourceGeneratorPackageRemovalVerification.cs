@@ -19,6 +19,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.PackageRemovalVerification
         const string SourceGeneratorPackageName =
             "jp.rhycol.openapicodegen.source-generator";
         const string DefineSymbol = "OPENAPI_CODEGEN_SOURCE_GENERATOR";
+        const string InactiveTargetMarker = "OPENAPI_CODEGEN_REMOVAL_FIXTURE";
         const double TimeoutSeconds = 120d;
 
         static double _deadline;
@@ -48,6 +49,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.PackageRemovalVerification
                 AssetDatabase.DisallowAutoRefresh();
                 _autoRefreshDisallowed = true;
 
+                SeedInactiveBuildTargets();
+
                 Client.Remove(SourceGeneratorPackageName);
             }
             catch (Exception exception)
@@ -71,14 +74,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.PackageRemovalVerification
 
             try
             {
-                PlayerSettings.GetScriptingDefineSymbols(
-                    GetActiveBuildTarget(),
-                    out string[] defines);
-                if (defines.Contains(DefineSymbol))
-                {
-                    throw new InvalidOperationException(
-                        $"{DefineSymbol} was not removed before package registration.");
-                }
+                AssertDefinesRemoved("before package registration");
 
                 string guardPath = Path.Combine(
                     Application.dataPath,
@@ -131,15 +127,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.PackageRemovalVerification
 
             try
             {
-                NamedBuildTarget buildTarget = GetActiveBuildTarget();
-                PlayerSettings.GetScriptingDefineSymbols(
-                    buildTarget,
-                    out string[] defines);
-                if (defines.Contains(DefineSymbol))
-                {
-                    throw new InvalidOperationException(
-                        $"{DefineSymbol} remained enabled after package removal.");
-                }
+                AssertDefinesRemoved("after package removal");
 
                 if (UnityEditor.PackageManager.PackageInfo
                     .GetAllRegisteredPackages()
@@ -188,6 +176,58 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.PackageRemovalVerification
                 throw new InvalidOperationException(
                     $"{DefineSymbol} must be enabled before verifying package removal.");
             }
+        }
+
+        static void SeedInactiveBuildTargets()
+        {
+            NamedBuildTarget activeTarget = GetActiveBuildTarget();
+            foreach (NamedBuildTarget target in GetVerificationBuildTargets())
+            {
+                if (target == activeTarget)
+                {
+                    continue;
+                }
+
+                PlayerSettings.GetScriptingDefineSymbols(target, out string[] defines);
+                string[] seeded = defines
+                    .Where(symbol => symbol != DefineSymbol
+                        && symbol != InactiveTargetMarker)
+                    .Concat(new[] { DefineSymbol, InactiveTargetMarker })
+                    .ToArray();
+                PlayerSettings.SetScriptingDefineSymbols(target, seeded);
+            }
+        }
+
+        static void AssertDefinesRemoved(string stage)
+        {
+            NamedBuildTarget activeTarget = GetActiveBuildTarget();
+            foreach (NamedBuildTarget target in GetVerificationBuildTargets())
+            {
+                PlayerSettings.GetScriptingDefineSymbols(target, out string[] defines);
+                if (defines.Contains(DefineSymbol))
+                {
+                    throw new InvalidOperationException(
+                        $"{DefineSymbol} remained on {target.TargetName} {stage}.");
+                }
+
+                if (target != activeTarget
+                    && !defines.Contains(InactiveTargetMarker))
+                {
+                    throw new InvalidOperationException(
+                        $"The unrelated define was removed from {target.TargetName} {stage}.");
+                }
+            }
+        }
+
+        static NamedBuildTarget[] GetVerificationBuildTargets()
+        {
+            return new[]
+            {
+                GetActiveBuildTarget(),
+                NamedBuildTarget.Standalone,
+                NamedBuildTarget.Server,
+                NamedBuildTarget.Android
+            }.Distinct().ToArray();
         }
 
         static NamedBuildTarget GetActiveBuildTarget()

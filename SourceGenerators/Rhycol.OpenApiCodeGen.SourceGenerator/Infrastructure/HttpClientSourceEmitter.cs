@@ -25,16 +25,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine();
             AppendConstructors(source, model);
             var responseValidators = new ResponseValidatorPlan(model);
+            var responseJsonContracts = new ResponseJsonContractPlan(model);
 
             foreach (GeneratedOperationModel operation in model.Operations)
             {
                 source.AppendLine();
-                AppendOperation(source, model, operation, responseValidators);
+                AppendOperation(source, model, operation, responseValidators, responseJsonContracts);
             }
 
             source.AppendLine();
             AppendHelpers(source, responseValidators);
             responseValidators.AppendMethods(source);
+            responseJsonContracts.AppendMethods(source);
             source.AppendLine("    }");
             source.AppendLine();
             AppendException(source, model.ApiName);
@@ -63,7 +65,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             StringBuilder source,
             OpenApiGenerationModel model,
             GeneratedOperationModel operation,
-            ResponseValidatorPlan responseValidators)
+            ResponseValidatorPlan responseValidators,
+            ResponseJsonContractPlan responseJsonContracts)
         {
             string summary = string.IsNullOrWhiteSpace(operation.Summary)
                 ? operation.Name
@@ -158,17 +161,28 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
             else
             {
+                source.AppendLine("                    if (global::System.String.IsNullOrWhiteSpace(responseBody))");
+                source.AppendLine("                    {");
+                source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response requires a JSON body.\");");
+                source.AppendLine("                    }");
                 if (!operation.ResponseType.Nullable)
                 {
-                    source.AppendLine("                    if (global::System.String.IsNullOrWhiteSpace(responseBody) ||");
-                    source.AppendLine("                        global::System.String.Equals(responseBody.Trim(), \"null\", global::System.StringComparison.Ordinal))");
+                    source.AppendLine("                    if (global::System.String.Equals(responseBody.Trim(), \"null\", global::System.StringComparison.Ordinal))");
                     source.AppendLine("                    {");
                     source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response requires a non-null JSON body.\");");
                     source.AppendLine("                    }");
                 }
-                source.Append("                    var deserializedResponse = global::Newtonsoft.Json.JsonConvert.DeserializeObject<")
+                source.AppendLine("                    var defaultResponseSettings = global::Newtonsoft.Json.JsonConvert.DefaultSettings?.Invoke();");
+                source.AppendLine("                    var responseSerializer = global::Newtonsoft.Json.JsonSerializer.Create(defaultResponseSettings);");
+                source.AppendLine("                    responseSerializer.DateParseHandling = global::Newtonsoft.Json.DateParseHandling.None;");
+                source.AppendLine("                    responseSerializer.MaxDepth = defaultResponseSettings is null ? 64 : defaultResponseSettings.MaxDepth;");
+                source.Append("                    string validatedResponseBody = ").Append(responseJsonContracts.ParseMethodName)
+                    .Append("(responseBody, ").Append(responseJsonContracts.MethodName(operation.ResponseType))
+                    .Append(", ").Append(operation.ResponseType.Nullable ? "true" : "false")
+                    .AppendLine(", responseSerializer.MaxDepth);");
+                source.Append("                    var deserializedResponse = ").Append(responseJsonContracts.DeserializeMethodName).Append('<')
                     .Append(GeneratedSourceEmitter.TypeName(operation.ResponseType))
-                    .AppendLine(">(responseBody, new global::Newtonsoft.Json.JsonSerializerSettings { DateParseHandling = global::Newtonsoft.Json.DateParseHandling.None });");
+                    .AppendLine(">(validatedResponseBody, responseSerializer);");
                 if (!operation.ResponseType.Nullable && !operation.ResponseType.IsValueType)
                 {
                     source.AppendLine("                    if (deserializedResponse is null)");
@@ -769,6 +783,466 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("    }");
         }
 
+        private sealed class ResponseJsonContractPlan
+        {
+            private readonly IReadOnlyDictionary<string, GeneratedDtoModel> _dtos;
+            private readonly List<GeneratedTypeModel> _types = new List<GeneratedTypeModel>();
+            private readonly Dictionary<GeneratedTypeModel, int> _indices =
+                new Dictionary<GeneratedTypeModel, int>();
+            private readonly string _prefix;
+
+            internal ResponseJsonContractPlan(OpenApiGenerationModel model)
+            {
+                _dtos = model.Dtos.ToDictionary(static dto => dto.Name, StringComparer.Ordinal);
+                var occupied = new HashSet<string>(StringComparer.Ordinal) { model.ApiName };
+                occupied.UnionWith(model.Dtos.Select(static dto => dto.Name));
+                occupied.UnionWith(model.Enums.Select(static value => value.Name));
+                foreach (GeneratedOperationModel operation in model.Operations)
+                {
+                    occupied.Add(operation.Name);
+                    foreach (GeneratedParameterModel parameter in operation.Parameters)
+                    {
+                        occupied.Add(parameter.Name);
+                    }
+
+                    if (operation.RequestBody is GeneratedRequestBodyModel requestBody)
+                    {
+                        occupied.Add(requestBody.ParameterName);
+                        if (requestBody.SpecifiedParameterName is string specifiedParameterName)
+                        {
+                            occupied.Add(specifiedParameterName);
+                        }
+                    }
+                }
+
+                string prefix = "__OacgJsonContract_";
+                while (occupied.Any(name => name.StartsWith(prefix, StringComparison.Ordinal)))
+                {
+                    prefix += "_";
+                }
+
+                _prefix = prefix;
+                foreach (GeneratedOperationModel operation in model.Operations)
+                {
+                    if (operation.ResponseType is GeneratedTypeModel responseType)
+                    {
+                        Register(responseType);
+                    }
+                }
+            }
+
+            internal string ParseMethodName => _prefix + "Parse";
+
+            internal string DeserializeMethodName => _prefix + "Deserialize";
+
+            internal string MethodName(GeneratedTypeModel type) =>
+                _prefix + _indices[type.WithNullable(false)];
+
+            private void Register(GeneratedTypeModel type)
+            {
+                type = type.WithNullable(false);
+                if (_indices.ContainsKey(type))
+                {
+                    return;
+                }
+
+                _indices.Add(type, _types.Count);
+                _types.Add(type);
+                if (type.Kind == GeneratedTypeKind.Array)
+                {
+                    Register(type.ItemType!);
+                }
+                else if (type.Kind == GeneratedTypeKind.Named &&
+                         _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
+                {
+                    foreach (GeneratedDtoPropertyModel property in dto.Properties)
+                    {
+                        Register(property.Type);
+                    }
+                }
+            }
+
+            internal void AppendMethods(StringBuilder source)
+            {
+                if (_types.Count == 0)
+                {
+                    return;
+                }
+
+                source.AppendLine();
+                source.Append("        private static string ").Append(ParseMethodName)
+                    .AppendLine("(string json, global::System.Action<global::Newtonsoft.Json.Linq.JToken, string, bool, string, global::System.Collections.Generic.List<int>, global::System.Collections.Generic.List<global::System.Tuple<int, int, string>>> validate, bool nullable, int? maxDepth)");
+                source.AppendLine("        {");
+                source.Append("            ").Append(_prefix).AppendLine("ValidateSyntax(json, maxDepth);");
+                source.AppendLine("            var lineStarts = new global::System.Collections.Generic.List<int> { 0 };");
+                source.AppendLine("            for (int index = 0; index < json.Length; index++)");
+                source.AppendLine("            {");
+                source.AppendLine("                if (json[index] != '\\r' && json[index] != '\\n') continue;");
+                source.AppendLine("                if (json[index] == '\\r' && index + 1 < json.Length && json[index + 1] == '\\n') index++;");
+                source.AppendLine("                lineStarts.Add(index + 1);");
+                source.AppendLine("            }");
+                source.AppendLine("            var replacements = new global::System.Collections.Generic.List<global::System.Tuple<int, int, string>>();");
+                source.AppendLine("            using (var textReader = new global::System.IO.StringReader(json))");
+                source.AppendLine("            using (var reader = new global::Newtonsoft.Json.JsonTextReader(textReader) { DateParseHandling = global::Newtonsoft.Json.DateParseHandling.None, MaxDepth = maxDepth })");
+                source.AppendLine("            {");
+                source.AppendLine("                var token = global::Newtonsoft.Json.Linq.JToken.ReadFrom(reader, new global::Newtonsoft.Json.Linq.JsonLoadSettings");
+                source.AppendLine("                {");
+                source.AppendLine("                    DuplicatePropertyNameHandling = global::Newtonsoft.Json.Linq.DuplicatePropertyNameHandling.Error");
+                source.AppendLine("                });");
+                source.AppendLine("                if (reader.Read())");
+                source.AppendLine("                {");
+                source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response has trailing JSON content.\");");
+                source.AppendLine("                }");
+                source.AppendLine("                validate(token, \"$\", nullable, json, lineStarts, replacements);");
+                source.AppendLine("            }");
+                source.AppendLine("            if (replacements.Count == 0) return json;");
+                source.AppendLine("            replacements.Sort((left, right) => left.Item1.CompareTo(right.Item1));");
+                source.AppendLine("            var normalized = new global::System.Text.StringBuilder(json.Length);");
+                source.AppendLine("            int copiedTo = 0;");
+                source.AppendLine("            foreach (var replacement in replacements)");
+                source.AppendLine("            {");
+                source.AppendLine("                normalized.Append(json, copiedTo, replacement.Item1 - copiedTo);");
+                source.AppendLine("                normalized.Append(replacement.Item3);");
+                source.AppendLine("                copiedTo = replacement.Item2;");
+                source.AppendLine("            }");
+                source.AppendLine("            normalized.Append(json, copiedTo, json.Length - copiedTo);");
+                source.AppendLine("            return normalized.ToString();");
+                source.AppendLine("        }");
+                source.AppendLine();
+                source.Append("        private static T? ").Append(DeserializeMethodName)
+                    .AppendLine("<T>(string json, global::Newtonsoft.Json.JsonSerializer serializer)");
+                source.AppendLine("        {");
+                source.AppendLine("            using (var textReader = new global::System.IO.StringReader(json))");
+                source.AppendLine("            using (var reader = new global::Newtonsoft.Json.JsonTextReader(textReader) { DateParseHandling = global::Newtonsoft.Json.DateParseHandling.None, MaxDepth = serializer.MaxDepth })");
+                source.AppendLine("            {");
+                source.AppendLine("                return serializer.Deserialize<T>(reader);");
+                source.AppendLine("            }");
+                source.AppendLine("        }");
+                foreach (GeneratedTypeModel type in _types)
+                {
+                    AppendMethod(source, type);
+                }
+
+                if (_types.Any(static type =>
+                        type.Kind == GeneratedTypeKind.Int32 || type.Kind == GeneratedTypeKind.Int64))
+                {
+                    AppendIntegerLexemeHelper(source);
+                }
+
+                AppendSyntaxHelpers(source);
+            }
+
+            private void AppendSyntaxHelpers(StringBuilder source)
+            {
+                source.AppendLine(@"
+        private static void __PREFIX__ValidateSyntax(string json, int? maxDepth)
+        {
+            int index = 0;
+            __PREFIX__SkipWhitespace(json, ref index);
+            __PREFIX__ReadValue(json, ref index, 0, maxDepth);
+            __PREFIX__SkipWhitespace(json, ref index);
+            if (index != json.Length) __PREFIX__InvalidSyntax();
+        }
+
+        private static void __PREFIX__ReadValue(string json, ref int index, int depth, int? maxDepth)
+        {
+            if (index >= json.Length || (maxDepth.HasValue && depth > maxDepth.Value)) __PREFIX__InvalidSyntax();
+            char current = json[index];
+            if (current == '{')
+            {
+                __PREFIX__ReadObject(json, ref index, depth + 1, maxDepth);
+                return;
+            }
+            if (current == '[')
+            {
+                __PREFIX__ReadArray(json, ref index, depth + 1, maxDepth);
+                return;
+            }
+            if (current == '""')
+            {
+                __PREFIX__ReadString(json, ref index);
+                return;
+            }
+            if (current == 't' && __PREFIX__ReadLiteral(json, ref index, ""true"")) return;
+            if (current == 'f' && __PREFIX__ReadLiteral(json, ref index, ""false"")) return;
+            if (current == 'n' && __PREFIX__ReadLiteral(json, ref index, ""null"")) return;
+            if (current == '-' || (current >= '0' && current <= '9'))
+            {
+                __PREFIX__ReadNumber(json, ref index);
+                return;
+            }
+            __PREFIX__InvalidSyntax();
+        }
+
+        private static void __PREFIX__ReadObject(string json, ref int index, int depth, int? maxDepth)
+        {
+            index++;
+            __PREFIX__SkipWhitespace(json, ref index);
+            if (index < json.Length && json[index] == '}') { index++; return; }
+            while (true)
+            {
+                if (index >= json.Length || json[index] != '""') __PREFIX__InvalidSyntax();
+                __PREFIX__ReadString(json, ref index);
+                __PREFIX__SkipWhitespace(json, ref index);
+                if (index >= json.Length || json[index++] != ':') __PREFIX__InvalidSyntax();
+                __PREFIX__SkipWhitespace(json, ref index);
+                __PREFIX__ReadValue(json, ref index, depth, maxDepth);
+                __PREFIX__SkipWhitespace(json, ref index);
+                if (index < json.Length && json[index] == '}') { index++; return; }
+                if (index >= json.Length || json[index++] != ',') __PREFIX__InvalidSyntax();
+                __PREFIX__SkipWhitespace(json, ref index);
+            }
+        }
+
+        private static void __PREFIX__ReadArray(string json, ref int index, int depth, int? maxDepth)
+        {
+            index++;
+            __PREFIX__SkipWhitespace(json, ref index);
+            if (index < json.Length && json[index] == ']') { index++; return; }
+            while (true)
+            {
+                __PREFIX__ReadValue(json, ref index, depth, maxDepth);
+                __PREFIX__SkipWhitespace(json, ref index);
+                if (index < json.Length && json[index] == ']') { index++; return; }
+                if (index >= json.Length || json[index++] != ',') __PREFIX__InvalidSyntax();
+                __PREFIX__SkipWhitespace(json, ref index);
+            }
+        }
+
+        private static void __PREFIX__ReadString(string json, ref int index)
+        {
+            index++;
+            while (index < json.Length)
+            {
+                char current = json[index++];
+                if (current == '""') return;
+                if (current < 0x20) __PREFIX__InvalidSyntax();
+                if (current != '\\') continue;
+                if (index >= json.Length) __PREFIX__InvalidSyntax();
+                char escaped = json[index++];
+                if (escaped == 'u')
+                {
+                    for (int digit = 0; digit < 4; digit++)
+                    {
+                        if (index >= json.Length) __PREFIX__InvalidSyntax();
+                        char hex = json[index++];
+                        if (!((hex >= '0' && hex <= '9') || (hex >= 'a' && hex <= 'f') ||
+                              (hex >= 'A' && hex <= 'F'))) __PREFIX__InvalidSyntax();
+                    }
+                }
+                else if (escaped != '""' && escaped != '\\' && escaped != '/' &&
+                         escaped != 'b' && escaped != 'f' && escaped != 'n' &&
+                         escaped != 'r' && escaped != 't') __PREFIX__InvalidSyntax();
+            }
+            __PREFIX__InvalidSyntax();
+        }
+
+        private static void __PREFIX__ReadNumber(string json, ref int index)
+        {
+            if (json[index] == '-') index++;
+            if (index >= json.Length) __PREFIX__InvalidSyntax();
+            if (json[index] == '0') index++;
+            else
+            {
+                if (json[index] < '1' || json[index] > '9') __PREFIX__InvalidSyntax();
+                do { index++; }
+                while (index < json.Length && json[index] >= '0' && json[index] <= '9');
+            }
+            if (index < json.Length && json[index] == '.')
+            {
+                index++;
+                if (index >= json.Length || json[index] < '0' || json[index] > '9') __PREFIX__InvalidSyntax();
+                do { index++; }
+                while (index < json.Length && json[index] >= '0' && json[index] <= '9');
+            }
+            if (index < json.Length && (json[index] == 'e' || json[index] == 'E'))
+            {
+                index++;
+                if (index < json.Length && (json[index] == '+' || json[index] == '-')) index++;
+                if (index >= json.Length || json[index] < '0' || json[index] > '9') __PREFIX__InvalidSyntax();
+                do { index++; }
+                while (index < json.Length && json[index] >= '0' && json[index] <= '9');
+            }
+        }
+
+        private static bool __PREFIX__ReadLiteral(string json, ref int index, string literal)
+        {
+            if (index + literal.Length > json.Length ||
+                global::System.String.CompareOrdinal(json, index, literal, 0, literal.Length) != 0) return false;
+            index += literal.Length;
+            return true;
+        }
+
+        private static void __PREFIX__SkipWhitespace(string json, ref int index)
+        {
+            while (index < json.Length && (json[index] == ' ' || json[index] == '\t' ||
+                   json[index] == '\r' || json[index] == '\n')) index++;
+        }
+
+        private static void __PREFIX__InvalidSyntax()
+        {
+            throw new global::Newtonsoft.Json.JsonSerializationException(""The successful response is not valid JSON."");
+        }
+".Replace("__PREFIX__", _prefix));
+            }
+
+            private void AppendMethod(StringBuilder source, GeneratedTypeModel type)
+            {
+                source.AppendLine();
+                source.Append("        private static void ").Append(MethodName(type))
+                    .AppendLine("(global::Newtonsoft.Json.Linq.JToken token, string path, bool nullable, string json, global::System.Collections.Generic.List<int> lineStarts, global::System.Collections.Generic.List<global::System.Tuple<int, int, string>> replacements)");
+                source.AppendLine("        {");
+                source.AppendLine("            if (token.Type == global::Newtonsoft.Json.Linq.JTokenType.Null)");
+                source.AppendLine("            {");
+                source.AppendLine("                if (nullable) return;");
+                source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-nullable response value was null at \" + path + \".\");");
+                source.AppendLine("            }");
+
+                if (type.Kind == GeneratedTypeKind.Array)
+                {
+                    source.AppendLine("            if (token is global::Newtonsoft.Json.Linq.JObject wrapper)");
+                    source.AppendLine("            {");
+                    source.AppendLine("                if (wrapper.Property(\"$ref\") is not null && wrapper.Count == 1) return;");
+                    source.AppendLine("                foreach (var property in wrapper.Properties())");
+                    source.AppendLine("                {");
+                    source.AppendLine("                    if (property.Name != \"$id\" && property.Name != \"$values\")");
+                    source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"Undeclared response property at \" + path + \".\" + property.Name + \".\");");
+                    source.AppendLine("                }");
+                    source.AppendLine("                token = wrapper[\"$values\"] ?? token;");
+                    source.AppendLine("            }");
+                    source.AppendLine("            if (!(token is global::Newtonsoft.Json.Linq.JArray array))");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Expected a response array at \" + path + \".\");");
+                    source.AppendLine("            for (int index = 0; index < array.Count; index++)");
+                    source.AppendLine("            {");
+                    source.Append("                ").Append(MethodName(type.ItemType!))
+                        .Append("(array[index], path + \"[\" + index.ToString(global::System.Globalization.CultureInfo.InvariantCulture) + \"]\", ")
+                        .Append(type.ItemType!.Nullable ? "true" : "false").AppendLine(", json, lineStarts, replacements);");
+                    source.AppendLine("            }");
+                }
+                else if (type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
+                {
+                    source.AppendLine("            if (!(token is global::Newtonsoft.Json.Linq.JObject objectToken))");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Expected a response object at \" + path + \".\");");
+                    if (!dto.Properties.Any(static property => property.WireName == "$ref"))
+                    {
+                        source.AppendLine("            if (objectToken.Property(\"$ref\") is not null && objectToken.Count == 1) return;");
+                    }
+                    source.AppendLine("            foreach (var property in objectToken.Properties())");
+                    source.AppendLine("            {");
+                    source.AppendLine("                switch (property.Name)");
+                    source.AppendLine("                {");
+                    foreach (GeneratedDtoPropertyModel property in dto.Properties)
+                    {
+                        source.Append("                    case ")
+                            .Append(GeneratedSourceEmitter.StringLiteral(property.WireName)).AppendLine(":");
+                        source.Append("                        ").Append(MethodName(property.Type))
+                            .Append("(property.Value, path + \".\" + ")
+                            .Append(GeneratedSourceEmitter.StringLiteral(property.WireName)).Append(", ")
+                            .Append(property.Type.Nullable ? "true" : "false").AppendLine(", json, lineStarts, replacements);");
+                        source.AppendLine("                        break;");
+                    }
+                    source.AppendLine("                    default:");
+                    source.AppendLine("                        if (property.Name == \"$id\") break;");
+                    source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"Undeclared response property at \" + path + \".\" + property.Name + \".\");");
+                    source.AppendLine("                }");
+                    source.AppendLine("            }");
+                }
+                else
+                {
+                    if (type.Kind == GeneratedTypeKind.Int32 || type.Kind == GeneratedTypeKind.Int64)
+                    {
+                        source.Append("            if (!").Append(_prefix)
+                            .Append("IsIntegralNumber(token, json, lineStarts, ")
+                            .Append(type.Kind == GeneratedTypeKind.Int32 ? "true" : "false")
+                            .AppendLine(", replacements))");
+                    }
+                    else if (type.Kind == GeneratedTypeKind.Single || type.Kind == GeneratedTypeKind.Double ||
+                        type.Kind == GeneratedTypeKind.Decimal)
+                    {
+                        source.AppendLine("            if (token.Type != global::Newtonsoft.Json.Linq.JTokenType.Integer &&");
+                        source.AppendLine("                token.Type != global::Newtonsoft.Json.Linq.JTokenType.Float)");
+                    }
+                    else
+                    {
+                        string expected = type.Kind == GeneratedTypeKind.Int32 || type.Kind == GeneratedTypeKind.Int64
+                            ? "Integer"
+                            : type.Kind == GeneratedTypeKind.Boolean ? "Boolean" : "String";
+                        source.Append("            if (token.Type != global::Newtonsoft.Json.Linq.JTokenType.")
+                            .Append(expected).AppendLine(")");
+                    }
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Unexpected response JSON token at \" + path + \".\");");
+                }
+
+                source.AppendLine("        }");
+            }
+
+            private void AppendIntegerLexemeHelper(StringBuilder source)
+            {
+                source.AppendLine();
+                source.Append("        private static bool ").Append(_prefix)
+                    .AppendLine("IsIntegralNumber(global::Newtonsoft.Json.Linq.JToken token, string json, global::System.Collections.Generic.List<int> lineStarts, bool int32, global::System.Collections.Generic.List<global::System.Tuple<int, int, string>> replacements)");
+                source.AppendLine(@"        {
+            if (token.Type == global::Newtonsoft.Json.Linq.JTokenType.Integer) return true;
+            if (token.Type != global::Newtonsoft.Json.Linq.JTokenType.Float) return false;
+            var location = (global::Newtonsoft.Json.IJsonLineInfo)token;
+            if (!location.HasLineInfo()) return false;
+            if (location.LineNumber < 1 || location.LineNumber > lineStarts.Count) return false;
+            int lineStart = lineStarts[location.LineNumber - 1];
+            int end = lineStart + location.LinePosition;
+            if (end > json.Length || end <= lineStart) return false;
+            int start = end;
+            while (start > lineStart)
+            {
+                char character = json[start - 1];
+                if ((character >= '0' && character <= '9') || character == '-' ||
+                    character == '+' || character == '.' || character == 'e' || character == 'E')
+                    start--;
+                else
+                    break;
+            }
+            if (start == end) return false;
+            string number = json.Substring(start, end - start);
+            int exponentMarker = number.IndexOfAny(new[] { 'e', 'E' });
+            int mantissaEnd = exponentMarker < 0 ? number.Length : exponentMarker;
+            int decimalPoint = number.IndexOf('.');
+            int fractionalDigits = decimalPoint < 0 ? 0 : mantissaEnd - decimalPoint - 1;
+            int trailingZeros = 0;
+            bool hasNonzeroDigit = false;
+            bool hasDigit = false;
+            for (int index = mantissaEnd - 1; index >= 0; index--)
+            {
+                char character = number[index];
+                if (character < '0' || character > '9') continue;
+                hasDigit = true;
+                if (character == '0' && !hasNonzeroDigit)
+                    trailingZeros++;
+                else if (character != '0')
+                    hasNonzeroDigit = true;
+            }
+            if (!hasDigit) return false;
+            if (hasNonzeroDigit)
+            {
+            int exponent = 0;
+            if (exponentMarker >= 0 &&
+                !global::System.Int32.TryParse(number.Substring(exponentMarker + 1),
+                    global::System.Globalization.NumberStyles.AllowLeadingSign,
+                    global::System.Globalization.CultureInfo.InvariantCulture, out exponent))
+            {
+                if (number[exponentMarker + 1] == '-') return false;
+            }
+            else if (exponent < fractionalDigits - trailingZeros) return false;
+            }
+            if (!global::System.Decimal.TryParse(number,
+                global::System.Globalization.NumberStyles.Float,
+                global::System.Globalization.CultureInfo.InvariantCulture, out var value)) return false;
+            if (int32 && (value < global::System.Int32.MinValue || value > global::System.Int32.MaxValue)) return false;
+            if (value < global::System.Int64.MinValue || value > global::System.Int64.MaxValue) return false;
+            replacements.Add(global::System.Tuple.Create(start, end, value.ToString(""0"", global::System.Globalization.CultureInfo.InvariantCulture)));
+            return true;
+        }");
+            }
+        }
+
         private sealed class ResponseValidatorPlan
         {
             private readonly IReadOnlyDictionary<string, GeneratedDtoModel> _dtos;
@@ -949,11 +1423,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 if (type.Kind == GeneratedTypeKind.Single || type.Kind == GeneratedTypeKind.Double)
                 {
                     string numberType = type.Kind == GeneratedTypeKind.Single ? "Single" : "Double";
-                    source.Append("            if (contract == \"request\" && value.HasValue && (global::System.")
+                    source.Append("            if (value.HasValue && (global::System.")
                         .Append(numberType).Append(".IsNaN(value.Value) || global::System.")
                         .Append(numberType).AppendLine(".IsInfinity(value.Value)))");
                     source.AppendLine("            {");
-                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-finite request number at \" + path + \".\");");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-finite \" + contract + \" number at \" + path + \".\");");
                     source.AppendLine("            }");
                     source.AppendLine("            return;");
                     source.AppendLine("        }");

@@ -158,6 +158,8 @@ request body raises `ArgumentNullException` before sending; a nullable required
 body can send JSON `null`. A `//host/path` server URL uses the scheme from
 `HttpClient.BaseAddress`; a `/path` server URL starts at the origin root,
 ignoring the base address path and query. Both forms require a base address.
+An omitted or empty root `servers` list defaults to `/` and therefore also
+requires a base address. An explicit `baseUrl=""` override remains relative.
 With a relative server URL, an operation at `/` includes a base address query once.
 Request bodies send a concrete `application/json` or `application/<subtype>+json`
 media type. A request that declares only `application/*+json` receives `OACG101`;
@@ -180,6 +182,12 @@ before the HTTP request is sent. For a successful response that supplies a
 status before deserializing; malformed, multiple, and conflicting values raise
 `JsonSerializationException`. A specific status declaration takes precedence
 over `2XX`. Responses without a `Content-Type` retain the existing behavior.
+Every schema-declared successful response requires a nonempty JSON body; a
+nullable schema accepts the JSON token `null`. Response JSON is checked for
+RFC 8259 syntax, duplicate and unknown object properties, and scalar token
+types before deserialization. `float` and `double` response values must be
+finite. Mathematical integers such as `1.0` and `1e0` are accepted within the
+generated CLR type's range. Json.NET reference metadata remains supported.
 
 Bundle and semantic failures use stable diagnostics including:
 
@@ -209,6 +217,7 @@ Unity Newtonsoft package.
 
 When Source Generator is selected and available, the base package synchronizes
 `OPENAPI_CODEGEN_SOURCE_GENERATOR` for the active `NamedBuildTarget`. Removing
-or updating this add-on removes the define before Unity applies the package
-transition. Code that references generated types may then require source or
-provider changes.
+this add-on removes the define from every known `NamedBuildTarget` before Unity
+applies the package transition. Updating the add-on temporarily removes it from
+the active target. Code that references generated types may then require source
+or provider changes.

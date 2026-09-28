@@ -128,6 +128,60 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Theory]
+        [InlineData(false, false, "https://fallback.example.test/pets?limit=5")]
+        [InlineData(true, false, "https://fallback.example.test/pets?limit=5")]
+        [InlineData(false, true, "https://fallback.example.test/root/pets?base=0&limit=5")]
+        public async Task MissingOrEmptyRootServersUseOriginRootUnlessBaseUrlIsOverridden(
+            bool emptyServers,
+            bool explicitEmptyOverride,
+            string expectedUri)
+        {
+            string document = CreateGetDocument("/v1");
+            document = document.Replace("  \"servers\": [{ \"url\": \"/v1\" }],",
+                emptyServers ? "  \"servers\": []," : string.Empty);
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = execution.EmitAssembly();
+            var handler = new RecordingHandler();
+            using var httpClient = new HttpClient(handler)
+            {
+                BaseAddress = new Uri("https://fallback.example.test/root/?base=0")
+            };
+            Type apiType = assembly.GetType("Generated.Phase4.Phase4Api")!;
+            object api = explicitEmptyOverride
+                ? Activator.CreateInstance(apiType, httpClient, string.Empty)!
+                : Activator.CreateInstance(apiType, httpClient)!;
+
+            await InvokeGet(api);
+
+            Assert.Equal(expectedUri, handler.RequestUri!.AbsoluteUri);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task MissingOrEmptyRootServersNeedBaseAddressBeforeSend(bool emptyServers)
+        {
+            string document = CreateGetDocument("/v1");
+            document = document.Replace("  \"servers\": [{ \"url\": \"/v1\" }],",
+                emptyServers ? "  \"servers\": []," : string.Empty);
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = execution.EmitAssembly();
+            var handler = new RecordingHandler();
+            using var httpClient = new HttpClient(handler);
+            object api = Activator.CreateInstance(assembly.GetType("Generated.Phase4.Phase4Api")!, httpClient)!;
+
+            InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => InvokeGet(api));
+
+            Assert.Contains("HttpClient.BaseAddress", exception.Message);
+            Assert.Equal(0, handler.SendCount);
+        }
+
+        [Theory]
         [InlineData("/v1?server=1", "https://fallback.example.test/v1/pets?server=1&limit=5")]
         [InlineData("v1?server=1", "https://fallback.example.test/root/v1/pets?base=0&server=1&limit=5")]
         [InlineData("https://api.example.test/v1?server=1", "https://api.example.test/v1/pets?server=1&limit=5")]

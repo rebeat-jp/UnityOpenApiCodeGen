@@ -38,7 +38,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             object api = Activator.CreateInstance(assembly.GetType("Generated.Phase4.Phase4Api")!, client)!;
             var task = (Task)api.GetType().GetMethod("readValue")!.Invoke(api, new object[] { CancellationToken.None })!;
 
-            if (nullable)
+            if (nullable && !string.IsNullOrWhiteSpace(responseBody))
             {
                 await task;
                 Assert.Null(task.GetType().GetProperty("Result")!.GetValue(task));

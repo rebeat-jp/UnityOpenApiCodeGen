@@ -82,12 +82,14 @@ JSON `null`を送ります。本文に値があれば通常どおり送信しま
 server URLが`//host/path`形式の場合は`HttpClient.BaseAddress`のschemeで解決します。
 `/path`形式は同じoriginのrootから解決し、`BaseAddress`のpathとqueryを引き継ぎません。
 どちらも`BaseAddress`が未設定なら送信前に`InvalidOperationException`になります。
+root `servers`を省略するか空配列にした場合は`/`が既定値となり、同様に`BaseAddress`が必要です。
+明示的な`baseUrl=""`の上書きは相対URLのままです。
 相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。
 リクエスト本文には具体的な`application/json`または`application/<subtype>+json`を送信します。
 `application/*+json`のみを宣言すると`OACG101`になり、具体型も宣言すると具体型を選びます。
 
-成功レスポンスのschemaが非nullableの場合、空本文またはJSON `null`は
-`JsonSerializationException`になります。nullableなschemaではJSON `null`を受け取れます。
+schema付き成功レスポンスの空・空白本文は、nullableでも`JsonSerializationException`になります。
+JSON `null`はnullableなschemaでのみ受け取れます。
 レスポンス配列の非nullableな参照型要素がJSON `null`の場合も、入れ子の配列やDTO内の配列を含めて
 `JsonSerializationException`になります。複数の成功レスポンス間でinline enum値の宣言順だけが
 異なる場合は、同じ契約として扱います。
@@ -98,6 +100,9 @@ nullableな要素にはJSON `null`を使用できます。
 成功レスポンスに`Content-Type`があれば、そのstatusで宣言されたmedia typeと照合してから
 本文を読みます。不正・複数・宣言と不一致の値は`JsonSerializationException`です。
 個別statusの宣言は`2XX`より優先します。`Content-Type`がない場合は従来どおり本文を読みます。
+成功レスポンスのJSONは、デシリアライズ前にRFC 8259の構文、重複・未知property、
+scalarのJSON token型を検査します。`float`／`double`は有限値に限り、`1.0`や`1e0`のような
+数学的整数は生成CLR型の範囲内で受け入れます。Json.NETの参照メタデータは維持します。
 必須nullableパラメーターや、対応表の範囲外のwire formatは位置付き診断で拒否します。
 
 成功した`Generate`では、`Library/OpenApiCodeGen/SourceGenerator/SpecCache/<specId>/`に
@@ -105,6 +110,10 @@ nullableな要素にはJSON `null`を使用できます。
 選択した出力フォルダーに`<ApiName>.OpenApiDefinition.cs`を配置します。所有する定義のnamespace変更や
 同一asmdef内でのフォルダー移動では、`specId`と既存`.meta`のGUIDを保持します。移動先の競合や
 所有者が曖昧な場合は生成を止め、手動編集したファイルを保護します。
+
+基本パッケージは有効な`NamedBuildTarget`の`OPENAPI_CODEGEN_SOURCE_GENERATOR`を同期します。
+この追加パッケージの削除時には、現在有効でないものも含むすべての既知ターゲットから
+Unityが削除を適用する前にdefineを取り除きます。更新時は有効なターゲットから一時的に取り除きます。
 
 ## 資料とライセンス
 

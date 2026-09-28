@@ -55,9 +55,11 @@ existing Docker URL settings retain their original value.
 
 When Source Generator is selected and available, the base package synchronizes
 `OPENAPI_CODEGEN_SOURCE_GENERATOR` for the active `NamedBuildTarget`. Removing
-or updating the add-on removes the define before Unity applies the package
-transition. Code that still references generated types can therefore fail to
-compile after switching providers.
+the add-on removes the define from every known `NamedBuildTarget` before Unity
+applies the package transition, including targets that are not active. Updating
+the add-on temporarily removes it from the active target during the transition.
+Code that still references generated types can therefore fail to compile after
+switching providers.
 
 ## License
 

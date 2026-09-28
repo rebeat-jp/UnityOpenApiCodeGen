@@ -45,7 +45,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Empty(execution.CompilationErrors);
             Assembly assembly = execution.EmitAssembly();
             var handler = new HeaderHandler();
-            using var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler)
+            {
+                BaseAddress = new Uri("https://example.test/")
+            };
             object client = Activator.CreateInstance(
                 assembly.GetType("Generated.Phase4.Phase4Api")!, httpClient)!;
             var task = (Task)client.GetType().GetMethod("readValue")!

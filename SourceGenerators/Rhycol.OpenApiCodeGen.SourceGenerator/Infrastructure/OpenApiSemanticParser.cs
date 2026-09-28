@@ -212,14 +212,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             if (serversNode is null)
             {
-                return string.Empty;
+                return "/";
             }
 
             RequireKind(serversNode, SpecValueKind.Array, "The 'servers' field must be an array.");
             IReadOnlyList<SpecNode> servers = serversNode.EnumerateArray().ToArray();
             if (servers.Count == 0)
             {
-                return string.Empty;
+                return "/";
             }
 
             if (servers.Count > 1)

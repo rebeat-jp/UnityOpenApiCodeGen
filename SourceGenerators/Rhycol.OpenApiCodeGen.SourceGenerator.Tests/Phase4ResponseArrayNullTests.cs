@@ -241,6 +241,79 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             await AssertResponse(assembly, response, "$.zStrict[0]");
         }
 
+        [Theory]
+        [InlineData(80, 256)]
+        [InlineData(140, null)]
+        public async Task ResponseUsesConfiguredJsonNetMaximumDepth(int depth, int? maxDepth)
+        {
+            var schemas = new JObject();
+            for (int index = 0; index < depth; index++)
+            {
+                schemas["Node" + index] = new JObject
+                {
+                    ["type"] = "object",
+                    ["additionalProperties"] = false,
+                    ["properties"] = index + 1 == depth
+                        ? new JObject { ["name"] = new JObject { ["type"] = "string" } }
+                        : new JObject
+                        {
+                            ["child"] = new JObject
+                            {
+                                ["$ref"] = "#/components/schemas/Node" + (index + 1)
+                            }
+                        }
+                };
+            }
+
+            Assembly assembly = GenerateAndCompile(
+                @"{ ""$ref"": ""#/components/schemas/Node0"" }",
+                schemas.ToString(Formatting.None));
+            var body = new StringBuilder();
+            for (int index = 1; index < depth; index++)
+            {
+                body.Append("{\"child\":");
+            }
+
+            body.Append("{\"name\":\"leaf\"}");
+            for (int index = 1; index < depth; index++)
+            {
+                body.Append('}');
+            }
+
+            Func<JsonSerializerSettings>? previous = JsonConvert.DefaultSettings;
+            try
+            {
+                JsonConvert.DefaultSettings = () => new JsonSerializerSettings { MaxDepth = maxDepth };
+                using var client = new HttpClient(new FixedResponseHandler(body.ToString()));
+                object api = Activator.CreateInstance(assembly.GetType("Generated.Phase4.Phase4Api")!, client)!;
+                var task = (Task)api.GetType().GetMethod("readValue")!
+                    .Invoke(api, new object[] { CancellationToken.None })!;
+
+                await task;
+                object node = task.GetType().GetProperty("Result")!.GetValue(task)!;
+                for (int index = 1; index < depth; index++)
+                {
+                    node = node.GetType().GetProperty("Child")!.GetValue(node)!;
+                }
+
+                Assert.Equal("leaf", node.GetType().GetProperty("Name")!.GetValue(node));
+                if (maxDepth == 256)
+                {
+                    JsonConvert.DefaultSettings = null;
+                    using var defaultClient = new HttpClient(new FixedResponseHandler(body.ToString()));
+                    object defaultApi = Activator.CreateInstance(
+                        assembly.GetType("Generated.Phase4.Phase4Api")!, defaultClient)!;
+                    var defaultTask = (Task)defaultApi.GetType().GetMethod("readValue")!
+                        .Invoke(defaultApi, new object[] { CancellationToken.None })!;
+                    await Assert.ThrowsAnyAsync<JsonException>(async () => await defaultTask);
+                }
+            }
+            finally
+            {
+                JsonConvert.DefaultSettings = previous;
+            }
+        }
+
         private static Assembly GenerateAndCompile(
             string schema,
             string components,

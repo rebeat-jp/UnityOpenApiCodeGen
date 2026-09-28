@@ -348,7 +348,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td><code>servers</code></td>
 <td>一部対応</td>
-<td>URLは0個または1個、variablesなし。<code>//host/path</code>は<code>HttpClient.BaseAddress</code>のschemeで解決します。<code>/path</code>は同じoriginのrootから解決し、<code>BaseAddress</code>のpathとqueryを引き継ぎません。どちらも<code>BaseAddress</code>未設定なら送信前に<code>InvalidOperationException</code>です。相対server URLとoperation pathが<code>/</code>の場合、<code>BaseAddress</code>のqueryは1回だけ付加します。</td>
+<td>URLは0個または1個、variablesなし。root <code>servers</code>の省略・空配列は<code>/</code>を既定値とします。<code>//host/path</code>は<code>HttpClient.BaseAddress</code>のschemeで解決します。<code>/path</code>と既定の<code>/</code>は同じoriginのrootから解決し、<code>BaseAddress</code>のpathとqueryを引き継ぎません。<code>BaseAddress</code>が必要な場合に未設定なら送信前に<code>InvalidOperationException</code>です。明示的な空文字<code>baseUrl</code> overrideは相対URLとして扱います。相対server URLとoperation pathが<code>/</code>の場合、<code>BaseAddress</code>のqueryは1回だけ付加します。</td>
 </tr>
 <tr>
 <td>parameter location</td>
@@ -413,12 +413,17 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>successful response</td>
 <td>一部対応</td>
-<td>少なくとも1つの<code>2xx</code> responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの値の宣言順は比較に影響しません。非nullableな成功本文が空・JSON <code>null</code>、または非nullableな配列要素がJSON <code>null</code>なら実行時に<code>JsonSerializationException</code>です。入れ子の配列やDTO内の配列も検査します。</td>
+<td>少なくとも1つの<code>2xx</code> responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの値の宣言順は比較に影響しません。schema付き成功本文の空・空白はnullableでも<code>JsonSerializationException</code>です。JSON <code>null</code>はnullable schemaだけで許可します。非nullableな配列要素がJSON <code>null</code>なら、入れ子の配列やDTO内の配列も含めて拒否します。</td>
 </tr>
 <tr>
 <td>成功レスポンスの<code>Content-Type</code></td>
 <td>一部対応</td>
 <td>headerがある場合はstatus別の宣言media typeと照合し、不一致・不正・複数値は<code>JsonSerializationException</code>です。個別statusの宣言は<code>2XX</code>より優先します。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。</td>
+</tr>
+<tr>
+<td>成功レスポンスのJSON</td>
+<td>一部対応</td>
+<td>RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの<code>$id</code>／<code>$ref</code>／<code>$values</code>参照メタデータを維持します。整数は数学的整数値の<code>1.0</code>／<code>1e0</code>を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限<code>float</code>／<code>double</code>は<code>JsonSerializationException</code>です。</td>
 </tr>
 <tr>
 <td>error/default response</td>
@@ -455,7 +460,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>object</td>
 <td>一部対応</td>
-<td>named propertiesと<code>required</code>を持ち、<code>additionalProperties: false</code>を明示したobject。省略、<code>true</code>、schema値はDTOを生成できず<code>OACG101</code>です。既存仕様で省略していた場合は明示してください。</td>
+<td>named propertiesと<code>required</code>を持ち、<code>additionalProperties: false</code>を明示したobject。省略、<code>true</code>、schema値はDTOを生成できず<code>OACG101</code>です。成功応答の未知propertyは拒否します。既存仕様で省略していた場合は明示してください。</td>
 </tr>
 <tr>
 <td>array</td>
