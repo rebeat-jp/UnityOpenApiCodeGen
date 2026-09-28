@@ -1,0 +1,22 @@
+{
+  "name": "Unity.OpenApiCodeGen.SourceGenerator.Editor",
+  "rootNamespace": "Rhycol.OpenApiCodeGen.SourceGenerator.Editor",
+  "references": [
+    "Unity.OpenApiCodeGen.Editor.Contracts",
+    "Unity.OpenApiCodeGen.SourceGenerator.Editor.Parsing",
+    "Unity.OpenApiCodeGen.SourceGenerator"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "Newtonsoft.Json.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

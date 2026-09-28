@@ -1,0 +1,16 @@
+{
+  "name": "Unity.OpenApiCodeGen.SourceGenerator.PackageRemovalVerification",
+  "rootNamespace": "Rhycol.OpenApiCodeGen.SourceGenerator.PackageRemovalVerification",
+  "references": [],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

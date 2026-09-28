@@ -32,16 +32,23 @@ namespace Rhycol.OpenApiCodeGen.Core
             {
                 await EnsureDockerInstalledAsync(setupDto.DockerPath);
                 var userSetting = new UserSetting(dockerPath: setupDto.DockerPath);
+                var existingProjectSetting = await _projectSettingJsonRepository.ReadAsync();
+                var existingGenerationCSharpSetting =
+                    await _generationCSharpSettingJsonRepository.ReadAsync();
 
-                var projectSetting = new ProjectSetting(
-                    apiClientOutputFolderPath: "Assets/OpenAPIGenerator/Generated",
-                    apiDocumentFilePathOrUrl: "http://localhost:8080",
-                    generateProvider: setupDto.ProviderType
-                );
-                var generationCSharpSetting = new GenerationCSharpSetting();
                 await _userSettingJsonRepository.SaveAsync(userSetting);
-                await _projectSettingJsonRepository.SaveAsync(projectSetting);
-                await _generationCSharpSettingJsonRepository.SaveAsync(generationCSharpSetting);
+                if (existingProjectSetting == null)
+                {
+                    await _projectSettingJsonRepository.SaveAsync(new ProjectSetting(
+                        apiClientOutputFolderPath: "Assets/OpenAPIGenerator/Generated",
+                        apiDocumentFilePathOrUrl: "http://localhost:8080"));
+                }
+
+                if (existingGenerationCSharpSetting == null)
+                {
+                    await _generationCSharpSettingJsonRepository.SaveAsync(
+                        new GenerationCSharpSetting());
+                }
             }
             catch (Exception e) when (e is not ApplicationServiceException)
             {

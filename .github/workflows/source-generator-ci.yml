@@ -1,0 +1,79 @@
+name: Source Generator CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Exact 40-character commit SHA (empty uses selected ref)
+        type: string
+        default: ''
+      automation_pr:
+        description: Bot DLL PR number (only for the update workflow's provenance artifact)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate manual target SHA before checkout
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TARGET_COMMIT: ${{ inputs.commit || github.sha }}
+          EXPLICIT_COMMIT: ${{ inputs.commit }}
+          AUTOMATION_PR: ${{ inputs.automation_pr }}
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo 'Manual CI must run from main.' >&2; exit 1; }
+          [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'Exact commit SHA required.' >&2; exit 1; }
+          if [[ -n "$AUTOMATION_PR" ]]; then
+            [[ "$AUTOMATION_PR" =~ ^[1-9][0-9]*$ ]] || { echo 'Invalid automation PR number.' >&2; exit 1; }
+            [[ -n "$EXPLICIT_COMMIT" ]] || { echo 'Automation requires explicit commit.' >&2; exit 1; }
+          fi
+      - uses: actions/checkout@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.automation_pr == ''
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enforce main ancestry before manual Unity verification
+        if: github.event_name == 'workflow_dispatch' && inputs.automation_pr == ''
+        env:
+          TARGET_COMMIT: ${{ inputs.commit || github.sha }}
+        run: |
+          [[ "$(git rev-parse HEAD)" == "$TARGET_COMMIT" ]] || { echo 'Checkout differs from selected commit.' >&2; exit 1; }
+          if ! git merge-base --is-ancestor "$TARGET_COMMIT" origin/main; then
+            echo 'Manual CI target must be an ancestor of origin/main.' >&2
+            exit 1
+          fi
+      - name: Check out trusted main controller for bot PR preflight
+        if: github.event_name == 'workflow_dispatch' && inputs.automation_pr != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate bot DLL PR before target code runs
+        if: github.event_name == 'workflow_dispatch' && inputs.automation_pr != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_COMMIT: ${{ inputs.commit }}
+          AUTOMATION_PR: ${{ inputs.automation_pr }}
+        run: node SourceGenerators/scripts/validate-analyzer-pr-ci.js
+  verify:
+    needs: preflight
+    uses: ./.github/workflows/source-generator-verify.yml
+    # Environment secrets in reusable workflows require caller inheritance:
+    # https://github.com/actions/runner/issues/4453
+    secrets: inherit
+    with:
+      commit: ${{ github.event.pull_request.head.sha || inputs.commit || github.sha }}
+      # Forks receive automated package/.NET checks without Unity credentials.
+      unity: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}

@@ -1,0 +1,5 @@
+name: jp.rhycol.openapicodegen.source-generator
+repoUrl: https://github.com/rebeat-jp/UnityOpenApiCodeGen
+trackingMode: githubRelease
+githubReleaseAssetName: jp.rhycol.openapicodegen.source-generator-
+minVersion: 0.5.0
