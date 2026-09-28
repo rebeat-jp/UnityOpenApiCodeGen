@@ -84,6 +84,8 @@ keys, JSON-compatible scalars, quoted/plain strings, literal/folded block
 scalars, comments, anchors, and aliases. In a flow collection, plain values
 containing `,`, `[`, `]`, `{`, or `}` must be quoted; URL scheme colons such as
 `https://` are accepted.
+Double-quoted Unicode escapes preserve valid non-BMP `\u` surrogate pairs;
+isolated or mismatched surrogates receive positioned `YAML006`.
 
 Tags, directives, merge keys, multiple documents, complex keys, and block
 scalars inside flow collections are rejected with source-located diagnostics.
@@ -128,6 +130,8 @@ The window reports progress and supports Cancel before publication. Generation
 and startup recovery use process-local and OS file locks. A durable publication
 journal retains compilation intent until the compilation request succeeds;
 startup recovery retries that request or restores interrupted publication.
+After restoration, Generate re-reads the owned definition before publishing,
+so the first retry uses the recovered file while later user edits remain protected.
 Cancellation after loading and before publication preserves the previous
 artifacts and does not request compilation.
 

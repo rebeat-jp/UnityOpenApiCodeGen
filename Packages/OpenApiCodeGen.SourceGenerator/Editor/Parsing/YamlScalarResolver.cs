@@ -29,6 +29,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     offset);
             }
 
+            ValidateLiteralUnicode(token, sourcePath, line, column, offset);
+
             if (token.Length >= 2 && token[0] == '\'' && token[token.Length - 1] == '\'')
             {
                 return new SpecStringNode(line, column, DecodeSingleQuoted(token));
@@ -89,6 +91,36 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             return value.Replace("''", "'");
         }
 
+        private static void ValidateLiteralUnicode(
+            string token,
+            string sourcePath,
+            int line,
+            int column,
+            int offset)
+        {
+            for (int index = 0; index < token.Length; index++)
+            {
+                if (char.IsHighSurrogate(token[index]) &&
+                    index + 1 < token.Length &&
+                    char.IsLowSurrogate(token[index + 1]))
+                {
+                    index++;
+                    continue;
+                }
+
+                if (char.IsSurrogate(token[index]))
+                {
+                    throw CreateException(
+                        YamlDiagnosticCode.InvalidScalar,
+                        "A YAML scalar contains an unpaired Unicode surrogate.",
+                        sourcePath,
+                        line,
+                        column + index,
+                        offset + index);
+                }
+            }
+        }
+
         private static string DecodeDoubleQuoted(
             string token,
             string sourcePath,
@@ -106,6 +138,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     continue;
                 }
 
+                int escapeStart = index;
                 if (++index >= token.Length - 1)
                 {
                     throw CreateException(
@@ -138,13 +171,63 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     case 'L': builder.Append('\u2028'); break;
                     case 'P': builder.Append('\u2029'); break;
                     case 'x':
-                        builder.Append(ParseHexEscape(token, ref index, 2, sourcePath, line, column, offset));
+                        builder.Append(ParseHexEscape(token, ref index, 2, sourcePath, line, column + escapeStart, offset + escapeStart));
                         break;
                     case 'u':
-                        builder.Append(ParseHexEscape(token, ref index, 4, sourcePath, line, column, offset));
+                        int escapedCodeUnit = ParseHexCodePoint(
+                            token, ref index, 4, sourcePath, line, column + escapeStart, offset + escapeStart);
+                        if (char.IsHighSurrogate((char)escapedCodeUnit))
+                        {
+                            int lowEscapeStart = index + 1;
+                            if (lowEscapeStart + 1 >= token.Length - 1 ||
+                                token[lowEscapeStart] != '\\' || token[lowEscapeStart + 1] != 'u')
+                            {
+                                throw CreateException(
+                                    YamlDiagnosticCode.InvalidScalar,
+                                    "A high Unicode surrogate escape must be followed by a low surrogate escape.",
+                                    sourcePath,
+                                    line,
+                                    column + escapeStart,
+                                    offset + escapeStart);
+                            }
+
+                            index = lowEscapeStart + 1;
+                            int lowCodeUnit = ParseHexCodePoint(
+                                token, ref index, 4, sourcePath, line,
+                                column + lowEscapeStart, offset + lowEscapeStart);
+                            if (!char.IsLowSurrogate((char)lowCodeUnit))
+                            {
+                                throw CreateException(
+                                    YamlDiagnosticCode.InvalidScalar,
+                                    "A high Unicode surrogate escape must be followed by a low surrogate escape.",
+                                    sourcePath,
+                                    line,
+                                    column + lowEscapeStart,
+                                    offset + lowEscapeStart);
+                            }
+
+                            builder.Append((char)escapedCodeUnit);
+                            builder.Append((char)lowCodeUnit);
+                        }
+                        else if (char.IsLowSurrogate((char)escapedCodeUnit))
+                        {
+                            throw CreateException(
+                                YamlDiagnosticCode.InvalidScalar,
+                                "A low Unicode surrogate escape must follow a high surrogate escape.",
+                                sourcePath,
+                                line,
+                                column + escapeStart,
+                                offset + escapeStart);
+                        }
+                        else
+                        {
+                            builder.Append((char)escapedCodeUnit);
+                        }
+
                         break;
                     case 'U':
-                        int codePoint = ParseHexCodePoint(token, ref index, 8, sourcePath, line, column, offset);
+                        int codePoint = ParseHexCodePoint(
+                            token, ref index, 8, sourcePath, line, column + escapeStart, offset + escapeStart);
                         try
                         {
                             builder.Append(char.ConvertFromUtf32(codePoint));
@@ -156,8 +239,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                                 "A YAML Unicode escape is outside the Unicode scalar range.",
                                 sourcePath,
                                 line,
-                                column,
-                                offset);
+                                column + escapeStart,
+                                offset + escapeStart);
                         }
 
                         break;

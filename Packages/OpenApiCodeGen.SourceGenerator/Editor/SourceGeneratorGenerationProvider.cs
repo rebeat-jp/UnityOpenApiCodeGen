@@ -99,6 +99,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     definitionPlan.SpecId,
                     definitionPlan.DefinitionPath,
                     definitionPlan.DefinitionAssetPath);
+                // Recovery can restore the owned definition after Prepare captured its bytes.
+                // Publish must compare against the recovered file, while still rejecting later edits.
+                definitionPlan = definitionWriter.Prepare(
+                    request.OutputFolderPath,
+                    request.ApiName,
+                    request.GeneratedNamespace,
+                    requestedDocumentFormat);
                 NormalizedSpecGraph graph = await cacheService.LoadGraphAsync(
                     request.ApiDocumentFilePathOrUrl,
                     definitionPlan.SpecId,
@@ -148,6 +155,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     definitionPlan.SpecId,
                     definitionPlan.DefinitionPath,
                     definitionPlan.DefinitionAssetPath);
+                definitionPlan = definitionWriter.Prepare(
+                    request.OutputFolderPath,
+                    request.ApiName,
+                    request.GeneratedNamespace,
+                    requestedDocumentFormat);
                 // Match the Docker provider's synchronous boundary for fetch/parse, then publish
                 // Unity assets on this caller thread after the worker has returned.
                 NormalizedSpecGraph graph = Task.Run(

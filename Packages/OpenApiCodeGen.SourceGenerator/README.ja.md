@@ -49,6 +49,8 @@ manifest、診断へ平文保存しません。次回の`Generate`時にはquery
 グラフ全体32 MiB、最大64文書、リダイレクト5回、参照深度256の上限があります。
 
 対応するOpenAPI要素、YAMLの範囲、診断は[日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)に記載しています。
+YAMLの二重引用符内では有効な`\u`サロゲート対を非BMP文字として保持し、
+孤立・不一致のサロゲートは位置付き`YAML006`で拒否します。
 OpenAPI 3.1は標準schema dialectのみを受け付けます。独自dialectや`null`入りstring enumは診断で拒否します。
 参照先が完全なOpenAPI文書の場合、その文書の`openapi`版と`jsonSchemaDialect`も確認します。
 入口文書とmajor.minor版が異なる参照先、および未対応dialectは位置付き診断で拒否します。
@@ -149,6 +151,8 @@ scalarのJSON token型を検査します。`float`／`double`は有限値に限�
 選択した出力フォルダーに`<ApiName>.OpenApiDefinition.cs`を配置します。所有する定義のnamespace変更や
 同一asmdef内でのフォルダー移動では、`specId`と既存`.meta`のGUIDを保持します。移動先の競合や
 所有者が曖昧な場合は生成を止め、手動編集したファイルを保護します。
+公開が中断して次の`Generate`で復旧した場合は、復旧後の定義を読み直してから公開します。
+最初の再実行で復旧を反映し、その後のユーザー編集は引き続き保護します。
 
 基本パッケージは有効な`NamedBuildTarget`の`OPENAPI_CODEGEN_SOURCE_GENERATOR`を同期します。
 この追加パッケージの削除時には、現在有効でないものも含むすべての既知ターゲットから

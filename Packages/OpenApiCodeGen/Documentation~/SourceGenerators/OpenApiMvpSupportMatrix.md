@@ -81,6 +81,7 @@ YAML 1.2-compatible subsetです。subset外は黙ってJSONへ変換したり�
 | mapping key | Partial | simple string keyのみ。duplicate、complex/non-string key、merge key `<<`は拒否。 |
 | comments / encoding | Supported | comments、UTF-8 BOM、LF、CRLF。BOMはtreeから除きraw hashには含めます。 |
 | quoted / plain scalar | Supported | single/double quoteとplain scalar。YAML 1.1 implicit bool/date等はstringとして保持。 |
+| Unicode escapes in quoted scalars | Partial | Adjacent high/low `\u` surrogate escapes and valid `\U` scalars preserve non-BMP characters. Isolated, reversed, or mismatched surrogate escapes receive positioned `YAML006` before bundle generation. |
 | JSON-compatible scalar | Supported | `null`、`true`/`false`、RFC 8259 number（integer/real）、string。 |
 | literal / folded block scalar | Partial | `|`/`>`、`+`/`-` chomping、explicit indent `1`–`9`。`>`では内側の空行1行を改行1つ、空行2行を改行2つへfoldします。末尾空行はchompingに従います。flow内は拒否。 |
 | flow plain delimiter | Partial | plain valueに`,`, `[`, `]`, `{`, `}`を含める場合はquote必須。URL scheme colon（`https://`）は受理。 |

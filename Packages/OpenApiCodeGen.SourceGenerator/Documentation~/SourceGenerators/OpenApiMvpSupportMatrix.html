@@ -190,6 +190,11 @@ YAML 1.2-compatible subsetです。subset外は黙ってJSONへ変換したり�
 <td>single/double quoteとplain scalar。YAML 1.1 implicit bool/date等はstringとして保持。</td>
 </tr>
 <tr>
+<td>Unicode escapes in quoted scalars</td>
+<td>Partial</td>
+<td>Adjacent high/low <code>\u</code> surrogate escapes and valid <code>\U</code> scalars preserve non-BMP characters. Isolated, reversed, or mismatched surrogate escapes receive positioned <code>YAML006</code> before bundle generation.</td>
+</tr>
+<tr>
 <td>JSON-compatible scalar</td>
 <td>Supported</td>
 <td><code>null</code>、<code>true</code>/<code>false</code>、RFC 8259 number（integer/real）、string。</td>

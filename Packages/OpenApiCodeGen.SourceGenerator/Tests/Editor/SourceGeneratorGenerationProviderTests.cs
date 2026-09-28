@@ -130,6 +130,51 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Is.Empty);
         }
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task FirstGenerationAfterInterruptedPublicationUsesRecoveredDefinition(bool asynchronous)
+        {
+            SourceGeneratorGenerationProvider provider = CreateProvider();
+            GenerationResult initial = provider.Generate(CreateRequest());
+            Assert.That(initial.IsSuccess, Is.True, initial.Message);
+            string specId = ReadSpecId(initial.Message);
+            string definitionPath = Path.Combine(outputFolder, "PetStoreApi.OpenApiDefinition.cs");
+            byte[] originalDefinition = File.ReadAllBytes(definitionPath);
+
+            var writer = new OpenApiClientDefinitionWriter(
+                projectRoot, new AtomicFileWriter(), definitionImports.Add);
+            OpenApiClientDefinitionPlan yamlPlan = writer.Prepare(
+                outputFolder, "PetStoreApi", "Example.Generated.PetStore", OpenApiDocumentFormat.Yaml);
+            Assert.That(writer.Publish(yamlPlan), Is.True);
+            byte[] interruptedOutput = File.ReadAllBytes(definitionPath);
+            Assert.That(interruptedOutput, Is.Not.EqualTo(originalDefinition));
+            WriteInterruptedDefinitionPublication(specId, definitionPath, originalDefinition, interruptedOutput);
+            definitionImports.Clear();
+            mirrorImporter.ImportedAssetPaths.Clear();
+
+            GenerationResult recovered = asynchronous
+                ? await provider.GenerateAsync(CreateRequest(), CancellationToken.None)
+                : provider.Generate(CreateRequest());
+
+            Assert.That(recovered.IsSuccess, Is.True, recovered.Message);
+            Assert.That(ReadSpecId(recovered.Message), Is.EqualTo(specId));
+            Assert.That(File.ReadAllBytes(definitionPath), Is.EqualTo(originalDefinition));
+            Assert.That(compilationRequestCount, Is.EqualTo(2));
+            Assert.That(definitionImports, Is.Empty);
+            Assert.That(mirrorImporter.ImportedAssetPaths, Is.EqualTo(new[]
+            {
+                NormalizedSpecBundleConstants.CompilerMirrorRelativePath + "/" + specId +
+                NormalizedSpecBundleConstants.AdditionalFileSuffix,
+                "Assets/Clients/PetStore/PetStoreApi.OpenApiDefinition.cs",
+            }));
+            string markerPath = Path.Combine(
+                projectRoot,
+                NormalizedSpecBundleConstants.AuthoritativeCacheRelativePath,
+                specId,
+                NormalizedSpecBundleConstants.PublishPendingFileName);
+            Assert.That(File.Exists(markerPath), Is.False);
+        }
+
         [Test]
         public void ByteIdenticalRerunDoesNotRewriteImportOrRequestCompilation()
         {
@@ -772,6 +817,52 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 cacheService,
                 definitionWriter,
                 requestCompilation ?? (() => compilationRequestCount++));
+        }
+
+        void WriteInterruptedDefinitionPublication(
+            string specId,
+            string definitionPath,
+            byte[] originalDefinition,
+            byte[] interruptedOutput)
+        {
+            string cacheDirectory = Path.Combine(
+                projectRoot,
+                NormalizedSpecBundleConstants.AuthoritativeCacheRelativePath,
+                specId);
+            string mirrorPath = Path.Combine(
+                projectRoot,
+                NormalizedSpecBundleConstants.CompilerMirrorRelativePath,
+                specId + NormalizedSpecBundleConstants.AdditionalFileSuffix);
+            string[] targets =
+            {
+                Path.Combine(cacheDirectory, NormalizedSpecBundleConstants.BundleFileName),
+                Path.Combine(cacheDirectory, NormalizedSpecBundleConstants.ManifestFileName),
+                mirrorPath,
+                definitionPath,
+            };
+            string backupDirectory = Path.Combine(
+                cacheDirectory,
+                NormalizedSpecBundleConstants.PublishBackupDirectoryName);
+            Directory.CreateDirectory(backupDirectory);
+            var marker = new StringBuilder("version=3\nstate=publishing\ncount=4\ncompilationRequired=true\n");
+            for (int index = 0; index < targets.Length; index++)
+            {
+                byte[] snapshot = index == 3 ? originalDefinition : File.ReadAllBytes(targets[index]);
+                byte[] output = index == 3 ? interruptedOutput : snapshot;
+                string backupName = "artifact-" + index.ToString("D3", CultureInfo.InvariantCulture);
+                File.WriteAllBytes(Path.Combine(backupDirectory, backupName + ".bytes"), snapshot);
+                File.WriteAllBytes(Path.Combine(backupDirectory, backupName + ".output.bytes"), output);
+                string relativePath = targets[index].Substring(projectRoot.Length + 1)
+                    .Replace('\\', '/');
+                marker.Append("target=")
+                    .Append(Convert.ToBase64String(Encoding.UTF8.GetBytes(relativePath)))
+                    .Append('\n');
+            }
+
+            File.WriteAllText(
+                Path.Combine(cacheDirectory, NormalizedSpecBundleConstants.PublishPendingFileName),
+                marker.ToString(),
+                new UTF8Encoding(false));
         }
 
         GenerationRequest CreateRequest(
