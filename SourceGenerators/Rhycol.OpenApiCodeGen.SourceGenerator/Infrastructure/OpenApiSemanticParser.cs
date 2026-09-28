@@ -523,6 +523,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 throw Unsupported(node, "Only path, query, and header parameters are supported.");
             }
 
+            if (locationName == "header" && !IsHttpFieldName(name))
+            {
+                throw Invalid(nameNode, "Header parameter names must be nonempty ASCII HTTP field-name tokens.");
+            }
+
             if (locationName == "header" && ContentOnlyRequestHeaders.Contains(name))
             {
                 throw Unsupported(nameNode, "The content-only header parameter '" + name +
@@ -562,6 +567,29 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 required,
                 schema,
                 CreateLocation(node));
+        }
+
+        private static bool IsHttpFieldName(string name)
+        {
+            if (name.Length == 0)
+            {
+                return false;
+            }
+
+            foreach (char character in name)
+            {
+                if ((character >= '0' && character <= '9') ||
+                    (character >= 'A' && character <= 'Z') ||
+                    (character >= 'a' && character <= 'z') ||
+                    "!#$%&'*+-.^_`|~".IndexOf(character) >= 0)
+                {
+                    continue;
+                }
+
+                return false;
+            }
+
+            return true;
         }
 
         private static void ValidateParameterSerialization(SpecNode node, string locationName)
@@ -631,6 +659,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             while (cursor < path.Length)
             {
                 int open = path.IndexOf('{', cursor);
+                int prematureClose = path.IndexOf('}', cursor);
+                if (prematureClose >= 0 && (open < 0 || prematureClose < open))
+                {
+                    throw Invalid(operationNode, "The path template contains an unmatched '}'.");
+                }
+
                 if (open < 0)
                 {
                     break;

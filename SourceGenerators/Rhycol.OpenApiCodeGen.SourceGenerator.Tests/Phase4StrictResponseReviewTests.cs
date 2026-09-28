@@ -45,6 +45,62 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Theory]
+        [InlineData("date", "\"2026-1-2\"")]
+        [InlineData("date", "\"2026-02-30\"")]
+        [InlineData("date", "\"2026-01-02T00:00:00Z\"")]
+        [InlineData("date-time", "\"2026-01-02 03:04:05Z\"")]
+        [InlineData("date-time", "\"2026-01-02T03:04:05\"")]
+        [InlineData("date-time", "\"2026-01-02T03:04:05.Z\"")]
+        [InlineData("date-time", "\"2026-01-02T24:04:05Z\"")]
+        [InlineData("uuid", "\"0123456789abcdef0123456789abcdef\"")]
+        [InlineData("uuid", "\"{01234567-89ab-cdef-0123-456789abcdef}\"")]
+        [InlineData("uuid", "\"01234567-89ab-cdef-0123-456789abcdeg\"")]
+        public async Task FormattedResponseRejectsInvalidWireValue(string format, string json)
+        {
+            Assembly assembly = Compile("{\"type\":\"string\",\"format\":\"" + format + "\"}");
+            JsonSerializationException error = await Assert.ThrowsAsync<JsonSerializationException>(
+                () => Invoke(assembly, json));
+            Assert.Contains("$", error.Message);
+        }
+
+        [Theory]
+        [InlineData("date", "\"2024-02-29\"")]
+        [InlineData("date-time", "\"2026-01-02t03:04:05z\"")]
+        [InlineData("date-time", "\"2026-01-02T03:04:05.123+09:00\"")]
+        [InlineData("uuid", "\"01234567-89ab-CDEF-0123-456789abcdef\"")]
+        [InlineData("uuid", "\"FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF\"")]
+        public async Task FormattedResponseAcceptsValidWireValue(string format, string json)
+        {
+            Assembly assembly = Compile("{\"type\":\"string\",\"format\":\"" + format + "\"}");
+            Assert.NotNull(await InvokeResult(assembly, json));
+        }
+
+        [Fact]
+        public async Task FormattedResponseValidationReportsNestedPropertyAndArrayItemPaths()
+        {
+            const string schema = "{\"$ref\":\"#/components/schemas/Envelope\"}";
+            const string components = "{\"Envelope\":{\"type\":\"object\",\"additionalProperties\":false," +
+                "\"properties\":{\"dates\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"format\":\"date\"}}," +
+                "\"timestamp\":{\"type\":\"string\",\"format\":\"date-time\"}," +
+                "\"id\":{\"type\":\"string\",\"format\":\"uuid\"}}}}";
+            Assembly assembly = Compile(schema, components);
+            await Invoke(assembly, "{\"dates\":[\"2024-02-29\"],\"timestamp\":\"2026-01-02T03:04:05Z\"," +
+                "\"id\":\"01234567-89ab-cdef-0123-456789abcdef\"}");
+
+            foreach ((string json, string path) in new[]
+            {
+                ("{\"dates\":[\"2026-01-02\",\"2026-02-30\"]}", "$.dates[1]"),
+                ("{\"timestamp\":\"2026-01-02 03:04:05Z\"}", "$.timestamp"),
+                ("{\"id\":\"0123456789abcdef0123456789abcdef\"}", "$.id")
+            })
+            {
+                JsonSerializationException error = await Assert.ThrowsAsync<JsonSerializationException>(
+                    () => Invoke(assembly, json));
+                Assert.Contains(path, error.Message);
+            }
+        }
+
+        [Theory]
         [InlineData("3.0.3")]
         [InlineData("3.1.0")]
         public async Task IntegerResponseUsesMathematicalValueWithoutRounding(string openapiVersion)

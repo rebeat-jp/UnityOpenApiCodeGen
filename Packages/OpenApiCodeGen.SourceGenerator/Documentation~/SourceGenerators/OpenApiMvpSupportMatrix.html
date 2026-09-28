@@ -381,9 +381,19 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>引数置換後のpath segmentが<code>.</code>／<code>..</code>（1回percent-decodeした表現を含む）なら、HTTP送信前に<code>ArgumentException</code>です。<code>.hidden</code>、<code>a.b</code>、<code>...</code>や通常の複合segmentは使用できます。</td>
 </tr>
 <tr>
+<td>path template braces</td>
+<td>Partial</td>
+<td>対応しない<code>{</code>／<code>}</code>は位置付き<code>OACG100</code>です。<code>/pets}</code>や<code>/pets/{id}}</code>も生成時に拒否します。</td>
+</tr>
+<tr>
 <td>header identity</td>
 <td>Supported</td>
 <td>header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。</td>
+</tr>
+<tr>
+<td>header parameter name</td>
+<td>Partial</td>
+<td>HTTP field-nameのASCII tokenのみを許可し、空白・コロン・非ASCIIなど不正な名前は<code>name</code>の位置付き<code>OACG100</code>です。</td>
 </tr>
 <tr>
 <td>content専用header parameter</td>
@@ -438,7 +448,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>successful response JSON</td>
 <td>Partial</td>
-<td>RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの<code>$id</code>／<code>$ref</code>／<code>$values</code>参照メタデータを維持します。整数は数学的整数値の<code>1.0</code>／<code>1e0</code>を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限<code>float</code>／<code>double</code>は<code>JsonSerializationException</code>です。</td>
+<td>RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの<code>$id</code>／<code>$ref</code>／<code>$values</code>参照メタデータを互換拡張として維持します。配列schemaでも<code>$id</code>／<code>$values</code>で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の<code>1.0</code>／<code>1e0</code>を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限<code>float</code>／<code>double</code>は<code>JsonSerializationException</code>です。 受信JSONの構文検査は通常最大64階層で、ホストが<code>JsonConvert.DefaultSettings.MaxDepth</code>に正の値を設定した場合はその値を使い、<code>null</code>または未指定なら64階層を維持します。</td>
 </tr>
 <tr>
 <td>error/default response</td>
@@ -520,7 +530,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>scalar format</td>
 <td>Partial</td>
-<td><code>integer</code>は通常<code>int</code>、<code>int64</code>は<code>long</code>。<code>number</code>は通常<code>double</code>、<code>float</code>は<code>float</code>、<code>decimal</code>は<code>decimal</code>。<code>date</code>、<code>date-time</code>、<code>uuid</code>は<code>DateTime</code>、<code>DateTimeOffset</code>、<code>Guid</code>へmappingします。</td>
+<td><code>integer</code>は通常<code>int</code>、<code>int64</code>は<code>long</code>。<code>number</code>は通常<code>double</code>、<code>float</code>は<code>float</code>、<code>decimal</code>は<code>decimal</code>。<code>date</code>、<code>date-time</code>、<code>uuid</code>は<code>DateTime</code>、<code>DateTimeOffset</code>、<code>Guid</code>へmappingします。成功レスポンスでは変換前にそれぞれ日付、タイムゾーン付き日時、ASCIIの8-4-4-4-12形式を字句検査します。字句が正しくてもCLRで表せない時刻・うるう秒などは変換時に拒否される場合があります。</td>
 </tr>
 <tr>
 <td>request number</td>

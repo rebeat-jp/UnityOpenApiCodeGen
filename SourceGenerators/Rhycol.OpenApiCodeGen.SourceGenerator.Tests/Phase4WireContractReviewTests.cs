@@ -36,6 +36,63 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Equal(TestBundleFactory.SourcePath, diagnostic.Location.GetLineSpan().Path);
         }
 
+        [Theory]
+        [InlineData("")]
+        [InlineData("Bad Name")]
+        [InlineData("Bad:Name")]
+        [InlineData("Bad\nName")]
+        [InlineData("X-雪")]
+        public void InvalidHeaderNameReportsNameLocation(string name)
+        {
+            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+                HeaderDocument(name)).RunResult.Diagnostics);
+
+            Assert.Equal("OACG100", diagnostic.Id);
+            Assert.Contains("HTTP field-name tokens", diagnostic.GetMessage());
+            Assert.Contains("/paths/~1value/get/parameters/0/name", diagnostic.GetMessage());
+            Assert.Equal(TestBundleFactory.SourcePath, diagnostic.Location.GetLineSpan().Path);
+        }
+
+        [Theory]
+        [InlineData("X!#$%&'*+-.^_`|~Value")]
+        [InlineData("X-Trace_123")]
+        public void ValidAsciiHeaderTokenCompiles(string name)
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                HeaderDocument(name));
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+        }
+
+        [Theory]
+        [InlineData("/pets}")]
+        [InlineData("/pets/{id}}")]
+        [InlineData("/pets/{id}/tail}")]
+        public void ExtraClosingPathBraceReportsPositionedDiagnostic(string path)
+        {
+            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+                PathDocument(path)).RunResult.Diagnostics);
+
+            Assert.Equal("OACG100", diagnostic.Id);
+            Assert.Contains("unmatched '}'", diagnostic.GetMessage());
+            Assert.Contains("/paths/", diagnostic.GetMessage());
+            Assert.Equal(TestBundleFactory.SourcePath, diagnostic.Location.GetLineSpan().Path);
+        }
+
+        [Theory]
+        [InlineData("/pets")]
+        [InlineData("/pets/{id}")]
+        [InlineData("/pets/{id}/tail")]
+        public void WellFormedPathTemplatesCompile(string path)
+        {
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                PathDocument(path));
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+        }
+
         [Fact]
         public async Task CustomContentPrefixedHeaderIsSentWithoutRequestBody()
         {
@@ -118,9 +175,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         {
             return "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Headers\",\"version\":\"1\"}," +
                 "\"paths\":{\"/value\":{\"get\":{\"operationId\":\"readValue\"," +
-                "\"parameters\":[{\"name\":\"" + name + "\",\"in\":\"header\",\"required\":true," +
+                "\"parameters\":[{\"name\":" + JsonConvert.SerializeObject(name) + ",\"in\":\"header\",\"required\":true," +
                 "\"schema\":{\"type\":\"string\"}}]," +
                 "\"responses\":{\"204\":{\"description\":\"OK\"}}}}}}";
+        }
+
+        private static string PathDocument(string path)
+        {
+            string parameter = path.Contains("{id}", StringComparison.Ordinal)
+                ? "\"parameters\":[{\"name\":\"id\",\"in\":\"path\",\"required\":true," +
+                  "\"schema\":{\"type\":\"string\"}}],"
+                : string.Empty;
+            return "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Path\",\"version\":\"1\"}," +
+                "\"paths\":{" + JsonConvert.SerializeObject(path) + ":{\"get\":{\"operationId\":\"readValue\"," +
+                parameter + "\"responses\":{\"204\":{\"description\":\"OK\"}}}}}}";
         }
 
         private static string EnumDocument(string schema)

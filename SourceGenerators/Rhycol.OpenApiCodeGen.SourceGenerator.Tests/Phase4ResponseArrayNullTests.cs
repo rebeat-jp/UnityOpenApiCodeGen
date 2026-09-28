@@ -241,11 +241,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             await AssertResponse(assembly, response, "$.zStrict[0]");
         }
 
-        [Theory]
-        [InlineData(80, 256)]
-        [InlineData(140, null)]
-        public async Task ResponseUsesConfiguredJsonNetMaximumDepth(int depth, int? maxDepth)
+        [Fact]
+        public async Task ResponseUsesConfiguredJsonNetMaximumDepth()
         {
+            const int depth = 80;
+            const int maxDepth = 256;
             var schemas = new JObject();
             for (int index = 0; index < depth; index++)
             {
@@ -297,16 +297,45 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 }
 
                 Assert.Equal("leaf", node.GetType().GetProperty("Name")!.GetValue(node));
-                if (maxDepth == 256)
+                JsonConvert.DefaultSettings = null;
+                using var defaultClient = new HttpClient(new FixedResponseHandler(body.ToString()));
+                object defaultApi = Activator.CreateInstance(
+                    assembly.GetType("Generated.Phase4.Phase4Api")!, defaultClient)!;
+                var defaultTask = (Task)defaultApi.GetType().GetMethod("readValue")!
+                    .Invoke(defaultApi, new object[] { CancellationToken.None })!;
+                await Assert.ThrowsAnyAsync<JsonException>(async () => await defaultTask);
+            }
+            finally
+            {
+                JsonConvert.DefaultSettings = previous;
+            }
+        }
+
+        [Theory]
+        [InlineData(null, 70)]
+        [InlineData(4, 6)]
+        public async Task HostSettingsWithoutDepthUsesFiniteLimitAndExplicitLimitIsHonored(
+            int? maxDepth,
+            int nesting)
+        {
+            Assembly assembly = GenerateAndCompile(StringArray, string.Empty);
+            string response = new string('[', nesting) + "\"value\"" + new string(']', nesting);
+            Func<JsonSerializerSettings>? previous = JsonConvert.DefaultSettings;
+            try
+            {
+                JsonConvert.DefaultSettings = () => new JsonSerializerSettings
                 {
-                    JsonConvert.DefaultSettings = null;
-                    using var defaultClient = new HttpClient(new FixedResponseHandler(body.ToString()));
-                    object defaultApi = Activator.CreateInstance(
-                        assembly.GetType("Generated.Phase4.Phase4Api")!, defaultClient)!;
-                    var defaultTask = (Task)defaultApi.GetType().GetMethod("readValue")!
-                        .Invoke(defaultApi, new object[] { CancellationToken.None })!;
-                    await Assert.ThrowsAnyAsync<JsonException>(async () => await defaultTask);
-                }
+                    NullValueHandling = NullValueHandling.Ignore,
+                    MaxDepth = maxDepth
+                };
+                using var client = new HttpClient(new FixedResponseHandler(response));
+                object api = Activator.CreateInstance(assembly.GetType("Generated.Phase4.Phase4Api")!, client)!;
+                var task = (Task)api.GetType().GetMethod("readValue")!
+                    .Invoke(api, new object[] { CancellationToken.None })!;
+
+                JsonSerializationException error = await Assert.ThrowsAsync<JsonSerializationException>(
+                    async () => await task);
+                Assert.Contains("not valid JSON", error.Message);
             }
             finally
             {

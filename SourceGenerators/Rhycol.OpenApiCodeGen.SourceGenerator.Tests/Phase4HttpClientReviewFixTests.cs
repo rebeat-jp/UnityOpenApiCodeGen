@@ -47,7 +47,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     ""operationId"": ""getComments"",
     ""summary"": " + JsonConvert.SerializeObject(summary) + @",
     ""parameters"": [
-      { ""name"": " + JsonConvert.SerializeObject(parameterName) + @", ""in"": ""header"", ""required"": true, ""schema"": { ""type"": ""string"" } }
+      { ""name"": " + JsonConvert.SerializeObject(parameterName) + @", ""in"": ""query"", ""required"": true, ""schema"": { ""type"": ""string"" } }
     ],
     ""responses"": { ""204"": { ""description"": ""No Content"" } }
   } } }

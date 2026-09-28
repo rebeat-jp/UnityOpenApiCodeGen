@@ -176,7 +176,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 source.AppendLine("                    var defaultResponseSettings = global::Newtonsoft.Json.JsonConvert.DefaultSettings?.Invoke();");
                 source.AppendLine("                    var responseSerializer = global::Newtonsoft.Json.JsonSerializer.Create(defaultResponseSettings);");
                 source.AppendLine("                    responseSerializer.DateParseHandling = global::Newtonsoft.Json.DateParseHandling.None;");
-                source.AppendLine("                    responseSerializer.MaxDepth = defaultResponseSettings is null ? 64 : defaultResponseSettings.MaxDepth;");
+                source.AppendLine("                    responseSerializer.MaxDepth = defaultResponseSettings?.MaxDepth ?? 64;");
                 source.Append("                    string validatedResponseBody = ").Append(responseJsonContracts.ParseMethodName)
                     .Append("(responseBody, ").Append(responseJsonContracts.MethodName(operation.ResponseType))
                     .Append(", ").Append(operation.ResponseType.Nullable ? "true" : "false")
@@ -981,6 +981,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     AppendIntegerLexemeHelper(source);
                 }
 
+                if (_types.Any(static type => type.Kind == GeneratedTypeKind.DateTime ||
+                    type.Kind == GeneratedTypeKind.DateTimeOffset || type.Kind == GeneratedTypeKind.Guid))
+                {
+                    AppendStringFormatHelpers(source);
+                }
+
                 AppendSyntaxHelpers(source);
             }
 
@@ -1223,9 +1229,84 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                             .Append(expected).AppendLine(")");
                     }
                     source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Unexpected response JSON token at \" + path + \".\");");
+                    if (type.Kind == GeneratedTypeKind.DateTime ||
+                        type.Kind == GeneratedTypeKind.DateTimeOffset || type.Kind == GeneratedTypeKind.Guid)
+                    {
+                        string validator = type.Kind == GeneratedTypeKind.DateTime
+                            ? "IsFullDate"
+                            : type.Kind == GeneratedTypeKind.DateTimeOffset ? "IsDateTime" : "IsUuid";
+                        source.Append("            if (!").Append(_prefix).Append(validator)
+                            .AppendLine("((string)((global::Newtonsoft.Json.Linq.JValue)token).Value!))");
+                        source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Invalid response string format at \" + path + \".\");");
+                    }
                 }
 
                 source.AppendLine("        }");
+            }
+
+            private void AppendStringFormatHelpers(StringBuilder source)
+            {
+                source.AppendLine(@"
+        private static bool __PREFIX__IsAsciiDigit(char value) => value >= '0' && value <= '9';
+
+        private static bool __PREFIX__IsTwoDigits(string value, int start) =>
+            __PREFIX__IsAsciiDigit(value[start]) && __PREFIX__IsAsciiDigit(value[start + 1]);
+
+        private static int __PREFIX__TwoDigits(string value, int start) =>
+            (value[start] - '0') * 10 + value[start + 1] - '0';
+
+        private static bool __PREFIX__IsFullDate(string value)
+        {
+            if (value.Length != 10 || value[4] != '-' || value[7] != '-' ||
+                !__PREFIX__IsTwoDigits(value, 0) || !__PREFIX__IsTwoDigits(value, 2) ||
+                !__PREFIX__IsTwoDigits(value, 5) || !__PREFIX__IsTwoDigits(value, 8)) return false;
+            return global::System.DateTime.TryParseExact(value, ""yyyy-MM-dd"",
+                global::System.Globalization.CultureInfo.InvariantCulture,
+                global::System.Globalization.DateTimeStyles.None, out _);
+        }
+
+        private static bool __PREFIX__IsDateTime(string value)
+        {
+            if (value.Length < 20 || !__PREFIX__IsFullDate(value.Substring(0, 10)) ||
+                (value[10] != 'T' && value[10] != 't') ||
+                value[13] != ':' || value[16] != ':' ||
+                !__PREFIX__IsTwoDigits(value, 11) || !__PREFIX__IsTwoDigits(value, 14) ||
+                !__PREFIX__IsTwoDigits(value, 17) ||
+                __PREFIX__TwoDigits(value, 11) > 23 ||
+                __PREFIX__TwoDigits(value, 14) > 59 ||
+                __PREFIX__TwoDigits(value, 17) > 60) return false;
+            int index = 19;
+            if (value[index] == '.')
+            {
+                index++;
+                int fractionalStart = index;
+                while (index < value.Length && __PREFIX__IsAsciiDigit(value[index])) index++;
+                if (index == fractionalStart) return false;
+            }
+            if (index == value.Length - 1 && (value[index] == 'Z' || value[index] == 'z')) return true;
+            return index == value.Length - 6 && (value[index] == '+' || value[index] == '-') &&
+                   value[index + 3] == ':' && __PREFIX__IsTwoDigits(value, index + 1) &&
+                   __PREFIX__IsTwoDigits(value, index + 4) &&
+                   __PREFIX__TwoDigits(value, index + 1) <= 23 &&
+                   __PREFIX__TwoDigits(value, index + 4) <= 59;
+        }
+
+        private static bool __PREFIX__IsUuid(string value)
+        {
+            if (value.Length != 36) return false;
+            for (int index = 0; index < value.Length; index++)
+            {
+                if (index == 8 || index == 13 || index == 18 || index == 23)
+                {
+                    if (value[index] != '-') return false;
+                }
+                else if (!((value[index] >= '0' && value[index] <= '9') ||
+                           (value[index] >= 'a' && value[index] <= 'f') ||
+                           (value[index] >= 'A' && value[index] <= 'F'))) return false;
+            }
+            return true;
+        }
+".Replace("__PREFIX__", _prefix));
             }
 
             private void AppendIntegerLexemeHelper(StringBuilder source)

@@ -89,6 +89,8 @@ server URLが`//host/path`形式の場合は`HttpClient.BaseAddress`のschemeで
 どちらも`BaseAddress`が未設定なら送信前に`InvalidOperationException`になります。
 root `servers`を省略するか空配列にした場合は`/`が既定値となり、同様に`BaseAddress`が必要です。
 絶対server URLはHTTP(S)のみ対応し、FTPなどのschemeは位置付き`OACG101`で拒否します。
+path templateで対応しない`{`／`}`は、`/pets}`や`/pets/{id}}`を含めて位置付き`OACG100`です。
+header parameterの名前はASCIIのHTTP field-name tokenに限り、不正な名前は位置付き`OACG100`です。
 明示的な`baseUrl=""`の上書きは相対URLのままです。
 相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。
 リクエスト本文には具体的な`application/json`または`application/<subtype>+json`を送信します。
@@ -114,7 +116,11 @@ HTTP送信前に`ArgumentOutOfRangeException`になります。任意パラメ�
 `Content-Type`がない場合も従来どおり本文を読みます。
 成功レスポンスのJSONは、デシリアライズ前にRFC 8259の構文、重複・未知property、
 scalarのJSON token型を検査します。`float`／`double`は有限値に限り、`1.0`や`1e0`のような
-数学的整数は生成CLR型の範囲内で受け入れます。Json.NETの参照メタデータは維持します。
+数学的整数は生成CLR型の範囲内で受け入れます。Json.NETの`$id`／`$ref`／`$values`参照メタデータは
+配列を包むJSON objectも含めて互換拡張として維持します。`date`／`date-time`／`uuid`は受信時に
+字句形式を検査します。字句が正しくてもCLRで表せない時刻やうるう秒は変換時に拒否される場合があります。
+受信JSONの深さ上限は通常64階層です。ホストが`JsonConvert.DefaultSettings.MaxDepth`に正の値を設定した場合はその値を使い、
+`null`または未指定なら64階層を維持します。
 必須nullableパラメーターや、対応表の範囲外のwire formatは位置付き診断で拒否します。
 
 成功した`Generate`では、`Library/OpenApiCodeGen/SourceGenerator/SpecCache/<specId>/`に

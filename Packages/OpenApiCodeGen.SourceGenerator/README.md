@@ -167,7 +167,9 @@ A `//host/path` server URL uses the scheme from
 ignoring the base address path and query. Both forms require a base address.
 An omitted or empty root `servers` list defaults to `/` and therefore also
 requires a base address. Absolute server URLs must use HTTP or HTTPS; other
-schemes receive a positioned `OACG101`. An explicit `baseUrl=""` override remains relative.
+schemes receive a positioned `OACG101`. Unmatched path-template braces and header
+parameter names outside the ASCII HTTP field-name token syntax receive a positioned `OACG100`.
+An explicit `baseUrl=""` override remains relative.
 With a relative server URL, an operation at `/` includes a base address query once.
 Request bodies send a concrete `application/json` or `application/<subtype>+json`
 media type. A request that declares only `application/*+json` receives `OACG101`;
@@ -201,7 +203,14 @@ nullable schema accepts the JSON token `null`. Response JSON is checked for
 RFC 8259 syntax, duplicate and unknown object properties, and scalar token
 types before deserialization. `float` and `double` response values must be
 finite. Mathematical integers such as `1.0` and `1e0` are accepted within the
-generated CLR type's range. Json.NET reference metadata remains supported.
+generated CLR type's range. Json.NET `$id` / `$ref` / `$values` reference
+metadata, including object wrappers around arrays, remains a documented
+compatibility extension. Known `date`, `date-time`, and `uuid` response strings
+are checked for their wire spelling before CLR conversion. Lexically valid
+leap seconds or times outside CLR ranges can still fail during conversion.
+Successful response JSON has a default syntax depth limit of 64. An explicitly configured
+positive `JsonConvert.DefaultSettings.MaxDepth` overrides it; `null` or an
+unset value keeps 64.
 
 Bundle and semantic failures use stable diagnostics including:
 
