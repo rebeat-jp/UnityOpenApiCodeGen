@@ -143,18 +143,36 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             AppendRequestBody(source, operation.RequestBody, responseValidators);
             source.AppendLine("                using (var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false))");
             source.AppendLine("                {");
-            source.AppendLine("                    string responseBody = response.Content == null");
-            source.AppendLine("                        ? string.Empty");
-            source.AppendLine("                        : await response.Content.ReadAsStringAsync().ConfigureAwait(false);");
-            source.Append("                    if (!(")
-                .Append(CreateSuccessExpression(operation.SuccessStatusCodes))
-                .AppendLine("))");
-            source.AppendLine("                    {");
-            source.Append("                        throw new ").Append(model.ApiName)
-                .AppendLine("Exception(response.StatusCode, responseBody);");
-            source.AppendLine("                    }");
-
-            AppendResponseContentTypeValidation(source, operation, responseValidators);
+            if (operation.ResponseType is null)
+            {
+                source.AppendLine("                    string responseBody = response.Content == null");
+                source.AppendLine("                        ? string.Empty");
+                source.AppendLine("                        : await response.Content.ReadAsStringAsync().ConfigureAwait(false);");
+                source.Append("                    if (!(")
+                    .Append(CreateSuccessExpression(operation.SuccessStatusCodes))
+                    .AppendLine("))");
+                source.AppendLine("                    {");
+                source.Append("                        throw new ").Append(model.ApiName)
+                    .AppendLine("Exception(response.StatusCode, responseBody);");
+                source.AppendLine("                    }");
+                AppendResponseContentTypeValidation(source, operation, responseValidators);
+            }
+            else
+            {
+                source.Append("                    if (!(")
+                    .Append(CreateSuccessExpression(operation.SuccessStatusCodes))
+                    .AppendLine("))");
+                source.AppendLine("                    {");
+                source.Append("                        throw new ").Append(model.ApiName)
+                    .AppendLine("Exception(response.StatusCode, response.Content == null");
+                source.AppendLine("                            ? string.Empty");
+                source.AppendLine("                            : await response.Content.ReadAsStringAsync().ConfigureAwait(false));");
+                source.AppendLine("                    }");
+                AppendResponseContentTypeValidation(source, operation, responseValidators);
+                source.AppendLine("                    string responseBody = response.Content == null");
+                source.AppendLine("                        ? string.Empty");
+                source.AppendLine("                        : await ReadJsonResponseBodyAsync(response.Content).ConfigureAwait(false);");
+            }
 
             if (operation.ResponseType is null)
             {
@@ -624,6 +642,89 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("            return content;");
             source.AppendLine("        }");
             source.AppendLine();
+            source.AppendLine("        private static async global::System.Threading.Tasks.Task<string> ReadJsonResponseBodyAsync(global::System.Net.Http.HttpContent content)");
+            source.AppendLine("        {");
+            source.AppendLine("            byte[] bytes = await content.ReadAsByteArrayAsync().ConfigureAwait(false);");
+            source.AppendLine("            if (bytes.Length == 0)");
+            source.AppendLine("            {");
+            source.AppendLine("                return string.Empty;");
+            source.AppendLine("            }");
+            source.AppendLine();
+            source.AppendLine("            string? charset = content.Headers.ContentType?.CharSet;");
+            source.AppendLine("            global::System.Text.Encoding encoding;");
+            source.AppendLine("            int offset = 0;");
+            source.AppendLine("            if (!string.IsNullOrWhiteSpace(charset))");
+            source.AppendLine("            {");
+            source.AppendLine("                charset = charset.Trim();");
+            source.AppendLine("                if (charset.Length >= 2 && charset[0] == '\"' && charset[charset.Length - 1] == '\"')");
+            source.AppendLine("                {");
+            source.AppendLine("                    charset = charset.Substring(1, charset.Length - 2);");
+            source.AppendLine("                }");
+            source.AppendLine("                try");
+            source.AppendLine("                {");
+            source.AppendLine("                    encoding = global::System.Text.Encoding.GetEncoding(charset, global::System.Text.EncoderFallback.ExceptionFallback, global::System.Text.DecoderFallback.ExceptionFallback);");
+            source.AppendLine("                }");
+            source.AppendLine("                catch (global::System.ArgumentException exception)");
+            source.AppendLine("                {");
+            source.AppendLine("                    throw new global::System.InvalidOperationException(\"The response charset is not supported.\", exception);");
+            source.AppendLine("                }");
+            source.AppendLine("                byte[] preamble = encoding.GetPreamble();");
+            source.AppendLine("                if (HasPreamble(bytes, preamble))");
+            source.AppendLine("                {");
+            source.AppendLine("                    offset = preamble.Length;");
+            source.AppendLine("                }");
+            source.AppendLine("            }");
+            source.AppendLine("            else if (HasPreamble(bytes, new byte[] { 0xEF, 0xBB, 0xBF }))");
+            source.AppendLine("            {");
+            source.AppendLine("                encoding = new global::System.Text.UTF8Encoding(false, true);");
+            source.AppendLine("                offset = 3;");
+            source.AppendLine("            }");
+            source.AppendLine("            else if (HasPreamble(bytes, new byte[] { 0xFF, 0xFE, 0x00, 0x00 }))");
+            source.AppendLine("            {");
+            source.AppendLine("                encoding = new global::System.Text.UTF32Encoding(false, false, true);");
+            source.AppendLine("                offset = 4;");
+            source.AppendLine("            }");
+            source.AppendLine("            else if (HasPreamble(bytes, new byte[] { 0xFF, 0xFE }))");
+            source.AppendLine("            {");
+            source.AppendLine("                encoding = new global::System.Text.UnicodeEncoding(false, false, true);");
+            source.AppendLine("                offset = 2;");
+            source.AppendLine("            }");
+            source.AppendLine("            else if (HasPreamble(bytes, new byte[] { 0xFE, 0xFF }))");
+            source.AppendLine("            {");
+            source.AppendLine("                encoding = new global::System.Text.UnicodeEncoding(true, false, true);");
+            source.AppendLine("                offset = 2;");
+            source.AppendLine("            }");
+            source.AppendLine("            else");
+            source.AppendLine("            {");
+            source.AppendLine("                encoding = new global::System.Text.UTF8Encoding(false, true);");
+            source.AppendLine("            }");
+            source.AppendLine();
+            source.AppendLine("            try");
+            source.AppendLine("            {");
+            source.AppendLine("                return encoding.GetString(bytes, offset, bytes.Length - offset);");
+            source.AppendLine("            }");
+            source.AppendLine("            catch (global::System.Text.DecoderFallbackException exception)");
+            source.AppendLine("            {");
+            source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response contains invalid encoded bytes.\", exception);");
+            source.AppendLine("            }");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        private static bool HasPreamble(byte[] bytes, byte[] preamble)");
+            source.AppendLine("        {");
+            source.AppendLine("            if (preamble.Length == 0 || bytes.Length < preamble.Length)");
+            source.AppendLine("            {");
+            source.AppendLine("                return false;");
+            source.AppendLine("            }");
+            source.AppendLine("            for (int index = 0; index < preamble.Length; index++)");
+            source.AppendLine("            {");
+            source.AppendLine("                if (bytes[index] != preamble[index])");
+            source.AppendLine("                {");
+            source.AppendLine("                    return false;");
+            source.AppendLine("                }");
+            source.AppendLine("            }");
+            source.AppendLine("            return true;");
+            source.AppendLine("        }");
+            source.AppendLine();
             source.AppendLine("        private static string ConvertToString(object value)");
             source.AppendLine("        {");
             source.AppendLine("            if (value == null)");
@@ -658,8 +759,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine();
             source.AppendLine("            if (value is global::System.Enum)");
             source.AppendLine("            {");
-            source.AppendLine("                string json = global::Newtonsoft.Json.JsonConvert.SerializeObject(value);");
-            source.AppendLine("                return global::Newtonsoft.Json.JsonConvert.DeserializeObject<string>(json, new global::Newtonsoft.Json.JsonSerializerSettings { DateParseHandling = global::Newtonsoft.Json.DateParseHandling.None }) ?? string.Empty;");
+            source.AppendLine("                var serializer = global::Newtonsoft.Json.JsonSerializer.Create();");
+            source.AppendLine("                var token = global::Newtonsoft.Json.Linq.JToken.FromObject(value, serializer);");
+            source.AppendLine("                return (string?)token ?? string.Empty;");
             source.AppendLine("            }");
             source.AppendLine();
             source.AppendLine("            return value is global::System.IFormattable formattable");

@@ -104,7 +104,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 "ValidatePathSegments",
                 "CreateJsonContent",
                 "ConvertToString",
-                "DateOnlyJsonConverter"
+                "DateOnlyJsonConverter",
+                "ReadJsonResponseBodyAsync",
+                "HasPreamble"
             };
             var result = new List<GeneratedOperationModel>();
             foreach (OpenApiSemanticOperation operation in _document.Operations
@@ -130,7 +132,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     "requestJson",
                     "_httpClient",
                     "CreateRequestUri",
-                    "ConvertToString"
+                    "ConvertToString",
+                    "ReadJsonResponseBodyAsync",
+                    "HasPreamble"
                 };
                 var parameters = new List<GeneratedParameterModel>();
                 foreach (OpenApiSemanticParameter parameter in operation.Parameters

@@ -593,6 +593,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     target => ParseParameter(target, referenceStack));
             }
 
+            var supportedFields = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "name", "in", "description", "required", "deprecated", "allowEmptyValue",
+                "style", "explode", "allowReserved", "schema", "example", "examples", "content"
+            };
+            foreach (SpecProperty property in node.EnumerateObject())
+            {
+                if (supportedFields.Contains(property.Name) ||
+                    property.Name.StartsWith("x-", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                throw Unsupported(property.Value, "Unsupported Parameter field: '" + property.Name + "'.");
+            }
+
             ThrowIfPresent(node, "content", "Parameter content is not supported by the Phase 4 MVP.");
             SpecNode nameNode = RequireProperty(node, "name");
             string name = RequireString(nameNode, "The parameter name must be a string.");

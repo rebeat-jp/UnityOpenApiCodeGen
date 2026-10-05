@@ -31,7 +31,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             "_httpClient", "_baseUrl", "DateOnlyJsonConverterInstance",
             "CreateRequestUri", "CombineAbsoluteUri", "CombinePaths", "CombineQueries",
             "AppendQuery", "SplitPathAndQuery", "ValidatePathSegments",
-            "CreateJsonContent", "ConvertToString", "DateOnlyJsonConverter"
+            "CreateJsonContent", "ConvertToString", "DateOnlyJsonConverter",
+            "ReadJsonResponseBodyAsync", "HasPreamble"
         };
 
         private static readonly DiagnosticDescriptor MalformedBundle = new(

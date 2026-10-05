@@ -200,6 +200,9 @@ HEAD responses and successful 204, 205, or `2XX` responses cannot declare
 body content, including through a response reference (`OACG101`). A typed
 `2XX` contract is unsupported because that range includes 204 and 205.
 Present response `headers` must be an object; nonempty maps remain unsupported.
+Parameter Objects recognize standard OpenAPI 3.0/3.1 fields and `x-*` extensions.
+Unknown fields such as `requird` receive positioned `OACG101`, including in
+path-level parameters, components, and external reference targets.
 Parameter, Request Body, and Response `$ref` siblings are checked: OpenAPI 3.1
 allows string `summary` and `description`, while this generator accepts only
 `$ref` in OpenAPI 3.0 to avoid silently ignored contract fields.
@@ -220,6 +223,8 @@ Request arrays with non-nullable reference items are checked before sending,
 including nested arrays and DTO properties. Nullable items may be JSON `null`.
 String enums accept only declared wire strings with exact case and spacing;
 undeclared strings and JSON numbers are rejected.
+Path, query, and header enum values use an isolated Json.NET serializer, so
+host `JsonConvert.DefaultSettings` converters or contract resolvers cannot rewrite them.
 Request `float` and `double` values must be finite, including values nested in
 arrays and DTOs. `NaN` and either infinity raise `JsonSerializationException`
 before the HTTP request is sent. Non-finite `float` and `double` path, query,
@@ -230,6 +235,11 @@ omitted optional parameters remain valid. An optional query parameter passed as
 status before deserializing; malformed, multiple, and conflicting values raise
 `JsonSerializationException`. A successful response without declared content skips this media
 check; responses without a `Content-Type` retain the existing behavior.
+Successful JSON bodies are decoded strictly with the declared charset, including
+quoted names. Only a matching BOM is removed. Without a charset, UTF-8,
+UTF-32 LE, and UTF-16 LE/BE BOMs are recognized; otherwise UTF-8 is used.
+Invalid encoded bytes raise `JsonSerializationException`. Error bodies and
+successful responses without a body type retain their existing reading behavior.
 Every schema-declared successful response requires a nonempty JSON body; a
 nullable schema accepts the JSON token `null`. Response JSON is checked for
 RFC 8259 syntax, duplicate and unknown object properties, and scalar token

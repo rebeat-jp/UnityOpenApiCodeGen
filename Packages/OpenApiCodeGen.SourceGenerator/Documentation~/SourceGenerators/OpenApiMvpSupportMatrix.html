@@ -366,9 +366,19 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>path、query、headerのscalar parameterのみ。cookieは対象外です。</td>
 </tr>
 <tr>
+<td>Parameter Object fields</td>
+<td>Partial</td>
+<td>Standard OpenAPI 3.0/3.1 fields and <code>x-*</code> extensions are recognized. Unknown fields such as <code>requird</code> receive positioned <code>OACG101</code>, including path/operation parameters and reference targets. Parameter <code>content</code> remains unsupported.</td>
+</tr>
+<tr>
 <td>parameter serialization</td>
 <td>Partial</td>
 <td>defaultの<code>style</code>/<code>explode</code>のみ。<code>allowReserved: true</code>は対象外です。任意queryの<code>null</code>は省略し、明示的な空文字列は<code>name=</code>として送信します。<code>allowEmptyValue</code>は省略される値の代替を表し、明示的な空文字列には適用しません。</td>
+</tr>
+<tr>
+<td>enum parameter formatting</td>
+<td>Supported</td>
+<td>String-enum path/query/header values use an isolated Json.NET serializer and declared wire strings; host <code>JsonConvert.DefaultSettings</code> converters or contract resolvers cannot rewrite them. Optional null parameters remain omitted.</td>
 </tr>
 <tr>
 <td>non-finite numeric parameter</td>
@@ -474,6 +484,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>request charset</td>
 <td>Partial</td>
 <td>UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。</td>
+</tr>
+<tr>
+<td>response charset</td>
+<td>Partial</td>
+<td>Schema-declared successful JSON bodies use strict decoding. The declared charset, including quoted names, takes precedence and only its matching BOM is removed. Without a charset, UTF-8, UTF-32 LE, and UTF-16 LE/BE BOMs are recognized; otherwise UTF-8 is used. Invalid encoded bytes raise <code>JsonSerializationException</code>. Charset availability follows the runtime&#39;s <code>Encoding.GetEncoding</code>; unknown charset names raise <code>InvalidOperationException</code> during decoding. Empty bodies retain the existing JSON-body requirement; error and bodyless responses retain their existing reading behavior.</td>
 </tr>
 <tr>
 <td>successful response</td>

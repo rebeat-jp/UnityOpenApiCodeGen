@@ -366,9 +366,19 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>path、query、headerのscalar parameterのみ。cookieは対象外です。</td>
 </tr>
 <tr>
+<td>Parameter Objectの項目</td>
+<td>一部対応</td>
+<td>OpenAPI 3.0／3.1の標準項目と<code>x-*</code>拡張を認識します。<code>requird</code>などの未知項目は、path／operationのparameterや参照先でも位置付き<code>OACG101</code>です。parameterの<code>content</code>は引き続き非対応です。</td>
+</tr>
+<tr>
 <td>parameter serialization</td>
 <td>一部対応</td>
 <td>defaultの<code>style</code>/<code>explode</code>のみ。<code>allowReserved: true</code>は対象外です。任意queryの<code>null</code>は省略し、明示的な空文字列は<code>name=</code>として送信します。<code>allowEmptyValue</code>は省略される値の代替を表し、明示的な空文字列には適用しません。</td>
+</tr>
+<tr>
+<td>enum parameter formatting</td>
+<td>対応</td>
+<td>path／query／headerのstring enum値は専用のJson.NET serializerで宣言wire文字列へ変換し、ホストの<code>JsonConvert.DefaultSettings</code>のconverterやcontract resolverを引き継ぎません。任意parameterのnull省略は維持します。</td>
 </tr>
 <tr>
 <td>非有限数値parameter</td>
@@ -474,6 +484,11 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>request charset</td>
 <td>一部対応</td>
 <td>UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。</td>
+</tr>
+<tr>
+<td>response charset</td>
+<td>一部対応</td>
+<td>schema付き成功JSON本文は厳密に復号します。引用付きの名前も含め宣言charsetを優先し、一致するBOMだけを除きます。charset未指定はUTF-8・UTF-32 LE・UTF-16 LE/BEのBOMを判定し、BOMもなければUTF-8です。不正なバイト列は<code>JsonSerializationException</code>です。charsetの対応範囲は実行環境の<code>Encoding.GetEncoding</code>に従い、未知のcharset名は復号時に<code>InvalidOperationException</code>です。空本文のJSON必須判定、エラー本文と本文型のない応答の読み取りは従来どおりです。</td>
 </tr>
 <tr>
 <td>successful response</td>

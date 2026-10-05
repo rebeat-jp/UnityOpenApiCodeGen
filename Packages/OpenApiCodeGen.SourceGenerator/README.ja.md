@@ -56,6 +56,8 @@ OpenAPI 3.1は標準schema dialectのみを受け付けます。独自dialectや
 入口文書とmajor.minor版が異なる参照先、および未対応dialectは位置付き診断で拒否します。
 版のpatch差と、`openapi`を持たない外部bare schemaは許可します。
 string enumは宣言したwire文字列と大小文字・空白も含め完全一致で送受信します。重複値、JSON数値、未宣言値は拒否します。
+path／query／headerのenum値も専用のJson.NET serializerで変換し、ホストの
+`JsonConvert.DefaultSettings`のconverterやcontract resolverによる書き換えを防ぎます。
 名前付きobjectのDTO生成には`additionalProperties: false`の明示が必要です。省略や追加プロパティの許可、
 `pattern`・`minimum`・`minItems`などの未対応assertionは`OACG101`になります。
 header parameterはscalarに対応しますが、`Content-Language`や`Content-Encoding`などの
@@ -98,6 +100,8 @@ root `servers`を省略するか空配列にした場合は`/`が既定値とな
 不正な絶対URL風・相対URL参照は位置付き`OACG100`、未解決の`{...}`変数は`OACG101`です。server URLのfragmentは操作pathとの結合前に除き、
 エンコード済みの`%23`はpath内に保持します。
 Response Objectの`contents`など未知項目も位置付き`OACG101`です。
+Parameter ObjectもOpenAPI 3.0／3.1の標準項目と`x-*`拡張を認識し、`requird`などの未知項目は
+path直下・components・外部参照先を含めて位置付き`OACG101`です。
 path templateで対応しない`{`／`}`は、`/pets}`や`/pets/{id}}`を含めて位置付き`OACG100`です。
 header parameterの名前はASCIIのHTTP field-name tokenに限り、不正な名前は位置付き`OACG100`です。
 Pathsのキーに生の`?`・`#`がある場合も位置付き`OACG100`です。path内の文字は
@@ -141,6 +145,10 @@ HTTP送信前に`ArgumentOutOfRangeException`になります。任意パラメ�
 本文を読みます。不正・複数・宣言と不一致の値は`JsonSerializationException`です。
 content宣言のない成功応答では`Content-Type`を照合せず、
 `Content-Type`がない場合も従来どおり本文を読みます。
+成功JSON本文は引用付きの名前も含め宣言charsetで厳密に復号し、一致するBOMだけを除きます。
+charset未指定はUTF-8・UTF-32 LE・UTF-16 LE/BEのBOMを判定し、BOMもなければUTF-8です。
+不正なバイト列は`JsonSerializationException`です。エラー本文と本文型のない成功応答の
+読み取りは従来どおりです。
 成功レスポンスのJSONは、デシリアライズ前にRFC 8259の構文、重複・未知property、
 scalarのJSON token型を検査します。`float`／`double`は有限値に限り、`1.0`や`1e0`のような
 数学的整数は生成CLR型の範囲内で受け入れます。Json.NETの`$id`／`$ref`／`$values`参照メタデータは

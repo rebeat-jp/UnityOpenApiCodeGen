@@ -1,8 +1,14 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Reflection;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 using NUnit.Framework;
@@ -68,6 +74,81 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Verification.Tests
             AssertAdditionalFileIncluded(tests, expectedAdditionalFileName);
             AssertAdditionalFileExcluded(unrelated, expectedAdditionalFileName);
             AssertAdditionalFileExcluded(predefinedEditor, expectedAdditionalFileName);
+        }
+
+        [Test]
+        public void GeneratedClientRejectsMalformedUtf8ResponseBytes()
+        {
+            byte[] prefix = Encoding.UTF8.GetBytes("[{\"id\":1,\"label\":\"");
+            byte[] suffix = Encoding.UTF8.GetBytes("\"}]");
+            byte[] body = prefix.Concat(new byte[] { 0xC3, 0x28 }).Concat(suffix).ToArray();
+
+            Exception exception = Assert.CatchAsync<Exception>(
+                async () => { await InvokeGeneratedClient(body, null); });
+
+            Assert.That(exception.GetType().FullName,
+                Is.EqualTo("Newtonsoft.Json.JsonSerializationException"));
+            Assert.That(exception.InnerException, Is.InstanceOf<DecoderFallbackException>());
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task GeneratedClientReadsUnicodeResponseBytes(bool quotedUtf16)
+        {
+            const string json = "[{\"id\":1,\"label\":\"日本語😀\"}]";
+            Encoding encoding = quotedUtf16 ? Encoding.Unicode : Encoding.UTF8;
+            byte[] body = encoding.GetPreamble().Concat(encoding.GetBytes(json)).ToArray();
+
+            object response = await InvokeGeneratedClient(
+                body, quotedUtf16 ? "\"utf-16\"" : null);
+            var items = (IList)response;
+            Assert.That(items.Count, Is.EqualTo(1));
+            Assert.That(items[0].GetType().GetProperty("Id").GetValue(items[0]), Is.EqualTo(1));
+            Assert.That(items[0].GetType().GetProperty("Label").GetValue(items[0]),
+                Is.EqualTo("日本語😀"));
+        }
+
+        private static async Task<object> InvokeGeneratedClient(byte[] body, string charset)
+        {
+            Type clientType = GeneratedClientProbe.ClientType;
+            Assert.That(clientType, Is.Not.Null);
+            MethodInfo method = clientType.GetMethod("getUpdatedItems") ??
+                clientType.GetMethod("getItems");
+            Assert.That(method, Is.Not.Null);
+            using (var httpClient = new HttpClient(new ByteResponseHandler(body, charset)))
+            {
+                httpClient.BaseAddress = new Uri("https://example.test/");
+                object client = Activator.CreateInstance(clientType, httpClient);
+                var task = (Task)method.Invoke(client, new object[] { CancellationToken.None });
+                await task.ConfigureAwait(false);
+                return task.GetType().GetProperty("Result").GetValue(task);
+            }
+        }
+
+        private sealed class ByteResponseHandler : HttpMessageHandler
+        {
+            private readonly byte[] _body;
+            private readonly string _charset;
+
+            internal ByteResponseHandler(byte[] body, string charset)
+            {
+                _body = body;
+                _charset = charset;
+            }
+
+            protected override Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                var content = new ByteArrayContent(_body);
+                content.Headers.ContentType = new MediaTypeHeaderValue("application/json")
+                {
+                    CharSet = _charset
+                };
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = content
+                });
+            }
         }
 
         private static UnityEditor.Compilation.Assembly FindAssembly(

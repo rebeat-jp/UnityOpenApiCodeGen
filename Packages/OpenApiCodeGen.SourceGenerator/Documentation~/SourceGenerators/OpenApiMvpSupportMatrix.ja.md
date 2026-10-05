@@ -136,7 +136,9 @@ YAMLの診断IDは次のとおりです。
 | `servers` | 一部対応 | URLは0個または1個、variablesなし。絶対URLはHTTP(S)のみで、FTPなどは`OACG101`です。root `servers`の省略・空配列は`/`を既定値とします。`//host/path`は`HttpClient.BaseAddress`のschemeで解決します。`/path`と既定の`/`は同じoriginのrootから解決し、`BaseAddress`のpathとqueryを引き継ぎません。`BaseAddress`が必要な場合に未設定なら送信前に`InvalidOperationException`です。明示的な空文字`baseUrl` overrideは相対URLとして扱います。相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。 |
 | server URLの検証 | 一部対応 | 不正な絶対URL風・相対URL参照は位置付き`OACG100`、未解決の`{...}`変数は`OACG101`です。不正な絶対URLを相対URLとして扱いません。有効なHTTP(S)・network-path・root-relative・path-relative形式は維持します。生のfragmentはoperation pathとの結合前に除き、エンコード済み`%23`はpath内に保持します。 |
 | parameter location | 一部対応 | path、query、headerのscalar parameterのみ。cookieは対象外です。 |
+| Parameter Objectの項目 | 一部対応 | OpenAPI 3.0／3.1の標準項目と`x-*`拡張を認識します。`requird`などの未知項目は、path／operationのparameterや参照先でも位置付き`OACG101`です。parameterの`content`は引き続き非対応です。 |
 | parameter serialization | 一部対応 | defaultの`style`/`explode`のみ。`allowReserved: true`は対象外です。任意queryの`null`は省略し、明示的な空文字列は`name=`として送信します。`allowEmptyValue`は省略される値の代替を表し、明示的な空文字列には適用しません。 |
+| enum parameter formatting | 対応 | path／query／headerのstring enum値は専用のJson.NET serializerで宣言wire文字列へ変換し、ホストの`JsonConvert.DefaultSettings`のconverterやcontract resolverを引き継ぎません。任意parameterのnull省略は維持します。 |
 | 非有限数値parameter | 非対応 | path／query／headerの`float`／`double`に`NaN`・正負の無限大を渡すと、HTTP送信前に`ArgumentOutOfRangeException`です。任意parameterの省略と有限値は使用できます。 |
 | complex parameter | 非対応 | 直接定義・多段`$ref`ともarray/object等のcomplex parameterは対象外です。 |
 | required nullable parameter | 非対応 | path/query/headerの`required: true`とnullableの組み合わせは`OACG101`です。参照チェーン全体を確認します。任意parameterのnull省略とDTOのnullableは維持します。 |
@@ -158,6 +160,7 @@ YAMLの診断IDは次のとおりです。
 | request array items | 対応 | 非nullableな参照型要素が`null`なら、本文直下・入れ子の配列・DTO内の配列とも、シリアライズ前に`JsonSerializationException`で拒否します。nullableな要素の`null`は送信できます。 |
 | optional nullable request body | 対応 | `requestBody.required: false`かつschemaがnullableの場合、`null`引数は本文省略、非`null`引数はJSON本文を送信します。生成メソッドの`<BodyParameterName>Specified`を`true`にすると、`null`引数でも明示的なJSON `null`を送信します。名前が衝突する場合は番号を付けます。 |
 | request charset | 一部対応 | UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。 |
+| response charset | 一部対応 | schema付き成功JSON本文は厳密に復号します。引用付きの名前も含め宣言charsetを優先し、一致するBOMだけを除きます。charset未指定はUTF-8・UTF-32 LE・UTF-16 LE/BEのBOMを判定し、BOMもなければUTF-8です。不正なバイト列は`JsonSerializationException`です。charsetの対応範囲は実行環境の`Encoding.GetEncoding`に従い、未知のcharset名は復号時に`InvalidOperationException`です。空本文のJSON必須判定、エラー本文と本文型のない応答の読み取りは従来どおりです。 |
 | successful response | 一部対応 | 少なくとも1つの`2xx` responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの値の宣言順は比較に影響しません。schema付き成功本文の空・空白はnullableでも`JsonSerializationException`です。JSON `null`はnullable schemaだけで許可します。非nullableな配列要素がJSON `null`なら、入れ子の配列やDTO内の配列も含めて拒否します。 |
 | 本文を持てないレスポンス | 非対応 | HEADの全status、および成功204・205・`2XX`では非空の`content`宣言を位置付き`OACG101`で拒否します。Response Objectの参照先も検査します。空の`content`と本文なし応答は使用できます。`2XX`には204・205が含まれるため、型付き本文契約は対象外です。 |
 | 成功レスポンスの`Content-Type` | 一部対応 | そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は`JsonSerializationException`です。content宣言のない成功応答では`Content-Type`を照合しません。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。 |
