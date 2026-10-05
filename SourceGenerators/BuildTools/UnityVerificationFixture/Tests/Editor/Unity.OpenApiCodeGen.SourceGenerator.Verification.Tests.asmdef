@@ -1,0 +1,22 @@
+{
+  "name": "Unity.OpenApiCodeGen.SourceGenerator.Verification.Tests",
+  "rootNamespace": "Rhycol.OpenApiCodeGen.SourceGenerator.Verification.Tests",
+  "references": [
+    "Unity.OpenApiCodeGen.SourceGenerator.Verification",
+    "Unity.OpenApiCodeGen.SourceGenerator"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

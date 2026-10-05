@@ -58,7 +58,8 @@ namespace Rhycol.OpenApiCodeGen.Lib
                 cancellationToken);
 
             var argumentsBuilder = new StringBuilder(1000);
-            argumentsBuilder.Append("run --rm ");
+            string containerName = "openapi-codegen-" + Guid.NewGuid().ToString("N");
+            argumentsBuilder.Append("run --rm --name ").Append(containerName).Append(' ');
             argumentsBuilder.Append($"-v \"{projectSetting.ApiClientOutputFolderPath}:/local\" ");
             argumentsBuilder.Append($"-v \"{cachedOpenApiConfigFilePath}:/config/config.json\" ");
             argumentsBuilder.Append($"-v \"{cachedOpenApiDocumentFilePath}:/input/openapi.json\" ");
@@ -67,7 +68,7 @@ namespace Rhycol.OpenApiCodeGen.Lib
             argumentsBuilder.Append("-g \"csharp\" -o \"/local\" ");
             argumentsBuilder.Append("-c /config/config.json");
 
-            return await dockerProcess.SendAsync(argumentsBuilder.ToString(), cancellationToken);
+            return await dockerProcess.SendContainerAsync(argumentsBuilder.ToString(), containerName, cancellationToken);
 
         }
 
@@ -125,7 +126,7 @@ namespace Rhycol.OpenApiCodeGen.Lib
                 await File.WriteAllTextAsync(configFilePath, json, cancellationToken);
                 return configFilePath;
             }
-            catch (Exception e)
+            catch (Exception e) when (e is not OperationCanceledException)
             {
                 throw new ExternalStorageException("OpenAPI C#ジェネレーター設定のキャッシュ保存に失敗しました。", e);
             }

@@ -1,0 +1,10 @@
+{
+  "name": "jp.rhycol.openapicodegen.source-generator.phase0",
+  "version": "0.0.0",
+  "displayName": "OpenApiCodeGen Source Generator Phase 0",
+  "description": "Retained Phase 0 source-generator compatibility spike.",
+  "unity": "6000.0",
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.2"
+  }
+}

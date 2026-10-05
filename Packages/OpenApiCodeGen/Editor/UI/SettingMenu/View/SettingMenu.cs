@@ -1,7 +1,9 @@
 ﻿#nullable enable
 using System;
+using System.Collections.Generic;
 
 using Rhycol.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Editor.Generation;
 using Rhycol.OpenApiCodeGen.Presenter;
 using Rhycol.OpenApiCodeGen.UI;
 
@@ -9,6 +11,13 @@ using UnityEditor;
 
 using UnityEngine;
 using UnityEngine.UIElements;
+
+#if !UNITY_2022_1_OR_NEWER
+using EnumField = UnityEditor.UIElements.EnumField;
+using PopupField = UnityEditor.UIElements.PopupField<Rhycol.OpenApiCodeGen.Editor.Generation.GenerateProvider>;
+#else
+using PopupField = UnityEngine.UIElements.PopupField<Rhycol.OpenApiCodeGen.Editor.Generation.GenerateProvider>;
+#endif
 
 internal class SettingMenu : EditorWindow, ISettingView
 {
@@ -23,10 +32,15 @@ internal class SettingMenu : EditorWindow, ISettingView
 
     #region UI Elements
     /* General */
-    EnumField? _generateProviderField;
+    PopupField? _generateProviderField;
+    VisualElement? _sourceGeneratorBetaNotice;
+    Label? _generateProviderDisplayNameLabel;
+    Label? _generateProviderAvailabilityLabel;
     TextField? _dockerPathField;
     TextField? _defaultApiDocumentFilePathOrUrlField;
     TextField? _defaultApiClientOutputFolderPathField;
+    Foldout? _cSharpGenerationSettingsFoldout;
+    bool _inputEnabled = true;
 
     /* Open API */
     Toggle? _allowUnicodeIdentifiersField;
@@ -75,15 +89,16 @@ internal class SettingMenu : EditorWindow, ISettingView
             var settings = GetCurrentProjectSettingValue();
             ProjectSettingChanged?.Invoke(settings);
         }
-        void EnumChangeEvent(ChangeEvent<Enum> e)
+        void ProviderChangeEvent(ChangeEvent<GenerateProvider> e)
         {
+            RefreshProviderUi();
             var settings = GetCurrentProjectSettingValue();
             ProjectSettingChanged?.Invoke(settings);
         }
 
 
         // General
-        _generateProviderField?.RegisterValueChangedCallback(EnumChangeEvent);
+        _generateProviderField?.RegisterValueChangedCallback(ProviderChangeEvent);
         _defaultApiClientOutputFolderPathField?.RegisterCallback((EventCallback<FocusOutEvent>)FocusOutEvent);
         _defaultApiDocumentFilePathOrUrlField?.RegisterCallback((EventCallback<FocusOutEvent>)FocusOutEvent);
 
@@ -161,10 +176,16 @@ internal class SettingMenu : EditorWindow, ISettingView
         root.Add(labelFromUXML);
 
         // General
-        _generateProviderField = root.Q<EnumField>("GenerateProviderField");
+        InitializeEnumFields(root);
+        _generateProviderField = root.Q<PopupField>("GenerateProviderField");
+        _sourceGeneratorBetaNotice = root.Q<VisualElement>("SourceGeneratorBetaNotice");
+        GenerationProviderPresentation.BindSupportLink(root);
+        _generateProviderDisplayNameLabel = root.Q<Label>("GenerateProviderDisplayNameLabel");
+        _generateProviderAvailabilityLabel = root.Q<Label>("GenerateProviderAvailabilityLabel");
         _dockerPathField = root.Q<TextField>("DockerPathField");
         _defaultApiClientOutputFolderPathField = root.Q<TextField>("DefaultOutputFolderPathField");
         _defaultApiDocumentFilePathOrUrlField = root.Q<TextField>("DefaultApiDocumentFilePathOrUrlField");
+        _cSharpGenerationSettingsFoldout = root.Q<Foldout>("CSharpGenerationSettingsFoldout");
 
         // Open API
         _allowUnicodeIdentifiersField = root.Q<Toggle>("AllowUnicodeIdentifiersField");
@@ -196,13 +217,101 @@ internal class SettingMenu : EditorWindow, ISettingView
         RegisterProjectSettingChangeHandlers();
         RegisterGenerationCSharpSettingChangeHandlers();
 
+        GenerationProviderRegistry.Shared.ProvidersChanged += OnProvidersChanged;
+        RefreshProviderUi();
+
         _presenter.Bind(this);
 
     }
 
+    internal static void InitializeEnumFields(VisualElement root)
+    {
+        root.Q<VisualElement>("GenerateProviderContainer").Add(
+            new PopupField("Generate Provider",
+                new List<GenerateProvider> { GenerateProvider.OpenApi, GenerateProvider.SourceGenerator },
+                GenerateProvider.OpenApi, GenerationProviderPresentation.GetDisplayName,
+                GenerationProviderPresentation.GetDisplayName) { name = "GenerateProviderField" });
+        root.Q<VisualElement>("LibraryContainer").Add(
+            new EnumField("Library", default(OpenApiDependenceLibrary)) { name = "LibraryField" });
+    }
+
     void OnDisable()
     {
+        GenerationProviderRegistry.Shared.ProvidersChanged -= OnProvidersChanged;
         _presenter.Unbind();
+    }
+
+    void OnProvidersChanged()
+    {
+        RefreshProviderUi();
+    }
+
+    GenerateProvider GetSelectedProvider()
+    {
+        return (GenerateProvider)(_generateProviderField?.value ?? GenerateProvider.OpenApi);
+    }
+
+    void RefreshProviderUi()
+    {
+        GenerateProvider provider = GetSelectedProvider();
+        GenerationProviderPresentation.UpdateBetaNotice(_sourceGeneratorBetaNotice, provider);
+        GenerationProviderResolution resolution = GenerationProviderRegistry.Shared.Resolve(provider);
+
+        if (resolution.IsResolved)
+        {
+            GenerationProviderDescriptor descriptor = resolution.Provider!.Descriptor;
+            if (_generateProviderDisplayNameLabel != null)
+            {
+                _generateProviderDisplayNameLabel.text = GenerationProviderPresentation.GetDisplayName(provider);
+            }
+
+            if (_generateProviderAvailabilityLabel != null)
+            {
+                if (descriptor.Availability.IsAvailable)
+                {
+                    _generateProviderAvailabilityLabel.text = "Available";
+                    _generateProviderAvailabilityLabel.style.color = new Color(0.3f, 0.75f, 0.3f);
+                }
+                else
+                {
+                    _generateProviderAvailabilityLabel.text =
+                        $"Unavailable: {descriptor.Availability.Reason}";
+                    _generateProviderAvailabilityLabel.style.color = new Color(1f, 0.3f, 0.3f);
+                }
+            }
+        }
+        else
+        {
+            if (_generateProviderDisplayNameLabel != null)
+            {
+                _generateProviderDisplayNameLabel.text = GenerationProviderPresentation.GetDisplayName(provider);
+            }
+
+            if (_generateProviderAvailabilityLabel != null)
+            {
+                _generateProviderAvailabilityLabel.text = $"Unavailable: {resolution.FailureReason}";
+                _generateProviderAvailabilityLabel.style.color = new Color(1f, 0.3f, 0.3f);
+            }
+        }
+
+        if (_defaultApiClientOutputFolderPathField != null)
+        {
+            _defaultApiClientOutputFolderPathField.label = provider == GenerateProvider.SourceGenerator
+                ? "Definition Output Folder"
+                : "Default Output Folder Path";
+        }
+
+        bool dockerSettingsEnabled = _inputEnabled && provider == GenerateProvider.OpenApi;
+        _dockerPathField?.SetEnabled(dockerSettingsEnabled);
+        _cSharpGenerationSettingsFoldout?.SetEnabled(_inputEnabled);
+        if (_cSharpGenerationSettingsFoldout != null)
+        {
+            foreach (VisualElement field in _cSharpGenerationSettingsFoldout.Children())
+            {
+                bool sharedSetting = field == _apiNameField || field == _packageNameField;
+                field.SetEnabled(_inputEnabled && (sharedSetting || dockerSettingsEnabled));
+            }
+        }
     }
 
     public void SetProjectSettingValue(ProjectSettingDisplayDto projectSetting)
@@ -210,6 +319,7 @@ internal class SettingMenu : EditorWindow, ISettingView
         _generateProviderField?.SetValueWithoutNotify(projectSetting.GenerateProvider);
         _defaultApiClientOutputFolderPathField?.SetValueWithoutNotify(projectSetting.ApiClientOutputFolderPath);
         _defaultApiDocumentFilePathOrUrlField?.SetValueWithoutNotify(projectSetting.ApiDocumentFilePathOrUrl);
+        RefreshProviderUi();
     }
     public void SetUserSettingValue(UserSettingDisplayDto userSetting)
     {
@@ -370,34 +480,10 @@ internal class SettingMenu : EditorWindow, ISettingView
 
     public void SetInputEnabled(bool isEnabled)
     {
+        _inputEnabled = isEnabled;
         _generateProviderField?.SetEnabled(isEnabled);
-        _dockerPathField?.SetEnabled(isEnabled);
         _defaultApiClientOutputFolderPathField?.SetEnabled(isEnabled);
         _defaultApiDocumentFilePathOrUrlField?.SetEnabled(isEnabled);
-
-        _allowUnicodeIdentifiersField?.SetEnabled(isEnabled);
-        _apiNameField?.SetEnabled(isEnabled);
-        _caseInsensitiveResponseHeadersField?.SetEnabled(isEnabled);
-        _conditionalSerializationField?.SetEnabled(isEnabled);
-        _disallowAdditionalPropertiesIfNotPresentField?.SetEnabled(isEnabled);
-        _equatableField?.SetEnabled(isEnabled);
-        _hideGenerationTimestampField?.SetEnabled(isEnabled);
-        _interfacePrefixField?.SetEnabled(isEnabled);
-        _libraryField?.SetEnabled(isEnabled);
-        _licenseIdField?.SetEnabled(isEnabled);
-        _modelPropertyNamingField?.SetEnabled(isEnabled);
-        _netCoreProjectFileField?.SetEnabled(isEnabled);
-        _nonPublicApiField?.SetEnabled(isEnabled);
-        _nullableReferenceTypesField?.SetEnabled(isEnabled);
-        _optionalEmitDefaultValuesField?.SetEnabled(isEnabled);
-        _optionalMethodArgumentField?.SetEnabled(isEnabled);
-        _optionalAssemblyInfoField?.SetEnabled(isEnabled);
-        _optionalProjectFileField?.SetEnabled(isEnabled);
-        _packageNameField?.SetEnabled(isEnabled);
-        _returnICollectionField?.SetEnabled(isEnabled);
-        _targetFrameworkField?.SetEnabled(isEnabled);
-        _useCollectionField?.SetEnabled(isEnabled);
-        _useOneOfDiscriminatorLookupField?.SetEnabled(isEnabled);
-        _validatableField?.SetEnabled(isEnabled);
+        RefreshProviderUi();
     }
 }

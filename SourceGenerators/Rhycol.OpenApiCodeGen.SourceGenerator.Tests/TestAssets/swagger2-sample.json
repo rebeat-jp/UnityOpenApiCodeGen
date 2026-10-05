@@ -1,0 +1,112 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Swagger Sample",
+    "version": "1.0.0",
+    "description": "Sample swagger 2.0"
+  },
+  "host": "api.example.com",
+  "basePath": "/v1",
+  "schemes": ["https"],
+  "consumes": ["application/json"],
+  "produces": ["application/json"],
+  "paths": {
+    "/items": {
+      "get": {
+        "summary": "List items",
+        "operationId": "listItems",
+        "tags": ["items"],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "format": "int32",
+            "required": false,
+            "default": "10"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/Item" }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "Base": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" }
+      },
+      "required": ["id"]
+    },
+    "Item": {
+      "allOf": [
+        { "$ref": "#/definitions/Base" },
+        { "type": "object", "properties": { "name": { "type": "string" } } }
+      ],
+      "description": "Item schema"
+    },
+    "Extended": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "id": "https://example.com/extended",
+      "type": ["object", "null"],
+      "properties": {
+        "code": { "type": "string" }
+      },
+      "patternProperties": {
+        "^S_": { "type": "string" }
+      },
+      "dependencies": {
+        "code": ["name"],
+        "meta": { "type": "object" }
+      },
+      "additionalProperties": false,
+      "items": [
+        { "type": "string" },
+        { "type": "integer" }
+      ],
+      "additionalItems": { "type": "boolean" },
+      "anyOf": [
+        { "type": "string" },
+        { "type": "number" }
+      ],
+      "oneOf": [
+        { "type": "integer" },
+        { "type": "boolean" }
+      ],
+      "not": { "type": "null" },
+      "definitions": {
+        "Local": { "type": "string" }
+      },
+      "multipleOf": 2,
+      "maximum": 10,
+      "exclusiveMaximum": true,
+      "minimum": 1,
+      "exclusiveMinimum": false,
+      "maxLength": 5,
+      "minLength": 1,
+      "pattern": "^a+$",
+      "maxItems": 5,
+      "minItems": 1,
+      "uniqueItems": true,
+      "maxProperties": 5,
+      "minProperties": 1,
+      "readOnly": true,
+      "enum": ["a", 1],
+      "default": { "k": 1 },
+      "example": [1, 2]
+    }
+  }
+}

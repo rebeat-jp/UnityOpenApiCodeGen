@@ -1,0 +1,10 @@
+type: object
+additionalProperties: false
+required:
+  - id
+  - label
+properties:
+  id:
+    type: string
+  label:
+    type: string
