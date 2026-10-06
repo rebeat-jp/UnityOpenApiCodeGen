@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<title>OpenAPI MVP support matrix</title>
+<style>body{font:16px/1.7 system-ui,sans-serif;color:#20242c;background:#fff;max-width:1080px;margin:0 auto;padding:32px 24px;overflow-wrap:anywhere}a{color:#0756a5}h1,h2,h3{line-height:1.3}h2{margin-top:2em}table{display:block;overflow:auto;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #ccd2da;padding:9px 12px;text-align:left;vertical-align:top}th{background:#f1f4f8}pre{padding:16px;background:#f1f4f8;overflow:auto}code{font-family:ui-monospace,monospace}blockquote{border-left:4px solid #ccd2da;margin-left:0;padding-left:16px}img{max-width:100%}</style>
+</head><body><main>
+<h1 id="openapi-mvp-support-matrix">OpenAPI MVP support matrix</h1>
+<p><a href="OpenApiMvpSupportMatrix.ja.html">日本語版</a></p>
+<p><strong>Source Generator (Beta)</strong> による生成はベータです。
+Source Generator generation is in beta. Review the supported features before use.</p>
+<p>Editorの「Open Support Matrix」は、base packageに同梱したHTMLをブラウザーで開きます。
+両パッケージにこの文書と参照資料のMarkdown／HTMLを同梱しており、公開タグやネット接続は不要です。
+GitHub Actionsや外部仕様へのリンクを開く場合はネット接続が必要です。</p>
+<h2 id="目的と対象読者">目的と対象読者</h2>
+<p>この文書は、<code>Rhycol.OpenApiCodeGen.SourceGenerator</code>で生成できるOpenAPI documentの
+MVP範囲を、API仕様の作成者とUnity利用者が判断するためのmatrixです。
+対象はSource Generator providerで選択したlocal <code>.json</code>、<code>.yaml</code>、<code>.yml</code>
+document（extension case-insensitive）とHTTP(S) URLです。Editorは参照グラフ全体を
+canonical Normalized Spec Bundle v2へ正規化し、Analyzerは1 specIdにつき1 AdditionalFile
+だけを読みます。Bundle v1はAnalyzerの後方互換入力として読み込めます。</p>
+<p>生成器は、wire formatに影響する未対応要素を黙って省略または推測しません。
+Unsupportedに分類された要素と、Partialの制約外へ出た要素は診断を報告し、生成を完了しません。
+入力・bundle・definitionの既存診断<code>OACG001</code>–<code>OACG009</code>に加え、semantic generationでは
+<code>OACG100</code>–<code>OACG106</code>を使用します。型名の重複をsuffixで解消した場合はwarning <code>OACG107</code>を報告します。</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>意味</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Supported</td>
+<td>記載した条件で生成・実行対象です。</td>
+</tr>
+<tr>
+<td>Partial</td>
+<td>記載した部分だけを生成します。条件外は診断となります。</td>
+</tr>
+<tr>
+<td>Unsupported</td>
+<td>MVPの対象外です。診断となります。</td>
+</tr>
+</tbody></table>
+<h2 id="入力と参照">入力と参照</h2>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>Status</th>
+<th>条件・制約</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>入力document</td>
+<td>Supported</td>
+<td>localの<code>.json</code>、<code>.yaml</code>、<code>.yml</code> file、またはHTTP(S) URL。local extensionはcase-insensitive。</td>
+</tr>
+<tr>
+<td>OpenAPI version</td>
+<td>Partial</td>
+<td><code>3.0.*</code>と<code>3.1.*</code>のみ。</td>
+</tr>
+<tr>
+<td>OpenAPI 3.1 schema dialect</td>
+<td>Partial</td>
+<td>既定または明示的な<code>https://spec.openapis.org/oas/3.1/dialect/base</code>のみ。入口・外部完全OpenAPI文書の<code>jsonSchemaDialect</code>とschemaの<code>$schema</code>で別dialectを指定すると<code>OACG101</code>、不正なURIは<code>OACG100</code>です。</td>
+</tr>
+<tr>
+<td>OpenAPI 3.2 / Swagger 2</td>
+<td>Unsupported</td>
+<td>document versionは受け付けません。</td>
+</tr>
+<tr>
+<td>URL入力</td>
+<td>Supported</td>
+<td>public/private/loopback、cross-host redirectを許可。userinfo、空白、非HTTP(S)、HTTPS-to-HTTP direct/redirectは拒否。Generateが明示的なfetch/refresh操作で、Docker fallbackはありません。</td>
+</tr>
+<tr>
+<td>JSON/YAML semantic parity</td>
+<td>Supported</td>
+<td>各normalizerがshared <code>SpecNode</code>へ正規化し、同じsemantic/generation pipelineを通ります。</td>
+</tr>
+<tr>
+<td><code>$ref</code></td>
+<td>Partial</td>
+<td>OpenAPI/Schema上の参照位置にあるinternal reference、またはEditorがBundle v2のedgeへ解決したexternal reference。example/default/enum/拡張データ内の同名キーはデータとして保持。fragmentはemptyまたはJSON Pointer。</td>
+</tr>
+<tr>
+<td>external <code>$ref</code></td>
+<td>Partial</td>
+<td>local external fileはreal/symbolic-link解決後もUnity project内。remote documentからlocal fileは不可。bare Schemaは可。参照先が完全なOpenAPI文書ならその<code>openapi</code>版と<code>jsonSchemaDialect</code>を検証し、入口とmajor.minor版が異なる場合は<code>OACG101</code>で拒否します。patch差は可。</td>
+</tr>
+<tr>
+<td>unresolved / cyclic <code>$ref</code></td>
+<td>Unsupported</td>
+<td>それぞれ<code>OACG102</code>、<code>OACG103</code>を報告します。<code>OACG104</code>はBundle v1のexternal-reference互換診断です。</td>
+</tr>
+<tr>
+<td>URL query / fragment</td>
+<td>Partial</td>
+<td>queryはfetch identityに使いますが平文永続化しません。root URL fragment、userinfo、explicit <code>file:</code>は拒否。</td>
+</tr>
+<tr>
+<td>URL format detection</td>
+<td>Supported</td>
+<td>final URL extensionとContent-Typeが既知なら一致必須。片方だけ既知は可、両方不明・競合は拒否。content sniffing/hintはなし。</td>
+</tr>
+</tbody></table>
+<h3 id="external-graph-limits">External graph limits</h3>
+<table>
+<thead>
+<tr>
+<th>Limit</th>
+<th align="right">Value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Request timeout</td>
+<td align="right">30 seconds</td>
+</tr>
+<tr>
+<td>Graph timeout</td>
+<td align="right">120 seconds</td>
+</tr>
+<tr>
+<td>Maximum document size</td>
+<td align="right">4 MiB</td>
+</tr>
+<tr>
+<td>Maximum graph size</td>
+<td align="right">32 MiB</td>
+</tr>
+<tr>
+<td>Maximum documents</td>
+<td align="right">64</td>
+</tr>
+<tr>
+<td>Maximum redirects</td>
+<td align="right">5</td>
+</tr>
+<tr>
+<td>Maximum reference depth</td>
+<td align="right">256</td>
+</tr>
+</tbody></table>
+<p>Editorはfetch、filesystem read/write、format parsing、reference resolutionを担当します。
+AnalyzerはAdditionalFile内のBundleとedge mapだけを読みます。Bundleは次のtop-level field順を
+持つstrict UTF-8/LF/2-space JSONです。</p>
+<pre><code class="language-text">formatVersion, specId, rawSha256, rootDocumentId, documents, referenceEdges
+</code></pre>
+<p>詳細なfield、ordering、manifest、publication failureの扱いは
+<a href="NormalizedSpecBundleV2.html">Normalized Spec Bundle v2</a>を参照してください。</p>
+<h2 id="yaml-subset">YAML subset</h2>
+<p>YAMLは全仕様対応ではなく、source generatorが安全に正規化できる bounded
+YAML 1.2-compatible subsetです。subset外は黙ってJSONへ変換したり無視したり
+せず、<code>YAML001</code>–<code>YAML015</code>のsource-located diagnosticで拒否します。</p>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>Status</th>
+<th>条件・制約</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>block mapping / sequence</td>
+<td>Supported</td>
+<td>indentationを使うmapping・sequence、nested/compact composition。compact continuationは2-space step。indentless sequenceと任意幅のcompact indentationは対象外。tabsはindentationに使用不可。</td>
+</tr>
+<tr>
+<td>flow mapping / sequence</td>
+<td>Supported</td>
+<td>nested、multiline、source orderを保持。flow collection内のblock scalarは対象外。</td>
+</tr>
+<tr>
+<td>mapping key</td>
+<td>Partial</td>
+<td>simple string keyのみ。duplicate、complex/non-string key、merge key <code>&lt;&lt;</code>は拒否。</td>
+</tr>
+<tr>
+<td>comments / encoding</td>
+<td>Supported</td>
+<td>comments、UTF-8 BOM、LF、CRLF。BOMはtreeから除きraw hashには含めます。</td>
+</tr>
+<tr>
+<td>quoted / plain scalar</td>
+<td>Supported</td>
+<td>single/double quoteとplain scalar。YAML 1.1 implicit bool/date等はstringとして保持。</td>
+</tr>
+<tr>
+<td>Unicode escapes in quoted scalars</td>
+<td>Partial</td>
+<td>Adjacent high/low <code>\u</code> surrogate escapes and valid <code>\U</code> scalars preserve non-BMP characters. Isolated, reversed, or mismatched surrogate escapes receive positioned <code>YAML006</code> before bundle generation.</td>
+</tr>
+<tr>
+<td>JSON-compatible scalar</td>
+<td>Supported</td>
+<td><code>null</code>、<code>true</code>/<code>false</code>、RFC 8259 number（integer/real）、string。</td>
+</tr>
+<tr>
+<td>literal / folded block scalar</td>
+<td>Partial</td>
+<td>`</td>
+</tr>
+<tr>
+<td>flow plain delimiter</td>
+<td>Partial</td>
+<td>plain valueに<code>,</code>, <code>[</code>, <code>]</code>, <code>{</code>, <code>}</code>を含める場合はquote必須。URL scheme colon（<code>https://</code>）は受理。</td>
+</tr>
+<tr>
+<td>anchor / alias</td>
+<td>Partial</td>
+<td>anchor定義とalias展開をサポート。alias rootにはalias位置を付与。undefined/cycle/redefinitionは拒否。同一行のcompact anchor mapping（<code>- &amp;a key: value</code>）は対象外で、nestedまたはflow valueとして記述する。</td>
+</tr>
+<tr>
+<td>tags / directives</td>
+<td>Unsupported</td>
+<td>explicit/custom tagとdirectiveは拒否。</td>
+</tr>
+<tr>
+<td>document stream</td>
+<td>Unsupported</td>
+<td>multiple document（<code>---</code>/<code>...</code>による複数document）は拒否。</td>
+</tr>
+</tbody></table>
+<h3 id="yaml-source-locations-and-limits">YAML source locations and limits</h3>
+<p>Lexer tokenはsource path、1-based line/column、UTF-16 offset/lengthを持ちます。
+bundleへ保存するのはsource pathと1-based line/columnで、offset/lengthはlexer/parser
+内部の診断情報です。syntax diagnosticのlogical pathはroot（empty）で、semantic
+diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
+<p>Parser limits are hard bounds:</p>
+<table>
+<thead>
+<tr>
+<th>Limit</th>
+<th align="right">Value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Maximum input characters</td>
+<td align="right">4,194,304</td>
+</tr>
+<tr>
+<td>Maximum tokens</td>
+<td align="right">1,000,000</td>
+</tr>
+<tr>
+<td>Maximum scalar characters</td>
+<td align="right">1,048,576</td>
+</tr>
+<tr>
+<td>Maximum aliases</td>
+<td align="right">4,096</td>
+</tr>
+<tr>
+<td>Maximum anchors</td>
+<td align="right">4,096</td>
+</tr>
+<tr>
+<td>Maximum expanded nodes</td>
+<td align="right">1,000,000</td>
+</tr>
+<tr>
+<td>Maximum nesting depth</td>
+<td align="right">256</td>
+</tr>
+</tbody></table>
+<p>YAML diagnostic IDs are stable within Phase 5:</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>YAML001</code></td>
+<td>Lexical error（invalid UTF-8など）</td>
+</tr>
+<tr>
+<td><code>YAML002</code></td>
+<td>Invalid indentation</td>
+</tr>
+<tr>
+<td><code>YAML003</code></td>
+<td>Invalid document</td>
+</tr>
+<tr>
+<td><code>YAML004</code></td>
+<td>Invalid mapping</td>
+</tr>
+<tr>
+<td><code>YAML005</code></td>
+<td>Invalid sequence</td>
+</tr>
+<tr>
+<td><code>YAML006</code></td>
+<td>Invalid scalar</td>
+</tr>
+<tr>
+<td><code>YAML007</code></td>
+<td>Duplicate key</td>
+</tr>
+<tr>
+<td><code>YAML008</code></td>
+<td>Unsupported tag</td>
+</tr>
+<tr>
+<td><code>YAML009</code></td>
+<td>Unsupported directive</td>
+</tr>
+<tr>
+<td><code>YAML010</code></td>
+<td>Multiple documents</td>
+</tr>
+<tr>
+<td><code>YAML011</code></td>
+<td>Complex key</td>
+</tr>
+<tr>
+<td><code>YAML012</code></td>
+<td>Undefined alias</td>
+</tr>
+<tr>
+<td><code>YAML013</code></td>
+<td>Alias cycle</td>
+</tr>
+<tr>
+<td><code>YAML014</code></td>
+<td>Anchor redefinition</td>
+</tr>
+<tr>
+<td><code>YAML015</code></td>
+<td>Limit exceeded</td>
+</tr>
+</tbody></table>
+<h2 id="operationsparametersresponses">Operations、parameters、responses</h2>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>Status</th>
+<th>条件・制約</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>HTTP method</td>
+<td>Supported</td>
+<td><code>GET</code>、<code>POST</code>、<code>PUT</code>、<code>DELETE</code>、<code>PATCH</code>、<code>HEAD</code>、<code>OPTIONS</code>、<code>TRACE</code>。</td>
+</tr>
+<tr>
+<td><code>servers</code></td>
+<td>Partial</td>
+<td>URLは0個または1個、variablesなし。絶対URLはHTTP(S)のみで、FTPなどは<code>OACG101</code>です。root <code>servers</code>の省略・空配列は<code>/</code>を既定値とします。<code>//host/path</code>は<code>HttpClient.BaseAddress</code>のschemeで解決します。<code>/path</code>と既定の<code>/</code>は同じoriginのrootから解決し、<code>BaseAddress</code>のpathとqueryを引き継ぎません。<code>BaseAddress</code>が必要な場合に未設定なら送信前に<code>InvalidOperationException</code>です。明示的な空文字<code>baseUrl</code> overrideは相対URLとして扱います。相対server URLとoperation pathが<code>/</code>の場合、<code>BaseAddress</code>のqueryは1回だけ付加します。</td>
+</tr>
+<tr>
+<td>server URL validation</td>
+<td>Partial</td>
+<td>Malformed absolute-looking or relative URL references receive positioned <code>OACG100</code>; unresolved <code>{...}</code> variables receive <code>OACG101</code>. Invalid absolute URLs no longer fall back to relative resolution. Valid HTTP(S), network-path, root-relative, and path-relative forms remain supported. A raw fragment is omitted before joining the operation path, while encoded <code>%23</code> remains path data.</td>
+</tr>
+<tr>
+<td>parameter location</td>
+<td>Partial</td>
+<td>path、query、headerのscalar parameterのみ。cookieは対象外です。</td>
+</tr>
+<tr>
+<td>Parameter Object fields</td>
+<td>Partial</td>
+<td>Standard OpenAPI 3.0/3.1 fields and <code>x-*</code> extensions are recognized. Unknown fields such as <code>requird</code> receive positioned <code>OACG101</code>, including path/operation parameters and reference targets. Parameter <code>content</code> remains unsupported.</td>
+</tr>
+<tr>
+<td>parameter serialization</td>
+<td>Partial</td>
+<td>defaultの<code>style</code>/<code>explode</code>のみ。<code>allowReserved: true</code>は対象外です。任意queryの<code>null</code>は省略し、明示的な空文字列は<code>name=</code>として送信します。<code>allowEmptyValue</code>は省略される値の代替を表し、明示的な空文字列には適用しません。</td>
+</tr>
+<tr>
+<td>enum parameter formatting</td>
+<td>Supported</td>
+<td>String-enum path/query/header values use an isolated Json.NET serializer and declared wire strings; host <code>JsonConvert.DefaultSettings</code> converters or contract resolvers cannot rewrite them. Optional null parameters remain omitted.</td>
+</tr>
+<tr>
+<td>non-finite numeric parameter</td>
+<td>Unsupported</td>
+<td>path／query／headerの<code>float</code>／<code>double</code>に<code>NaN</code>・正負の無限大を渡すと、HTTP送信前に<code>ArgumentOutOfRangeException</code>です。任意parameterの省略と有限値は使用できます。</td>
+</tr>
+<tr>
+<td>complex parameter</td>
+<td>Unsupported</td>
+<td>直接定義・多段<code>$ref</code>ともarray/object等のcomplex parameterは対象外です。</td>
+</tr>
+<tr>
+<td>required nullable parameter</td>
+<td>Unsupported</td>
+<td>path/query/headerの<code>required: true</code>とnullableの組み合わせは<code>OACG101</code>です。参照チェーン全体を確認します。任意parameterのnull省略とDTOのnullableは維持します。</td>
+</tr>
+<tr>
+<td>dot-only path segment</td>
+<td>Unsupported</td>
+<td>引数置換後のpath segmentが<code>.</code>／<code>..</code>（1回percent-decodeした表現を含む）なら、HTTP送信前に<code>ArgumentException</code>です。<code>.hidden</code>、<code>a.b</code>、<code>...</code>や通常の複合segmentは使用できます。</td>
+</tr>
+<tr>
+<td>path template braces</td>
+<td>Partial</td>
+<td>対応しない<code>{</code>／<code>}</code>は位置付き<code>OACG100</code>です。<code>/pets}</code>や<code>/pets/{id}}</code>も生成時に拒否します。</td>
+</tr>
+<tr>
+<td>path key delimiters</td>
+<td>Unsupported</td>
+<td>Raw <code>?</code> or <code>#</code> in a Paths key receives positioned <code>OACG100</code>; percent-encoded path data remains available. Declare query values as query parameters.</td>
+</tr>
+<tr>
+<td>header identity</td>
+<td>Supported</td>
+<td>header名だけ大文字小文字を区別せず、operation側で上書きします。送信名はoperationの宣言を保持し、path/query名は区別します。</td>
+</tr>
+<tr>
+<td>header parameter name</td>
+<td>Partial</td>
+<td>HTTP field-nameのASCII tokenのみを許可し、空白・コロン・非ASCIIなど不正な名前は<code>name</code>の位置付き<code>OACG100</code>です。</td>
+</tr>
+<tr>
+<td>reserved header parameters</td>
+<td>Unsupported</td>
+<td><code>Accept</code> and <code>Authorization</code> are rejected with positioned <code>OACG101</code>, including case variants. <code>Content-Type</code> remains covered by the content-only header restriction below.</td>
+</tr>
+<tr>
+<td>header parameter value</td>
+<td>Partial</td>
+<td>Generated clients accept HTAB and printable ASCII U+0020–U+007E only. Other characters, including CR, LF, DEL, non-ASCII and surrogates, raise <code>ArgumentException</code> before <code>HttpClient.SendAsync</code>. Omitted optional values remain omitted.</td>
+</tr>
+<tr>
+<td>content専用header parameter</td>
+<td>Unsupported</td>
+<td><code>Allow</code>、<code>Content-Disposition</code>、<code>Content-Encoding</code>、<code>Content-Language</code>、<code>Content-Length</code>、<code>Content-Location</code>、<code>Content-MD5</code>、<code>Content-Range</code>、<code>Content-Type</code>、<code>Expires</code>、<code>Last-Modified</code>は大小文字を問わず<code>OACG101</code>で拒否します。独自の<code>Content-*</code>名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に<code>InvalidOperationException</code>です。</td>
+</tr>
+<tr>
+<td>request body</td>
+<td>Partial</td>
+<td>パラメーター付きも含む具体的な<code>application/json</code>または<code>application/&lt;subtype&gt;+json</code>を送信します。<code>application/*+json</code>だけの宣言は<code>OACG101</code>で拒否し、具体型と併記された場合は具体型を選びます。type/subtypeを正規化して判定します。</td>
+</tr>
+<tr>
+<td>TRACE request body</td>
+<td>Unsupported</td>
+<td>A TRACE operation declaring <code>requestBody</code>, including a reference, receives positioned <code>OACG101</code>. Bodyless TRACE remains supported.</td>
+</tr>
+<tr>
+<td>Reference Object siblings</td>
+<td>Partial</td>
+<td>Parameter, Request Body, and Response references reject unsupported sibling fields with positioned <code>OACG101</code>. OpenAPI 3.1 permits string <code>summary</code> and <code>description</code> annotations; 3.0 accepts only <code>$ref</code> under this generator&#39;s strict input policy. Schema reference siblings follow the separate schema rule below.</td>
+</tr>
+<tr>
+<td>quoted media parameters</td>
+<td>Partial</td>
+<td>Syntax permits HTAB and U+0020–U+00FF except DEL; characters above U+00FF receive positioned <code>OACG100</code>. The selected request <code>Content-Type</code> is further restricted to ASCII, so U+0080–U+00FF also receives positioned <code>OACG100</code> there. Successful response declarations retain the HTTP quoted-string range.</td>
+</tr>
+<tr>
+<td>request JSON serialization</td>
+<td>Supported</td>
+<td>リクエスト本文は専用のJson.NET serializerで生成し、ホストの<code>JsonConvert.DefaultSettings</code>から<code>$type</code>／<code>$id</code>／<code>$ref</code>などのメタデータ設定を引き継ぎません。日付変換と明示的なJSON <code>null</code>は維持します。</td>
+</tr>
+<tr>
+<td>wildcard JSON media type</td>
+<td>Partial</td>
+<td><code>application/*+json</code>のみを認識します。<code>application/vnd.*+json</code>など部分的なwildcard subtypeは、リクエスト・成功レスポンスとも生成時に<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td>required non-nullable request body</td>
+<td>Supported</td>
+<td>参照型の本文に<code>null</code>を渡すとHTTP送信前に<code>ArgumentNullException</code>です。schemaがnullableな必須本文はJSON <code>null</code>を送信できます。</td>
+</tr>
+<tr>
+<td>request array items</td>
+<td>Supported</td>
+<td>非nullableな参照型要素が<code>null</code>なら、本文直下・入れ子の配列・DTO内の配列とも、シリアライズ前に<code>JsonSerializationException</code>で拒否します。nullableな要素の<code>null</code>は送信できます。</td>
+</tr>
+<tr>
+<td>optional nullable request body</td>
+<td>Supported</td>
+<td><code>requestBody.required: false</code>かつschemaがnullableの場合、<code>null</code>引数は本文省略、非<code>null</code>引数はJSON本文を送信します。生成メソッドの<code>&lt;BodyParameterName&gt;Specified</code>を<code>true</code>にすると、<code>null</code>引数でも明示的なJSON <code>null</code>を送信します。名前が衝突する場合は番号を付けます。</td>
+</tr>
+<tr>
+<td>request charset</td>
+<td>Partial</td>
+<td>UTF-8、UTF-16 LE/BE。未指定はUTF-8。不正なContent-Typeや未対応charsetは入力位置付き診断です。</td>
+</tr>
+<tr>
+<td>response charset</td>
+<td>Partial</td>
+<td>Schema-declared successful JSON bodies use strict decoding. The declared charset, including quoted names, takes precedence and only its matching BOM is removed. Without a charset, UTF-8, UTF-32 LE, and UTF-16 LE/BE BOMs are recognized; otherwise UTF-8 is used. Invalid encoded bytes raise <code>JsonSerializationException</code>. Charset availability follows the runtime&#39;s <code>Encoding.GetEncoding</code>; unknown charset names raise <code>InvalidOperationException</code> during decoding. Empty bodies retain the existing JSON-body requirement; error and bodyless responses retain their existing reading behavior.</td>
+</tr>
+<tr>
+<td>successful response</td>
+<td>Partial</td>
+<td>少なくとも1つの<code>2xx</code> responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの宣言順は比較に影響しません。schema付き成功本文の空・空白はnullableでも<code>JsonSerializationException</code>です。JSON <code>null</code>はnullable schemaだけで許可します。非nullableな配列要素がJSON <code>null</code>なら、入れ子の配列とDTO内の配列も含めて拒否します。</td>
+</tr>
+<tr>
+<td>bodyless response content</td>
+<td>Unsupported</td>
+<td>HEAD responses at any status, and successful 204, 205, or <code>2XX</code> responses cannot declare nonempty <code>content</code>; referenced Response Objects are checked too. The content location receives <code>OACG101</code>. Empty <code>content</code> and bodyless responses remain supported. <code>2XX</code> spans 204 and 205, so a typed <code>2XX</code> body contract is unsupported.</td>
+</tr>
+<tr>
+<td>successful response <code>Content-Type</code></td>
+<td>Partial</td>
+<td>そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は<code>JsonSerializationException</code>です。content宣言のない成功応答では<code>Content-Type</code>を照合しません。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。</td>
+</tr>
+<tr>
+<td>successful response JSON</td>
+<td>Partial</td>
+<td>RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの<code>$id</code>／<code>$ref</code>／<code>$values</code>参照メタデータを互換拡張として維持します。配列schemaでも<code>$id</code>／<code>$values</code>で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の<code>1.0</code>／<code>1e0</code>を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限<code>float</code>／<code>double</code>は<code>JsonSerializationException</code>です。 受信JSONの構文検査は通常最大64階層で、ホストが<code>JsonConvert.DefaultSettings.MaxDepth</code>に正の値を設定した場合はその値を使い、<code>null</code>または未指定なら64階層を維持します。</td>
+</tr>
+<tr>
+<td>response JSON conversion settings</td>
+<td>Partial</td>
+<td>The generated response serializer uses its own Json.NET defaults, so host <code>JsonConvert.DefaultSettings</code> converters and contract resolvers cannot change validated values. A positive host <code>MaxDepth</code> is the only inherited setting; absent, null, and invalid values use 64. Generated DTO converters and supported <code>$id</code>/<code>$ref</code>/<code>$values</code> metadata remain active.</td>
+</tr>
+<tr>
+<td>response DTO metadata names</td>
+<td>Unsupported</td>
+<td>A successful response DTO cannot declare <code>$id</code>, <code>$ref</code>, <code>$type</code>, or <code>$values</code> as data properties; the property location receives <code>OACG100</code>. Request-only DTOs may declare them. Json.NET reference metadata remains supported where these names are not declared as schema properties.</td>
+</tr>
+<tr>
+<td>error/default response</td>
+<td>Partial</td>
+<td>JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。</td>
+</tr>
+<tr>
+<td>response extension</td>
+<td>Supported</td>
+<td>operationのResponses Objectでは<code>x-*</code>を除外します。<code>components.responses</code>の<code>x-*</code>名は通常のResponse/Referenceです。</td>
+</tr>
+<tr>
+<td>response header</td>
+<td>Unsupported</td>
+<td>Nonempty response <code>headers</code> is unsupported (<code>OACG101</code>). If present, <code>headers</code> must be an object; scalar, array, and null values receive positioned <code>OACG100</code>. Empty objects are accepted.</td>
+</tr>
+<tr>
+<td>Response Object fields</td>
+<td>Partial</td>
+<td>Only <code>description</code>, <code>headers</code>, <code>content</code>, <code>links</code>, and <code>x-*</code> extensions are recognized. Unknown fields, including misspelled <code>contents</code>, receive positioned <code>OACG101</code> in success, error, and referenced responses.</td>
+</tr>
+</tbody></table>
+<p>status codeはASCII数字で検証します。属性付きのジェネリックclassは<code>OACG005</code>で拒否します。</p>
+<h2 id="schema">Schema</h2>
+<p>以下は生成するrequest／成功response／DTOの制限です。非2xxと<code>default</code>の本文は構造・参照検証の対象です。</p>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>Status</th>
+<th>条件・制約</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>scalar</td>
+<td>Supported</td>
+<td><code>string</code>、<code>integer</code>、<code>number</code>、<code>boolean</code>。</td>
+</tr>
+<tr>
+<td>object</td>
+<td>Partial</td>
+<td>named propertiesと<code>required</code>を持ち、<code>additionalProperties: false</code>を明示したobject。省略、<code>true</code>、schema値はDTOを生成できず<code>OACG101</code>です。成功応答の未知propertyは拒否します。既存仕様で省略していた場合は明示してください。</td>
+</tr>
+<tr>
+<td>array</td>
+<td>Partial</td>
+<td>supported schemaのarray。</td>
+</tr>
+<tr>
+<td>string enum</td>
+<td>Partial</td>
+<td>generated C# enumは宣言したwire文字列だけを大小文字・空白も含め完全一致で読み書きします。JSON数値と未宣言のC# enum値は拒否します。OpenAPI 3.1の<code>type: [string, null]</code>でも<code>enum</code>に文字列しかなければ非nullableです。<code>null</code>や重複値を含むenumは<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td>direct schema reference</td>
+<td>Supported</td>
+<td>supported schemaへの参照。多段参照のscalar／enumもnullableを保持します。</td>
+</tr>
+<tr>
+<td><code>$ref</code> sibling</td>
+<td>Partial</td>
+<td>注釈、literalデータ、<code>x-*</code>と既存の3.0 <code>nullable</code>は保持します。合成が必要な<code>type</code>、<code>properties</code>、<code>required</code>などは、該当位置の<code>OACG101</code>で拒否します。</td>
+</tr>
+<tr>
+<td>nullable</td>
+<td>Partial</td>
+<td>OpenAPI 3.0の<code>nullable</code>、OpenAPI 3.1の<code>type: [&lt;type&gt;, null]</code>。</td>
+</tr>
+<tr>
+<td>optional nullable DTO property</td>
+<td>Supported</td>
+<td>未代入はJSONから省略し、<code>null</code>代入は明示的なJSON <code>null</code>、値の代入はその値を送ります。生成される<code>&lt;PropertyName&gt;Specified</code>を<code>false</code>へ戻すと再び省略します。</td>
+</tr>
+<tr>
+<td>optional non-nullable DTO property</td>
+<td>Supported</td>
+<td>JSONからの省略は許可し、明示的なJSON <code>null</code>は<code>JsonSerializationException</code>です。未設定値はシリアライズ時に省略します。</td>
+</tr>
+<tr>
+<td>required non-nullable DTO property</td>
+<td>Supported</td>
+<td>参照型の必須項目が<code>null</code>ならシリアライズ中に検出し、HTTP送信を止めます。入れ子のDTOも対象です。必須nullable項目のJSON <code>null</code>と必須値型の既定値は送信できます。</td>
+</tr>
+<tr>
+<td>scalar format</td>
+<td>Partial</td>
+<td><code>integer</code>は通常<code>int</code>、<code>int64</code>は<code>long</code>。<code>number</code>は通常<code>double</code>、<code>float</code>は<code>float</code>、<code>decimal</code>は<code>decimal</code>。<code>date</code>、<code>date-time</code>、<code>uuid</code>は<code>DateTime</code>、<code>DateTimeOffset</code>、<code>Guid</code>へmappingします。成功レスポンスでは変換前にそれぞれ日付、タイムゾーン付き日時、ASCIIの8-4-4-4-12形式を字句検査します。字句が正しくてもCLRで表せない時刻・うるう秒などは変換時に拒否される場合があります。</td>
+</tr>
+<tr>
+<td>format spelling</td>
+<td>Partial</td>
+<td>Only exact lowercase <code>int64</code>, <code>float</code>, <code>decimal</code>, <code>date</code>, <code>date-time</code>, <code>uuid</code>, and <code>binary</code> trigger their special handling. Other casing is treated as an unrecognized format and uses the base schema type.</td>
+</tr>
+<tr>
+<td>request number</td>
+<td>Supported</td>
+<td><code>float</code>／<code>double</code>の<code>NaN</code>・正負の無限大は本文直下・配列・DTO内ともHTTP送信前に<code>JsonSerializationException</code>で拒否します。省略指定した任意項目は検査しません。</td>
+</tr>
+<tr>
+<td>map / free-form object</td>
+<td>Unsupported</td>
+<td><code>additionalProperties</code>などのmap/free-form表現は対象外です。</td>
+</tr>
+<tr>
+<td>schema assertions</td>
+<td>Unsupported</td>
+<td>生成モデルが保持しない<code>const</code>、<code>pattern</code>、<code>minLength</code>、<code>minimum</code>、<code>minItems</code>などのassertionは、そのkeywordの位置で<code>OACG101</code>です。説明用annotation、<code>default</code>、<code>x-*</code>は許可します。</td>
+</tr>
+<tr>
+<td>composition</td>
+<td>Unsupported</td>
+<td><code>allOf</code>、<code>anyOf</code>、<code>oneOf</code>、<code>not</code>、discriminatorは対象外です。</td>
+</tr>
+<tr>
+<td>binary / readOnly / writeOnly</td>
+<td>Unsupported</td>
+<td>生成contractでは対象外です。</td>
+</tr>
+</tbody></table>
+<p><code>$ref</code>と併記できる注釈・データのキーは<code>$comment</code>、<code>default</code>、<code>deprecated</code>、
+<code>description</code>、<code>example</code>、<code>examples</code>、<code>externalDocs</code>、<code>summary</code>、<code>title</code>、<code>xml</code>、<code>x-*</code>です。
+OpenAPI 3.0では既存互換として<code>nullable</code>も扱います。</p>
+<p>リクエストJSONの<code>format: date</code>は<code>yyyy-MM-dd</code>へ変換します。公開型の<code>DateTime</code>は維持し、
+<code>date-time</code>の<code>DateTimeOffset</code>にはdate用converterを適用しません。</p>
+<h2 id="generated-outputと利用上の制約">Generated outputと利用上の制約</h2>
+<p>生成結果は次のpublic API contractです。</p>
+<ul>
+<li>public mutable sealed DTO（Json.NET attribute使用）</li>
+<li>任意かつschema上nullableなDTO propertyの<code>&lt;PropertyName&gt;Specified</code>による存在状態の管理</li>
+<li>任意かつschema上nullableなrequest bodyの<code>&lt;BodyParameterName&gt;Specified</code>による明示的なJSON <code>null</code>送信</li>
+<li>宣言したwire文字列を完全一致で扱うstring enum converterと<code>List&lt;T&gt;</code></li>
+<li>injected <code>HttpClient</code>を使うasync client API。documentまたはexplicit base URLを指定するconstructorを使用可能</li>
+<li>path/query/header/body、<code>JsonConvert</code>、<code>CancellationToken</code>、宣言された<code>2xx</code> response handling</li>
+<li>generated <code>&lt;ApiName&gt;Exception</code></li>
+</ul>
+<p>生成モデルは、raw JSON/YAMLを各normalizerでnormalized bundleへ変換した後、OAS semantic parserとinternal reference resolverを通し、
+Roslyn非依存のgeneration modelを作ってから、Roslynでparseしたdeterministic source emitterへ渡します。
+emitterの結果を<code>AddSource</code>します。serializer/backendは固定で、generated clientは
+Newtonsoft.Jsonと<code>System.Net.Http.HttpClient</code>を使用します。Docker providerは別providerであり、
+fallbackまたは切替は行いません。</p>
+<p>生成物はhand-editするsourceではなく、再Generateされるpublic contractです。spec IDを含むhint nameは
+stableで、generated nameはordinalのdeterministic namingとsuffixによるcollision resolutionを使用します。
+複数specでDTO名が重なる場合は、generated namespaceを分けてください。current generated typeは
+namespace-levelのため、同じnamespaceには共存できません。</p>
+<p>An <code>apiName</code> equal to a fixed generated client member receives <code>OACG005</code>.
+Reserved names are <code>_httpClient</code>, <code>_baseUrl</code>, <code>DateOnlyJsonConverterInstance</code>,
+<code>CreateRequestUri</code>, <code>CombineAbsoluteUri</code>, <code>CombinePaths</code>, <code>CombineQueries</code>,
+<code>AppendQuery</code>, <code>SplitPathAndQuery</code>, <code>ValidatePathSegments</code>, <code>CreateJsonContent</code>,
+<code>ConvertToString</code>, and <code>DateOnlyJsonConverter</code>.
+Schema members whose CLR names would match another member&#39;s <code>Name + &quot;Specified&quot;</code>
+are assigned a unique CLR name while retaining their JSON wire names. This
+prevents Json.NET from mistaking a schema boolean for a presence flag.</p>
+<h2 id="診断">診断</h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>意味</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>OACG005</code></td>
+<td>Invalid client definition, including an <code>apiName</code> reserved by a generated member</td>
+</tr>
+<tr>
+<td><code>OACG100</code></td>
+<td>InvalidDocument</td>
+</tr>
+<tr>
+<td><code>OACG101</code></td>
+<td>UnsupportedElement（bare non-Schema、<code>$id</code>/<code>$anchor</code>/<code>$dynamicAnchor</code>/<code>$dynamicRef</code>など）</td>
+</tr>
+<tr>
+<td><code>OACG102</code></td>
+<td>Unresolved document or JSON Pointer target</td>
+</tr>
+<tr>
+<td><code>OACG103</code></td>
+<td>Cyclic reference</td>
+</tr>
+<tr>
+<td><code>OACG104</code></td>
+<td>ExternalReference（Bundle v1 compatibility）</td>
+</tr>
+<tr>
+<td><code>OACG105</code></td>
+<td>InconsistentResponse</td>
+</tr>
+<tr>
+<td><code>OACG106</code></td>
+<td>InvalidIdentifier</td>
+</tr>
+<tr>
+<td><code>OACG107</code></td>
+<td>Warning: deterministic type-name collision resolution</td>
+</tr>
+</tbody></table>
+<h2 id="検証済み環境">検証済み環境</h2>
+<p>GitHub ActionsのUnity検証とCD dry-runは実装済みです。レビュー対応前のclean commit
+<code>adefab2c5bf367c3ecf5971fa555f1cbb68afa24</code>では、
+<a href="https://github.com/rebeat-jp/UnityOpenApiCodeGen/actions/runs/34987295723">run 34987295723</a>
+で3版のUnity検証とCD dry-runが成功しています。</p>
+<p>2026-09-20の追加レビュー対応後のローカル検証では、.NET 168/168、Node 50/50が成功しました。
+Analyzer再現ビルド・同梱DLL同期・package inspection・tarball再現性と、同一候補を使った
+次のUnity検証も成功しています。すべて失敗・スキップ0件です。</p>
+<table>
+<thead>
+<tr>
+<th>Unity</th>
+<th align="right">初回EditMode</th>
+<th align="right">再生成</th>
+<th align="right">add-on除去後</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>2021.3.19f1</code>（base）</td>
+<td align="right">58/58</td>
+<td align="right">対象外</td>
+<td align="right">対象外</td>
+</tr>
+<tr>
+<td><code>6000.0.23f1</code></td>
+<td align="right">258/258</td>
+<td align="right">258/258</td>
+<td align="right">58/58</td>
+</tr>
+<tr>
+<td><code>6000.3.2f1</code></td>
+<td align="right">258/258</td>
+<td align="right">258/258</td>
+<td align="right">58/58</td>
+</tr>
+</tbody></table>
+<p>baseはTest Framework未導入と導入済み・<code>testables</code>なしのconsumer compileが成功しています。
+両Unity 6でもTest Framework導入済み・<code>testables</code>なしで、本番assemblyの生成と
+両パッケージのtest assembly不在を確認しました。
+追加テストでは出力フォルダー移行、SpecId／GUID保持、再起動後の復旧、競合編集保護、
+同梱資料と日本語・空白を含むfile URIを確認しました。Unityは外部cwdから起動しても
+内部cwdをprojectへ戻すため、設定の保存先と起動元への書き込み不在をEditorで検証し、
+cwd依存の旧実装を検出するテストは実際の設定パス定義と明示的なUnity dataPathを使って.NETでも実行します。
+Settings／Generatorは<code>Source Generator (Beta)</code>を表示し、ベータ説明とSupport Matrixへの
+導線を持ちます。利用不可時もベータ表示を維持します。ApiName/PackageNameを編集でき、
+Docker専用項目は無効になります。実UXMLテストに加え、Unity Editorで利用可能／不可と
+狭い幅での説明文の折り返しを確認しました。Unity 2021.3のネイティブpopup操作は
+このmacOS環境で標準PopupFieldでもEditor終了を再現したため、候補の実表示はUnity 6で確認しています。
+共有<code>$ref</code>の解析完了結果はdocument ID＋pointerで再利用し、循環診断は維持します。
+比較用の深さ14のDAGでは割当量が893,361,000 bytesから254,416 bytesへ減少しました
+（ローカル測定値であり、実行時間のCI閾値には使いません）。
+文書走査では870,986 bytes／8,000 schemaの同一入力で、割り当てが約843 MBから
+約305 MBへ減少しました。エラーschema検証も成功済み参照を再利用し、深さ15の
+共有DAGで約155 MBから約9.8 MBへ減少しました。</p>
+<p>このローカル候補は<code>--allow-dirty</code>で作成した開発用証拠です。公開に使うclean commitと
+最新のCI結果・成果物は<a href="https://github.com/rebeat-jp/UnityOpenApiCodeGen/pull/56">PR #56</a>
+で確認し、<a href="../RELEASE.html">RELEASE.md</a>の承認・検証手順に従ってください。
+IL2CPP/WebGLのPlayer互換性は未検証で、<a href="https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/57">#57</a>
+で追跡します。正式タグ・公開・OpenUPM初回登録は
+<a href="https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/62">#62</a>の別作業です。</p>
+</main></body></html>

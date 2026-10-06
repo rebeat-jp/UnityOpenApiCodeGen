@@ -1,0 +1,8 @@
+{
+  "name": "openapicodegen-package-documentation",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "marked": "15.0.12"
+  }
+}

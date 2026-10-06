@@ -11,8 +11,7 @@ namespace Rhycol.OpenApiCodeGen
             "OpenApiCodeGen"
         );
         public static readonly string PROJECT_FOLDER_PATH = Path.Combine(
-            Directory.GetCurrentDirectory(),
-            "Assets",
+            UnityEngine.Application.dataPath,
             "OpenApiCodeGen"
         );
 
@@ -41,8 +40,7 @@ namespace Rhycol.OpenApiCodeGen
             );
 #else
         public static readonly string USER_FOLDER_PATH = Path.Combine(
-            Directory.GetCurrentDirectory(),
-            "Assets",
+            UnityEngine.Application.dataPath,
             "OpenApiCodeGen"
             );
 #endif
