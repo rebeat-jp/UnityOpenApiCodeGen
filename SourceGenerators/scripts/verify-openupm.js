@@ -90,6 +90,7 @@ function archiveFiles(bytes) {
 function comparableManifest(bytes, published, commit) {
   const manifest = JSON.parse(bytes.toString('utf8'));
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new Error('Package manifest must be an object');
+  if (Object.hasOwn(manifest, 'dependencies') && (!manifest.dependencies || typeof manifest.dependencies !== 'object' || Array.isArray(manifest.dependencies))) throw new Error('Package manifest dependencies must be an object');
   if (published) {
     if (!manifest.repository || typeof manifest.repository !== 'object' || Array.isArray(manifest.repository) || manifest.repository.type !== 'git' || manifest.repository.url !== 'https://github.com/rebeat-jp/UnityOpenApiCodeGen' || manifest.repository.revision !== commit) throw new Error('OpenUPM base repository metadata is invalid');
     if (!manifest.publishConfig || typeof manifest.publishConfig !== 'object' || Array.isArray(manifest.publishConfig) || manifest.publishConfig.registry !== 'https://package.openupm.com') throw new Error('OpenUPM base publishConfig.registry is invalid');
@@ -108,7 +109,10 @@ function compareBaseArchives(candidate, published, commit) {
   if (expected.size !== actual.size || [...expected.keys()].some(name => !actual.has(name))) throw new Error('OpenUPM base package file tree differs from the Unity-validated candidate');
   for (const [name, bytes] of expected) {
     if (name === 'package.json') {
-      if (!isDeepStrictEqual(comparableManifest(bytes, false), comparableManifest(actual.get(name), true, commit))) throw new Error('OpenUPM base package.json has unexpected differences');
+      const candidateManifest = comparableManifest(bytes, false);
+      const publishedManifest = comparableManifest(actual.get(name), true, commit);
+      if (Object.hasOwn(candidateManifest, 'dependencies') && Object.keys(candidateManifest.dependencies).length === 0 && !Object.hasOwn(publishedManifest, 'dependencies')) delete candidateManifest.dependencies;
+      if (!isDeepStrictEqual(candidateManifest, publishedManifest)) throw new Error('OpenUPM base package.json has unexpected differences');
     } else if (bytes === null ? actual.get(name) !== null : !Buffer.isBuffer(actual.get(name)) || !bytes.equals(actual.get(name))) throw new Error(`OpenUPM base package content differs from the Unity-validated candidate: ${name}`);
   }
 }

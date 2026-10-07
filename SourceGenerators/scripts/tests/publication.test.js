@@ -70,6 +70,40 @@ test('registry comparison accepts OpenUPM base manifest patch and exact Source G
   const { f, request } = registryFixture(t);
   await compareRegistry(f.output, '0.5.0', request());
 });
+test('registry comparison accepts the published omission of empty base dependencies', async t => {
+  const { f, published, entries, request } = registryFixture(t);
+  const { dependencies, ...withoutDependencies } = published;
+  assert.deepEqual(dependencies, {});
+  await compareRegistry(f.output, '0.5.0', request(archive(entries(withoutDependencies))));
+});
+test('registry comparison preserves manifests that already omit dependencies', async t => {
+  const { f, manifest, published, entries, request } = registryFixture(t);
+  const { dependencies: candidateDependencies, ...candidateWithoutDependencies } = manifest;
+  const { dependencies: publishedDependencies, ...publishedWithoutDependencies } = published;
+  assert.deepEqual(candidateDependencies, {}); assert.deepEqual(publishedDependencies, {});
+  fs.writeFileSync(path.join(f.output, 'jp.rhycol.openapicodegen-0.5.0.tgz'), archive(entries(candidateWithoutDependencies)));
+  await compareRegistry(f.output, '0.5.0', request(archive(entries(publishedWithoutDependencies))));
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive(entries(published)))), /package.json has unexpected differences/);
+});
+test('registry comparison rejects changes to nonempty base dependencies', async t => {
+  const { f, manifest, published, entries, request } = registryFixture(t);
+  fs.writeFileSync(path.join(f.output, 'jp.rhycol.openapicodegen-0.5.0.tgz'), archive(entries({ ...manifest, dependencies: { 'com.unity.nuget.newtonsoft-json': '3.2.2' } })));
+  for (const dependencies of [undefined, {}, { 'com.unity.nuget.newtonsoft-json': '3.2.1' }, { 'com.unity.nuget.newtonsoft-json': '3.2.2', 'com.unity.extra': '1.0.0' }]) {
+    const actual = { ...published, dependencies };
+    await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive(entries(actual)))), /package.json has unexpected differences/);
+  }
+  fs.writeFileSync(path.join(f.output, 'jp.rhycol.openapicodegen-0.5.0.tgz'), archive(entries(manifest)));
+  await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive(entries({ ...published, dependencies: { 'com.unity.extra': '1.0.0' } })))), /package.json has unexpected differences/);
+});
+test('registry comparison rejects malformed base dependencies on either side', async t => {
+  const { f, manifest, published, entries, request } = registryFixture(t);
+  for (const dependencies of [null, [], 'invalid']) {
+    fs.writeFileSync(path.join(f.output, 'jp.rhycol.openapicodegen-0.5.0.tgz'), archive(entries({ ...manifest, dependencies })));
+    await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive(entries({ ...published, dependencies })))), /dependencies/);
+    fs.writeFileSync(path.join(f.output, 'jp.rhycol.openapicodegen-0.5.0.tgz'), archive(entries(manifest)));
+    await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive(entries({ ...published, dependencies })))), /dependencies/);
+  }
+});
 test('registry comparison rejects changed base content, missing and extra files', async t => {
   const { f, published, entries, request } = registryFixture(t);
   await assert.rejects(compareRegistry(f.output, '0.5.0', request(archive(entries(published, [{ name: 'package/Runtime/code.cs', content: 'changed' }])))), /content differs/);
