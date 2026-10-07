@@ -209,10 +209,13 @@ ref**. OpenUPM's OIDC token must refer to that exact tag, so this cannot run in
 the original main-ref job. No extra OpenUPM Secret is needed. The follow-up
 verifies the Release, waits for the base package through the official OpenUPM
 action, then does the same for the add-on. It checks the base registry package's
-file tree and contents against the Unity-validated candidate, allowing only
+file tree and contents against the Unity-validated candidate, allowing
 OpenUPM-managed `repository.url`, `repository.revision`, and
-`publishConfig.registry` differences in `package.json`. The revision must
-match the verified Release commit. OpenUPM repacks the Git-tag-tracked base
+`publishConfig.registry` differences in `package.json`. An explicitly empty
+`dependencies: {}` in the base candidate may be omitted by OpenUPM. Adding that
+field to a candidate that already omitted it, changing nonempty dependencies,
+or using a non-object value still fails comparison. The revision must match
+the verified Release commit. OpenUPM repacks the Git-tag-tracked base
 package, so its tarball bytes can differ. The add-on uses Release-asset
 tracking and must match the verified tarball byte-for-byte.
 
@@ -244,7 +247,15 @@ tracking and must match the verified tarball byte-for-byte.
   publisher does not modify published assets to repair it.
 - **OpenUPM failure:** fix registration/service conditions and rerun the
   follow-up at the same tag. A successful main release job alone does not prove
-  registry delivery. A byte mismatch requires investigation and a new version.
+  registry delivery. After a build timeout, first check the release status and
+  registry: service-side work can finish after the action fails. Verify both
+  delivered packages even if later workflow steps were skipped. A byte mismatch
+  requires investigation and a new version.
+- **Comparison fix after publication:** a rerun at an immutable tag still uses
+  that tag's original comparison code. Record read-only re-verification of the
+  original validated Release and registry packages with the reviewed fix; apply
+  the fixed comparison to future releases. Keep the original failed run, tag,
+  assets, and checksums unchanged.
 
 ## Local Mac verification
 
