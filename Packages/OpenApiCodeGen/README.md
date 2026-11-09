@@ -44,6 +44,15 @@ input support, references, and generated-code requirements.
 3. In `Window/OpenAPI Code Generator/Generator`, enter the document path or
    URL and an output folder under `Assets`, then press `Generate`.
 
+To read a document from a private GitHub repository, use its
+`https://raw.githubusercontent.com/...` URL and set **GitHub Token** in the
+User Settings section of `Window/OpenAPI Code Generator/Settings`. Both
+providers send the token only to `https://raw.githubusercontent.com`, check
+every redirect hop again, and store it in plain text in the per-user settings
+file outside the Unity project. The Docker provider passes only the root
+document to the container, so it cannot resolve relative external references;
+use the Source Generator provider or a local copy for split documents.
+
 `Generate` is the explicit fetch/refresh action for URL-based Source Generator
 inputs. Provider resolution is strict: an unknown, unavailable, or failing
 provider does not fall back to Docker.

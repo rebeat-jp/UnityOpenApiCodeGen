@@ -78,6 +78,11 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 <td>public/private/loopback、cross-host redirectを許可。userinfo、空白、非HTTP(S)、HTTPS-to-HTTP direct/redirectは拒否。Generateが明示的なfetch/refresh操作で、Docker fallbackはありません。</td>
 </tr>
 <tr>
+<td>private GitHub repository</td>
+<td>対応</td>
+<td><code>https://raw.githubusercontent.com</code>のURLのみ。Settingsの<strong>GitHub Token</strong>を、originが完全一致するリクエストとリダイレクト先にだけ<code>Authorization: Bearer</code>で送信。相対外部参照にも送信。トークンはプロジェクト外のユーザー設定に平文保存し、Bundle/manifest/診断には書き込みません。<code>github.com</code>、REST contents API、GitHub Enterprise Serverは対象外。</td>
+</tr>
+<tr>
 <td>JSON/YAML semantic parity</td>
 <td>対応</td>
 <td>各normalizerがshared <code>SpecNode</code>へ正規化し、同じsemantic/generation pipelineを通ります。</td>

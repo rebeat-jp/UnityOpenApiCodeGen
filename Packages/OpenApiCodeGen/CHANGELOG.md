@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Unreleased
 
+### Added
+
+- Add a user-local **GitHub Token** setting for OpenAPI documents in private GitHub repositories. Both providers send it as `Authorization: Bearer` only to `https://raw.githubusercontent.com`, re-check every redirect hop, and explain 401/403/404 responses from that origin.
+
 ## [0.5.0] - Unreleased
 
 ### Added

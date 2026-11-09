@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Send the user-local GitHub token to `https://raw.githubusercontent.com` root documents and relative external references, never to other origins or redirect targets, and explain 401/403/404 responses from that origin.
+
 ## [0.5.0] - Unreleased
 
 ### Added
