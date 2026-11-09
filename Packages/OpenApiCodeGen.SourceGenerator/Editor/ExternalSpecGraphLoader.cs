@@ -64,7 +64,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             var handler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false };
             httpClient = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
             httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/json, application/yaml, text/yaml, */*;q=0.1");
-            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("UnityOpenApiCodeGen/0.5.0");
+            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("UnityOpenApiCodeGen/0.5.1");
         }
 
         internal async Task<NormalizedSpecGraph> LoadAsync(

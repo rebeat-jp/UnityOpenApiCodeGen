@@ -19,18 +19,18 @@ Add both packages to the Unity project's `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.0",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.0"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.1",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.1"
   }
 }
 ```
 
-The add-on requires Unity `6000.0` or later, base package `0.5.0`, and
+The add-on requires Unity `6000.0` or later, base package `0.5.1`, and
 `com.unity.nuget.newtonsoft-json` `3.2.2`. Select **Source Generator (Beta)** in
 `Window/OpenAPI Code Generator/Settings`, then use
 `Window/OpenAPI Code Generator/Generator`.
 
-The examples target the planned `0.5.0` tag. Until it is published, use the
+The examples use the `0.5.1` release tag. To try an unreleased commit, use the
 same reviewed commit SHA in both Git URLs.
 
 The target assembly definition must directly reference

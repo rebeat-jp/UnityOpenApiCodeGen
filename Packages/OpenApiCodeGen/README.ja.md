@@ -12,15 +12,15 @@ Source Generator方式では、Unityプロジェクトの`Packages/manifest.json
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.0",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.0"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.1",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.1"
   }
 }
 ```
 
 Docker方式には基本パッケージだけを使用できます。追加パッケージにはUnity 6000.0以降と
-`com.unity.nuget.newtonsoft-json` `3.2.2`が必要です。`0.5.0`は公開予定のタグです。
-公開前には、両URLのタグ部分を同じ検証済みコミットSHAへ置き換えてください。
+`com.unity.nuget.newtonsoft-json` `3.2.2`が必要です。例は`0.5.1`のリリースタグを使います。
+未リリースのコミットを試す場合は、両URLのタグ部分を同じ検証済みコミットSHAへ置き換えてください。
 
 ## Editorでの操作
 

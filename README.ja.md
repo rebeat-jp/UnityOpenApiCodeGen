@@ -20,13 +20,13 @@ Source Generatorを使う場合は、Unityプロジェクトの`Packages/manifes
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.0",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.0"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.1",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.1"
   }
 }
 ```
 
-`0.5.0`は公開予定のタグです。公開前に試す場合は、両URLの`0.5.0`を同じ検証済みコミットSHAへ
+例は`0.5.1`のリリースタグを使います。未リリースのコミットを試す場合は、両URLの`0.5.1`を同じ検証済みコミットSHAへ
 置き換えてください。基本パッケージだけを導入してDocker方式を使うこともできます。
 
 ## 生成手順

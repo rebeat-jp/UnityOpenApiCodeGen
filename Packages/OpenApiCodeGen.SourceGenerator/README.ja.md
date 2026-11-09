@@ -12,14 +12,14 @@ Unity 6000.0以降のプロジェクトの`Packages/manifest.json`に両パッ�
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.0",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.0"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.1",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.1"
   }
 }
 ```
 
-追加パッケージは`com.unity.nuget.newtonsoft-json` `3.2.2`を使用します。`0.5.0`は公開予定のタグです。
-公開前には両URLのタグ部分を同じ検証済みコミットSHAへ置き換えてください。
+追加パッケージは`com.unity.nuget.newtonsoft-json` `3.2.2`を使用します。例は`0.5.1`のリリースタグを使います。
+未リリースのコミットを試す場合は、両URLのタグ部分を同じ検証済みコミットSHAへ置き換えてください。
 
 1. `Window/OpenAPI Code Generator/Settings`で`Source Generator (Beta)`を選び、API名とnamespaceを設定します。
 2. `Window/OpenAPI Code Generator/Generator`でローカルの`.json`、`.yaml`、`.yml`、

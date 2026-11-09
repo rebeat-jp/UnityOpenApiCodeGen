@@ -5,13 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-## Unreleased
+## [0.5.1] - 2026-11-10
 
 ### Added
 
 - Add a user-local **GitHub Token** setting for OpenAPI documents in private GitHub repositories. Both providers send it as `Authorization: Bearer` only to `https://raw.githubusercontent.com`, re-check every redirect hop, and explain 401/403/404 responses from that origin.
 
-## [0.5.0] - Unreleased
+## [0.5.0] - 2026-10-06
 
 ### Added
 
