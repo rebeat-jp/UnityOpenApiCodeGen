@@ -29,6 +29,12 @@ Docker方式には基本パッケージだけを使用できます。追加パ�
 3. `Window/OpenAPI Code Generator/Generator`に仕様書のパスまたはURLと、`Assets`配下の
    出力フォルダーを入力し、`Generate`を押します。
 
+GitHubのprivateリポジトリにある文書は`https://raw.githubusercontent.com/...`のURLを指定し、
+`Window/OpenAPI Code Generator/Settings`のUser Settingsで**GitHub Token**を設定します。
+どちらのproviderも`https://raw.githubusercontent.com`にだけトークンを送り、リダイレクトのたびに判定し直します。
+トークンはUnityプロジェクト外のユーザー設定ファイルに平文で保存します。Docker方式は入口の文書だけを
+コンテナへ渡すため、相対外部参照は解決できません。分割された文書にはSource Generator方式かローカルの複製を使ってください。
+
 URL入力のSource Generatorは、`Generate`の操作時に取得・更新します。providerが利用できない場合や
 生成が失敗した場合にDockerへ自動切替はしません。進捗、警告、キャンセルはGenerator画面に表示します。
 Settingsの編集とprovider変更は発生順に保存し、保存に失敗した場合はUnity Consoleに例外を記録します。

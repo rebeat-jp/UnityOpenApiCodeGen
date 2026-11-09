@@ -42,6 +42,20 @@ HTTP(S)以外の方式、HTTPSからHTTPへの参照・リダイレクト、明�
 ローカルファイルへの参照は拒否されます。URLのqueryは現在の取得で識別に使いますが、設定、Bundle、
 manifest、診断へ平文保存しません。次回の`Generate`時にはqueryを含むURLを再入力してください。
 
+### GitHubのprivateリポジトリ
+
+privateリポジトリの文書は`https://raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`のURLを指定し、
+`Window/OpenAPI Code Generator/Settings`のUser Settingsで**GitHub Token**を設定します。
+トークンは送信先のoriginが`https://raw.githubusercontent.com`と完全に一致するリクエストにだけ
+`Authorization: Bearer`で送ります。リダイレクトのたびに判定し直すため、別ホストへのリダイレクト先には送りません。
+同じリポジトリ内の相対外部参照もトークン付きで取得します。
+
+トークンはUnityプロジェクト外のユーザー設定ファイルに平文で保存し、プロジェクト設定、Bundle v2、
+manifest、診断には書き込みません。対象リポジトリに限定した、Contents読み取り専用のfine-grained
+personal access tokenを使ってください。`github.com`のページ、REST contents API、GitHub Enterprise Serverの
+ホストには対応しません。許可されたGitHub URLが401、403、404を返した場合は、トークンが未設定か
+拒否されたかをエラーで示します。
+
 リモート文書の形式は最終URLの拡張子と`Content-Type`で判定します。既知の値が両方にある場合は
 一致が必要です。JSONは`application/json`と`+json`、YAMLは`application/yaml`、
 `application/x-yaml`、`text/yaml`、`text/x-yaml`、`text/x-yml`に対応します。

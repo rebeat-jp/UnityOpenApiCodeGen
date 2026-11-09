@@ -38,6 +38,7 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 | OpenAPI 3.1 schema dialect | Partial | 既定または明示的な`https://spec.openapis.org/oas/3.1/dialect/base`のみ。入口・外部完全OpenAPI文書の`jsonSchemaDialect`とschemaの`$schema`で別dialectを指定すると`OACG101`、不正なURIは`OACG100`です。 |
 | OpenAPI 3.2 / Swagger 2 | Unsupported | document versionは受け付けません。 |
 | URL入力 | Supported | public/private/loopback、cross-host redirectを許可。userinfo、空白、非HTTP(S)、HTTPS-to-HTTP direct/redirectは拒否。Generateが明示的なfetch/refresh操作で、Docker fallbackはありません。 |
+| private GitHub repository | Supported | `https://raw.githubusercontent.com`のURLのみ。Settingsの**GitHub Token**を、originが完全一致するリクエストとリダイレクト先にだけ`Authorization: Bearer`で送信。相対外部参照にも送信。トークンはプロジェクト外のユーザー設定に平文保存し、Bundle/manifest/診断には書き込みません。`github.com`、REST contents API、GitHub Enterprise Serverは対象外。 |
 | JSON/YAML semantic parity | Supported | 各normalizerがshared `SpecNode`へ正規化し、同じsemantic/generation pipelineを通ります。 |
 | `$ref` | Partial | OpenAPI/Schema上の参照位置にあるinternal reference、またはEditorがBundle v2のedgeへ解決したexternal reference。example/default/enum/拡張データ内の同名キーはデータとして保持。fragmentはemptyまたはJSON Pointer。 |
 | external `$ref` | Partial | local external fileはreal/symbolic-link解決後もUnity project内。remote documentからlocal fileは不可。bare Schemaは可。参照先が完全なOpenAPI文書ならその`openapi`版と`jsonSchemaDialect`を検証し、入口とmajor.minor版が異なる場合は`OACG101`で拒否します。patch差は可。 |

@@ -63,6 +63,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             RawYamlNormalizer yamlNormalizer,
             IAtomicFileWriter fileWriter,
             ICompilerMirrorImporter importer)
+            : this(
+                projectRoot,
+                normalizer,
+                yamlNormalizer,
+                fileWriter,
+                importer,
+                GitHubAuthorizationPolicy.Default)
+        {
+        }
+
+        internal NormalizedSpecCacheService(
+            string projectRoot,
+            RawJsonNormalizer normalizer,
+            RawYamlNormalizer yamlNormalizer,
+            IAtomicFileWriter fileWriter,
+            ICompilerMirrorImporter importer,
+            GitHubAuthorizationPolicy authorizationPolicy)
         {
             if (string.IsNullOrEmpty(projectRoot))
             {
@@ -77,7 +94,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             graphLoader = new ExternalSpecGraphLoader(
                 this.projectRoot,
                 this.normalizer,
-                this.yamlNormalizer);
+                this.yamlNormalizer,
+                authorizationPolicy);
         }
 
         internal static NormalizedSpecCacheService CreateForCurrentProject()
@@ -225,9 +243,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             string rawSpecPathOrUrl,
             string specId,
             CancellationToken cancellationToken,
-            IProgress<GenerationProgress>? progress = null)
+            IProgress<GenerationProgress>? progress = null,
+            string? gitHubToken = null)
         {
-            return graphLoader.LoadAsync(rawSpecPathOrUrl, specId, cancellationToken, progress);
+            return graphLoader.LoadAsync(
+                rawSpecPathOrUrl,
+                specId,
+                cancellationToken,
+                progress,
+                gitHubToken);
         }
 
         internal void RepairPendingPublicationForSpec(string specId)

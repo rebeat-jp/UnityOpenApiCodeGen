@@ -196,14 +196,16 @@ namespace Rhycol.OpenApiCodeGen.Core
         static UserSettingDisplayDto ToDisplayDto(UserSetting userSetting)
         {
             return new UserSettingDisplayDto(
-                dockerPath: userSetting.DockerPath
+                dockerPath: userSetting.DockerPath,
+                gitHubToken: userSetting.GitHubToken
             );
         }
 
         static UserSetting ToDomain(UserSettingDisplayDto userSetting)
         {
             return new UserSetting(
-                dockerPath: userSetting.DockerPath
+                dockerPath: userSetting.DockerPath,
+                gitHubToken: userSetting.GitHubToken
             );
         }
     }

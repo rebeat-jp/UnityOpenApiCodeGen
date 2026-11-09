@@ -14,6 +14,7 @@ namespace Rhycol.OpenApiCodeGen.Core
     {
         readonly IAsyncRepository<ProjectSetting> _projectSettingRepository;
         readonly IAsyncRepository<GenerationCSharpSetting> _generationCSharpSettingRepository;
+        readonly IAsyncRepository<UserSetting> _userSettingRepository;
         readonly GenerationProviderRegistry _providerRegistry;
 
         public GenerationService()
@@ -38,11 +39,26 @@ namespace Rhycol.OpenApiCodeGen.Core
             IAsyncRepository<ProjectSetting> projectSettingRepository,
             IAsyncRepository<GenerationCSharpSetting> generationCSharpSettingRepository,
             GenerationProviderRegistry providerRegistry)
+            : this(
+                projectSettingRepository,
+                generationCSharpSettingRepository,
+                ApplicationConfig.UserSettingsRepository,
+                providerRegistry)
+        {
+        }
+
+        internal GenerationService(
+            IAsyncRepository<ProjectSetting> projectSettingRepository,
+            IAsyncRepository<GenerationCSharpSetting> generationCSharpSettingRepository,
+            IAsyncRepository<UserSetting> userSettingRepository,
+            GenerationProviderRegistry providerRegistry)
         {
             _projectSettingRepository = projectSettingRepository
                 ?? throw new ArgumentNullException(nameof(projectSettingRepository));
             _generationCSharpSettingRepository = generationCSharpSettingRepository
                 ?? throw new ArgumentNullException(nameof(generationCSharpSettingRepository));
+            _userSettingRepository = userSettingRepository
+                ?? throw new ArgumentNullException(nameof(userSettingRepository));
             _providerRegistry = providerRegistry
                 ?? throw new ArgumentNullException(nameof(providerRegistry));
         }
@@ -105,6 +121,7 @@ namespace Rhycol.OpenApiCodeGen.Core
                 GenerationCSharpSetting generationCSharpSetting =
                     await _generationCSharpSettingRepository.ReadAsync()
                     ?? new GenerationCSharpSetting();
+                UserSetting? userSetting = await _userSettingRepository.ReadAsync();
                 cancellationToken.ThrowIfCancellationRequested();
                 var request = new GenerationRequest(
                     generateApiClientDto.ApiDocumentFilePathOrUrl,
@@ -112,6 +129,7 @@ namespace Rhycol.OpenApiCodeGen.Core
                     generationCSharpSetting.ApiName,
                     generationCSharpSetting.PackageName);
                 request.Progress = progress;
+                request.GitHubToken = userSetting?.GitHubToken;
                 GenerationResult result =
                     await provider.GenerateAsync(request, cancellationToken);
 

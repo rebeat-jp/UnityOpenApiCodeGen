@@ -31,7 +31,10 @@ namespace Rhycol.OpenApiCodeGen.Core
             try
             {
                 await EnsureDockerInstalledAsync(setupDto.DockerPath);
-                var userSetting = new UserSetting(dockerPath: setupDto.DockerPath);
+                var existingUserSetting = await _userSettingJsonRepository.ReadAsync();
+                var userSetting = new UserSetting(
+                    dockerPath: setupDto.DockerPath,
+                    gitHubToken: existingUserSetting?.GitHubToken ?? "");
                 var existingProjectSetting = await _projectSettingJsonRepository.ReadAsync();
                 var existingGenerationCSharpSetting =
                     await _generationCSharpSettingJsonRepository.ReadAsync();
