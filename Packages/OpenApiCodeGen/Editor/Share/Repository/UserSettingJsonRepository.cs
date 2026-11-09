@@ -48,19 +48,22 @@ namespace Rhycol.OpenApiCodeGen.Lib
         private class UserSettingJson
         {
             public string DockerPath = "";
+            public string GitHubToken = "";
 
             public static UserSettingJson FromDomain(UserSetting value)
             {
                 return new UserSettingJson
                 {
                     DockerPath = value.DockerPath,
+                    GitHubToken = value.GitHubToken,
                 };
             }
 
             public UserSetting ToDomain()
             {
                 return new UserSetting(
-                    dockerPath: DockerPath
+                    dockerPath: DockerPath,
+                    gitHubToken: GitHubToken ?? ""
                 );
             }
         }

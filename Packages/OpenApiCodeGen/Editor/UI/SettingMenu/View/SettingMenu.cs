@@ -37,6 +37,7 @@ internal class SettingMenu : EditorWindow, ISettingView
     Label? _generateProviderDisplayNameLabel;
     Label? _generateProviderAvailabilityLabel;
     TextField? _dockerPathField;
+    TextField? _gitHubTokenField;
     TextField? _defaultApiDocumentFilePathOrUrlField;
     TextField? _defaultApiClientOutputFolderPathField;
     Foldout? _cSharpGenerationSettingsFoldout;
@@ -113,6 +114,7 @@ internal class SettingMenu : EditorWindow, ISettingView
         }
 
         _dockerPathField?.RegisterCallback((EventCallback<FocusOutEvent>)FocusOutEvent);
+        _gitHubTokenField?.RegisterCallback((EventCallback<FocusOutEvent>)FocusOutEvent);
     }
 
     void RegisterGenerationCSharpSettingChangeHandlers()
@@ -183,6 +185,11 @@ internal class SettingMenu : EditorWindow, ISettingView
         _generateProviderDisplayNameLabel = root.Q<Label>("GenerateProviderDisplayNameLabel");
         _generateProviderAvailabilityLabel = root.Q<Label>("GenerateProviderAvailabilityLabel");
         _dockerPathField = root.Q<TextField>("DockerPathField");
+        _gitHubTokenField = root.Q<TextField>("GitHubTokenField");
+        if (_gitHubTokenField != null)
+        {
+            _gitHubTokenField.isPasswordField = true;
+        }
         _defaultApiClientOutputFolderPathField = root.Q<TextField>("DefaultOutputFolderPathField");
         _defaultApiDocumentFilePathOrUrlField = root.Q<TextField>("DefaultApiDocumentFilePathOrUrlField");
         _cSharpGenerationSettingsFoldout = root.Q<Foldout>("CSharpGenerationSettingsFoldout");
@@ -324,6 +331,7 @@ internal class SettingMenu : EditorWindow, ISettingView
     public void SetUserSettingValue(UserSettingDisplayDto userSetting)
     {
         _dockerPathField?.SetValueWithoutNotify(userSetting.DockerPath);
+        _gitHubTokenField?.SetValueWithoutNotify(userSetting.GitHubToken);
     }
 
     public void SetGenerationCSharpSettingValue(GenerationCSharpSettingDisplayDto generationCSharpSetting)
@@ -368,7 +376,8 @@ internal class SettingMenu : EditorWindow, ISettingView
     public UserSettingDisplayDto GetUserSettingDisplayDto()
     {
         var userSettingDisplayDto = new UserSettingDisplayDto(
-            dockerPath: _dockerPathField?.value ?? ""
+            dockerPath: _dockerPathField?.value ?? "",
+            gitHubToken: _gitHubTokenField?.value ?? ""
         );
         return userSettingDisplayDto;
     }
@@ -484,6 +493,7 @@ internal class SettingMenu : EditorWindow, ISettingView
         _generateProviderField?.SetEnabled(isEnabled);
         _defaultApiClientOutputFolderPathField?.SetEnabled(isEnabled);
         _defaultApiDocumentFilePathOrUrlField?.SetEnabled(isEnabled);
+        _gitHubTokenField?.SetEnabled(isEnabled);
         RefreshProviderUi();
     }
 }

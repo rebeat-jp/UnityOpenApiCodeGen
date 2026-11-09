@@ -4,6 +4,8 @@
         <ui:Label tabindex="-1" text="Setting Menu" display-tooltip-when-elided="true" style="font-size: 30px; -unity-font-style: bold;" />
         <ui:Foldout text="User Settings" name="UserSettingsFoldout" class="setting-section" style="font-size: 14px;">
             <ui:TextField picking-mode="Ignore" label="Docker Path" name="DockerPathField" />
+            <ui:TextField picking-mode="Ignore" label="GitHub Token" name="GitHubTokenField" password="true" />
+            <ui:Label name="GitHubTokenDescriptionLabel" text="Used to read OpenAPI documents in private GitHub repositories. Sent only to https://raw.githubusercontent.com, never to other hosts or redirect targets. Stored in plain text in this computer&apos;s user settings folder, outside the Unity project. A fine-grained token with read-only Contents access to the repository is recommended." style="margin-left: 3px; margin-bottom: 4px; white-space: normal; font-size: 11px;" />
         </ui:Foldout>
         <ui:Foldout text="Project Settings" name="ProjectSettingsFoldout" class="setting-section" style="font-size: 14px;">
             <ui:VisualElement name="GenerateProviderContainer" />
