@@ -193,7 +193,7 @@ namespace Rhycol.OpenApiCodeGen.Lib
                             token);
                     }
 
-                    using var response = await httpClient.SendAsync(request, cancellationToken);
+                    using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
                     if (IsRedirect(response.StatusCode))
                     {
                         Uri? location = response.Headers.Location;
@@ -212,7 +212,7 @@ namespace Rhycol.OpenApiCodeGen.Lib
                         throw new ExternalServiceException($"OpenAPIドキュメントURLの読み込みに失敗しました。status: {(int)response.StatusCode} {response.ReasonPhrase}, url: {documentUrl}{hint}");
                     }
 
-                    var content = await response.Content.ReadAsStringAsync();
+                    var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                     if (string.IsNullOrWhiteSpace(content))
                     {
                         throw new ExternalServiceException($"OpenAPIドキュメントURLのレスポンスが空です。url: {documentUrl}");

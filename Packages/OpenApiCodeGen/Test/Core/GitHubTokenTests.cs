@@ -134,12 +134,13 @@ internal sealed class GitHubTokenTests
 
     static string Download(string url, string? token, HttpMessageHandler handler)
     {
-        return OpenApiCodeGenerator.DownloadRemoteDocumentAsync(
+        // Run off Unity's main-thread SynchronizationContext so blocking here cannot deadlock.
+        return Task.Run(() => OpenApiCodeGenerator.DownloadRemoteDocumentAsync(
                 url,
                 token,
                 GitHubAuthorizationPolicy.Default,
                 handler,
-                CancellationToken.None)
+                CancellationToken.None))
             .GetAwaiter()
             .GetResult();
     }
