@@ -110,7 +110,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     request.ApiDocumentFilePathOrUrl,
                     definitionPlan.SpecId,
                     cancellationToken,
-                    request.Progress);
+                    request.Progress,
+                    request.GitHubToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 definitionPlan = PrepareForGraphFormat(definitionPlan, graph.Format);
                 bool definitionChanged = false;
@@ -167,7 +168,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                             request.ApiDocumentFilePathOrUrl,
                     definitionPlan.SpecId,
                     CancellationToken.None,
-                    request.Progress),
+                    request.Progress,
+                    request.GitHubToken),
                     CancellationToken.None)
                     .GetAwaiter()
                     .GetResult();

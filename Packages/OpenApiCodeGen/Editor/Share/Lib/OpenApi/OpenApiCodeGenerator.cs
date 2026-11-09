@@ -1,12 +1,15 @@
 ﻿#nullable enable
 using System;
 using System.IO;
+using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
 using Rhycol.OpenApiCodeGen.Core;
+using Rhycol.OpenApiCodeGen.Editor.Generation;
 
 using UnityEngine;
 
@@ -16,12 +19,19 @@ namespace Rhycol.OpenApiCodeGen.Lib
     {
         const string CachedOpenApiDocumentFileName = "openapi-document.json";
         const string OpenApiCSharpConfigJsonFileName = "openapi-csharp-config.json";
+        const int MaximumRedirects = 5;
+
+        internal const string MissingGitHubTokenHint =
+            " privateリポジトリの設計書の場合は、Setting MenuのGitHub Tokenを設定してください。";
+        internal const string RejectedGitHubTokenHint =
+            " 設定されたGitHub Tokenが拒否されたか、このリポジトリを読む権限がありません。";
 
         public ProcessResponse Generate(ProjectSetting projectSetting, GenerationCSharpSetting cSharpSetting, UserSetting userSetting)
         {
             EnsureOutputDirectory(projectSetting.ApiClientOutputFolderPath);
             var cachedOpenApiDocumentFilePath = CacheOpenApiDocumentFileAsync(
                 projectSetting.ApiDocumentFilePathOrUrl,
+                userSetting.GitHubToken,
                 CancellationToken.None).GetAwaiter().GetResult();
 
             var cachedOpenApiConfigFilePath = CacheCSharpConfigFileAsync(
@@ -50,6 +60,7 @@ namespace Rhycol.OpenApiCodeGen.Lib
             EnsureOutputDirectory(projectSetting.ApiClientOutputFolderPath);
             var cachedOpenApiDocumentFilePath = await CacheOpenApiDocumentFileAsync(
                 projectSetting.ApiDocumentFilePathOrUrl,
+                userSetting.GitHubToken,
                 cancellationToken);
 
             var dockerProcess = CreateDockerProcess(userSetting);
@@ -80,7 +91,7 @@ namespace Rhycol.OpenApiCodeGen.Lib
             };
         }
 
-        static async Task<string> CacheOpenApiDocumentFileAsync(string documentFilePathOrUrl, CancellationToken cancellationToken)
+        static async Task<string> CacheOpenApiDocumentFileAsync(string documentFilePathOrUrl, string? gitHubToken, CancellationToken cancellationToken)
         {
             try
             {
@@ -92,7 +103,7 @@ namespace Rhycol.OpenApiCodeGen.Lib
                 var cachedFilePath = Path.Combine(ApplicationConstant.CacheFolderPath, CachedOpenApiDocumentFileName);
                 if (IsHttpUrl(documentFilePathOrUrl))
                 {
-                    await SaveRemoteDocumentAsync(documentFilePathOrUrl, cachedFilePath, cancellationToken);
+                    await SaveRemoteDocumentAsync(documentFilePathOrUrl, gitHubToken, cachedFilePath, cancellationToken);
                     return cachedFilePath;
                 }
 
@@ -138,29 +149,105 @@ namespace Rhycol.OpenApiCodeGen.Lib
                 && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
         }
 
-        static async Task SaveRemoteDocumentAsync(string documentUrl, string savePath, CancellationToken cancellationToken)
+        static async Task SaveRemoteDocumentAsync(string documentUrl, string? gitHubToken, string savePath, CancellationToken cancellationToken)
+        {
+            var content = await DownloadRemoteDocumentAsync(
+                documentUrl,
+                gitHubToken,
+                GitHubAuthorizationPolicy.Default,
+                new HttpClientHandler { AllowAutoRedirect = false },
+                cancellationToken);
+            try
+            {
+                await File.WriteAllTextAsync(savePath, content, cancellationToken);
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                throw new ExternalStorageException($"OpenAPIドキュメントのキャッシュ保存に失敗しました。url: {documentUrl}", e);
+            }
+        }
+
+        /// <summary>
+        /// Downloads a remote OpenAPI document. Redirects are followed manually so the GitHub token
+        /// is attached only to hops whose origin <paramref name="authorizationPolicy"/> allows.
+        /// </summary>
+        internal static async Task<string> DownloadRemoteDocumentAsync(
+            string documentUrl,
+            string? gitHubToken,
+            GitHubAuthorizationPolicy authorizationPolicy,
+            HttpMessageHandler handler,
+            CancellationToken cancellationToken)
         {
             try
             {
-                using var httpClient = new HttpClient();
-                using var response = await httpClient.GetAsync(documentUrl, cancellationToken);
-                if (!response.IsSuccessStatusCode)
+                using var httpClient = new HttpClient(handler, disposeHandler: true);
+                var current = new Uri(documentUrl, UriKind.Absolute);
+                for (int redirects = 0; ; redirects++)
                 {
-                    throw new ExternalServiceException($"OpenAPIドキュメントURLの読み込みに失敗しました。status: {(int)response.StatusCode} {response.ReasonPhrase}, url: {documentUrl}");
-                }
+                    using var request = new HttpRequestMessage(HttpMethod.Get, current);
+                    bool sentGitHubToken = authorizationPolicy.TryGetToken(current, gitHubToken, out string token);
+                    if (sentGitHubToken)
+                    {
+                        request.Headers.Authorization = new AuthenticationHeaderValue(
+                            GitHubAuthorizationPolicy.AuthorizationScheme,
+                            token);
+                    }
 
-                var content = await response.Content.ReadAsStringAsync();
-                if (string.IsNullOrWhiteSpace(content))
-                {
-                    throw new ExternalServiceException($"OpenAPIドキュメントURLのレスポンスが空です。url: {documentUrl}");
-                }
+                    using var response = await httpClient.SendAsync(request, cancellationToken);
+                    if (IsRedirect(response.StatusCode))
+                    {
+                        Uri? location = response.Headers.Location;
+                        if (location == null || redirects >= MaximumRedirects)
+                        {
+                            throw new ExternalServiceException($"OpenAPIドキュメントURLのリダイレクトを処理できませんでした。url: {documentUrl}");
+                        }
 
-                await File.WriteAllTextAsync(savePath, content, cancellationToken);
+                        current = location.IsAbsoluteUri ? location : new Uri(current, location);
+                        continue;
+                    }
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string hint = GetGitHubAccessHint(response.StatusCode, current, sentGitHubToken, authorizationPolicy);
+                        throw new ExternalServiceException($"OpenAPIドキュメントURLの読み込みに失敗しました。status: {(int)response.StatusCode} {response.ReasonPhrase}, url: {documentUrl}{hint}");
+                    }
+
+                    var content = await response.Content.ReadAsStringAsync();
+                    if (string.IsNullOrWhiteSpace(content))
+                    {
+                        throw new ExternalServiceException($"OpenAPIドキュメントURLのレスポンスが空です。url: {documentUrl}");
+                    }
+
+                    return content;
+                }
             }
             catch (Exception e) when (e is not ExternalServiceException && e is not OperationCanceledException)
             {
                 throw new ExternalServiceException($"OpenAPIドキュメントURLの読み込みに失敗しました。url: {documentUrl}", e);
             }
+        }
+
+        static bool IsRedirect(HttpStatusCode statusCode)
+        {
+            int code = (int)statusCode;
+            return code == 301 || code == 302 || code == 303 || code == 307 || code == 308;
+        }
+
+        static string GetGitHubAccessHint(
+            HttpStatusCode statusCode,
+            Uri requestUri,
+            bool sentGitHubToken,
+            GitHubAuthorizationPolicy authorizationPolicy)
+        {
+            if ((statusCode != HttpStatusCode.Unauthorized &&
+                 statusCode != HttpStatusCode.Forbidden &&
+                 statusCode != HttpStatusCode.NotFound) ||
+                !authorizationPolicy.IsAllowedOrigin(requestUri))
+            {
+                return string.Empty;
+            }
+
+            return sentGitHubToken ? RejectedGitHubTokenHint : MissingGitHubTokenHint;
         }
 
         static void EnsureOutputDirectory(string outputFolderPath)
