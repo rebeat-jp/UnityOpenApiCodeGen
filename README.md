@@ -27,8 +27,8 @@ the Source Generator provider. Unity resolves these as separate Git packages.
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.0",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.0"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.1",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.1"
   }
 }
 ```
@@ -37,8 +37,8 @@ The Source Generator package depends on
 `com.unity.nuget.newtonsoft-json` `3.2.2`. It does not bundle Newtonsoft.Json,
 Roslyn, or YamlDotNet DLLs.
 
-These examples target the planned `0.5.0` release. Before that tag is published,
-replace `0.5.0` with the same reviewed commit SHA in both Git URLs.
+These examples use the `0.5.1` release tag. To try an unreleased commit,
+replace `0.5.1` with the same reviewed commit SHA in both Git URLs.
 
 ## Getting started
 

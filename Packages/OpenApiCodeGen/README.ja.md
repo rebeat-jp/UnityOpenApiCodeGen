@@ -12,15 +12,15 @@ Source Generator方式では、Unityプロジェクトの`Packages/manifest.json
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.0",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.0"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.1",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.1"
   }
 }
 ```
 
 Docker方式には基本パッケージだけを使用できます。追加パッケージにはUnity 6000.0以降と
-`com.unity.nuget.newtonsoft-json` `3.2.2`が必要です。`0.5.0`は公開予定のタグです。
-公開前には、両URLのタグ部分を同じ検証済みコミットSHAへ置き換えてください。
+`com.unity.nuget.newtonsoft-json` `3.2.2`が必要です。例は`0.5.1`のリリースタグを使います。
+未リリースのコミットを試す場合は、両URLのタグ部分を同じ検証済みコミットSHAへ置き換えてください。
 
 ## Editorでの操作
 
@@ -28,6 +28,12 @@ Docker方式には基本パッケージだけを使用できます。追加パ�
 2. Docker方式を選んだ場合だけ、`Window/OpenAPI Code Generator/Setup`でDockerを設定します。
 3. `Window/OpenAPI Code Generator/Generator`に仕様書のパスまたはURLと、`Assets`配下の
    出力フォルダーを入力し、`Generate`を押します。
+
+GitHubのprivateリポジトリにある文書は`https://raw.githubusercontent.com/...`のURLを指定し、
+`Window/OpenAPI Code Generator/Settings`のUser Settingsで**GitHub Token**を設定します。
+どちらのproviderも`https://raw.githubusercontent.com`にだけトークンを送り、リダイレクトのたびに判定し直します。
+トークンはUnityプロジェクト外のユーザー設定ファイルに平文で保存します。Docker方式は入口の文書だけを
+コンテナへ渡すため、相対外部参照は解決できません。分割された文書にはSource Generator方式かローカルの複製を使ってください。
 
 URL入力のSource Generatorは、`Generate`の操作時に取得・更新します。providerが利用できない場合や
 生成が失敗した場合にDockerへ自動切替はしません。進捗、警告、キャンセルはGenerator画面に表示します。

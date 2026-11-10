@@ -32,8 +32,8 @@ packages use the same stable version and tag, initially <code>0.5.0</code>.</p>
 </tr>
 </tbody></table>
 <p>The analyzer DLL remains committed in the add-on for Git URL installation.
-Examples target the planned <code>0.5.0</code> tag; before it exists, replace that ref with
-the reviewed commit SHA in both Git dependencies. Candidate verification does
+Examples use the current <code>0.5.1</code> release tag; to try an unreleased commit, replace
+that ref with the reviewed commit SHA in both Git dependencies. Candidate verification does
 not establish that a version is published.</p>
 <table>
 <thead>
@@ -113,9 +113,9 @@ does not automatically trigger the ordinary PR workflow.</p>
 <h2 id="candidate-contract-and-evidence">Candidate contract and evidence</h2>
 <p>The current package contract is:</p>
 <ul>
-<li>Base <code>0.5.0</code>, minimum Unity <code>2021.3</code>.</li>
-<li>Add-on <code>0.5.0</code>, minimum Unity <code>6000.0</code>.</li>
-<li>Add-on dependency on base <code>0.5.0</code> and
+<li>Base <code>0.5.1</code>, minimum Unity <code>2021.3</code>.</li>
+<li>Add-on <code>0.5.1</code>, minimum Unity <code>6000.0</code>.</li>
+<li>Add-on dependency on base <code>0.5.1</code> and
 <code>com.unity.nuget.newtonsoft-json</code> <code>3.2.2</code>.</li>
 <li>Package versions, dependency version, requested version, and tag match.</li>
 </ul>
@@ -158,8 +158,8 @@ nonzero exits, and mismatched provenance cannot pass the release gate. Unity
 jobs cannot silently repack a missing candidate.</p>
 <p>The final <code>verified-release-&lt;run-id&gt;-&lt;aggregate-execution-attempt&gt;</code> artifact is
 uploaded only after successful aggregation and dry-run validation. It contains:</p>
-<pre><code class="language-text">jp.rhycol.openapicodegen-0.5.0.tgz
-jp.rhycol.openapicodegen.source-generator-0.5.0.tgz
+<pre><code class="language-text">jp.rhycol.openapicodegen-0.5.1.tgz
+jp.rhycol.openapicodegen.source-generator-0.5.1.tgz
 release-manifest.json
 SHA256SUMS
 unity-gate.json
@@ -206,7 +206,7 @@ failure reasons. Arbitrary logs are not emitted as executable workflow commands.
 <h2 id="dry-run-and-publication">Dry-run and publication</h2>
 <p>Start the manual release workflow with an exact 40-character SHA:</p>
 <pre><code class="language-sh">gh workflow run source-generator-release.yml --ref main \
-  -f commit=REPLACE_WITH_FULL_COMMIT_SHA -f version=0.5.0 -F publish=false
+  -f commit=REPLACE_WITH_FULL_COMMIT_SHA -f version=0.5.1 -F publish=false
 </code></pre>
 <p>The default <code>publish=false</code> verifies the full candidate and executes the CD
 script without remote publication. Review the workflow result and complete
@@ -295,7 +295,7 @@ evidence archive uses GNU tar and runs on Linux in Actions.</p>
 <li>Remove <code>jp.rhycol.openapicodegen.source-generator</code> from the Unity project
 manifest and allow Unity to remove its provider define.</li>
 <li>Keep the base package and select the Docker provider in Settings.</li>
-<li>Pin the base to the existing <code>0.4.0</code> release if its <code>0.5.0</code> contract is also
+<li>Pin the base to the previous <code>0.5.0</code> release if its <code>0.5.1</code> contract is also
 implicated.</li>
 <li>Regenerate affected clients and adjust code that depended on generated
 types. Record the project/package changes.</li>

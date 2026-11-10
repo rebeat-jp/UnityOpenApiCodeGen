@@ -20,8 +20,8 @@ For the Source Generator provider, add both packages to the Unity project's
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.0",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.0"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.1",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.1"
   }
 }
 ```
@@ -30,8 +30,8 @@ The base package is also usable by itself with the Docker provider. The
 Source Generator add-on requires Unity 6000.0 or later and
 `com.unity.nuget.newtonsoft-json` `3.2.2`.
 
-These examples use the planned `0.5.0` tag. Until publication, replace it with
-the same reviewed commit SHA in both Git URLs. See the
+These examples use the `0.5.1` release tag. To try an unreleased commit, replace it
+with the same reviewed commit SHA in both Git URLs. See the
 [Source Generator README](../OpenApiCodeGen.SourceGenerator/README.md) for
 input support, references, and generated-code requirements.
 
@@ -43,6 +43,15 @@ input support, references, and generated-code requirements.
    the Docker provider.
 3. In `Window/OpenAPI Code Generator/Generator`, enter the document path or
    URL and an output folder under `Assets`, then press `Generate`.
+
+To read a document from a private GitHub repository, use its
+`https://raw.githubusercontent.com/...` URL and set **GitHub Token** in the
+User Settings section of `Window/OpenAPI Code Generator/Settings`. Both
+providers send the token only to `https://raw.githubusercontent.com`, check
+every redirect hop again, and store it in plain text in the per-user settings
+file outside the Unity project. The Docker provider passes only the root
+document to the container, so it cannot resolve relative external references;
+use the Source Generator provider or a local copy for split documents.
 
 `Generate` is the explicit fetch/refresh action for URL-based Source Generator
 inputs. Provider resolution is strict: an unknown, unavailable, or failing

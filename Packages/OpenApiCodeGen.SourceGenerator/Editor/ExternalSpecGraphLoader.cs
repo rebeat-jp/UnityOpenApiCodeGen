@@ -29,12 +29,29 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         private readonly RawJsonNormalizer jsonNormalizer;
         private readonly RawYamlNormalizer yamlNormalizer;
         private readonly HttpClient httpClient;
+        private readonly GitHubAuthorizationPolicy authorizationPolicy;
+
+        internal const string MissingGitHubTokenHint =
+            " If this document is in a private GitHub repository, set 'GitHub Token' in the OpenAPI CodeGen Setting Menu.";
+        internal const string RejectedGitHubTokenHint =
+            " The configured GitHub Token was rejected or cannot read this repository.";
 
         internal ExternalSpecGraphLoader(
             string projectRoot,
             RawJsonNormalizer jsonNormalizer,
             RawYamlNormalizer yamlNormalizer)
+            : this(projectRoot, jsonNormalizer, yamlNormalizer, GitHubAuthorizationPolicy.Default)
         {
+        }
+
+        internal ExternalSpecGraphLoader(
+            string projectRoot,
+            RawJsonNormalizer jsonNormalizer,
+            RawYamlNormalizer yamlNormalizer,
+            GitHubAuthorizationPolicy authorizationPolicy)
+        {
+            this.authorizationPolicy = authorizationPolicy
+                ?? throw new ArgumentNullException(nameof(authorizationPolicy));
             if (string.IsNullOrWhiteSpace(projectRoot))
             {
                 throw new ArgumentException("A project root is required.", nameof(projectRoot));
@@ -47,14 +64,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             var handler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false };
             httpClient = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
             httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/json, application/yaml, text/yaml, */*;q=0.1");
-            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("UnityOpenApiCodeGen/0.5.0");
+            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("UnityOpenApiCodeGen/0.5.1");
         }
 
         internal async Task<NormalizedSpecGraph> LoadAsync(
             string source,
             string specId,
             CancellationToken cancellationToken,
-            IProgress<GenerationProgress>? progress = null)
+            IProgress<GenerationProgress>? progress = null,
+            string? gitHubToken = null)
         {
             if (string.IsNullOrWhiteSpace(source))
             {
@@ -66,7 +84,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             {
                 graphCancellation.CancelAfter(
                     TimeSpan.FromSeconds(NormalizedSpecBundleConstants.GraphTimeoutSeconds));
-                var graph = new GraphBuilder(this, specId, graphCancellation.Token, progress);
+                var graph = new GraphBuilder(
+                    this,
+                    specId,
+                    graphCancellation.Token,
+                    progress,
+                    gitHubToken);
                 try
                 {
                     return await graph.LoadAsync(source).ConfigureAwait(false);
@@ -114,6 +137,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             private readonly string specId;
             private readonly CancellationToken cancellationToken;
             private readonly IProgress<GenerationProgress>? progress;
+            // Never persisted, logged, or included in messages. Attached per request only when
+            // the request URI is an allowed GitHub origin.
+            private readonly string? gitHubToken;
             private readonly Dictionary<string, GraphDocument> documentsByKey =
                 new Dictionary<string, GraphDocument>(StringComparer.Ordinal);
             private readonly List<GraphDocument> documents = new List<GraphDocument>();
@@ -137,12 +163,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 ExternalSpecGraphLoader owner,
                 string specId,
                 CancellationToken cancellationToken,
-                IProgress<GenerationProgress>? progress)
+                IProgress<GenerationProgress>? progress,
+                string? gitHubToken)
             {
                 this.owner = owner;
                 this.specId = specId;
                 this.cancellationToken = cancellationToken;
                 this.progress = progress;
+                this.gitHubToken = GitHubAuthorizationPolicy.NormalizeToken(gitHubToken);
             }
 
             internal async Task<NormalizedSpecGraph> LoadAsync(string source)
@@ -566,6 +594,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                         using (var requestMessage = new HttpRequestMessage(HttpMethod.Get, current))
                         using (CancellationTokenSource requestCancellation = CreateRequestCancellation())
                         {
+                            // Evaluate every hop independently so a redirect to another origin
+                            // never receives the token.
+                            string token;
+                            bool sentGitHubToken =
+                                owner.authorizationPolicy.TryGetToken(current, gitHubToken, out token);
+                            if (sentGitHubToken)
+                            {
+                                requestMessage.Headers.Authorization = new AuthenticationHeaderValue(
+                                    GitHubAuthorizationPolicy.AuthorizationScheme,
+                                    token);
+                            }
                             HttpResponseMessage response;
                             try
                             {
@@ -639,9 +678,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                                 throw new TrustedRemoteFetchException(
                                     string.Format(
                                         CultureInfo.InvariantCulture,
-                                        "The OpenAPI URL returned HTTP {0}: {1}",
+                                        "The OpenAPI URL returned HTTP {0}: {1}{2}",
                                         (int)response.StatusCode,
-                                        RedactUri(current)));
+                                        RedactUri(current),
+                                        GetGitHubAccessHint(response.StatusCode, current, sentGitHubToken)));
                             }
 
                             byte[] bytes;
@@ -676,6 +716,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                         }
                     }
                 }
+            }
+
+            private string GetGitHubAccessHint(HttpStatusCode statusCode, Uri requestUri, bool sentGitHubToken)
+            {
+                if ((statusCode != HttpStatusCode.Unauthorized &&
+                     statusCode != HttpStatusCode.Forbidden &&
+                     statusCode != HttpStatusCode.NotFound) ||
+                    !owner.authorizationPolicy.IsAllowedOrigin(requestUri))
+                {
+                    return string.Empty;
+                }
+
+                return sentGitHubToken ? RejectedGitHubTokenHint : MissingGitHubTokenHint;
             }
 
             private CancellationTokenSource CreateRequestCancellation()

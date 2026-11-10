@@ -19,18 +19,18 @@ Add both packages to the Unity project's `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.0",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.0"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.1",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.1"
   }
 }
 ```
 
-The add-on requires Unity `6000.0` or later, base package `0.5.0`, and
+The add-on requires Unity `6000.0` or later, base package `0.5.1`, and
 `com.unity.nuget.newtonsoft-json` `3.2.2`. Select **Source Generator (Beta)** in
 `Window/OpenAPI Code Generator/Settings`, then use
 `Window/OpenAPI Code Generator/Generator`.
 
-The examples target the planned `0.5.0` tag. Until it is published, use the
+The examples use the `0.5.1` release tag. To try an unreleased commit, use the
 same reviewed commit SHA in both Git URLs.
 
 The target assembly definition must directly reference
@@ -48,6 +48,24 @@ following are rejected: whitespace or userinfo in a URL, non-HTTP(S) schemes,
 HTTPS-to-HTTP direct references or redirects, explicit `file:` references, and
 remote documents that reference local files. Local external files must remain
 inside the Unity project after real-path and symbolic-link checks.
+
+### Private GitHub repositories
+
+To read a document from a private GitHub repository, enter its
+`https://raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>` URL and set
+**GitHub Token** under User Settings in `Window/OpenAPI Code Generator/Settings`.
+The token is sent as `Authorization: Bearer` only to requests whose origin is
+exactly `https://raw.githubusercontent.com`. Every redirect hop is checked
+again, so a redirect to another host never receives the token. Relative
+external references in the same repository are fetched with the token.
+
+The token is stored in plain text in the per-user settings file outside the
+Unity project. It is never written to project settings, Bundle v2, the
+manifest, or diagnostics. Use a fine-grained personal access token limited to
+the repository with read-only Contents permission. `github.com` pages, the REST
+contents API, and GitHub Enterprise Server hosts are not supported. When an
+allowed GitHub URL returns 401, 403, or 404, the error says whether the token
+is missing or was rejected.
 
 For a remote document, the final URL extension and response `Content-Type`
 determine the format. If both are recognized they must agree; one recognized

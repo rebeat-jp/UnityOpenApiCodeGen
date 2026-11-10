@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Unity.OpenApiCodeGen.Editor")]
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Unity.OpenApiCodeGen.SourceGenerator.Editor")]
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Unity.OpenApiCodeGen.Test")]
 
 namespace Rhycol.OpenApiCodeGen.Editor.Generation
 {
@@ -77,6 +78,12 @@ namespace Rhycol.OpenApiCodeGen.Editor.Generation
         public string GeneratedNamespace { get; }
 
         internal IProgress<GenerationProgress>? Progress { get; set; }
+
+        /// <summary>
+        /// User-local GitHub token. Providers must send it only where
+        /// <see cref="GitHubAuthorizationPolicy"/> allows and never persist or log it.
+        /// </summary>
+        internal string? GitHubToken { get; set; }
 
         internal void ReportProgress(double value, string stage)
         {
