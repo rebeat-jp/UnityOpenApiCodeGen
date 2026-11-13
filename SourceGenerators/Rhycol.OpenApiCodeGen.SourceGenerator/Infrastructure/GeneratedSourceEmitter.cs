@@ -64,6 +64,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     break;
                 case GeneratedTypeKind.Named:
                 case GeneratedTypeKind.NamedEnum:
+                case GeneratedTypeKind.File:
                     name = type.Name;
                     break;
                 case GeneratedTypeKind.Array:

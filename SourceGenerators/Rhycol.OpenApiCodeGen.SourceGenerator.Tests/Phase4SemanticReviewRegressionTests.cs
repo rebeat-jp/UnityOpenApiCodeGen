@@ -644,7 +644,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Phase4GeneratorExecution execution =
                 Phase4GeneratorTestHarness.GenerateAndCompile(Document);
 
-            Assert.Empty(execution.RunResult.Diagnostics);
+            // P4: the allOf siblings cannot be generated as a typed error, so OACG108 is reported (no error).
+            Assert.All(execution.RunResult.Diagnostics, diagnostic => Assert.Equal("OACG108", diagnostic.Id));
             Assert.Empty(execution.CompilationErrors);
         }
 
@@ -694,7 +695,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void SuccessfulPlainTextBodyRemainsUnsupported()
+        // P4 (G22): a text/plain success body is supported; the method returns the string.
+        public void SuccessfulPlainTextBodyReturnsString()
         {
             const string Document = @"{
   ""openapi"": ""3.1.0"",
@@ -706,11 +708,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     } } }
   } } }
 }";
-            Diagnostic diagnostic = Assert.Single(
-                Phase4GeneratorTestHarness.GenerateAndCompile(Document).RunResult.Diagnostics);
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(Document);
 
-            Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("Only application/json", diagnostic.GetMessage());
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.Contains("Task<string> getValues", execution.GeneratedSource);
         }
 
         [Fact]

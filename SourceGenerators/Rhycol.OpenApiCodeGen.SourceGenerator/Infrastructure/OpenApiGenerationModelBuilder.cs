@@ -34,6 +34,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             _options = options;
             ReserveTypeName(options.ApiName, document.Location, emitsDeclaration: true);
             ReserveTypeName(options.ApiName + "Exception", document.Location, emitsDeclaration: true);
+            _fileParameterTypeName = options.ApiName + "FileParameter";
+            if (!_typeNameAllocations.ContainsKey(_fileParameterTypeName))
+            {
+                ReserveTypeName(_fileParameterTypeName, document.Location, emitsDeclaration: false);
+            }
+
             foreach (string memberName in new[]
                      {
                          "Servers", "BuildServerUrl", "ExpandServerUrl",
@@ -83,7 +89,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 _typeNameCollisions.ToArray(),
                 _document.Warnings,
                 _unions.OrderBy(static value => value.Name, StringComparer.Ordinal).ToArray(),
-                _document.Servers);
+                _document.Servers,
+                _usesFileParameter ? _fileParameterTypeName : null);
         }
 
         private void AllocateComponentTypeNames()
@@ -165,6 +172,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     "ReadJsonResponseBodyAsync",
                     "HasPreamble"
                 };
+                usedParameterNames.UnionWith(ReservedBodyLocalNames);
                 var parameters = new List<GeneratedParameterModel>();
                 foreach (OpenApiSemanticParameter parameter in operation.Parameters
                              .OrderBy(static value => value.Identity, StringComparer.Ordinal))
@@ -189,34 +197,42 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         parameter.Deprecated));
                 }
 
-                GeneratedRequestBodyModel? requestBody = null;
-                if (operation.RequestBody is not null)
+                GeneratedRequestBodyModel? requestBody = operation.RequestBody is null
+                    ? null
+                    : BuildRequestBody(operation, usedParameterNames);
+                BuildResponses(
+                    operation,
+                    methodName,
+                    usedMethodNames,
+                    out GeneratedTypeModel? responseType,
+                    out GeneratedResponsePlanModel? responsePlan,
+                    out IReadOnlyList<GeneratedErrorResponseModel> errorResponses);
+                if (requestBody is not null)
                 {
-                    string parameterName = AllocateUniqueName("body", usedParameterNames);
-                    GeneratedTypeModel resolvedType = ResolveType(operation.RequestBody.Schema);
-                    GeneratedTypeModel type = resolvedType.WithNullable(
-                        resolvedType.Nullable ||
-                        operation.RequestBody.Schema.Nullable ||
-                        !operation.RequestBody.Required);
-                    string? specifiedParameterName = !operation.RequestBody.Required &&
-                                                     (resolvedType.Nullable || operation.RequestBody.Schema.Nullable)
-                        ? AllocateUniqueName(parameterName + "Specified", usedParameterNames)
-                        : null;
-                    requestBody = new GeneratedRequestBodyModel(
-                        parameterName,
-                        operation.RequestBody.Required,
-                        operation.RequestBody.MediaType,
-                        type,
-                        specifiedParameterName);
+                    foreach (GeneratedBodyVariantModel variant in requestBody.Variants)
+                    {
+                        variant.MethodName = variant.MethodSuffix.Length == 0
+                            ? methodName
+                            : AllocateUniqueName(methodName + variant.MethodSuffix, usedMethodNames);
+                    }
                 }
 
-                GeneratedTypeModel? responseType = null;
-                if (operation.ResponseSchema is not null)
+                if (responsePlan?.HttpInfo is GeneratedHttpInfoModel httpInfo)
                 {
-                    GeneratedTypeModel resolvedType = ResolveType(operation.ResponseSchema);
-                    responseType = resolvedType.WithNullable(
-                        resolvedType.Nullable || operation.ResponseSchema.Nullable);
+                    if (requestBody is not null)
+                    {
+                        foreach (GeneratedBodyVariantModel variant in requestBody.Variants)
+                        {
+                            variant.HttpInfoMethodName = AllocateUniqueName(
+                                variant.MethodName + "WithHttpInfo", usedMethodNames);
+                        }
+                    }
+                    else
+                    {
+                        httpInfo.MethodName = AllocateUniqueName(methodName + "WithHttpInfo", usedMethodNames);
+                    }
                 }
+
                 result.Add(new GeneratedOperationModel(
                     methodName,
                     operation.Summary,
@@ -229,7 +245,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     operation.ResponseMediaTypes,
                     operation.Description,
                     operation.Deprecated,
-                    operation.Servers));
+                    operation.Servers,
+                    responsePlan,
+                    errorResponses));
             }
 
             return result;
@@ -271,6 +289,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     return new GeneratedTypeModel(GeneratedTypeKind.Any, true);
                 case OpenApiSemanticSchemaKind.FreeObject:
                     return new GeneratedTypeModel(GeneratedTypeKind.FreeObject, schema.Nullable);
+                case OpenApiSemanticSchemaKind.Binary:
+                    _usesFileParameter = true;
+                    return new GeneratedTypeModel(GeneratedTypeKind.File, schema.Nullable, _fileParameterTypeName);
                 case OpenApiSemanticSchemaKind.Map:
                     return new GeneratedTypeModel(
                         GeneratedTypeKind.Map,

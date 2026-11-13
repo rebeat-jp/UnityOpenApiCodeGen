@@ -143,8 +143,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiSourceLocation location,
             string description = "",
             bool deprecated = false,
-            IReadOnlyList<OpenApiSemanticServer>? servers = null)
+            IReadOnlyList<OpenApiSemanticServer>? servers = null,
+            IReadOnlyList<OpenApiSemanticResponse>? responses = null)
         {
+            Responses = responses ?? Array.Empty<OpenApiSemanticResponse>();
             Description = description ?? string.Empty;
             Deprecated = deprecated;
             Servers = servers ?? Array.Empty<OpenApiSemanticServer>();
@@ -187,6 +189,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal IReadOnlyList<string> SuccessStatusCodes { get; }
 
         internal IReadOnlyDictionary<string, IReadOnlyList<string>> ResponseMediaTypes { get; }
+
+        /// <summary>Every declared response (success, error, redirect) with its contents and headers.</summary>
+        internal IReadOnlyList<OpenApiSemanticResponse> Responses { get; }
 
         internal OpenApiSourceLocation Location { get; }
     }
@@ -255,13 +260,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             bool required,
             string mediaType,
             OpenApiSemanticSchema schema,
-            OpenApiSourceLocation location)
+            OpenApiSourceLocation location,
+            IReadOnlyList<OpenApiSemanticMediaContent>? contents = null)
         {
             Required = required;
             MediaType = mediaType;
             Schema = schema;
             Location = location;
+            Contents = contents ?? Array.Empty<OpenApiSemanticMediaContent>();
         }
+
+        /// <summary>
+        /// Every supported media type in priority order (JSON, form-urlencoded, multipart, text,
+        /// binary). The first one is the primary content; MediaType and Schema describe it.
+        /// </summary>
+        internal IReadOnlyList<OpenApiSemanticMediaContent> Contents { get; }
 
         internal bool Required { get; }
 
@@ -282,7 +295,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         Array,
         Reference,
         Enum,
-        // Any, Map, FreeObject and Union are produced by the parser; Binary is not yet.
+        // Any, Map, FreeObject, Union and Binary (format: binary, outside JSON) are produced by the parser.
         Any,
         Map,
         Union,
@@ -325,8 +338,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<string?>? enumMemberDescriptions = null,
             OpenApiSemanticDiscriminator? discriminator = null,
             bool unionIsOneOf = true,
-            IReadOnlyList<OpenApiSemanticSchema>? notSchemas = null)
+            IReadOnlyList<OpenApiSemanticSchema>? notSchemas = null,
+            string contentMediaType = "")
         {
+            ContentMediaType = contentMediaType ?? string.Empty;
             Discriminator = discriminator;
             UnionIsOneOf = unionIsOneOf;
             NotSchemas = notSchemas ?? Array.Empty<OpenApiSemanticSchema>();
@@ -433,6 +448,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// </summary>
         internal IReadOnlyList<OpenApiSemanticSchema> NotSchemas { get; }
 
+        /// <summary>contentMediaType of a string schema without contentEncoding (a file part in multipart); empty otherwise.</summary>
+        internal string ContentMediaType { get; }
+
         internal OpenApiSemanticSchema WithNullable(bool nullable)
         {
             return nullable == Nullable ? this : Clone(nullable, Annotations, NotSchemas);
@@ -474,7 +492,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 EnumMemberDescriptions,
                 Discriminator,
                 UnionIsOneOf,
-                notSchemas);
+                notSchemas,
+                ContentMediaType);
         }
 
         internal OpenApiSourceLocation Location { get; }

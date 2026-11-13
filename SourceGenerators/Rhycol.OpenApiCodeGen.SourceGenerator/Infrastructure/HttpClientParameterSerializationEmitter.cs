@@ -61,14 +61,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         /// <summary>True when any parameter is serialized through the generated helper.</summary>
         internal bool UsesHelpers =>
-            _model.Operations.Any(operation => operation.Parameters.Any(UsesHelper));
+            _model.Operations.Any(operation => operation.Parameters.Any(UsesHelper)) ||
+            _model.Operations.Any(static operation => operation.RequestBody is not null &&
+                operation.RequestBody.Variants.Any(static variant => variant.Kind == GeneratedBodyKind.FormUrlEncoded));
 
         internal bool HasCookieParameters(GeneratedOperationModel operation)
         {
             return operation.Parameters.Any(static value => value.LocationName == "cookie");
         }
 
-        private static string CreatePrefix(OpenApiGenerationModel model, string seed)
+        internal static string CreatePrefix(OpenApiGenerationModel model, string seed)
         {
             var occupied = new HashSet<string>(StringComparer.Ordinal) { model.ApiName };
             foreach (GeneratedOperationModel operation in model.Operations)
@@ -455,6 +457,53 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append(' ', indent).Append("string? ").Append(resultName).Append(" = ").Append(SerializeName)
                 .Append('(').Append(common).Append(", ").Append(KindConst(kind))
                 .Append(", null, null, ").Append(PairsVar).AppendLine(");");
+        }
+
+        // ---- form-urlencoded fields (P4) --------------------------------------------------------------
+
+        /// <summary>
+        /// Appends one application/x-www-form-urlencoded field of a body DTO to <paramref name="collection"/>
+        /// (a List of string): the member is serialized with the form style rules of its Encoding Object
+        /// (query style: style / explode / allowReserved), so an array becomes name=a&amp;name=b or name=a,b.
+        /// </summary>
+        internal void AppendFormField(
+            StringBuilder source,
+            GeneratedParameterModel parameter,
+            int indentation,
+            string collection)
+        {
+            AppendGuarded(source, parameter, indentation, (indent) =>
+            {
+                AppendSerializedValue(source, parameter, indent, ResultVar);
+                source.Append(' ', indent).AppendLine("if (" + ResultVar + " != null && " + ResultVar + ".Length > 0)");
+                source.Append(' ', indent).AppendLine("{");
+                source.Append(' ', indent + 4).AppendLine(collection + ".Add(" + ResultVar + ");");
+                source.Append(' ', indent).AppendLine("}");
+            });
+        }
+
+        /// <summary>A nested value of a urlencoded body: its JSON text becomes the (percent-encoded) field value.</summary>
+        internal void AppendFormJsonField(
+            StringBuilder source,
+            GeneratedFormFieldModel field,
+            string valueExpression,
+            int indentation,
+            string collection)
+        {
+            string? condition = field.Required
+                ? null
+                : field.Type.IsValueType ? valueExpression + ".HasValue" : valueExpression + " != null";
+            if (condition is not null)
+            {
+                source.Append(' ', indentation).Append("if (").Append(condition).AppendLine(")");
+            }
+
+            source.Append(' ', indentation).AppendLine("{");
+            source.Append(' ', indentation + 4).Append(collection).Append(".Add(")
+                .Append(EncodeName).Append('(').Append(GeneratedSourceEmitter.StringLiteral(field.WireName)).Append(", false) + \"=\" + ")
+                .Append(EncodeName).Append('(').Append(_jsonSerializerName).Append('(').Append(valueExpression).Append("), ")
+                .Append(field.AllowReserved ? "true" : "false").AppendLine("));");
+            source.Append(' ', indentation).AppendLine("}");
         }
 
         private static void ThrowIfNotScalar(GeneratedTypeModel type, GeneratedParameterModel parameter)

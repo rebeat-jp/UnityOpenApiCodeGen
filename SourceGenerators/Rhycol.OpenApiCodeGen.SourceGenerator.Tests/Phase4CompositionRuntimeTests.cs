@@ -1031,13 +1031,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
             Generate(Document("{'oneOf':[{'type':'integer'},{'type':'string'}]}"));
 
-            Diagnostic oneOfAnyOf = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
-                Document("{'anyOf':[{'type':'string'},{'type':'integer'}]}")).RunResult.Diagnostics);
-            Assert.Equal("OACG105", oneOfAnyOf.Id);
-            Diagnostic differentMembers = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
-                Document("{'oneOf':[{'type':'string'},{'type':'boolean'}]}")).RunResult.Diagnostics);
-            Assert.Equal("OACG105", differentMembers.Id);
-            Assert.Contains("logical path '/paths/~1p/get/responses/201'", differentMembers.GetMessage());
+            // P4 (G23): different union contracts get a result wrapper (was OACG105).
+            foreach (string created in new[]
+            {
+                "{'anyOf':[{'type':'string'},{'type':'integer'}]}",
+                "{'oneOf':[{'type':'string'},{'type':'boolean'}]}"
+            })
+            {
+                Phase4GeneratorExecution wrapped = Phase4GeneratorTestHarness.GenerateAndCompile(Document(created));
+                Assert.Empty(wrapped.RunResult.Diagnostics);
+                Assert.Empty(wrapped.CompilationErrors);
+                Assert.Contains("Status201", wrapped.GeneratedSource);
+            }
         }
 
         [Fact]
@@ -1053,14 +1058,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Generate(Document(
                 "{'type':'object','additionalProperties':{'type':'integer'}}",
                 "{'type':'object','additionalProperties':{'type':'integer'}}"));
-            Diagnostic any = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
-                Document("{}", "{'type':'object'}")).RunResult.Diagnostics);
-            Assert.Equal("OACG105", any.Id);
-            Diagnostic map = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
-                Document(
+            // P4 (G23): contracts that differ get a result wrapper (was OACG105).
+            foreach (Phase4GeneratorExecution wrapped in new[]
+            {
+                Phase4GeneratorTestHarness.GenerateAndCompile(Document("{}", "{'type':'object'}")),
+                Phase4GeneratorTestHarness.GenerateAndCompile(Document(
                     "{'type':'object','additionalProperties':{'type':'integer'}}",
-                    "{'type':'object','additionalProperties':{'type':'string'}}")).RunResult.Diagnostics);
-            Assert.Equal("OACG105", map.Id);
+                    "{'type':'object','additionalProperties':{'type':'string'}}"))
+            })
+            {
+                Assert.Empty(wrapped.RunResult.Diagnostics);
+                Assert.Empty(wrapped.CompilationErrors);
+                Assert.Contains("Status201", wrapped.GeneratedSource);
+            }
         }
 
         // ---- review follow-ups ---------------------------------------------------------------------

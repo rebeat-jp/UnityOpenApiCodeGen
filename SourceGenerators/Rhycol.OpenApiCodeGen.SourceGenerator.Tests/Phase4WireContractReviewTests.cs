@@ -408,11 +408,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "{\"type\":\"string\",\"enum\":[\"a,b\",\"c\"]}",
                 "{\"type\":\"string\",\"enum\":[\"a\",\"b,c\"]}");
 
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(document)
-                .RunResult.Diagnostics);
-
-            Assert.Contains("same JSON body contract", diagnostic.GetMessage());
-            Assert.Contains("/responses/201", diagnostic.GetMessage());
+            // P4 (G23): distinct contracts get a status-keyed result wrapper instead of OACG105.
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.Contains("Status200", execution.GeneratedSource);
+            Assert.Contains("Status201", execution.GeneratedSource);
         }
 
         [Fact]
@@ -423,11 +424,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"a\":{\"type\":\"string\"}," +
                 "\"b\":{\"type\":\"string\"}}}");
 
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(document)
-                .RunResult.Diagnostics);
-
-            Assert.Contains("same JSON body contract", diagnostic.GetMessage());
-            Assert.Contains("/responses/201", diagnostic.GetMessage());
+            // P4 (G23): distinct contracts get a status-keyed result wrapper instead of OACG105.
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.Contains("Status200", execution.GeneratedSource);
+            Assert.Contains("Status201", execution.GeneratedSource);
         }
 
         private static string TwoResponseDocument(string firstSchema, string secondSchema)
