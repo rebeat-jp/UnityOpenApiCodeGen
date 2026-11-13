@@ -291,6 +291,7 @@ Bundle and semantic failures use stable diagnostics including:
 | `OACG105` | Inconsistent response |
 | `OACG106` | Invalid identifier |
 | `OACG107` | Warning: a generated type name was disambiguated with a deterministic suffix |
+| `OACG108` | Warning: an OpenAPI element was ignored; reported with its logical path and never changes the wire contract |
 
 The analyzer reads both Bundle v1 and v2. Bundle v1 remains available for
 backward compatibility; the Editor always writes Bundle v2. The complete

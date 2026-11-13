@@ -63,7 +63,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 _dtos.OrderBy(static value => value.Name, StringComparer.Ordinal).ToArray(),
                 _enums.OrderBy(static value => value.Name, StringComparer.Ordinal).ToArray(),
                 operations,
-                _typeNameCollisions.ToArray());
+                _typeNameCollisions.ToArray(),
+                _document.Warnings);
         }
 
         private void AllocateComponentTypeNames()

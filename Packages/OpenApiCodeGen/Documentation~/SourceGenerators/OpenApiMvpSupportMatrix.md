@@ -21,7 +21,7 @@ canonical Normalized Spec Bundle v2へ正規化し、Analyzerは1 specIdにつ�
 生成器は、wire formatに影響する未対応要素を黙って省略または推測しません。
 Unsupportedに分類された要素と、Partialの制約外へ出た要素は診断を報告し、生成を完了しません。
 入力・bundle・definitionの既存診断`OACG001`–`OACG009`に加え、semantic generationでは
-`OACG100`–`OACG106`を使用します。型名の重複をsuffixで解消した場合はwarning `OACG107`を報告します。
+`OACG100`–`OACG106`を使用します。型名の重複をsuffixで解消した場合はwarning `OACG107`を、無視した要素があればwarning `OACG108`を報告します。
 
 | Status | 意味 |
 | --- | --- |
@@ -251,6 +251,7 @@ prevents Json.NET from mistaking a schema boolean for a presence flag.
 | `OACG105` | InconsistentResponse |
 | `OACG106` | InvalidIdentifier |
 | `OACG107` | Warning: deterministic type-name collision resolution |
+| `OACG108` | Warning: ignored OpenAPI element, reported with its logical path (never changes the wire contract) |
 
 ## 検証済み環境
 

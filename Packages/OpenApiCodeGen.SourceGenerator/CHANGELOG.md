@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Add warning `OACG108` ("Ignored OpenAPI element"), reported with a logical path when the analyzer deliberately ignores an OpenAPI element. No element is reported yet.
+
 ## [0.5.1] - 2026-11-10
 
 ### Added

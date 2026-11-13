@@ -5,7 +5,7 @@ using System.Linq;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator
 {
-    internal sealed class OpenApiSemanticParser
+    internal sealed partial class OpenApiSemanticParser
     {
         private const string OpenApi31BaseDialect = "https://spec.openapis.org/oas/3.1/dialect/base";
 
@@ -94,7 +94,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        internal static OpenApiSemanticDocument Parse(SpecNode root)
+        internal static OpenApiSemanticDocument Parse(
+            SpecNode root,
+            Action<OpenApiSemanticParser, SpecNode>? injectWarnings = null)
         {
             if (root is null)
             {
@@ -106,10 +108,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string version = RequireString(versionNode, "The 'openapi' field must be a string.");
             int minorVersion = ParseSupportedVersion(version, versionNode);
             var parser = new OpenApiSemanticParser(root, minorVersion);
+            parser._injectWarnings = injectWarnings;
             return parser.ParseDocument();
         }
 
-        internal static OpenApiSemanticDocument Parse(NormalizedSpecBundle bundle)
+        internal static OpenApiSemanticDocument Parse(
+            NormalizedSpecBundle bundle,
+            Action<OpenApiSemanticParser, SpecNode>? injectWarnings = null)
         {
             if (bundle is null)
             {
@@ -140,6 +145,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             var parser = new OpenApiSemanticParser(bundle.Root, minorVersion, bundle);
+            parser._injectWarnings = injectWarnings;
             return parser.ParseDocument();
         }
 
@@ -147,6 +153,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             try
             {
+                _injectWarnings?.Invoke(this, _root);
                 ValidateRootFeatures();
                 ParseInfo(RequireProperty(_root, "info"));
                 string baseUrl = ParseBaseUrl(GetProperty(_root, "servers"));
@@ -160,7 +167,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     baseUrl,
                     schemas,
                     operations,
-                    CreateLocation(_root));
+                    CreateLocation(_root),
+                    _warnings.ToList());
             }
             catch (OpenApiSemanticException exception) when (_bundle is not null &&
                                                               string.IsNullOrEmpty(exception.Location.SourcePath))

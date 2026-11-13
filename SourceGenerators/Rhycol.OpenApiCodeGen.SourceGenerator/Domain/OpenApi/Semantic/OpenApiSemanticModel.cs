@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator
 {
@@ -97,8 +98,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string baseUrl,
             IReadOnlyDictionary<NormalizedSpecNodeIdentity, OpenApiSemanticSchema> schemas,
             IReadOnlyList<OpenApiSemanticOperation> operations,
-            OpenApiSourceLocation location)
+            OpenApiSourceLocation location,
+            IReadOnlyList<OpenApiSemanticWarning>? warnings = null)
         {
+            Warnings = warnings ?? Array.Empty<OpenApiSemanticWarning>();
             MinorVersion = minorVersion;
             BaseUrl = baseUrl ?? string.Empty;
             Schemas = schemas ?? throw new ArgumentNullException(nameof(schemas));
@@ -115,6 +118,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal IReadOnlyList<OpenApiSemanticOperation> Operations { get; }
 
         internal OpenApiSourceLocation Location { get; }
+
+        /// <summary>Warnings about ignored elements (source of OACG108).</summary>
+        internal IReadOnlyList<OpenApiSemanticWarning> Warnings { get; }
     }
 
     internal sealed class OpenApiSemanticOperation
@@ -227,7 +233,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         Object,
         Array,
         Reference,
-        Enum
+        Enum,
+        // Added for the spec-coverage work. The parser does not produce these yet.
+        Any,
+        Map,
+        Union,
+        Binary
     }
 
     internal sealed class OpenApiSemanticSchema
@@ -243,8 +254,44 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<string> enumValues,
             OpenApiSourceLocation location,
             NormalizedSpecNodeIdentity identity = default,
-            NormalizedSpecNodeIdentity referenceIdentity = default)
+            NormalizedSpecNodeIdentity referenceIdentity = default,
+            OpenApiSemanticAnnotations? annotations = null,
+            IReadOnlyList<OpenApiSemanticLiteral>? typedEnumValues = null,
+            OpenApiSemanticSchema? valueSchema = null,
+            IReadOnlyList<OpenApiSemanticSchema>? unionMembers = null)
         {
+            Annotations = annotations ?? OpenApiSemanticAnnotations.Empty;
+            ValueSchema = valueSchema;
+            UnionMembers = unionMembers ?? Array.Empty<OpenApiSemanticSchema>();
+            if (typedEnumValues is not null)
+            {
+                TypedEnumValues = typedEnumValues;
+                var rawValues = new List<string>(typedEnumValues.Count);
+                foreach (OpenApiSemanticLiteral literal in typedEnumValues)
+                {
+                    rawValues.Add(literal.RawText);
+                }
+
+                if (enumValues is not null && enumValues.Count > 0 && !enumValues.SequenceEqual(rawValues))
+                {
+                    throw new ArgumentException(
+                        "enumValues and typedEnumValues disagree; pass only one of them.",
+                        nameof(typedEnumValues));
+                }
+
+                enumValues = rawValues;
+            }
+            else
+            {
+                var literals = new List<OpenApiSemanticLiteral>();
+                foreach (string value in enumValues ?? Array.Empty<string>())
+                {
+                    literals.Add(OpenApiSemanticLiteral.FromString(value));
+                }
+
+                TypedEnumValues = literals;
+            }
+
             Kind = kind;
             SuggestedName = suggestedName ?? string.Empty;
             Format = format ?? string.Empty;
@@ -272,7 +319,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         internal OpenApiSemanticSchema? ItemSchema { get; }
 
+        /// <summary>Wire strings of the enum values (RawText of TypedEnumValues).</summary>
         internal IReadOnlyList<string> EnumValues { get; }
+
+        /// <summary>Typed enum values. Existing string enums become String literals.</summary>
+        internal IReadOnlyList<OpenApiSemanticLiteral> TypedEnumValues { get; }
+
+        /// <summary>description / deprecated / readOnly / writeOnly / default / const.</summary>
+        internal OpenApiSemanticAnnotations Annotations { get; }
+
+        /// <summary>Value schema when Kind is Map.</summary>
+        internal OpenApiSemanticSchema? ValueSchema { get; }
+
+        /// <summary>Members when Kind is Union.</summary>
+        internal IReadOnlyList<OpenApiSemanticSchema> UnionMembers { get; }
 
         internal OpenApiSourceLocation Location { get; }
 
