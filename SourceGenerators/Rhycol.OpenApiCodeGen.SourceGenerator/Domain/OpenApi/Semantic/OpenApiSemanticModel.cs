@@ -99,8 +99,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyDictionary<NormalizedSpecNodeIdentity, OpenApiSemanticSchema> schemas,
             IReadOnlyList<OpenApiSemanticOperation> operations,
             OpenApiSourceLocation location,
-            IReadOnlyList<OpenApiSemanticWarning>? warnings = null)
+            IReadOnlyList<OpenApiSemanticWarning>? warnings = null,
+            IReadOnlyList<OpenApiSemanticServer>? servers = null)
         {
+            Servers = servers ?? Array.Empty<OpenApiSemanticServer>();
             Warnings = warnings ?? Array.Empty<OpenApiSemanticWarning>();
             MinorVersion = minorVersion;
             BaseUrl = baseUrl ?? string.Empty;
@@ -112,6 +114,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal int MinorVersion { get; }
 
         internal string BaseUrl { get; }
+
+        /// <summary>Document-level servers. BaseUrl is the default URL of the first one.</summary>
+        internal IReadOnlyList<OpenApiSemanticServer> Servers { get; }
 
         internal IReadOnlyDictionary<NormalizedSpecNodeIdentity, OpenApiSemanticSchema> Schemas { get; }
 
@@ -135,8 +140,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiSemanticSchema? responseSchema,
             IReadOnlyList<string> successStatusCodes,
             IReadOnlyDictionary<string, IReadOnlyList<string>> responseMediaTypes,
-            OpenApiSourceLocation location)
+            OpenApiSourceLocation location,
+            string description = "",
+            bool deprecated = false,
+            IReadOnlyList<OpenApiSemanticServer>? servers = null)
         {
+            Description = description ?? string.Empty;
+            Deprecated = deprecated;
+            Servers = servers ?? Array.Empty<OpenApiSemanticServer>();
             OperationId = operationId;
             Summary = summary ?? string.Empty;
             HttpMethod = httpMethod;
@@ -152,6 +163,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal string OperationId { get; }
 
         internal string Summary { get; }
+
+        internal string Description { get; }
+
+        internal bool Deprecated { get; }
+
+        /// <summary>
+        /// Servers declared on the operation, otherwise on its Path Item. Empty when the operation
+        /// uses the document-level servers.
+        /// </summary>
+        internal IReadOnlyList<OpenApiSemanticServer> Servers { get; }
 
         internal string HttpMethod { get; }
 
@@ -177,14 +198,41 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string locationName,
             bool required,
             OpenApiSemanticSchema schema,
-            OpenApiSourceLocation location)
+            OpenApiSourceLocation location,
+            string style = "",
+            bool explode = false,
+            bool allowReserved = false,
+            string contentMediaType = "",
+            string description = "",
+            bool deprecated = false)
         {
             Name = name;
             LocationName = locationName;
             Required = required;
             Schema = schema;
             Location = location;
+            Style = style ?? string.Empty;
+            Explode = explode;
+            AllowReserved = allowReserved;
+            ContentMediaType = contentMediaType ?? string.Empty;
+            Description = description ?? string.Empty;
+            Deprecated = deprecated;
         }
+
+        /// <summary>Effective serialization style (the default for the location when omitted).</summary>
+        internal string Style { get; }
+
+        /// <summary>Effective explode value (the default for the style when omitted).</summary>
+        internal bool Explode { get; }
+
+        internal bool AllowReserved { get; }
+
+        /// <summary>Media type of the parameter content; empty when the parameter uses schema.</summary>
+        internal string ContentMediaType { get; }
+
+        internal string Description { get; }
+
+        internal bool Deprecated { get; }
 
         internal string Name { get; }
 

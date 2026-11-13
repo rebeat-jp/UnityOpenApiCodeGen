@@ -57,6 +57,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         /// <summary>
+        /// P3 surface: synthesized operation ids, server catalog (Servers / BuildServerUrl),
+        /// operation-level servers (OperationServerUrls), cookie / array / content parameters.
+        /// </summary>
+        [Fact]
+        public void OperationsSpecKeepsPublicSurface()
+        {
+            AssertBaseline(
+                "operations",
+                "BaselineOperationsApi",
+                File.ReadAllText(SpecPath("operations.json")));
+        }
+
+        /// <summary>
         /// NOT the Unity fixture document itself: the external YAML reference
         /// ("VerificationItem.yaml") is rewritten to an internal component reference and the
         /// component is added, because this test uses a single-document bundle.

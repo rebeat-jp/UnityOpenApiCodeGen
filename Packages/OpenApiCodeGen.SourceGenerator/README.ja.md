@@ -79,7 +79,7 @@ path／query／headerのenum値も専用のJson.NET serializerで変換し、ホ
 `allOf`は1つのDTOへ平坦化し、`oneOf`／`anyOf`はラッパークラス（`FromX`／`TryGetX`／`AsX`）になります。
 `discriminator`があればその値で、なければ成功応答のJSONの構造検査で候補を決めます。`[X, null]`はnullableな`X`です。`oneOf`で複数の候補が一致したときは、応答のすべてのpropertyを宣言している候補を選び、区別できない候補は失敗します。
 `not`は成功応答の検査だけで評価します。詳細は対応表を参照してください。
-header parameterはscalarに対応しますが、`Content-Language`や`Content-Encoding`などの
+path・query・header・cookieのparameterに対応しますが、`Content-Language`や`Content-Encoding`などの
 content専用headerは位置付き診断で拒否します。対象名は[日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)を参照してください。
 
 ## 生成されたDTOとHTTPクライアント
@@ -116,7 +116,7 @@ server URLが`//host/path`形式の場合は`HttpClient.BaseAddress`のschemeで
 どちらも`BaseAddress`が未設定なら送信前に`InvalidOperationException`になります。
 root `servers`を省略するか空配列にした場合は`/`が既定値となり、同様に`BaseAddress`が必要です。
 絶対server URLはHTTP(S)のみ対応し、FTPなどのschemeは位置付き`OACG101`で拒否します。
-不正な絶対URL風・相対URL参照は位置付き`OACG100`、未解決の`{...}`変数は`OACG101`です。server URLのfragmentは操作pathとの結合前に除き、
+不正な絶対URL風・相対URL参照は位置付き`OACG100`、`variables`に宣言のない`{...}`は`OACG101`です。server URLのfragmentは操作pathとの結合前に除き、
 エンコード済みの`%23`はpath内に保持します。
 Response Objectの`contents`など未知項目も位置付き`OACG101`です。
 Parameter ObjectもOpenAPI 3.0／3.1の標準項目と`x-*`拡張を認識し、`requird`などの未知項目は
@@ -125,10 +125,25 @@ path templateで対応しない`{`／`}`は、`/pets}`や`/pets/{id}}`を含め�
 header parameterの名前はASCIIのHTTP field-name tokenに限り、不正な名前は位置付き`OACG100`です。
 Pathsのキーに生の`?`・`#`がある場合も位置付き`OACG100`です。path内の文字は
 percent-encodeし、query値はquery parameterで宣言します。
-`Accept`と`Authorization`のheader parameterは大小文字を問わず`OACG101`です。
+`Accept`・`Content-Type`・`Authorization`のheader parameterは、OpenAPI仕様どおり大小文字を問わず無視し、
+`OACG108`のWarningを報告します。
 header値はHTABと印字可能ASCII（U+0020～U+007E）だけを受け付け、
 それ以外は送信前に`ArgumentException`になります。
 `requestBody`を宣言したTRACEは、参照経由も含めて`OACG101`です。
+複数の`servers`とserverの`variables`に対応します。既定のクライアントは`servers[0]`の各variableを
+`default`で置換したURLを使います。生成クライアントは`Servers`（URLテンプレートの一覧）と
+`BuildServerUrl(int index, IReadOnlyDictionary<string, string>? variables = null)`
+（variablesは`enum`で検証）を公開しており、結果を`baseUrl`引数として渡せます。
+Path Itemまたはoperationに`servers`がある場合、そのoperationではdocumentのserversより優先します。
+`baseUrl`引数が置き換えるのはdocument levelのserversだけで、operation levelのURLは
+`OperationServerUrls`プロパティで実行時に置き換えます。`operationId`のないoperationは
+メソッドとpathから命名します（`GET /pets/{petId}`は`GetPetsByPetId`）。Path Itemの`$ref`
+（とOpenAPI 3.1の`components.pathItems`）も辿ります。
+path・query・header・cookieのparameterは、プリミティブ、プリミティブの配列、プリミティブpropertyだけの
+objectを、OpenAPIの`style`／`explode`のすべての組み合わせで送信できます。queryの`allowReserved`と、
+JSON media typeの`content`にも対応します。cookie parameterは1本の`Cookie`ヘッダーで送信します。
+手動の`Cookie`ヘッダーは`CookieContainer`の値と併用・上書きされることがあるため、
+`HttpClientHandler.UseCookies = false`にするか`CookieContainer`を使ってください。
 明示的な`baseUrl=""`の上書きは相対URLのままです。
 相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。
 リクエスト本文には具体的な`application/json`または`application/<subtype>+json`を送信します。

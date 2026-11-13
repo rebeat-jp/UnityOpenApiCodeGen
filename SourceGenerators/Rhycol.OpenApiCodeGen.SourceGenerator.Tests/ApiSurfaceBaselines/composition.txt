@@ -5,6 +5,8 @@ Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi method public S
 Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineCompositionApi.Holder> getNullableName(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
 Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineCompositionApi.Pet> createPet(Generated.Baseline.BaselineCompositionApi.Pet body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
 Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineCompositionApi.Value> getValue(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi method public static string BuildServerUrl(int index, System.Collections.Generic.IReadOnlyDictionary<string, string>? variables = null)
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi property public static System.Collections.Generic.IReadOnlyList<string> Servers { get; }
 Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody)
 Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException property public System.Net.HttpStatusCode StatusCode { get; }
 Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException property public string ResponseBody { get; }

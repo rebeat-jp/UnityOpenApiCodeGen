@@ -168,8 +168,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Theory]
-        [InlineData("array", "\"items\": { \"type\": \"string\" }")]
-        [InlineData("object", "\"additionalProperties\": false, \"properties\": { \"value\": { \"type\": \"string\" } }")]
+        // P3: arrays of primitives and objects of primitives are supported parameters; only nested
+        // values (no defined serialization) are still rejected.
+        [InlineData("array", "\"items\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } }")]
+        [InlineData("object", "\"additionalProperties\": false, \"properties\": { \"value\": { \"type\": \"object\", \"additionalProperties\": false, \"properties\": { \"inner\": { \"type\": \"string\" } } } }")]
         public void ReferencedComplexParameterSchemaIsRejected(string type, string shape)
         {
             string document = @"{
@@ -190,7 +192,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Phase4GeneratorTestHarness.GenerateAndCompile(document).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("Array and object parameters", diagnostic.GetMessage());
+            Assert.Contains("is not a primitive, an array of primitives", diagnostic.GetMessage());
         }
 
         [Fact]
@@ -207,7 +209,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     ""responses"": { ""204"": { ""description"": ""OK"" } }
   } } }
 }";
-            const string External = "{\"type\":\"array\",\"items\":{\"type\":\"string\"}}";
+            const string External = "{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}}";
             const string SourcePointer = "/paths/~1values/get/parameters/0/schema/$ref";
             string bundle = TestBundleFactory.CreateV2(
                 Root,
@@ -232,7 +234,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Phase4GeneratorTestHarness.GenerateAndCompile(Root, bundle: bundle).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("Array and object parameters", diagnostic.GetMessage());
+            Assert.Contains("is not a primitive, an array of primitives", diagnostic.GetMessage());
         }
 
         [Fact]

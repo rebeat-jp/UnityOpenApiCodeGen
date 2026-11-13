@@ -1347,6 +1347,85 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(compilationRequests, Is.EqualTo(2), "An acknowledged repair must not request compilation again.");
         }
 
+        [Test]
+        public async Task NormalizeAndCacheAsyncCollectsReferencesInsideABarePathItemFile()
+        {
+            WriteText("Assets/Specs/root.json", CreateRootWithPathItemReference("item.json"));
+            WriteText(
+                "Assets/Specs/item.json",
+                "{\"parameters\":[{\"name\":\"limit\",\"in\":\"query\",\"schema\":{\"$ref\":\"schemas.json\"}}]," +
+                "\"get\":{\"responses\":{\"200\":{\"description\":\"OK\",\"content\":{\"application/json\":" +
+                "{\"schema\":{\"$ref\":\"schemas.json\"}}}}}}," +
+                "\"post\":{\"requestBody\":{\"content\":{\"application/json\":{\"schema\":{\"$ref\":\"schemas.json\"}}}}," +
+                "\"responses\":{\"204\":{\"description\":\"No content\"}}}}");
+            WriteText("Assets/Specs/schemas.json", "{\"type\":\"integer\"}");
+
+            NormalizedSpecCacheResult result = await CreateService().NormalizeAndCacheAsync(
+                "Assets/Specs/root.json",
+                SpecId,
+                CancellationToken.None);
+            string bundle = File.ReadAllText(result.AuthoritativePath, new UTF8Encoding(false));
+
+            Assert.That(bundle, Does.Contain("\"sourcePointer\": \"/paths/~1pets/$ref\""));
+            Assert.That(bundle, Does.Contain("\"sourcePointer\": \"/parameters/0/schema/$ref\""));
+            Assert.That(
+                bundle,
+                Does.Contain("\"sourcePointer\": \"/get/responses/200/content/application~1json/schema/$ref\""));
+            Assert.That(
+                bundle,
+                Does.Contain("\"sourcePointer\": \"/post/requestBody/content/application~1json/schema/$ref\""));
+        }
+
+        [Test]
+        public async Task NormalizeAndCacheAsyncFollowsAPathItemToPathItemChain()
+        {
+            WriteText("Assets/Specs/root.json", CreateRootWithPathItemReference("first.json"));
+            WriteText("Assets/Specs/first.json", "{\"$ref\":\"second.json\",\"summary\":\"first\"}");
+            WriteText(
+                "Assets/Specs/second.json",
+                "{\"summary\":\"second\",\"parameters\":[{\"name\":\"id\",\"in\":\"query\"," +
+                "\"schema\":{\"$ref\":\"schemas.json\"}}]}");
+            WriteText("Assets/Specs/schemas.json", "{\"type\":\"string\"}");
+
+            NormalizedSpecCacheResult result = await CreateService().NormalizeAndCacheAsync(
+                "Assets/Specs/root.json",
+                SpecId,
+                CancellationToken.None);
+            string bundle = File.ReadAllText(result.AuthoritativePath, new UTF8Encoding(false));
+
+            Assert.That(bundle, Does.Contain("\"documentId\": \"Assets/Specs/first.json\""));
+            Assert.That(bundle, Does.Contain("\"documentId\": \"Assets/Specs/second.json\""));
+            Assert.That(bundle, Does.Contain("\"sourcePointer\": \"/$ref\""));
+            Assert.That(bundle, Does.Contain("\"sourcePointer\": \"/parameters/0/schema/$ref\""));
+            Assert.That(bundle, Does.Contain("\"documentId\": \"Assets/Specs/schemas.json\""));
+        }
+
+        [Test]
+        public async Task NormalizeAndCacheAsyncKeepsAFileWithSchemaKeywordsAsABareSchema()
+        {
+            // 'description' alone looks like a Path Item key, but 'properties' makes it a schema, so
+            // the property reference is collected as a schema reference and no Path Item pointer is.
+            WriteText("Assets/Specs/root.json", CreateRootWithReference("schema.json"));
+            WriteText(
+                "Assets/Specs/schema.json",
+                "{\"description\":\"d\",\"type\":\"object\",\"properties\":{\"x\":{\"$ref\":\"leaf.json\"}}}");
+            WriteText("Assets/Specs/leaf.json", "{\"type\":\"string\"}");
+
+            NormalizedSpecCacheResult result = await CreateService().NormalizeAndCacheAsync(
+                "Assets/Specs/root.json",
+                SpecId,
+                CancellationToken.None);
+            string bundle = File.ReadAllText(result.AuthoritativePath, new UTF8Encoding(false));
+
+            Assert.That(bundle, Does.Contain("\"sourcePointer\": \"/properties/x/$ref\""));
+        }
+
+        private static string CreateRootWithPathItemReference(string reference)
+        {
+            return "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Root\",\"version\":\"1\"}," +
+                   "\"paths\":{\"/pets\":{\"$ref\":\"" + reference + "\"}},\"components\":{}}";
+        }
+
         private NormalizedSpecCacheService CreateService()
         {
             return new NormalizedSpecCacheService(

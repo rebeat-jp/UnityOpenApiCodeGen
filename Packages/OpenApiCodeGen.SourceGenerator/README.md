@@ -202,18 +202,36 @@ ignoring the base address path and query. Both forms require a base address.
 An omitted or empty root `servers` list defaults to `/` and therefore also
 requires a base address. Absolute server URLs must use HTTP or HTTPS; other
 schemes receive a positioned `OACG101`. Malformed absolute-looking and relative
-server URL references receive positioned `OACG100`; unresolved `{...}` variables
-receive `OACG101`. A server URL fragment is omitted when combining its base
+server URL references receive positioned `OACG100`; a `{...}` placeholder without a matching server `variables` entry
+receives `OACG101`. A server URL fragment is omitted when combining its base
 path with an operation path; an encoded `%23` stays in the path.
 Unknown Response Object fields such as `contents` receive positioned `OACG101`.
 Unmatched path-template braces and header parameter names outside the ASCII
 HTTP field-name token syntax receive a positioned `OACG100`.
 Raw `?` and `#` in a Paths key also receive positioned `OACG100`; encode path
 data and declare query parameters separately.
-`Accept` and `Authorization` header parameters receive `OACG101`, regardless of
-case. Header values accept only HTAB and printable ASCII (U+0020–U+007E);
+`Accept`, `Content-Type` and `Authorization` header parameters are ignored as the
+OpenAPI specification requires (any case) and reported as an `OACG108` warning.
+Header values accept only HTAB and printable ASCII (U+0020–U+007E);
 other characters raise `ArgumentException` before sending. A TRACE operation with `requestBody`
 receives `OACG101`, including when the body is referenced.
+Several `servers` and server `variables` are supported: the default client uses
+`servers[0]` with each variable's `default` substituted. The generated client
+exposes `Servers` (the URL templates) and
+`BuildServerUrl(int index, IReadOnlyDictionary<string, string>? variables = null)`
+(variables are validated against their `enum`); pass the result as the `baseUrl`
+constructor argument. Servers declared on a Path Item or an operation take
+precedence over the document servers for those operations; the `baseUrl`
+argument only replaces the document-level servers, and the `OperationServerUrls`
+property replaces an operation-level URL at run time. An operation without
+`operationId` is named from its method and path (`GET /pets/{petId}` becomes
+`GetPetsByPetId`). Path Item `$ref` (and OpenAPI 3.1 `components.pathItems`) is followed.
+Path, query, header and cookie parameters support primitives, arrays of
+primitives and objects of primitive properties in every OpenAPI `style` /
+`explode` combination, `allowReserved` for query parameters, and `content` with
+a JSON media type. Cookie parameters are sent in one `Cookie` header; set
+`HttpClientHandler.UseCookies = false` (or use the `CookieContainer`) because a
+manual `Cookie` header can otherwise be merged with or replaced by the container.
 An explicit `baseUrl=""` override remains relative.
 With a relative server URL, an operation at `/` includes a base address query once.
 Request bodies send a concrete `application/json` or `application/<subtype>+json`
