@@ -63,6 +63,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     return "Guid";
                 case GeneratedTypeKind.Binary:
                     return "Bytes";
+                case GeneratedTypeKind.File:
+                    return "File";
                 case GeneratedTypeKind.FreeObject:
                     return "Object";
                 case GeneratedTypeKind.Any:
@@ -98,14 +100,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     WalkForDiscriminators(parameter.Schema);
                 }
 
-                if (operation.RequestBody is not null)
+                foreach (OpenApiSemanticMediaContent content in operation.RequestBody?.Contents ?? Array.Empty<OpenApiSemanticMediaContent>())
                 {
-                    WalkForDiscriminators(operation.RequestBody.Schema);
+                    WalkForDiscriminators(content.Schema);
                 }
 
-                if (operation.ResponseSchema is not null)
+                foreach (OpenApiSemanticResponse response in operation.Responses)
                 {
-                    WalkForDiscriminators(operation.ResponseSchema);
+                    foreach (OpenApiSemanticMediaContent content in response.Contents)
+                    {
+                        WalkForDiscriminators(content.Schema);
+                    }
                 }
             }
         }

@@ -106,6 +106,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             var files = new List<GeneratedFile>();
             files.AddRange(new NewtonsoftDtoSourceEmitter().Emit(model));
             files.Add(new HttpClientSourceEmitter().Emit(model));
+            files.AddRange(new HttpContentEmitter().Emit(model));
             return files.OrderBy(static file => file.FileName, StringComparer.Ordinal).ToArray();
         }
 

@@ -146,13 +146,29 @@ JSON media typeの`content`にも対応します。cookie parameterは1本の`Co
 `HttpClientHandler.UseCookies = false`にするか`CookieContainer`を使ってください。
 明示的な`baseUrl=""`の上書きは相対URLのままです。
 相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。
-リクエスト本文には具体的な`application/json`または`application/<subtype>+json`を送信します。
-`application/*+json`のみを宣言すると`OACG101`になり、具体型も宣言すると具体型を選びます。
-`application/vnd.*+json`など部分的なwildcard subtypeは、リクエスト・成功レスポンスとも
-生成時に`OACG101`で拒否します。
-HEADの応答と成功204・205・`2XX`には、参照先を含めて本文の`content`を宣言できません
-（`OACG101`）。`2XX`は204・205を含むため、型付き本文契約は対象外です。
-responseの`headers`を宣言する場合はobjectが必要で、非空のmapは対象外です。
+リクエスト本文は`application/json`（具体的な`application/<subtype>+json`も可）、
+`application/x-www-form-urlencoded`、`multipart/form-data`、テキスト（`text/*`と、schemaが
+stringの`application/xml`）、バイナリ（`application/octet-stream`、`image/*`、`*/*`、または
+`format: binary`のschema）を送信できます。複数のmedia typeを宣言したoperationは、優先順位が最上位
+（JSON、form-urlencoded、multipart、text、binary）のmedia typeがoperation名のメソッドになり、
+残りは`<name>AsFormUrlEncoded`、`<name>AsMultipart`、`<name>AsText`、`<name>AsBinary`の
+追加メソッド（`CreatePetAsMultipart`の形）になります。multipartのファイルpart（`format: binary`）は
+生成する`<ApiName>FileParameter`（`byte[]`または`Stream`、`FileName`、`ContentType`）で、`Stream`は
+リクエストに渡されて一緒に破棄されるので、呼び出しごとに新しいstreamを渡してください。
+Encoding Object（`contentType`、静的な`headers`、`style`／`explode`／`allowReserved`）に対応します。
+form-urlencodedの値はpercent-encodeします（空白は`+`ではなく`%20`）。`application/*+json`のみを宣言すると
+`OACG101`、`application/xml`のobject schemaも`OACG101`です。`application/vnd.*+json`など
+部分的なwildcard subtypeも`OACG101`で拒否します。
+成功レスポンスはJSON、テキスト（`string`）、バイナリ（`byte[]`）に対応します。2xxのcontractが異なる場合や
+`2XX`範囲に本文がある場合は、status別の`<OperationName>Response`（`StatusCode`、`IsStatus200`、
+`Status200`など）を返します。`default`だけのoperationは`default`を成功contractとみなし、
+`responses`の省略（OpenAPI 3.1）は任意の`2xx`で成功します。`3XX`の宣言は受理し、`HttpClient`の
+リダイレクト後の最終応答で判定します。型付きエラーとして、`<ApiName>Exception`は`StatusCode`と
+`ResponseBody`に加え、宣言されたJSONエラー本文の`Error`、`TryGetError<T>(out T)`、
+`ErrorDeserializationException`を持ちます（完全一致のstatus、`4XX`／`5XX`、`default`の順）。
+responseの`headers`（と`components.headers`）は追加メソッド`<name>WithHttpInfo`で公開します
+（status、raw・型付きheader、データ）。必須headerの欠落は`JsonSerializationException`です。
+HEADの応答と成功204・205には、参照先を含めて本文の`content`を宣言できません（`OACG101`）。
 Parameter・Request Body・Responseの`$ref`と並ぶ項目も検査します。OpenAPI 3.1では
 文字列の`summary`・`description`を許可し、3.0では契約項目の黙示的な無視を避けるため
 ジェネレーターの入力規則として`$ref`のみを受け付けます。

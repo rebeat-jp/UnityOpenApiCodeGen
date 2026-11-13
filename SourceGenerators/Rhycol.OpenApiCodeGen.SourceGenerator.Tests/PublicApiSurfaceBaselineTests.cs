@@ -70,6 +70,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         /// <summary>
+        /// P4 surface: request body variants (AsMultipart, AsFormUrlEncoded, AsText, AsBinary), the file
+        /// part type, the status-keyed result wrapper, WithHttpInfo and the typed API exception.
+        /// </summary>
+        [Fact]
+        public void BodiesSpecKeepsPublicSurface()
+        {
+            AssertBaseline(
+                "bodies",
+                "BaselineBodiesApi",
+                File.ReadAllText(SpecPath("bodies.json")));
+        }
+
+        /// <summary>
         /// NOT the Unity fixture document itself: the external YAML reference
         /// ("VerificationItem.yaml") is rewritten to an internal component reference and the
         /// component is added, because this test uses a single-document bundle.

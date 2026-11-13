@@ -399,7 +399,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 case OpenApiSemanticSchemaKind.Number:
                 case OpenApiSemanticSchemaKind.Boolean:
                 case OpenApiSemanticSchemaKind.Enum:
-                case OpenApiSemanticSchemaKind.Binary:
                     return ParameterShape.Scalar;
                 case OpenApiSemanticSchemaKind.Array:
                     return effective.ItemSchema is not null && IsScalarSchema(effective.ItemSchema)

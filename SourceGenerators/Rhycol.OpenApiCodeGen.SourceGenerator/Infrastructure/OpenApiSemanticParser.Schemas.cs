@@ -112,17 +112,46 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 return ParseEnumSchema(node, enumNode, type, suggestedName, format, nullable, annotations);
             }
 
-            if (type == "string" && string.Equals(format, "binary", StringComparison.Ordinal))
+            string? declaredContentMediaType = type == "string" && GetProperty(node, "contentEncoding") is null
+                ? GetOptionalString(node, "contentMediaType")
+                : null;
+            if (type == "string" &&
+                (string.Equals(format, "binary", StringComparison.Ordinal) ||
+                 IsBinaryContentMediaType(declaredContentMediaType)))
             {
-                throw Unsupported(node, "Binary schemas are outside the JSON-only Phase 4 MVP.");
+                // format: binary (or a string with a non-text contentMediaType and no contentEncoding)
+                // is a file or an opaque byte payload. It has no JSON form, so it is accepted here and
+                // rejected where a JSON body, parameter or DTO would use it (ValidateNoBinaryInJson).
+                return new OpenApiSemanticSchema(
+                    OpenApiSemanticSchemaKind.Binary,
+                    suggestedName,
+                    "binary",
+                    nullable,
+                    string.Empty,
+                    Array.Empty<OpenApiSemanticProperty>(),
+                    null,
+                    Array.Empty<string>(),
+                    CreateLocation(node),
+                    annotations: annotations,
+                    contentMediaType: declaredContentMediaType ?? string.Empty);
             }
 
             annotations = ValidateConst(node, type, annotations);
             switch (type)
             {
                 case "string":
-                    return CreateSimpleSchema(
-                        OpenApiSemanticSchemaKind.String, node, suggestedName, format, nullable, annotations);
+                    return new OpenApiSemanticSchema(
+                        OpenApiSemanticSchemaKind.String,
+                        suggestedName,
+                        format,
+                        nullable,
+                        string.Empty,
+                        Array.Empty<OpenApiSemanticProperty>(),
+                        null,
+                        Array.Empty<string>(),
+                        CreateLocation(node),
+                        annotations: annotations,
+                        contentMediaType: declaredContentMediaType ?? string.Empty);
                 case "integer":
                     return CreateSimpleSchema(
                         OpenApiSemanticSchemaKind.Integer, node, suggestedName, format, nullable, annotations);

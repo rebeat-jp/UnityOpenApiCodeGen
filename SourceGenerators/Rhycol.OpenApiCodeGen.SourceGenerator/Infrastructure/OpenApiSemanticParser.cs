@@ -170,6 +170,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 IReadOnlyList<OpenApiSemanticOperation> operations = ParsePaths(RequireProperty(_root, "paths"));
                 ValidateDiscriminatedUnionMembers();
                 ValidateRecursionIfObserved();
+                ValidateNoBinaryInJson(operations);
 
                 return new OpenApiSemanticDocument(
                     _minorVersion,
@@ -208,6 +209,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     property.Name == "parameters" ||
                     property.Name == "requestBodies" ||
                     property.Name == "responses" ||
+                    property.Name == "headers" ||
                     (_minorVersion >= 1 && property.Name == "pathItems") ||
                     property.Name.StartsWith("x-", StringComparison.Ordinal))
                 {
@@ -348,11 +350,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     name + "Request"));
             ValidateComponentMap(
                 GetProperty(components, "responses"),
-                (node, name) => ParseResponse(
+                (node, name) => ParseResponseObject(
                     node,
                     new HashSet<NormalizedSpecNodeIdentity>(),
                     name + "Response",
-                    parseJsonBody: false));
+                    ResponseParseMode.ValidateOnly,
+                    forbidBodyContent: false));
+            ValidateComponentMap(
+                GetProperty(components, "headers"),
+                (node, name) => ParseHeaderObject(node, name, new HashSet<NormalizedSpecNodeIdentity>()));
         }
 
         private static void ValidateComponentMap(
@@ -495,10 +501,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 requestBodyNode,
                 new HashSet<NormalizedSpecNodeIdentity>(),
                 operationId + "Request");
+            SpecNode? responsesNode = _minorVersion >= 1
+                ? GetProperty(operationNode, "responses")
+                : RequireProperty(operationNode, "responses");
             ParsedResponses responses = ParseResponses(
-                RequireProperty(operationNode, "responses"),
+                responsesNode,
                 operationId + "Response",
-                method);
+                operationId + "Error",
+                method,
+                operationNode);
 
             return new OpenApiSemanticOperation(
                 operationId,
@@ -513,7 +524,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 CreateLocation(operationNode),
                 description,
                 deprecated,
-                effectiveServers);
+                effectiveServers,
+                responses.Responses);
         }
 
         private static void ValidateOperationProperties(SpecNode operationNode)
@@ -681,109 +693,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private OpenApiSemanticRequestBody? ParseRequestBody(
-            SpecNode? node,
-            HashSet<NormalizedSpecNodeIdentity> referenceStack,
-            string suggestedName)
-        {
-            if (node is null)
-            {
-                return null;
-            }
-
-            RequireKind(node, SpecValueKind.Object, "The requestBody field must be an object or an internal $ref.");
-            if (TryGetReference(node, out string reference, out SpecNode referenceNode))
-            {
-                ValidateReferenceObjectSiblings(node);
-                _resolver.GetComponentName(_currentDocumentId, reference, "requestBodies", referenceNode);
-                return ParseReferenced(
-                    reference,
-                    referenceNode,
-                    referenceStack,
-                    target => ParseRequestBody(target, referenceStack, suggestedName)!);
-            }
-
-            bool required = GetOptionalBoolean(node, "required") ?? false;
-            ParsedContent content = ParseContent(
-                RequireProperty(node, "content"),
-                suggestedName,
-                validateRequestEncoding: true);
-            if (content.Schema is null)
-            {
-                throw Invalid(node, "A request body must define a JSON schema.");
-            }
-
-            return new OpenApiSemanticRequestBody(
-                required,
-                content.MediaType,
-                content.Schema,
-                CreateLocation(node));
-        }
-
-        private ParsedResponses ParseResponses(SpecNode responsesNode, string suggestedName, string method)
-        {
-            RequireKind(responsesNode, SpecValueKind.Object, "The responses field must be an object.");
-            var successCodes = new List<string>();
-            var responseMediaTypes = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
-            OpenApiSemanticSchema? successSchema = null;
-            string? successSignature = null;
-
-            foreach (SpecProperty responseProperty in responsesNode.EnumerateObject()
-                         .OrderBy(static value => value.Name, StringComparer.Ordinal))
-            {
-                if (responseProperty.Name.StartsWith("x-", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                ValidateResponseStatusCode(responseProperty);
-                bool isSuccess = IsSuccessStatusCode(responseProperty.Name);
-                ParsedContent content = ParseResponse(
-                    responseProperty.Value,
-                    new HashSet<NormalizedSpecNodeIdentity>(),
-                    suggestedName,
-                    parseJsonBody: isSuccess,
-                    forbidBodyContent: method == "head" ||
-                                       (isSuccess &&
-                                        (responseProperty.Name == "204" ||
-                                         responseProperty.Name == "205" ||
-                                         string.Equals(responseProperty.Name, "2XX", StringComparison.OrdinalIgnoreCase))));
-                if (!isSuccess)
-                {
-                    continue;
-                }
-
-                OpenApiSemanticSchema? schema = content.Schema;
-                if (schema is not null)
-                {
-                    ValidateResponseMetadataProperties(
-                        schema,
-                        new HashSet<NormalizedSpecNodeIdentity>());
-                }
-
-                string signature = GetSchemaSignature(schema);
-                if (successSignature is not null && !string.Equals(successSignature, signature, StringComparison.Ordinal))
-                {
-                    throw CreateException(
-                        OpenApiSemanticErrorKind.InconsistentResponse,
-                        "All successful responses for an operation must use the same JSON body contract.",
-                        responseProperty.Value);
-                }
-
-                successSignature = signature;
-                successSchema = schema;
-                successCodes.Add(responseProperty.Name.ToUpperInvariant());
-                responseMediaTypes.Add(responseProperty.Name.ToUpperInvariant(), content.MediaTypes);
-            }
-
-            if (successCodes.Count == 0)
-            {
-                throw Invalid(responsesNode, "At least one 2xx response is required by the Phase 4 MVP.");
-            }
-
-            return new ParsedResponses(successSchema, successCodes.OrderBy(static value => value, StringComparer.Ordinal).ToArray(), responseMediaTypes);
-        }
-
         private void ValidateResponseMetadataProperties(
             OpenApiSemanticSchema schema,
             HashSet<NormalizedSpecNodeIdentity> visited)
@@ -852,67 +761,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private ParsedContent ParseResponse(
-            SpecNode node,
-            HashSet<NormalizedSpecNodeIdentity> referenceStack,
-            string suggestedName,
-            bool parseJsonBody,
-            bool forbidBodyContent = false)
-        {
-            RequireKind(node, SpecValueKind.Object, "Each response must be an object or an internal $ref.");
-            if (TryGetReference(node, out string reference, out SpecNode referenceNode))
-            {
-                ValidateReferenceObjectSiblings(node);
-                _resolver.GetComponentName(_currentDocumentId, reference, "responses", referenceNode);
-                return ParseReferenced(
-                    reference,
-                    referenceNode,
-                    referenceStack,
-                    target => ParseResponse(target, referenceStack, suggestedName, parseJsonBody, forbidBodyContent));
-            }
-
-            ValidateResponseProperties(node);
-            RequireString(RequireProperty(node, "description"), "The response description must be a string.");
-            SpecNode? headers = GetProperty(node, "headers");
-            if (headers is not null)
-            {
-                RequireKind(headers, SpecValueKind.Object, "The response headers field must be an object.");
-                if (headers.EnumerateObject().Any())
-                {
-                    throw Unsupported(headers, "Response headers are not exposed by the Phase 4 client contract.");
-                }
-            }
-
-            ThrowIfPresent(node, "links", "OpenAPI response links are not supported by the Phase 4 MVP.");
-            SpecNode? contentNode = GetProperty(node, "content");
-            if (contentNode is null)
-            {
-                return new ParsedContent(string.Empty, null, Array.Empty<string>());
-            }
-
-            if (forbidBodyContent)
-            {
-                RequireKind(contentNode, SpecValueKind.Object, "The response content field must be an object.");
-                if (contentNode.EnumerateObject().Any())
-                {
-                    throw Unsupported(contentNode, "HEAD, 204, 205, and 2XX success responses cannot declare body content in the Phase 4 client contract.");
-                }
-
-                return new ParsedContent(string.Empty, null, Array.Empty<string>());
-            }
-
-            if (!parseJsonBody)
-            {
-                ValidateResponseContent(contentNode);
-                return new ParsedContent(string.Empty, null, Array.Empty<string>());
-            }
-
-            return ParseContent(
-                contentNode,
-                suggestedName,
-                validateRequestEncoding: false);
-        }
-
         private static void ValidateResponseProperties(SpecNode node)
         {
             foreach (SpecProperty property in node.EnumerateObject())
@@ -930,84 +778,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private ParsedContent ParseContent(
-            SpecNode contentNode,
-            string suggestedName,
-            bool validateRequestEncoding)
-        {
-            RequireKind(contentNode, SpecValueKind.Object, "The content field must be an object.");
-            var supported = new List<(string MediaType, OpenApiSemanticSchema Schema, bool Wildcard, SpecNode Node)>();
-            foreach (SpecProperty mediaProperty in contentNode.EnumerateObject()
-                         .OrderBy(static value => value.Name, StringComparer.Ordinal))
-            {
-                ParsedOpenApiMediaType mediaType = ParseMediaType(mediaProperty);
-                if (!mediaType.IsJson)
-                {
-                    throw Unsupported(
-                        mediaProperty.Value,
-                        "Only application/json and application/*+json media types are supported: '" +
-                        mediaProperty.Name + "'.");
-                }
-
-                RequireKind(mediaProperty.Value, SpecValueKind.Object, "Each media type entry must be an object.");
-                OpenApiSemanticSchema schema = ParseSchema(
-                    RequireProperty(mediaProperty.Value, "schema"),
-                    suggestedName,
-                    new HashSet<NormalizedSpecNodeIdentity>());
-                string? normalizedCharset = validateRequestEncoding
-                    ? GetSupportedRequestCharset(mediaType, mediaProperty.Value)
-                    : null;
-                supported.Add((mediaType.ToNormalizedString(normalizedCharset), schema,
-                    mediaType.Subtype.IndexOf('*') >= 0, mediaProperty.Value));
-            }
-
-            if (supported.Count == 0)
-            {
-                return new ParsedContent(string.Empty, null, Array.Empty<string>());
-            }
-
-            string signature = GetSchemaSignature(supported[0].Schema);
-            for (int index = 1; index < supported.Count; index++)
-            {
-                if (!string.Equals(signature, GetSchemaSignature(supported[index].Schema), StringComparison.Ordinal))
-                {
-                    throw new OpenApiSemanticException(
-                        OpenApiSemanticErrorKind.InconsistentResponse,
-                        "All JSON media types must use the same schema in the Phase 4 MVP.",
-                        CreateLocation(contentNode),
-                        Array.Empty<OpenApiSourceLocation>());
-                }
-            }
-
-            var selected = supported[0];
-            if (validateRequestEncoding)
-            {
-                var concrete = supported.FirstOrDefault(static item => !item.Wildcard);
-                if (concrete.MediaType is null)
-                {
-                    throw Unsupported(selected.Node,
-                        "A request body must declare a concrete JSON media type; application/*+json is a response range only.");
-                }
-
-                selected = concrete;
-                if (selected.MediaType.Any(static character => character > (char)127))
-                {
-                    throw Invalid(selected.Node,
-                        "A request media type must contain ASCII characters only to be sent as Content-Type.");
-                }
-            }
-
-            return new ParsedContent(selected.MediaType, selected.Schema,
-                supported.Select(static item => item.MediaType).ToArray());
-        }
-
         private void ValidateResponseContent(SpecNode contentNode)
         {
             RequireKind(contentNode, SpecValueKind.Object, "The content field must be an object.");
             foreach (SpecProperty mediaProperty in contentNode.EnumerateObject()
                          .OrderBy(static value => value.Name, StringComparer.Ordinal))
             {
-                ParseMediaType(mediaProperty);
+                ParseMediaType(mediaProperty, allowWildcard: true);
                 RequireKind(mediaProperty.Value, SpecValueKind.Object, "Each media type entry must be an object.");
                 SpecNode? schemaNode = GetProperty(mediaProperty.Value, "schema");
                 if (schemaNode is not null)
@@ -1206,7 +983,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private static ParsedOpenApiMediaType ParseMediaType(SpecProperty mediaProperty)
+        private static ParsedOpenApiMediaType ParseMediaType(SpecProperty mediaProperty, bool allowWildcard = false)
         {
             if (!OpenApiMediaTypeParser.TryParse(
                     mediaProperty.Name,
@@ -1218,13 +995,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     "Invalid media type '" + mediaProperty.Name + "': " + error);
             }
 
-            if (mediaType.Subtype.IndexOf('*') >= 0 &&
-                !(string.Equals(mediaType.Type, "application", StringComparison.Ordinal) &&
-                  string.Equals(mediaType.Subtype, "*+json", StringComparison.Ordinal)))
+            bool hasWildcard = mediaType.Type.IndexOf('*') >= 0 || mediaType.Subtype.IndexOf('*') >= 0;
+            bool supportedWildcard =
+                (string.Equals(mediaType.Type, "application", StringComparison.Ordinal) &&
+                 string.Equals(mediaType.Subtype, "*+json", StringComparison.Ordinal)) ||
+                (allowWildcard &&
+                 string.Equals(mediaType.Subtype, "*", StringComparison.Ordinal) &&
+                 (mediaType.Type.IndexOf('*') < 0 || string.Equals(mediaType.Type, "*", StringComparison.Ordinal)));
+            if (hasWildcard && !supportedWildcard)
             {
                 throw Unsupported(
                     mediaProperty.Value,
-                    "Only application/*+json is supported as a wildcard media subtype: '" +
+                    "Only application/*+json is supported as a wildcard media subtype" +
+                    (allowWildcard ? " (body media types also accept */* and type/*)" : string.Empty) + ": '" +
                     mediaProperty.Name + "'.");
             }
 
@@ -1963,31 +1746,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return characters.Count == 0 ? "Value" : new string(characters.ToArray());
         }
 
-        private readonly struct ParsedContent
-        {
-            internal ParsedContent(string mediaType, OpenApiSemanticSchema? schema, IReadOnlyList<string> mediaTypes)
-            {
-                MediaType = mediaType;
-                Schema = schema;
-                MediaTypes = mediaTypes;
-            }
-
-            internal string MediaType { get; }
-
-            internal OpenApiSemanticSchema? Schema { get; }
-
-            internal IReadOnlyList<string> MediaTypes { get; }
-        }
-
         private readonly struct ParsedResponses
         {
             internal ParsedResponses(OpenApiSemanticSchema? schema, IReadOnlyList<string> statusCodes,
-                IReadOnlyDictionary<string, IReadOnlyList<string>> mediaTypes)
+                IReadOnlyDictionary<string, IReadOnlyList<string>> mediaTypes,
+                IReadOnlyList<OpenApiSemanticResponse> responses)
             {
+                Responses = responses;
                 Schema = schema;
                 StatusCodes = statusCodes;
                 MediaTypes = mediaTypes;
             }
+
+            internal IReadOnlyList<OpenApiSemanticResponse> Responses { get; }
 
             internal OpenApiSemanticSchema? Schema { get; }
 

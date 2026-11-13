@@ -37,15 +37,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 responseValidators.RequestJsonSerializerName,
                 responseValidators.HeaderValueValidatorName);
 
+            var bodyHelpers = new BodyHelperNames(model);
             foreach (GeneratedOperationModel operation in model.Operations)
             {
                 source.AppendLine();
-                AppendOperation(source, model, operation, responseValidators, responseJsonContracts, parameterSerializer);
+                AppendOperationMethods(
+                    source, model, operation, responseValidators, responseJsonContracts, parameterSerializer, bodyHelpers);
             }
 
             source.AppendLine();
             AppendHelpers(source, responseValidators);
             parameterSerializer.AppendHelpers(source);
+            AppendBodyHelpers(source, model, bodyHelpers);
             responseValidators.AppendMethods(source);
             responseJsonContracts.AppendMethods(source);
             source.AppendLine("    }");
@@ -71,220 +74,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("            _baseUrl = baseUrl ?? throw new global::System.ArgumentNullException(nameof(baseUrl));");
             source.AppendLine("        }");
         }
-
-        private static void AppendOperation(
-            StringBuilder source,
-            OpenApiGenerationModel model,
-            GeneratedOperationModel operation,
-            ResponseValidatorPlan responseValidators,
-            ResponseJsonContractPlan responseJsonContracts,
-            HttpClientParameterSerializationEmitter parameters)
-        {
-            string summary = string.IsNullOrWhiteSpace(operation.Summary)
-                ? operation.Name
-                : operation.Summary;
-            source.Append("        /// <summary>")
-                .Append(EscapeXml(summary))
-                .AppendLine("</summary>");
-            if (!string.IsNullOrWhiteSpace(operation.Description))
-            {
-                var remarks = new StringBuilder();
-                GeneratedDocumentationEmitter.AppendSummary(remarks, "        ", operation.Description);
-                source.Append(remarks.ToString()
-                    .Replace("/// <summary>", "/// <remarks>")
-                    .Replace("/// </summary>", "/// </remarks>"));
-            }
-
-            foreach (GeneratedParameterModel parameter in operation.Parameters)
-            {
-                source.Append("        /// <param name=\"")
-                    .Append(parameter.Name)
-                    .Append("\">")
-                    .Append(EscapeXml(parameter.WireName));
-                if (parameter.Deprecated)
-                {
-                    source.Append(" (deprecated)");
-                }
-
-                if (!string.IsNullOrWhiteSpace(parameter.Description))
-                {
-                    source.Append(": ").Append(EscapeXml(string.Join(
-                        " ",
-                        parameter.Description.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                            .Select(static line => line.Trim())
-                            .Where(static line => line.Length > 0))));
-                }
-
-                source.AppendLine("</param>");
-            }
-
-            if (operation.RequestBody is not null)
-            {
-                source.Append("        /// <param name=\"")
-                    .Append(operation.RequestBody.ParameterName)
-                    .AppendLine("\">JSON request body.</param>");
-            }
-
-            source.AppendLine("        /// <param name=\"cancellationToken\">Cancellation token.</param>");
-            if (operation.RequestBody?.SpecifiedParameterName is string specifiedParameterName)
-            {
-                source.Append("        /// <param name=\"").Append(specifiedParameterName)
-                    .AppendLine("\">Send the JSON body even when its value is null.</param>");
-            }
-            string taskType = operation.ResponseType is null
-                ? "global::System.Threading.Tasks.Task"
-                : "global::System.Threading.Tasks.Task<" +
-                  GeneratedSourceEmitter.TypeName(operation.ResponseType) + ">";
-            GeneratedDocumentationEmitter.AppendObsolete(source, "        ", operation.Deprecated);
-            source.Append("        public async ").Append(taskType).Append(' ').Append(operation.Name).Append('(');
-            bool first = true;
-            foreach (GeneratedParameterModel parameter in operation.Parameters)
-            {
-                AppendParameterSeparator(source, ref first);
-                source.Append(GeneratedSourceEmitter.TypeName(parameter.Type))
-                    .Append(' ')
-                    .Append(parameter.Name);
-            }
-
-            if (operation.RequestBody is not null)
-            {
-                AppendParameterSeparator(source, ref first);
-                source.Append(GeneratedSourceEmitter.TypeName(operation.RequestBody.Type))
-                    .Append(' ')
-                    .Append(operation.RequestBody.ParameterName);
-            }
-
-            AppendParameterSeparator(source, ref first);
-            source.Append("global::System.Threading.CancellationToken cancellationToken = default");
-            if (operation.RequestBody?.SpecifiedParameterName is string specifiedParameter)
-            {
-                source.Append(", bool ").Append(specifiedParameter).Append(" = false");
-            }
-            source.AppendLine(")");
-            source.AppendLine("        {");
-            AppendNumericParameterValidation(source, operation);
-            AppendRequestBodyValidation(source, operation.RequestBody);
-            source.Append("            string relativePath = ")
-                .Append(GeneratedSourceEmitter.StringLiteral(operation.Path))
-                .AppendLine(";");
-            parameters.AppendPathParameters(source, operation);
-            parameters.AppendQueryParameters(source, operation);
-            source.AppendLine("            ValidatePathSegments(relativePath);");
-            if (operation.Servers.Count > 0)
-            {
-                source.Append("            var requestUri = CreateRequestUri(relativePath, ResolveOperationServerUrl(")
-                    .Append(GeneratedSourceEmitter.StringLiteral(OperationKey(operation))).Append(", ")
-                    .Append(GeneratedSourceEmitter.StringLiteral(operation.Servers[0].DefaultUrl))
-                    .AppendLine("));");
-            }
-            else
-            {
-                source.AppendLine("            var requestUri = CreateRequestUri(relativePath);");
-            }
-            source.Append("            using (var request = new global::System.Net.Http.HttpRequestMessage(")
-                .Append(GetHttpMethod(operation.HttpMethod))
-                .AppendLine(", requestUri))");
-            source.AppendLine("            {");
-            parameters.AppendHeaderAndCookieParameters(source, operation);
-            AppendRequestBody(source, operation.RequestBody, responseValidators);
-            source.AppendLine("                using (var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false))");
-            source.AppendLine("                {");
-            if (operation.ResponseType is null)
-            {
-                source.AppendLine("                    string responseBody = response.Content == null");
-                source.AppendLine("                        ? string.Empty");
-                source.AppendLine("                        : await response.Content.ReadAsStringAsync().ConfigureAwait(false);");
-                source.Append("                    if (!(")
-                    .Append(CreateSuccessExpression(operation.SuccessStatusCodes))
-                    .AppendLine("))");
-                source.AppendLine("                    {");
-                source.Append("                        throw new ").Append(model.ApiName)
-                    .AppendLine("Exception(response.StatusCode, responseBody);");
-                source.AppendLine("                    }");
-                AppendResponseContentTypeValidation(source, operation, responseValidators);
-            }
-            else
-            {
-                source.Append("                    if (!(")
-                    .Append(CreateSuccessExpression(operation.SuccessStatusCodes))
-                    .AppendLine("))");
-                source.AppendLine("                    {");
-                source.Append("                        throw new ").Append(model.ApiName)
-                    .AppendLine("Exception(response.StatusCode, response.Content == null");
-                source.AppendLine("                            ? string.Empty");
-                source.AppendLine("                            : await response.Content.ReadAsStringAsync().ConfigureAwait(false));");
-                source.AppendLine("                    }");
-                AppendResponseContentTypeValidation(source, operation, responseValidators);
-                source.AppendLine("                    string responseBody = response.Content == null");
-                source.AppendLine("                        ? string.Empty");
-                source.AppendLine("                        : await ReadJsonResponseBodyAsync(response.Content).ConfigureAwait(false);");
-            }
-
-            if (operation.ResponseType is null)
-            {
-                source.AppendLine("                    return;");
-            }
-            else
-            {
-                source.AppendLine("                    if (global::System.String.IsNullOrWhiteSpace(responseBody))");
-                source.AppendLine("                    {");
-                source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response requires a JSON body.\");");
-                source.AppendLine("                    }");
-                if (!operation.ResponseType.Nullable)
-                {
-                    source.AppendLine("                    if (global::System.String.Equals(responseBody.Trim(), \"null\", global::System.StringComparison.Ordinal))");
-                    source.AppendLine("                    {");
-                    source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response requires a non-null JSON body.\");");
-                    source.AppendLine("                    }");
-                }
-                source.AppendLine("                    var defaultResponseSettings = global::Newtonsoft.Json.JsonConvert.DefaultSettings?.Invoke();");
-                source.AppendLine("                    var responseSerializer = global::Newtonsoft.Json.JsonSerializer.Create();");
-                source.AppendLine("                    responseSerializer.DateParseHandling = global::Newtonsoft.Json.DateParseHandling.None;");
-                source.AppendLine("                    responseSerializer.MaxDepth = defaultResponseSettings?.MaxDepth > 0 ? defaultResponseSettings.MaxDepth : 64;");
-                source.Append("                    string validatedResponseBody = ").Append(responseJsonContracts.ParseMethodName)
-                    .Append("(responseBody, ").Append(responseJsonContracts.MethodName(operation.ResponseType))
-                    .Append(", ").Append(operation.ResponseType.Nullable ? "true" : "false")
-                    .AppendLine(", responseSerializer.MaxDepth);");
-                source.Append("                    var deserializedResponse = ").Append(responseJsonContracts.DeserializeMethodName).Append('<')
-                    .Append(GeneratedSourceEmitter.TypeName(operation.ResponseType))
-                    .AppendLine(">(validatedResponseBody, responseSerializer);");
-                if (!operation.ResponseType.Nullable && !operation.ResponseType.IsValueType)
-                {
-                    source.AppendLine("                    if (deserializedResponse is null)");
-                    source.AppendLine("                    {");
-                    source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response requires a non-null JSON body.\");");
-                    source.AppendLine("                    }");
-                }
-                if (responseValidators.TryGetMethodName(operation.ResponseType, out string? validatorName))
-                {
-                    source.Append("                    ").Append(validatorName)
-                        .Append("(deserializedResponse, \"$\", \"response\", new global::System.Collections.Generic.Dictionary<object, global::System.Collections.Generic.HashSet<int>>(new ")
-                        .Append(responseValidators.ComparerName).AppendLine("()));");
-                }
-                source.AppendLine("                    return deserializedResponse!;");
-            }
-
-            source.AppendLine("                }");
-            source.AppendLine("            }");
-            source.AppendLine("        }");
-        }
-
-        private static void AppendRequestBodyValidation(
-            StringBuilder source,
-            GeneratedRequestBodyModel? body)
-        {
-            if (body is null || !body.Required || body.Type.Nullable || body.Type.IsValueType)
-            {
-                return;
-            }
-
-            source.Append("            if (").Append(body.ParameterName).AppendLine(" is null)");
-            source.AppendLine("            {");
-            source.Append("                throw new global::System.ArgumentNullException(nameof(")
-                .Append(body.ParameterName).AppendLine("));");
-            source.AppendLine("            }");
-        }
-
         private static void AppendNumericParameterValidation(
             StringBuilder source,
             GeneratedOperationModel operation)
@@ -316,47 +105,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private static void AppendRequestBody(
-            StringBuilder source,
-            GeneratedRequestBodyModel? body,
-            ResponseValidatorPlan validators)
-        {
-            if (body is null)
-            {
-                return;
-            }
-
-            if (!body.Required)
-            {
-                source.Append("                if (").Append(body.ParameterName).Append(" != null");
-                if (body.SpecifiedParameterName is not null)
-                {
-                    source.Append(" || ").Append(body.SpecifiedParameterName);
-                }
-                source.AppendLine(")");
-                source.AppendLine("                {");
-            }
-
-            string indent = body.Required ? "                " : "                    ";
-            if (validators.TryGetMethodName(body.Type, out string? validatorName))
-            {
-                source.Append(indent).Append(validatorName).Append('(')
-                    .Append(body.ParameterName)
-                    .Append(", \"$\", \"request\", new global::System.Collections.Generic.Dictionary<object, global::System.Collections.Generic.HashSet<int>>(new ")
-                    .Append(validators.ComparerName).AppendLine("()));");
-            }
-            source.Append(indent).Append("string requestJson = ")
-                .Append(validators.RequestJsonSerializerName).Append('(')
-                .Append(body.ParameterName)
-                .AppendLine(");");
-            source.Append(indent).Append("request.Content = CreateJsonContent(requestJson, ")
-                .Append(GeneratedSourceEmitter.StringLiteral(body.MediaType))
-                .AppendLine(");");
-            if (!body.Required)
-            {
-                source.AppendLine("                }");
-            }
-        }
 
         internal static void AppendConditionalStatement(
             StringBuilder source,
@@ -947,15 +695,43 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("    {");
             source.Append("        public ").Append(apiName)
                 .AppendLine("Exception(global::System.Net.HttpStatusCode statusCode, string responseBody)");
+            source.AppendLine("            : this(statusCode, responseBody, null, null)");
+            source.AppendLine("        {");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        /// <summary>Creates the exception with the declared error body of the response, when there is one.</summary>");
+            source.Append("        public ").Append(apiName)
+                .AppendLine("Exception(global::System.Net.HttpStatusCode statusCode, string responseBody, object? error, global::System.Exception? errorDeserializationException)");
             source.AppendLine("            : base(\"The API returned HTTP status \" + ((int)statusCode).ToString(global::System.Globalization.CultureInfo.InvariantCulture) + \" (\" + statusCode + \").\")");
             source.AppendLine("        {");
             source.AppendLine("            StatusCode = statusCode;");
             source.AppendLine("            ResponseBody = responseBody ?? string.Empty;");
+            source.AppendLine("            Error = error;");
+            source.AppendLine("            ErrorDeserializationException = errorDeserializationException;");
             source.AppendLine("        }");
             source.AppendLine();
             source.AppendLine("        public global::System.Net.HttpStatusCode StatusCode { get; }");
             source.AppendLine();
             source.AppendLine("        public string ResponseBody { get; }");
+            source.AppendLine();
+            source.AppendLine("        /// <summary>The error body deserialized to the type the operation declares for this status (exact code, then 4XX / 5XX range, then default); null when none is declared or it could not be read.</summary>");
+            source.AppendLine("        public object? Error { get; }");
+            source.AppendLine();
+            source.AppendLine("        /// <summary>Why the declared error body could not be deserialized; null when it was or none is declared. ResponseBody always keeps the raw text.</summary>");
+            source.AppendLine("        public global::System.Exception? ErrorDeserializationException { get; }");
+            source.AppendLine();
+            source.AppendLine("        /// <summary>Gets the declared error body as <typeparamref name=\"T\"/>.</summary>");
+            source.AppendLine("        public bool TryGetError<T>(out T value)");
+            source.AppendLine("        {");
+            source.AppendLine("            if (Error is T typed)");
+            source.AppendLine("            {");
+            source.AppendLine("                value = typed;");
+            source.AppendLine("                return true;");
+            source.AppendLine("            }");
+            source.AppendLine();
+            source.AppendLine("            value = default!;");
+            source.AppendLine("            return false;");
+            source.AppendLine("        }");
             source.AppendLine("    }");
         }
 
@@ -1005,7 +781,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 _prefix = prefix;
                 foreach (GeneratedOperationModel operation in model.Operations)
                 {
-                    if (operation.ResponseType is GeneratedTypeModel responseType)
+                    foreach (GeneratedTypeModel responseType in operation.EnumerateJsonResponseTypes())
                     {
                         Register(responseType);
                     }
@@ -1902,13 +1678,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 _mediaTypePrefix = prefix;
                 foreach (GeneratedOperationModel operation in model.Operations)
                 {
-                    if (operation.ResponseType is GeneratedTypeModel responseType &&
-                        RequiresValidation(responseType, new HashSet<string>(StringComparer.Ordinal)))
+                    foreach (GeneratedTypeModel responseType in operation.EnumerateJsonResponseTypes())
                     {
-                        Register(responseType);
+                        if (RequiresValidation(responseType, new HashSet<string>(StringComparer.Ordinal)))
+                        {
+                            Register(responseType);
+                        }
                     }
 
                     if (operation.RequestBody is GeneratedRequestBodyModel requestBody &&
+                        requestBody.Variants[0].Kind == GeneratedBodyKind.Json &&
                         RequiresValidation(requestBody.Type, new HashSet<string>(StringComparer.Ordinal)))
                     {
                         Register(requestBody.Type);

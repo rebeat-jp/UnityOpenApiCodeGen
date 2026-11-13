@@ -483,7 +483,37 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>request body</td>
 <td>一部対応</td>
-<td>パラメーター付きも含む具体的な<code>application/json</code>または<code>application/&lt;subtype&gt;+json</code>を送信します。<code>application/*+json</code>だけの宣言は<code>OACG101</code>で拒否し、具体型と併記された場合は具体型を選びます。type/subtypeを正規化して判定します。</td>
+<td>複数のmedia typeを宣言できます。<code>application/json</code>（パラメーター付きも含む具体的な<code>application/&lt;subtype&gt;+json</code>。<code>application/*+json</code>だけの宣言は<code>OACG101</code>で、具体型と併記された場合は具体型を選びます）、<code>application/x-www-form-urlencoded</code>、<code>multipart/form-data</code>、テキスト（<code>text/*</code>、<code>application/xml</code>・<code>+xml</code>・<code>application/yaml</code>でschemaが<code>string</code>などのscalar）、バイナリ（<code>application/octet-stream</code>、<code>image/*</code>、<code>*/*</code>などその他のmedia typeで、schemaが<code>format: binary</code>・<code>contentMediaType</code>・省略）を扱います。type/subtypeを正規化して判定します。object schemaの<code>application/xml</code>など表せない組み合わせは該当位置の<code>OACG101</code>です。<code>requestBody.required: false</code>ならどのmedia typeでも<code>null</code>引数は本文なしで送信します（<code>&lt;BodyParameterName&gt;Specified</code>はJSONでschemaがnullableの場合だけです）。</td>
+</tr>
+<tr>
+<td>multiple request media types</td>
+<td>一部対応</td>
+<td>複数のmedia typeは優先順位（JSON &gt; form-urlencoded &gt; multipart &gt; text &gt; binary）の最上位を主メソッド（operation名のまま）にし、残りは種別名の接尾辞を付けた追加メソッドとして生成します（<code>&lt;name&gt;AsFormUrlEncoded</code>、<code>&lt;name&gt;AsMultipart</code>、<code>&lt;name&gt;AsText</code>、<code>&lt;name&gt;AsBinary</code>。同じ種別が複数あれば2つ目以降は<code>&lt;name&gt;As&lt;MediaType&gt;</code>、例<code>AsImagePng</code>。名前が重なれば連番）。黙って捨てるmedia typeはありません。schemaが同じJSON media typeは1つにまとめ、最初の具体型をContent-Typeに送ります（schemaが異なれば<code>OACG105</code>）。どの追加メソッドも同じparameter・戻り値・例外です。</td>
+</tr>
+<tr>
+<td>multipart/form-data request</td>
+<td>一部対応</td>
+<td>object schemaの各propertyを1つのpartにします（DTOを引数に取り、<code>readOnly</code> propertyは送りません）。scalar・enum・<code>format: byte</code>は<code>ConvertToString</code>した文字列part（Content-Typeは<code>text/plain; charset=utf-8</code>）、配列は同名のpartを要素ごとに複数、<code>format: binary</code>（または<code>contentMediaType</code>）のpropertyと、その配列はファイルpart（<code>&lt;ApiName&gt;FileParameter</code>、配列は<code>List&lt;&lt;ApiName&gt;FileParameter&gt;</code>）、objectなど入れ子の値はJSON part（Content-Type <code>application/json</code>）です。boundaryは<code>MultipartFormDataContent</code>が付け、<code>Content-Disposition</code>は生成コードがRFC 7578に沿って組み立てます（<code>name</code>・<code>filename</code>は引用符で囲み<code>&quot;</code>と``をエスケープ、CR/LFは<code>ArgumentException</code>、非ASCIIのpart名はUTF-8のpercent-encoding（netstandard2.0のHttpClientはヘッダーをUTF-8で書けないための妥協で、サーバーがpercent-decodeしなければフィールド名が一致しません。サロゲートペアは1コードポイントとして符号化します）、非ASCIIのファイル名はASCIIの代替名に<code>filename*=UTF-8&#39;&#39;…</code>を併記。ファイル名は<code>FileParameter.FileName</code>があるときだけ）。必須のpartが<code>null</code>なら送信前に<code>ArgumentException</code>、任意のpartは<code>null</code>で省略します。multipartでは<code>encoding</code>の<code>style</code>／<code>explode</code>／<code>allowReserved</code>を使わず（<code>OACG108</code>）、配列は常に1要素1partです。</td>
+</tr>
+<tr>
+<td>application/x-www-form-urlencoded request</td>
+<td>一部対応</td>
+<td>object schemaの各propertyを、queryの<code>form</code>style規則（parameter serializationと共通）で<code>name=value</code>にして<code>&amp;</code>で連結し、<code>StringContent</code>（Content-Type <code>application/x-www-form-urlencoded</code>）で送ります。値はRFC 3986のunreservedだけを残してpercent-encodeします。**空白は<code>+</code>ではなく<code>%20</code>**です（.NETの<code>FormUrlEncodedContent</code>と異なりますが、サーバーは両方を空白として読みます）。<code>encoding</code>の<code>style</code>／<code>explode</code>／<code>allowReserved</code>に従い、配列は既定<code>name=a&amp;name=b</code>、<code>explode: false</code>なら<code>name=a,b</code>、<code>pipeDelimited</code>なら`name=a</td>
+</tr>
+<tr>
+<td>Encoding Object</td>
+<td>一部対応</td>
+<td><code>encoding.&lt;property&gt;</code>の<code>contentType</code>（multipartのpart。カンマ区切りは先頭だけで<code>OACG108</code>）、<code>headers</code>（<code>schema.const</code>／<code>default</code>／<code>example</code>の静的な値を持つheaderだけをpartに付与。値のないheaderは<code>OACG108</code>、<code>Content-Type</code>は<code>contentType</code>を使い<code>OACG108</code>）、<code>style</code>／<code>explode</code>／<code>allowReserved</code>（form-urlencodedのみ）に対応します。宣言したpropertyが存在しなければ<code>OACG108</code>です。既定のContent-Typeは、文字列・scalarが<code>text/plain</code>、object・array of objectが<code>application/json</code>、ファイルが<code>application/octet-stream</code>（<code>contentMediaType</code>があればそれ）です。<code>FileParameter.ContentType</code>があればpartごとに優先します。</td>
+</tr>
+<tr>
+<td>binary request body</td>
+<td>一部対応</td>
+<td><code>application/octet-stream</code>など上記のバイナリmedia typeは<code>byte[]</code>を<code>ByteArrayContent</code>で送ります。media typeが<code>image/*</code>・<code>*/*</code>などのwildcardの場合は、Content-Typeを選ぶ任意引数<code>&lt;BodyParameterName&gt;ContentType</code>（<code>string?</code>、<code>null</code>なら<code>application/octet-stream</code>）を加えます。トップレベルの<code>Stream</code>オーバーロードはなく、巨大なファイルはmultipartの<code>FileParameter</code>（<code>Stream</code>）で送ります。</td>
+</tr>
+<tr>
+<td>file part (<code>&lt;ApiName&gt;FileParameter</code>)</td>
+<td>対応</td>
+<td><code>format: binary</code>のproperty（と<code>contentMediaType</code>を持つ非textのstring）は、生成する<code>public sealed class &lt;ApiName&gt;FileParameter</code>（<code>byte[]</code>または<code>Stream</code>、<code>FileName</code>、<code>ContentType</code>）を型にします。<code>Stream</code>は所有権をリクエストへ渡します。送信中に読まれ、リクエストと一緒に破棄されます（<code>StreamContent</code>の動作）ので、呼び出しごとに新しいstreamを渡し、送信後は使わないでください。送信前に例外が出た場合は破棄されません。<code>Stream</code>は再読込できないため、リトライや307/308リダイレクトによる本文の再送には使えません。コンストラクターは<code>byte[]</code>版と<code>Stream</code>版の2つです。</td>
 </tr>
 <tr>
 <td>TRACEのrequest body</td>
@@ -506,9 +536,9 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>リクエスト本文は専用のJson.NET serializerで生成し、ホストの<code>JsonConvert.DefaultSettings</code>から<code>$type</code>／<code>$id</code>／<code>$ref</code>などのメタデータ設定を引き継ぎません。日付変換と明示的なJSON <code>null</code>は維持します。</td>
 </tr>
 <tr>
-<td>wildcard JSON media type</td>
+<td>wildcard media type</td>
 <td>一部対応</td>
-<td><code>application/*+json</code>のみを認識します。<code>application/vnd.*+json</code>など部分的なwildcard subtypeは、リクエスト・成功レスポンスとも生成時に<code>OACG101</code>です。</td>
+<td><code>*/*</code>、<code>type/*</code>、<code>application/*+json</code>だけを受け付けます（request・response）。<code>application/vnd.*+json</code>など部分的なwildcard subtypeは生成時に<code>OACG101</code>です。<code>application/*+json</code>は成功responseのJSON、<code>*/*</code>と<code>type/*</code>はバイナリとして扱います（<code>*/*</code>のobject schemaは<code>OACG101</code>）。</td>
 </tr>
 <tr>
 <td>required non-nullable request body</td>
@@ -538,12 +568,32 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>successful response</td>
 <td>一部対応</td>
-<td>少なくとも1つの<code>2xx</code> responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの値の宣言順は比較に影響しません。schema付き成功本文の空・空白はnullableでも<code>JsonSerializationException</code>です。JSON <code>null</code>はnullable schemaだけで許可します。非nullableな配列要素がJSON <code>null</code>なら、入れ子の配列やDTO内の配列も含めて拒否します。</td>
+<td><code>2xx</code>（<code>2XX</code>範囲を含む）が成功です。全成功responseの本文contract（別名参照を終端まで解決し、実効nullable性・型・各値の境界が一致、inline enumの宣言順は無関係）が同じなら、従来どおり1つの型（本文なしは<code>Task</code>）を返します。<strong>contractが異なる場合は、status別の結果型を返します（下の「status別の結果型」）。従来の<code>OACG105</code>は、1つのresponse内の複数のJSON media typeでschemaが異なる場合だけです。</strong> schema付きJSON成功本文の空・空白はnullableでも<code>JsonSerializationException</code>、JSON <code>null</code>はnullable schemaだけで許可します。非nullableな配列要素がJSON <code>null</code>なら、入れ子の配列とDTO内の配列も含めて拒否します。</td>
+</tr>
+<tr>
+<td>status-keyed result type</td>
+<td>一部対応</td>
+<td>成功responseの本文contractが異なる、または<code>2XX</code>範囲に本文がある、またはdefaultだけ・responses省略などのoperationは、主メソッドが<code>&lt;OperationName&gt;Response</code>（名前が重なれば連番）を返します。<code>StatusCode</code>、宣言ごとの<code>Is&lt;Status&gt;</code>（<code>IsStatus200</code>、<code>IsStatus2XX</code>、<code>IsStatusDefault</code>）、本文があるstatusの型付きアクセサ<code>Status200</code>（その応答でなければ<code>null</code>）を持ちます。判定順は完全一致のstatus、<code>2XX</code>範囲、<code>default</code>です。status別のメソッドは追加しません。</td>
+</tr>
+<tr>
+<td>text / binary response</td>
+<td>一部対応</td>
+<td><code>text/*</code>・<code>application/xml</code>・<code>+xml</code>・<code>application/yaml</code>でschemaがscalar（<code>string</code>など）の成功本文は<code>string</code>（ほかのscalarは宣言型へ変換。変換できなければ<code>JsonSerializationException</code>）、<code>application/octet-stream</code>・<code>image/*</code>・<code>*/*</code>・schemaが<code>format: binary</code>または省略の成功本文は<code>byte[]</code>です。本文の文字コードはJSONと同じ規則（charset・BOM）で読みます。<code>HttpResponseMessage</code>を返すオーバーロードと<code>Stream</code>を返すメソッドは生成しません（巨大なファイルは<code>byte[]</code>に全読みします）。</td>
+</tr>
+<tr>
+<td>response <code>Accept</code> header</td>
+<td>一部対応</td>
+<td>status別のresultを返すoperationと、JSON以外の本文または複数のmedia typeを持つ成功responseのoperationは、<code>Accept</code>に処理できるmedia typeを優先順（JSON &gt; text &gt; binary）で送ります（先頭が主media type、残りは<code>q=0.9</code>、<code>0.8</code>…）。response内でschemaが主media typeと異なる型の別media typeは処理できないため<code>OACG108</code>で通知し、<code>Accept</code>にも入れず、受信すると拒否します。受信した<code>Content-Type</code>で処理を選び（先頭のmedia typeは<code>Content-Type</code>なしにも使用）、宣言にないmedia typeは<code>JsonSerializationException</code>です。従来のJSON単独のoperationは<code>Accept</code>を送りません。</td>
+</tr>
+<tr>
+<td>default-only / omitted responses / 3XX</td>
+<td>一部対応</td>
+<td><code>2xx</code>がなく<code>default</code>だけなら、<code>default</code>を成功contractとみなし、任意の<code>2xx</code>で成功します（<code>2xx</code>と<code>default</code>が両方あれば<code>default</code>はエラーのcontractです）。<code>responses</code>を省略（OpenAPI 3.1）または<code>2xx</code>がない場合は、任意の<code>2xx</code>で成功する<code>Task</code>です（本文は読みません）。OpenAPI 3.0の<code>responses</code>省略・空は<code>OACG100</code>です。<code>3XX</code>の宣言は受理しますが生成物には影響せず、<code>HttpClient</code>の自動リダイレクトに従い<strong>最終応答のstatusで成功・失敗を判定</strong>します（<code>3xx</code>の最終応答は<code>2xx</code>でなければ<code>&lt;ApiName&gt;Exception</code>です）。</td>
 </tr>
 <tr>
 <td>本文を持てないレスポンス</td>
 <td>非対応</td>
-<td>HEADの全status、および成功204・205・<code>2XX</code>では非空の<code>content</code>宣言を位置付き<code>OACG101</code>で拒否します。Response Objectの参照先も検査します。空の<code>content</code>と本文なし応答は使用できます。<code>2XX</code>には204・205が含まれるため、型付き本文契約は対象外です。</td>
+<td>HEADの全status、および成功204・205では非空の<code>content</code>宣言を位置付き<code>OACG101</code>で拒否します。Response Objectの参照先も検査します。空の<code>content</code>と本文なしは使えます。<code>2XX</code>範囲は型付き本文を宣言できます（status別の結果型）。</td>
 </tr>
 <tr>
 <td>成功レスポンスの<code>Content-Type</code></td>
@@ -568,7 +618,12 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>error/default response</td>
 <td>一部対応</td>
-<td>JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。</td>
+<td>本文の構造・参照を検証し、成功本文のDTO生成制限は適用しません。<code>4xx</code>・<code>5xx</code>・<code>4XX</code>・<code>5XX</code>・<code>default</code>のJSON本文はschemaが生成できれば<code>&lt;ApiName&gt;Exception</code>から取得できます（下の「typed error」）。生成できないschemaは受理しますが、その位置で<code>OACG108</code>のWarningを報告し、本文は<code>ResponseBody</code>の文字列だけです。本文を宣言していない（またはJSON本文を持たない）<code>4xx</code>・<code>5xx</code> statusは「型なし」として扱い、<code>default</code>の型にはフォールバックしません（<code>default</code>は未宣言のstatusにだけ適用）。JSON以外のmedia type（<code>*/*</code>などのwildcardを含む）も受理します。例外は実際の本文を保持します。</td>
+</tr>
+<tr>
+<td>typed error</td>
+<td>対応</td>
+<td><code>&lt;ApiName&gt;Exception</code>は従来の<code>StatusCode</code>・<code>ResponseBody</code>（文字列）を保ったまま、宣言されたJSON本文を逆シリアル化した<code>object? Error</code>と<code>bool TryGetError&lt;T&gt;(out T value)</code>、失敗理由の<code>Exception? ErrorDeserializationException</code>を持ちます。statusの選択は完全一致、<code>4XX</code>／<code>5XX</code>、<code>default</code>の順です。逆シリアル化に失敗（不正なJSON・必須property欠落など）しても例外を握りつぶさず、<code>ResponseBody</code>に本文を残して<code>Error</code>は<code>null</code>、失敗は<code>ErrorDeserializationException</code>に残します。既存の2引数コンストラクターは変わりません。エラーresponseのheaderは公開しません。</td>
 </tr>
 <tr>
 <td>response extension</td>
@@ -577,8 +632,13 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 </tr>
 <tr>
 <td>response header</td>
-<td>非対応</td>
-<td>非空の<code>headers</code>は<code>OACG101</code>です。<code>headers</code>がある場合はobjectが必要で、scalar・array・nullは位置付き<code>OACG100</code>です。空objectは使用できます。</td>
+<td>一部対応</td>
+<td>成功responseの<code>headers</code>は、そのoperationに<code>&lt;name&gt;WithHttpInfo</code>メソッド（追加メソッド。<code>&lt;Name&gt;HttpInfo</code>クラスを返す）を生成して公開します。<code>StatusCode</code>、raw <code>Headers</code>（<code>IReadOnlyDictionary&lt;string, string[]&gt;</code>、大小文字を区別しない）、<code>Data</code>（通常のメソッドの戻り値）と、宣言headerごとの型付きプロパティ（<code>X-Rate-Limit</code>は<code>XRateLimit</code>）を持ちます。headerは<code>simple</code>style（scalarとscalarの配列。配列はカンマ区切り）、型は<code>int</code>・<code>double</code>・<code>bool</code>・<code>DateTime</code>・<code>Guid</code>・enumなどをinvariant cultureで読み、不正な値と<code>required</code>の欠落は<code>JsonSerializationException</code>です。通常のメソッドは同じ検査を行い<code>Data</code>だけを返します（headerを宣言したoperationだけが対象で、ほかのoperationに<code>WithHttpInfo</code>は生成しません）。header objectの<code>content</code>、objectのheader、<code>style: simple</code>以外は<code>OACG101</code>、<code>Content-Type</code>は仕様どおり<code>OACG108</code>で無視します。エラーresponseのheaderは検証だけで公開しません。<code>headers</code>はobjectが必要で、scalar・array・nullは位置付き<code>OACG100</code>です。</td>
+</tr>
+<tr>
+<td><code>components.headers</code></td>
+<td>対応</td>
+<td><code>components.headers</code>と、responses・<code>encoding</code>のheaderからの<code>#/components/headers/&lt;name&gt;</code>参照を解決します（参照先は通常のHeader Objectと同じ規則で検証します）。</td>
 </tr>
 <tr>
 <td>Response Objectの項目</td>
@@ -720,7 +780,12 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td><code>format: byte</code></td>
 <td>対応</td>
-<td><code>byte[]</code>（Json.NET標準のbase64）へmappingします（従来は<code>string</code>）。成功応答は文字列かつ有効なbase64であることを検査し、path/query/header parameterは標準base64文字列で送ります。<code>format: binary</code>はJSON schemaでは<code>OACG101</code>のままで、multipartやoctet-streamは後続フェーズで扱います。</td>
+<td><code>byte[]</code>（Json.NET標準のbase64）へmappingします（従来は<code>string</code>）。成功応答は文字列かつ有効なbase64であることを検査し、path/query/header parameterは標準base64文字列で送ります。</td>
+</tr>
+<tr>
+<td><code>format: binary</code></td>
+<td>一部対応</td>
+<td>multipartのファイルpart（<code>&lt;ApiName&gt;FileParameter</code>）、バイナリのrequest本文（<code>byte[]</code>）、バイナリ応答（<code>byte[]</code>）で使えます。JSONの本文・DTO（JSON応答を含む）・parameter・header・form-urlencodedの値で参照されると、binaryのschemaの位置で<code>OACG101</code>です（binaryを含むschemaをcomponentsに置くことは可能で、使われた場所で判定します）。3.1の<code>type: string</code>＋<code>contentMediaType</code>（<code>contentEncoding</code>なし、JSON・text・xml以外）も同じ扱いです。大文字小文字の違う<code>format</code>は従来どおり通常のstringです。</td>
 </tr>
 </tbody></table>
 <p><code>$ref</code>と併記できる注釈・データのキーは<code>$comment</code>、<code>default</code>、<code>deprecated</code>、
@@ -738,7 +803,8 @@ OpenAPI 3.0では既存互換として<code>nullable</code>も扱います。</p
 <li><code>oneOf</code>／<code>anyOf</code>のsealed unionラッパークラス（<code>FromX</code>／<code>TryGetX</code>／<code>AsX</code>、discriminatorなしは<code>FromJToken</code>／<code>ToJToken</code>）と、internalな<code>JsonConverter</code></li>
 <li>injected <code>HttpClient</code>を使うasync client API。documentまたはexplicit base URLを指定するconstructorを使用可能</li>
 <li>path/query/header/body、<code>JsonConvert</code>、<code>CancellationToken</code>、宣言された<code>2xx</code> response handling</li>
-<li>generated <code>&lt;ApiName&gt;Exception</code></li>
+<li>request本文のmedia type別メソッド（<code>&lt;name&gt;AsMultipart</code>など）、ファイルpartの<code>&lt;ApiName&gt;FileParameter</code>、status別の結果型<code>&lt;OperationName&gt;Response</code>、<code>&lt;name&gt;WithHttpInfo</code>と<code>&lt;Name&gt;HttpInfo</code></li>
+<li>generated <code>&lt;ApiName&gt;Exception</code>（<code>Error</code>／<code>TryGetError&lt;T&gt;</code>／<code>ErrorDeserializationException</code>を追加）</li>
 </ul>
 <p>生成モデルは、raw JSON/YAMLを各normalizerでnormalized bundleへ変換した後、OAS semantic parserとinternal reference resolverを通し、
 Roslyn非依存のgeneration modelを作ってから、Roslynでparseしたdeterministic source emitterへ渡します。
@@ -790,7 +856,7 @@ CLR名に番号を付けます。Json.NETがschemaのboolean値を存在フラ�
 </tr>
 <tr>
 <td><code>OACG105</code></td>
-<td>InconsistentResponse</td>
+<td>InconsistentResponse（1つのresponse・requestBody内で、schemaが異なる複数のJSON media typeを宣言した場合だけ。status間でcontractが異なる成功responseはstatus別の結果型になります）</td>
 </tr>
 <tr>
 <td><code>OACG106</code></td>

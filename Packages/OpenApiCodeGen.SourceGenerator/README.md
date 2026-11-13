@@ -234,15 +234,32 @@ a JSON media type. Cookie parameters are sent in one `Cookie` header; set
 manual `Cookie` header can otherwise be merged with or replaced by the container.
 An explicit `baseUrl=""` override remains relative.
 With a relative server URL, an operation at `/` includes a base address query once.
-Request bodies send a concrete `application/json` or `application/<subtype>+json`
-media type. A request that declares only `application/*+json` receives `OACG101`;
-when a concrete type is also declared, that type is selected.
-Partial wildcard subtypes such as `application/vnd.*+json` receive `OACG101`
-for request and successful response content.
-HEAD responses and successful 204, 205, or `2XX` responses cannot declare
-body content, including through a response reference (`OACG101`). A typed
-`2XX` contract is unsupported because that range includes 204 and 205.
-Present response `headers` must be an object; nonempty maps remain unsupported.
+Request bodies support `application/json` (a concrete `application/<subtype>+json`
+also works), `application/x-www-form-urlencoded`, `multipart/form-data`, text
+(`text/*`, `application/xml` with a string schema) and binary (`application/octet-stream`,
+`image/*`, `*/*`, or a schema with `format: binary`). When an operation declares several
+media types, the highest priority one (JSON, form-urlencoded, multipart, text, binary)
+keeps the operation name and each other one gets its own method (`CreatePetAsMultipart`
+style: `<name>AsFormUrlEncoded`, `<name>AsMultipart`, `<name>AsText`, `<name>AsBinary`).
+A multipart part that is a file (`format: binary`) is a generated `<ApiName>FileParameter`
+(`byte[]` or `Stream`, with `FileName` and `ContentType`); a `Stream` is handed to the request
+and disposed with it, so pass a new stream per call. The Encoding Object (`contentType`, static
+`headers`, `style` / `explode` / `allowReserved`) is honored. Form-urlencoded values are
+percent-encoded (a space is `%20`, not `+`). A request that declares only `application/*+json`
+receives `OACG101`; object schemas in `application/xml` receive `OACG101`.
+Partial wildcard subtypes such as `application/vnd.*+json` receive `OACG101`.
+Successful responses may be JSON, text (`string`) or binary (`byte[]`). When the 2xx responses
+carry different contracts, or a `2XX` range has a body, the method returns a status-keyed
+`<OperationName>Response` (`StatusCode`, `IsStatus200`, `Status200`, ...). A `default`-only
+operation treats `default` as the success contract, and an omitted `responses` (OpenAPI 3.1)
+succeeds on any 2xx. `3XX` declarations are accepted; HttpClient follows redirects and the final
+response decides. Typed errors: `<ApiName>Exception` keeps `StatusCode` and `ResponseBody` and adds
+`Error`, `TryGetError<T>(out T)` and `ErrorDeserializationException` for the declared JSON error body
+(exact status, `4XX` / `5XX`, then `default`). Declared response `headers` (and
+`components.headers`) are exposed by an added `<name>WithHttpInfo` method (status code, raw and
+typed headers, data); a missing required header raises `JsonSerializationException`.
+HEAD responses and successful 204 or 205 responses cannot declare body content, including through
+a response reference (`OACG101`).
 Parameter Objects recognize standard OpenAPI 3.0/3.1 fields and `x-*` extensions.
 Unknown fields such as `requird` receive positioned `OACG101`, including in
 path-level parameters, components, and external reference targets.

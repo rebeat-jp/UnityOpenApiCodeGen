@@ -125,7 +125,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                               "\"type\":\"string\",\"pattern\":\"^[a-z]+$\"}},\"const\":{}," +
                               "\"additionalProperties\":true}}}}}}}}}";
 
-            AssertGenerates(document);
+            // P4: the schema (const {}) cannot be generated, so the typed error is skipped with an OACG108
+            // warning; the document still generates and the body stays available as ResponseBody.
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
+            Assert.All(execution.RunResult.Diagnostics, diagnostic => Assert.Equal("OACG108", diagnostic.Id));
+            Assert.Empty(execution.CompilationErrors);
         }
 
         [Fact]

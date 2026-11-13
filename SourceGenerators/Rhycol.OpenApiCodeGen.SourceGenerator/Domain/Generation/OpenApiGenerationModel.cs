@@ -16,8 +16,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<GeneratedTypeNameCollision> typeNameCollisions,
             IReadOnlyList<OpenApiSemanticWarning>? warnings = null,
             IReadOnlyList<GeneratedUnionModel>? unions = null,
-            IReadOnlyList<OpenApiSemanticServer>? servers = null)
+            IReadOnlyList<OpenApiSemanticServer>? servers = null,
+            string? fileParameterTypeName = null)
         {
+            FileParameterTypeName = fileParameterTypeName;
             Unions = unions ?? Array.Empty<GeneratedUnionModel>();
             Servers = servers ?? Array.Empty<OpenApiSemanticServer>();
             Warnings = warnings ?? Array.Empty<OpenApiSemanticWarning>();
@@ -44,6 +46,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal IReadOnlyList<GeneratedEnumModel> Enums { get; }
 
         /// <summary>Union wrapper types (oneOf / anyOf).</summary>
+        /// <summary>Name of the generated file part type; null when no multipart body or binary property uses it.</summary>
+        internal string? FileParameterTypeName { get; }
+
         internal IReadOnlyList<GeneratedUnionModel> Unions { get; }
 
         internal IReadOnlyList<GeneratedOperationModel> Operations { get; }
@@ -268,8 +273,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyDictionary<string, IReadOnlyList<string>> responseMediaTypes,
             string description = "",
             bool deprecated = false,
-            IReadOnlyList<OpenApiSemanticServer>? servers = null)
+            IReadOnlyList<OpenApiSemanticServer>? servers = null,
+            GeneratedResponsePlanModel? responsePlan = null,
+            IReadOnlyList<GeneratedErrorResponseModel>? errorResponses = null)
         {
+            ResponsePlan = responsePlan;
+            ErrorResponses = errorResponses ?? Array.Empty<GeneratedErrorResponseModel>();
             Name = name;
             Summary = summary;
             HttpMethod = httpMethod;
@@ -304,6 +313,32 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal GeneratedRequestBodyModel? RequestBody { get; }
 
         internal GeneratedTypeModel? ResponseType { get; }
+
+        /// <summary>The advanced response path; null when the original void / single JSON contract path applies.</summary>
+        internal GeneratedResponsePlanModel? ResponsePlan { get; }
+
+        /// <summary>Every body type decoded as JSON on a success path (the original path or the plan).</summary>
+        internal IEnumerable<GeneratedTypeModel> EnumerateJsonResponseTypes()
+        {
+            if (ResponseType is not null)
+            {
+                yield return ResponseType;
+            }
+
+            if (ResponsePlan is not null)
+            {
+                foreach (GeneratedSuccessResponseModel member in ResponsePlan.Successes)
+                {
+                    if (member.Type is not null && member.Contents.Any(static content => content.Kind == GeneratedResponseBodyKind.Json))
+                    {
+                        yield return member.Type;
+                    }
+                }
+            }
+        }
+
+        /// <summary>Declared error bodies (JSON) by status, used to give the API exception a typed error.</summary>
+        internal IReadOnlyList<GeneratedErrorResponseModel> ErrorResponses { get; }
 
         internal IReadOnlyList<string> SuccessStatusCodes { get; }
 
@@ -372,8 +407,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             bool required,
             string mediaType,
             GeneratedTypeModel type,
-            string? specifiedParameterName)
+            string? specifiedParameterName,
+            IReadOnlyList<GeneratedBodyVariantModel>? variants = null)
         {
+            Variants = variants ?? new[]
+            {
+                new GeneratedBodyVariantModel(GeneratedBodyKind.Json, mediaType, type, string.Empty, null, null, specifiedParameterName)
+            };
             ParameterName = parameterName;
             Required = required;
             MediaType = mediaType;
@@ -390,6 +430,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal GeneratedTypeModel Type { get; }
 
         internal string? SpecifiedParameterName { get; }
+
+        /// <summary>Every media type of the body; index 0 is the primary one (MediaType and Type describe it).</summary>
+        internal IReadOnlyList<GeneratedBodyVariantModel> Variants { get; }
     }
 
     internal enum GeneratedTypeKind
@@ -413,7 +456,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         Union,
         Binary,
         /// <summary>An untyped JSON object (JObject).</summary>
-        FreeObject
+        FreeObject,
+        /// <summary>A file part: the generated FileParameter type (Name).</summary>
+        File
     }
 
     internal sealed class GeneratedTypeModel : IEquatable<GeneratedTypeModel>
