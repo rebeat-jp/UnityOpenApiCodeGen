@@ -99,8 +99,13 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 </tr>
 <tr>
 <td>unresolved / cyclic <code>$ref</code></td>
-<td>Unsupported</td>
-<td>それぞれ<code>OACG102</code>、<code>OACG103</code>を報告します。<code>OACG104</code>はBundle v1のexternal-reference互換診断です。</td>
+<td>Partial</td>
+<td>解決できない参照は<code>OACG102</code>です。<code>$ref</code>のaliasだけの循環（A→B→A）と、array／mapだけを経由して名前付きDTO／enumで閉じない循環は<code>OACG103</code>です。property・items・additionalPropertiesを経由するobject／enumの自己再帰・相互再帰は許可します。<code>OACG104</code>はBundle v1のexternal-reference互換診断です。</td>
+</tr>
+<tr>
+<td>schema <code>$ref</code> target</td>
+<td>Supported</td>
+<td>schemaの<code>$ref</code>は<code>#/components/schemas/&lt;name&gt;</code>に限らず、任意のJSON Pointer（例: <code>#/components/schemas/A/properties/b</code>、<code>$defs</code>配下、拡張キー配下）と、Bundle v2のexternal documentの任意fragmentを指せます。型名はpointer末尾のtokenから付け（末尾が配列indexなら直前のtokenを前置）、名前の衝突は既存どおり連番と<code>OACG107</code>で解決します。inline定義と同じschemaを指す参照は別の型になる場合があります。parameters／responses／requestBodiesなど他のcomponent参照は従来どおり<code>#/components/&lt;section&gt;/&lt;name&gt;</code>だけです。</td>
 </tr>
 <tr>
 <td>URL query / fragment</td>
@@ -513,7 +518,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>successful response JSON</td>
 <td>Partial</td>
-<td>RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの<code>$id</code>／<code>$ref</code>／<code>$values</code>参照メタデータを互換拡張として維持します。配列schemaでも<code>$id</code>／<code>$values</code>で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の<code>1.0</code>／<code>1e0</code>を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限<code>float</code>／<code>double</code>は<code>JsonSerializationException</code>です。 受信JSONの構文検査は通常最大64階層で、ホストが<code>JsonConvert.DefaultSettings.MaxDepth</code>に正の値を設定した場合はその値を使い、<code>null</code>または未指定なら64階層を維持します。</td>
+<td>RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTO（<code>additionalProperties: false</code>）の未宣言propertyを拒否し（open DTOとmapは許可し、宣言した値型を検査します）、Json.NETの<code>$id</code>／<code>$ref</code>／<code>$values</code>参照メタデータを互換拡張として維持します。配列schemaでも<code>$id</code>／<code>$values</code>で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の<code>1.0</code>／<code>1e0</code>を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限<code>float</code>／<code>double</code>は<code>JsonSerializationException</code>です。 受信JSONの構文検査は通常最大64階層で、ホストが<code>JsonConvert.DefaultSettings.MaxDepth</code>に正の値を設定した場合はその値を使い、<code>null</code>または未指定なら64階層を維持します。</td>
 </tr>
 <tr>
 <td>response JSON conversion settings</td>
@@ -564,8 +569,8 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 </tr>
 <tr>
 <td>object</td>
-<td>Partial</td>
-<td>named propertiesと<code>required</code>を持ち、<code>additionalProperties: false</code>を明示したobject。省略、<code>true</code>、schema値はDTOを生成できず<code>OACG101</code>です。成功応答の未知propertyは拒否します。既存仕様で省略していた場合は明示してください。</td>
+<td>Supported</td>
+<td>named propertiesと<code>required</code>を持つobjectをDTOへ生成します。<code>additionalProperties</code>の省略または<code>true</code>はopen objectで、宣言外のpropertyを<code>[JsonExtensionData]</code>の<code>IDictionary&lt;string, JToken&gt;</code>メンバー（既定名<code>AdditionalProperties</code>、宣言済みpropertyと重なる場合は連番）に保持して再送し、成功応答の未知propertyも許可します。schema値の<code>additionalProperties</code>はpropertiesがあればopen objectとして同じく保持し、成功応答では各値をその型で検査します（値は<code>JToken</code>のまま取り出し、<code>ToObject&lt;T&gt;()</code>で変換します）。<code>additionalProperties: false</code>はclosedで、成功応答の未知propertyを拒否します。propertiesがなく<code>false</code>なら空のclosed DTOです。</td>
 </tr>
 <tr>
 <td>array</td>
@@ -573,9 +578,9 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>supported schemaのarray。</td>
 </tr>
 <tr>
-<td>string enum</td>
+<td>string / integer enum</td>
 <td>Partial</td>
-<td>generated C# enumは宣言したwire文字列だけを大小文字・空白も含め完全一致で読み書きします。JSON数値と未宣言のC# enum値は拒否します。OpenAPI 3.1の<code>type: [string, null]</code>でも<code>enum</code>に文字列しかなければ非nullableです。<code>null</code>や重複値を含むenumは<code>OACG101</code>です。</td>
+<td>generated C# enumは宣言したwire値だけを完全一致で読み書きします。string enumは大小文字・空白も含む文字列を、integer enumは明示値付きのC# enum（値が<code>int</code>を超えれば<code>long</code>）と数値のwireを使い、JSON文字列・小数（<code>2.0</code>や<code>1e0</code>のような整数値の字句も）・未宣言値・未宣言のC# enum値を拒否します（整数トークンだけを受理）。<code>type</code>を省略したenumは値の型（すべてstringまたはすべてinteger）から推論します。stringとintegerの混在、number enum、boolean enumは<code>enum</code>の位置で<code>OACG101</code>です。<code>enum</code>に<code>null</code>を含むとnullable（<code>Priority?</code>）として扱います。<code>x-enum-varnames</code>／<code>x-enumNames</code>（前者を優先）はC#のmember名、<code>x-enum-descriptions</code>はmemberのXML docに使い、長さ不一致などの不正な指定は<code>OACG108</code>で無視します。名前のないinteger enumのmemberは<code>Value&lt;n&gt;</code>（負数は<code>ValueMinus&lt;n&gt;</code>）です。OpenAPI 3.1の<code>type: [string, null]</code>でも<code>enum</code>に<code>null</code>が無ければ非nullableです。重複値は<code>OACG101</code>です。</td>
 </tr>
 <tr>
 <td>direct schema reference</td>
@@ -610,12 +615,12 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>scalar format</td>
 <td>Partial</td>
-<td><code>integer</code>は通常<code>int</code>、<code>int64</code>は<code>long</code>。<code>number</code>は通常<code>double</code>、<code>float</code>は<code>float</code>、<code>decimal</code>は<code>decimal</code>。<code>date</code>、<code>date-time</code>、<code>uuid</code>は<code>DateTime</code>、<code>DateTimeOffset</code>、<code>Guid</code>へmappingします。成功レスポンスでは変換前にそれぞれ日付、タイムゾーン付き日時、ASCIIの8-4-4-4-12形式を字句検査します。字句が正しくてもCLRで表せない時刻・うるう秒などは変換時に拒否される場合があります。</td>
+<td><code>integer</code>は通常<code>int</code>、<code>int64</code>は<code>long</code>。<code>number</code>は通常<code>double</code>、<code>float</code>は<code>float</code>、<code>decimal</code>は<code>decimal</code>。<code>date</code>、<code>date-time</code>、<code>uuid</code>は<code>DateTime</code>、<code>DateTimeOffset</code>、<code>Guid</code>へmappingします。成功レスポンスでは変換前にそれぞれ日付、タイムゾーン付き日時、ASCIIの8-4-4-4-12形式を字句検査します。字句が正しくてもCLRで表せない時刻・うるう秒などは変換時に拒否される場合があります。 <code>byte</code>は<code>byte[]</code>にmappingします（成功応答はbase64を検査）。</td>
 </tr>
 <tr>
 <td>format spelling</td>
 <td>Partial</td>
-<td>Only exact lowercase <code>int64</code>, <code>float</code>, <code>decimal</code>, <code>date</code>, <code>date-time</code>, <code>uuid</code>, and <code>binary</code> trigger their special handling. Other casing is treated as an unrecognized format and uses the base schema type.</td>
+<td>Only exact lowercase <code>int64</code>, <code>float</code>, <code>decimal</code>, <code>date</code>, <code>date-time</code>, <code>uuid</code>, <code>byte</code>, and <code>binary</code> trigger their special handling. Other casing is treated as an unrecognized format and uses the base schema type.</td>
 </tr>
 <tr>
 <td>request number</td>
@@ -624,13 +629,28 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 </tr>
 <tr>
 <td>map / free-form object</td>
-<td>Unsupported</td>
-<td><code>additionalProperties</code>などのmap/free-form表現は対象外です。</td>
+<td>Supported</td>
+<td>propertiesがなく<code>additionalProperties</code>がschemaなら<code>Dictionary&lt;string, T&gt;</code>です。成功応答では各値を検査し（非nullableな参照型のnull、型不一致、Json.NETの<code>$id</code>／<code>$ref</code>／<code>$type</code>／<code>$values</code>キーを拒否）、requestでは値の型に応じたnull・非有限数を検査します。propertiesがなく<code>additionalProperties</code>が省略または<code>true</code>の<code>type: object</code>（free-form）は<code>JObject</code>です。</td>
+</tr>
+<tr>
+<td>any / type inference</td>
+<td>Supported</td>
+<td><code>{}</code>、OpenAPI 3.1のboolean schema <code>true</code>、<code>type: &quot;null&quot;</code>、およびnull以外の型を複数持つ3.1の型配列（例: <code>[&quot;string&quot;,&quot;integer&quot;]</code>）は<code>JToken</code>です（JSON <code>null</code>を受け付けるため常にnullable）。<code>type</code>を省略した場合は、<code>properties</code>／<code>additionalProperties</code>があればobject、<code>items</code>があればarray、<code>enum</code>の値からstring／integer、<code>const</code>の値からその型を推論します。boolean schema <code>false</code>は<code>OACG101</code>です。parameterの<code>{}</code>や複数型は<code>OACG101</code>のままです。</td>
 </tr>
 <tr>
 <td>schema assertions</td>
 <td>Unsupported</td>
-<td>生成モデルが保持しない<code>const</code>、<code>pattern</code>、<code>minLength</code>、<code>minimum</code>、<code>minItems</code>などのassertionは、そのkeywordの位置で<code>OACG101</code>です。説明用annotation、<code>default</code>、<code>x-*</code>は許可します。</td>
+<td>生成モデルが保持しない<code>pattern</code>、<code>minLength</code>、<code>minimum</code>、<code>minItems</code>などのassertionは、そのkeywordの位置で<code>OACG101</code>です。説明用annotation、<code>default</code>、<code>x-*</code>は許可します。<code>const</code>と<code>$defs</code>はOpenAPI 3.1のkeywordで、3.0では<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td><code>const</code></td>
+<td>Partial</td>
+<td>OpenAPI 3.1のscalar const（string／integer／number／boolean）。成功応答では値の一致を検査し（integer／numberは数値として比較するため<code>2.0</code>は<code>2</code>と等価）、不一致は<code>JsonSerializationException</code>です。request DTOでは、string／整数／浮動小数／decimal／booleanのDTO propertyの初期値になるだけで、request側で値は検証しません（nullableな任意propertyは初期値の対象外）。object／array値は<code>OACG101</code>、schema型と合わない値は<code>OACG100</code>です。<code>null</code>や単一のscalar型を持たないschemaのconst、<code>enum</code>と併記したconstは<code>OACG108</code>で無視します。</td>
+</tr>
+<tr>
+<td>description / title / deprecated / default</td>
+<td>Supported</td>
+<td><code>title</code>と<code>description</code>はDTO・property・enum（とmember）のXML docへ出力します。<code>deprecated: true</code>はschemaとpropertyに<code>[Obsolete]</code>を付けます（生成コード内は<code>#pragma warning disable CS0612, CS0618</code>）。<code>default</code>はXML docだけで、wire contractは変えません（object／arrayのdefaultは無視）。operationとparameterの<code>deprecated</code>は後続フェーズで扱います。</td>
 </tr>
 <tr>
 <td>composition</td>
@@ -638,13 +658,18 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td><code>allOf</code>、<code>anyOf</code>、<code>oneOf</code>、<code>not</code>、discriminatorは対象外です。</td>
 </tr>
 <tr>
-<td>binary / readOnly / writeOnly</td>
-<td>Unsupported</td>
-<td>生成contractでは対象外です。</td>
+<td>readOnly / writeOnly</td>
+<td>Supported</td>
+<td><code>readOnly</code>なDTO propertyはrequestへ送信せず（生成される<code>ShouldSerialize&lt;Name&gt;()</code>が<code>false</code>）、requestのrequired検査からも外します。成功応答ではschemaの<code>required</code>どおり必須です。<code>writeOnly</code>なpropertyは成功応答で欠落しても許可し、requestではrequiredのままです。<code>$ref</code>先のschemaに付いた<code>readOnly</code>／<code>writeOnly</code>も、参照するpropertyに適用します。readOnly propertyの値はrequestで検証もしません。Unity IL2CPPのmanaged strippingでreflection専用メンバーが削除されないよう、<code>ShouldSerialize&lt;Name&gt;()</code>と<code>AdditionalProperties</code>にはinternalな<code>PreserveAttribute</code>を付け、<code>ShouldSerialize&lt;Name&gt;()</code>は<code>EditorBrowsable(Never)</code>にします。</td>
+</tr>
+<tr>
+<td><code>format: byte</code></td>
+<td>Supported</td>
+<td><code>byte[]</code>（Json.NET標準のbase64）へmappingします（従来は<code>string</code>）。成功応答は文字列かつ有効なbase64であることを検査し、path/query/header parameterは標準base64文字列で送ります。<code>format: binary</code>はJSON schemaでは<code>OACG101</code>のままで、multipartやoctet-streamは後続フェーズで扱います。</td>
 </tr>
 </tbody></table>
 <p><code>$ref</code>と併記できる注釈・データのキーは<code>$comment</code>、<code>default</code>、<code>deprecated</code>、
-<code>description</code>、<code>example</code>、<code>examples</code>、<code>externalDocs</code>、<code>summary</code>、<code>title</code>、<code>xml</code>、<code>x-*</code>です。
+<code>description</code>、<code>example</code>、<code>examples</code>、<code>externalDocs</code>、<code>readOnly</code>、<code>summary</code>、<code>title</code>、<code>writeOnly</code>、<code>xml</code>、<code>x-*</code>です。
 OpenAPI 3.0では既存互換として<code>nullable</code>も扱います。</p>
 <p>リクエストJSONの<code>format: date</code>は<code>yyyy-MM-dd</code>へ変換します。公開型の<code>DateTime</code>は維持し、
 <code>date-time</code>の<code>DateTimeOffset</code>にはdate用converterを適用しません。</p>
