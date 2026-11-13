@@ -1,0 +1,52 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Composition", "version": "1" },
+  "servers": [ { "url": "https://api.example.com" } ],
+  "paths": {
+    "/pets": {
+      "post": {
+        "operationId": "createPet",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } } },
+        "responses": { "200": { "description": "ok", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } } } }
+      }
+    },
+    "/extended": {
+      "get": {
+        "operationId": "getExtended",
+        "responses": { "200": { "description": "ok", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Extended" } } } } }
+      }
+    },
+    "/values": {
+      "get": {
+        "operationId": "getValue",
+        "responses": { "200": { "description": "ok", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Value" } } } } }
+      }
+    },
+    "/nullable": {
+      "get": {
+        "operationId": "getNullableName",
+        "responses": { "200": { "description": "ok", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Holder" } } } } }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Pet": {
+        "oneOf": [ { "$ref": "#/components/schemas/Cat" }, { "$ref": "#/components/schemas/Dog" } ],
+        "discriminator": { "propertyName": "petType", "mapping": { "cat": "#/components/schemas/Cat", "dog": "Dog" } }
+      },
+      "Cat": { "type": "object", "additionalProperties": false, "required": [ "meow" ], "properties": { "meow": { "type": "boolean" } } },
+      "Dog": { "type": "object", "additionalProperties": false, "properties": { "bark": { "type": "string" } } },
+      "Base": { "type": "object", "required": [ "id" ], "properties": { "id": { "type": "integer" } } },
+      "Extended": {
+        "allOf": [ { "$ref": "#/components/schemas/Base" }, { "type": "object", "required": [ "label" ], "properties": { "label": { "type": "string" } } } ]
+      },
+      "Value": { "oneOf": [ { "type": "string" }, { "type": "integer" }, { "$ref": "#/components/schemas/Cat" } ] },
+      "Holder": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "name": { "oneOf": [ { "type": "string" }, { "type": "null" } ] } }
+      }
+    }
+  }
+}

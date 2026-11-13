@@ -39,6 +39,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
+        public void CompositionSpecKeepsPublicSurface()
+        {
+            AssertBaseline(
+                "composition",
+                "BaselineCompositionApi",
+                File.ReadAllText(SpecPath("composition.json")));
+        }
+
+        [Fact]
         public void CoverageSpecKeepsPublicSurface()
         {
             AssertBaseline(

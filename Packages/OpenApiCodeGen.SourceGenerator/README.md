@@ -183,6 +183,11 @@ generate an open DTO whose undeclared members are kept in an
 that rejects unknown response properties. Unsupported assertions such as
 `pattern`, `minimum`, and `minItems` receive `OACG101` instead of generating a
 weaker contract. Duplicate enum wire values also receive `OACG101`.
+`allOf` is flattened into one DTO, and `oneOf` / `anyOf` become a wrapper class
+(`FromX`, `TryGetX`, `AsX`) that is selected by the `discriminator` when there is
+one, or by structural matching of the response JSON when there is not;
+`[X, null]` is a nullable `X`. When several `oneOf` candidates match, the ones that declare every property of the response win; candidates that cannot be told apart fail. `not` is evaluated only for successful
+responses. See the support matrix for the exact rules.
 
 An optional non-nullable DTO property may be absent from JSON, but an explicit
 JSON `null` raises `JsonSerializationException`. An unset property is omitted

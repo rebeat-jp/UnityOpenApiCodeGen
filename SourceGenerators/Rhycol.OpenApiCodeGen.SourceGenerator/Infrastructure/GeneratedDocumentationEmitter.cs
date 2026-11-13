@@ -21,7 +21,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return model.Dtos.Any(static dto =>
                        dto.Annotations.Deprecated ||
                        dto.Properties.Any(static property => property.Annotations.Deprecated)) ||
-                   model.Enums.Any(static value => value.Annotations.Deprecated);
+                   model.Enums.Any(static value => value.Annotations.Deprecated) ||
+                   model.Unions.Any(static value => value.Annotations.Deprecated);
         }
 
         internal static void AppendObsolete(StringBuilder source, string indent, bool deprecated)

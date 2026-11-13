@@ -976,6 +976,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             private readonly IReadOnlyDictionary<string, GeneratedDtoModel> _dtos;
             private readonly IReadOnlyDictionary<string, GeneratedEnumModel> _enums;
+            private readonly IReadOnlyDictionary<string, GeneratedUnionModel> _unions;
             private readonly List<GeneratedTypeModel> _types = new List<GeneratedTypeModel>();
             private readonly Dictionary<GeneratedTypeModel, int> _indices =
                 new Dictionary<GeneratedTypeModel, int>();
@@ -985,9 +986,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 _dtos = model.Dtos.ToDictionary(static dto => dto.Name, StringComparer.Ordinal);
                 _enums = model.Enums.ToDictionary(static value => value.Name, StringComparer.Ordinal);
+                _unions = model.Unions.ToDictionary(static value => value.Name, StringComparer.Ordinal);
                 var occupied = new HashSet<string>(StringComparer.Ordinal) { model.ApiName };
                 occupied.UnionWith(model.Dtos.Select(static dto => dto.Name));
                 occupied.UnionWith(model.Enums.Select(static value => value.Name));
+                occupied.UnionWith(model.Unions.Select(static value => value.Name));
                 foreach (GeneratedOperationModel operation in model.Operations)
                 {
                     occupied.Add(operation.Name);
@@ -1039,6 +1042,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
                 _indices.Add(type, _types.Count);
                 _types.Add(type);
+                foreach (GeneratedTypeModel notType in type.NotTypes)
+                {
+                    Register(notType);
+                }
+
                 if (type.Kind == GeneratedTypeKind.Array)
                 {
                     Register(type.ItemType!);
@@ -1046,6 +1054,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 else if (type.Kind == GeneratedTypeKind.Map)
                 {
                     Register(type.ValueType!);
+                }
+                else if (type.Kind == GeneratedTypeKind.Union &&
+                         _unions.TryGetValue(type.Name, out GeneratedUnionModel? union))
+                {
+                    foreach (GeneratedUnionMemberModel member in union.Members)
+                    {
+                        Register(member.Type);
+                    }
                 }
                 else if (type.Kind == GeneratedTypeKind.Named &&
                          _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
@@ -1147,7 +1163,34 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     AppendNumberEqualsHelper(source);
                 }
 
+                AppendTrialHelpers(source);
                 AppendSyntaxHelpers(source);
+            }
+
+            // A failed trial run (union candidate, not schema) is any exception that a contract check or a
+            // value conversion can raise for a value of the wrong shape.
+            private void AppendTrialHelpers(StringBuilder source)
+            {
+                source.AppendLine(@"
+        private static bool __PREFIX__IsTrialFailure(global::System.Exception exception)
+        {
+            return exception is global::Newtonsoft.Json.JsonException ||
+                   exception is global::System.FormatException ||
+                   exception is global::System.InvalidCastException ||
+                   exception is global::System.OverflowException ||
+                   exception is global::System.ArgumentException;
+        }
+
+        private static bool __PREFIX__AllDeclared(global::Newtonsoft.Json.Linq.JToken token, string[] names)
+        {
+            if (!(token is global::Newtonsoft.Json.Linq.JObject objectToken)) return true;
+            foreach (var property in objectToken.Properties())
+            {
+                if (global::System.Array.IndexOf(names, property.Name) < 0) return false;
+            }
+            return true;
+        }
+".Replace("__PREFIX__", _prefix));
             }
 
             private void AppendSyntaxHelpers(StringBuilder source)
@@ -1368,6 +1411,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         .AppendLine("IsBase64((string)((global::Newtonsoft.Json.Linq.JValue)token).Value!))");
                     source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Invalid base64 response string at \" + path + \".\");");
                 }
+                else if (type.Kind == GeneratedTypeKind.Union && _unions.TryGetValue(type.Name, out GeneratedUnionModel? union))
+                {
+                    AppendUnionChecks(source, union);
+                }
                 else if (type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
                 {
                     source.AppendLine("            if (!(token is global::Newtonsoft.Json.Linq.JObject objectToken))");
@@ -1412,6 +1459,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     }
                     source.AppendLine("                }");
                     source.AppendLine("            }");
+                    // Json.NET reports a missing required member only while deserializing; checking it
+                    // here keeps the response contract complete, so that a oneOf / anyOf member whose
+                    // required property is absent does not match.
+                    foreach (GeneratedDtoPropertyModel requiredProperty in dto.Properties.Where(
+                                 static value => value.Required && !value.Annotations.WriteOnly))
+                    {
+                        source.Append("            if (objectToken.Property(")
+                            .Append(GeneratedSourceEmitter.StringLiteral(requiredProperty.WireName))
+                            .AppendLine(") == null)");
+                        source.Append("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Missing required response property at \" + path + \".\" + ")
+                            .Append(GeneratedSourceEmitter.StringLiteral(requiredProperty.WireName))
+                            .AppendLine(" + \".\");");
+                    }
                 }
                 else
                 {
@@ -1450,10 +1510,151 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Invalid response string format at \" + path + \".\");");
                     }
 
+                    if (type.Kind == GeneratedTypeKind.NamedEnum &&
+                        _enums.TryGetValue(type.Name, out GeneratedEnumModel? enumMembers))
+                    {
+                        AppendEnumMembershipCheck(source, enumMembers);
+                    }
+
                     AppendConstCheck(source, type);
                 }
 
+                AppendNotChecks(source, type);
                 source.AppendLine("        }");
+            }
+
+            // The converter of an enum rejects undeclared values while deserializing; the contract
+            // checks them as well so that a union candidate or a not schema is decided by the value.
+            private static void AppendEnumMembershipCheck(StringBuilder source, GeneratedEnumModel enumModel)
+            {
+                if (enumModel.IsInteger)
+                {
+                    source.AppendLine("            switch (((global::Newtonsoft.Json.Linq.JValue)token).ToString(global::System.Globalization.CultureInfo.InvariantCulture))");
+                }
+                else
+                {
+                    source.AppendLine("            switch ((string)((global::Newtonsoft.Json.Linq.JValue)token).Value!)");
+                }
+
+                source.AppendLine("            {");
+                foreach (GeneratedEnumMemberModel member in enumModel.Members)
+                {
+                    source.Append("                case ")
+                        .Append(GeneratedSourceEmitter.StringLiteral(member.WireValue)).AppendLine(":");
+                }
+
+                source.AppendLine("                    break;");
+                source.AppendLine("                default:");
+                source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"The response value is not a declared enum value at \" + path + \".\");");
+                source.AppendLine("            }");
+            }
+
+            private void AppendUnionChecks(StringBuilder source, GeneratedUnionModel union)
+            {
+                if (union.DiscriminatorPropertyName is string discriminatorName)
+                {
+                    string propertyLiteral = GeneratedSourceEmitter.StringLiteral(discriminatorName);
+                    source.AppendLine("            if (!(token is global::Newtonsoft.Json.Linq.JObject unionObject))");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Expected a response object at \" + path + \".\");");
+                    source.Append("            var unionDiscriminator = unionObject[").Append(propertyLiteral).AppendLine("];");
+                    source.AppendLine("            if (unionDiscriminator == null || unionDiscriminator.Type != global::Newtonsoft.Json.Linq.JTokenType.String)");
+                    source.Append("                throw new global::Newtonsoft.Json.JsonSerializationException(\"The discriminator property is missing or is not a string at \" + path + \".\" + ")
+                        .Append(propertyLiteral).AppendLine(" + \".\");");
+                    source.AppendLine("            switch ((string)unionDiscriminator!)");
+                    source.AppendLine("            {");
+                    foreach (GeneratedUnionMemberModel member in union.Members)
+                    {
+                        foreach (string wireValue in member.DiscriminatorValues)
+                        {
+                            source.Append("                case ")
+                                .Append(GeneratedSourceEmitter.StringLiteral(wireValue)).AppendLine(":");
+                        }
+
+                        source.Append("                    ").Append(MethodName(member.Type))
+                            .Append("(token, path, ").Append(member.Type.Nullable ? "true" : "false")
+                            .AppendLine(", json, lineStarts, replacements);");
+                        source.AppendLine("                    break;");
+                    }
+
+                    source.AppendLine("                default:");
+                    source.Append("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"The discriminator value '\" + (string)unionDiscriminator! + \"' does not select a schema at \" + path + \".\" + ")
+                        .Append(propertyLiteral).AppendLine(" + \".\");");
+                    source.AppendLine("            }");
+                    return;
+                }
+
+                // Without a discriminator every candidate is tried against its own contract. The
+                // normalization of integer lexemes is applied only to a single typed candidate, so
+                // the trial runs use a throw-away replacement list.
+                source.AppendLine("            int unionMatches = 0;");
+                int memberIndex = 0;
+                foreach (GeneratedUnionMemberModel member in union.Members)
+                {
+                    source.Append("            bool unionMatched").Append(memberIndex++).AppendLine(" = false;");
+                    source.AppendLine("            try");
+                    source.AppendLine("            {");
+                    source.Append("                ").Append(MethodName(member.Type))
+                        .Append("(token, path, ").Append(member.Type.Nullable ? "true" : "false")
+                        .AppendLine(", json, lineStarts, new global::System.Collections.Generic.List<global::System.Tuple<int, int, string>>());");
+                    source.Append("                unionMatched").Append(memberIndex - 1).AppendLine(" = true;");
+                    source.AppendLine("                unionMatches++;");
+                    source.AppendLine("            }");
+                    source.Append("            catch (global::System.Exception exception) when (").Append(_prefix).AppendLine("IsTrialFailure(exception))");
+                    source.AppendLine("            {");
+                    source.AppendLine("            }");
+                }
+
+                if (union.IsOneOf)
+                {
+                    // Open candidates overlap easily. Tie-break: keep the candidates that declare every
+                    // property of the value (as if they were closed); still not exactly one is an error.
+                    source.AppendLine("            int unionStrict = 0;");
+                    source.AppendLine("            if (unionMatches > 1)");
+                    source.AppendLine("            {");
+                    for (int index = 0; index < union.Members.Count; index++)
+                    {
+                        GeneratedTypeModel memberType = union.Members[index].Type;
+                        string strict = memberType.Kind == GeneratedTypeKind.Named &&
+                                        _dtos.TryGetValue(memberType.Name, out GeneratedDtoModel? memberDto)
+                            ? " && " + _prefix + "AllDeclared(token, new string[] { " +
+                              string.Join(", ", memberDto.Properties.Select(static property =>
+                                  GeneratedSourceEmitter.StringLiteral(property.WireName))) + " })"
+                            : string.Empty;
+                        source.Append("                if (unionMatched").Append(index).Append(strict).AppendLine(") unionStrict++;");
+                    }
+
+                    source.AppendLine("            }");
+                    source.AppendLine("            if (unionMatches != 1 && unionStrict != 1)");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"The response value must match exactly one oneOf schema at \" + path + \" but matched \" + unionMatches.ToString(global::System.Globalization.CultureInfo.InvariantCulture) + \".\");");
+                }
+                else
+                {
+                    source.AppendLine("            if (unionMatches == 0)");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"The response value must match at least one anyOf schema at \" + path + \".\");");
+                }
+            }
+
+            // not is evaluated here only: a value that matches the not schema is rejected.
+            private void AppendNotChecks(StringBuilder source, GeneratedTypeModel type)
+            {
+                foreach (GeneratedTypeModel notType in type.NotTypes)
+                {
+                    source.AppendLine("            {");
+                    source.AppendLine("                bool notMatched = true;");
+                    source.AppendLine("                try");
+                    source.AppendLine("                {");
+                    source.Append("                    ").Append(MethodName(notType))
+                        .Append("(token, path, ").Append(notType.Nullable ? "true" : "false")
+                        .AppendLine(", json, lineStarts, new global::System.Collections.Generic.List<global::System.Tuple<int, int, string>>());");
+                    source.AppendLine("                }");
+                    source.Append("                catch (global::System.Exception exception) when (").Append(_prefix).AppendLine("IsTrialFailure(exception))");
+                    source.AppendLine("                {");
+                    source.AppendLine("                    notMatched = false;");
+                    source.AppendLine("                }");
+                    source.AppendLine("                if (notMatched)");
+                    source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"The response value matches a schema that it must not match (not) at \" + path + \".\");");
+                    source.AppendLine("            }");
+                }
             }
 
             private void AppendConstCheck(StringBuilder source, GeneratedTypeModel type)
@@ -1691,6 +1892,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 foreach (GeneratedEnumModel generatedEnum in model.Enums)
                 {
                     occupiedNames.Add(generatedEnum.Name);
+                }
+
+                foreach (GeneratedUnionModel union in model.Unions)
+                {
+                    occupiedNames.Add(union.Name);
                 }
 
                 string prefix = "__OacgResponseValidator_";

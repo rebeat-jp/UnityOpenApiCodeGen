@@ -49,9 +49,48 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             RequireKind(node, SpecValueKind.Object, "A schema must be an object in the Phase 4 MVP.");
             ValidateUnsupportedSchemaKeywords(node);
 
+            // not is a response-validation add-on that can accompany any schema shape.
+            return ApplyNotKeyword(
+                node,
+                suggestedName,
+                ParseSchemaShape(node, suggestedName, referenceStack));
+        }
+
+        private OpenApiSemanticSchema ParseSchemaShape(
+            SpecNode node,
+            string suggestedName,
+            HashSet<NormalizedSpecNodeIdentity> referenceStack)
+        {
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
+                if (_minorVersion == 1 && HasStructuralReferenceSiblings(node))
+                {
+                    // OpenAPI 3.1: $ref with meaningful siblings is allOf: [ { $ref }, { siblings } ].
+                    return ParseObjectComposition(node, suggestedName, referenceStack);
+                }
+
                 return ParseReferenceSchema(node, suggestedName, referenceStack, reference, referenceNode);
+            }
+
+            if (HasUnionKeyword(node))
+            {
+                return ParseUnion(node, suggestedName, referenceStack);
+            }
+
+            if (node.TryGetProperty("discriminator", out _))
+            {
+                // A discriminator without oneOf / anyOf marks the base of an allOf hierarchy.
+                OpenApiSemanticSchema? inheritanceUnion =
+                    TryParseInheritanceUnion(node, suggestedName, referenceStack);
+                if (inheritanceUnion is not null)
+                {
+                    return inheritanceUnion;
+                }
+            }
+
+            if (node.TryGetProperty("allOf", out _))
+            {
+                return ParseAllOf(node, suggestedName, referenceStack);
             }
 
             bool nullable = ParseNullable(node);
@@ -156,14 +195,42 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string suggestedName,
             HashSet<NormalizedSpecNodeIdentity> referenceStack,
             string reference,
-            SpecNode referenceNode)
+            SpecNode referenceNode,
+            bool? nullableOverride = null,
+            OpenApiSemanticAnnotations? annotationsOverride = null)
         {
             ValidateReferenceSchemaSiblings(node);
             ResolvedSpecReference resolved = ResolveSchemaReference(
                 reference,
                 referenceNode,
                 out string referenceName);
+            return BuildReferenceSchema(
+                node,
+                suggestedName,
+                referenceStack,
+                reference,
+                referenceNode,
+                resolved,
+                referenceName,
+                nullableOverride ?? ParseNullable(node),
+                annotationsOverride ?? ParseAnnotations(node, allowConst: false));
+        }
 
+        /// <summary>
+        /// Creates a Reference schema for an already resolved target, making sure the target is
+        /// parsed (or known to be in progress, which marks the reference as recursive).
+        /// </summary>
+        private OpenApiSemanticSchema BuildReferenceSchema(
+            SpecNode node,
+            string suggestedName,
+            HashSet<NormalizedSpecNodeIdentity> referenceStack,
+            string reference,
+            SpecNode referenceNode,
+            ResolvedSpecReference resolved,
+            string referenceName,
+            bool nullable,
+            OpenApiSemanticAnnotations annotations)
+        {
             if (referenceStack.Contains(resolved.Identity))
             {
                 // Only $ref aliases lead back here without crossing a container, so nothing
@@ -183,6 +250,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     // The target is registered when its own parse completes; the generation model
                     // resolves the reference by identity.
                     _recursionObserved = true;
+                    if (_notDepth > 0)
+                    {
+                        _notRecursion = true;
+                    }
                 }
                 else
                 {
@@ -208,7 +279,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 OpenApiSemanticSchemaKind.Reference,
                 suggestedName,
                 string.Empty,
-                ParseNullable(node),
+                nullable,
                 referenceName,
                 Array.Empty<OpenApiSemanticProperty>(),
                 null,
@@ -216,7 +287,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 CreateLocation(node),
                 identity: new NormalizedSpecNodeIdentity(_currentDocumentId, node.LogicalPath),
                 referenceIdentity: resolved.Identity,
-                annotations: ParseAnnotations(node, allowConst: false));
+                annotations: annotations);
         }
 
         /// <summary>
@@ -344,6 +415,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     "Required property '" + missingProperty + "' is not declared in schema properties.");
             }
 
+            return CreateObjectShape(node, suggestedName, format, nullable, annotations, properties, mode, valueSchema);
+        }
+
+        /// <summary>
+        /// Chooses between a free-form object, a map and a DTO from the collected members.
+        /// Shared by plain object schemas and allOf compositions.
+        /// </summary>
+        private OpenApiSemanticSchema CreateObjectShape(
+            SpecNode node,
+            string suggestedName,
+            string format,
+            bool nullable,
+            OpenApiSemanticAnnotations annotations,
+            IReadOnlyList<OpenApiSemanticProperty> properties,
+            OpenApiSemanticAdditionalProperties mode,
+            OpenApiSemanticSchema? valueSchema)
+        {
             if (properties.Count == 0 && mode == OpenApiSemanticAdditionalProperties.Open)
             {
                 // Free-form object: nothing is declared, so there is no DTO to generate.
@@ -862,12 +950,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     }
 
                     return;
+                case OpenApiSemanticSchemaKind.Union:
+                    // A union is a named wrapper class (like an object or an enum), so a cycle through
+                    // one of its members is finite; the members are not part of the walk.
+                    return;
                 case OpenApiSemanticSchemaKind.Reference:
                     NormalizedSpecNodeIdentity identity = schema.ReferenceIdentity;
                     if (identity.IsEmpty ||
                         !_schemas.TryGetValue(identity, out OpenApiSemanticSchema? target) ||
                         target.Kind == OpenApiSemanticSchemaKind.Object ||
-                        target.Kind == OpenApiSemanticSchemaKind.Enum)
+                        target.Kind == OpenApiSemanticSchemaKind.Enum ||
+                        target.Kind == OpenApiSemanticSchemaKind.Union)
                     {
                         return;
                     }
