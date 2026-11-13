@@ -428,7 +428,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void QueryAllowReservedFalseIsAcceptedButTrueIsRejected()
+        public void QueryAllowReservedFalseAndTrueAreBothAccepted()
         {
             Phase4GeneratorExecution allowed = Phase4GeneratorTestHarness.GenerateAndCompile(
                 CreateAllowReservedDocument(allowReserved: false));
@@ -436,15 +436,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Empty(allowed.RunResult.Diagnostics);
             Assert.Empty(allowed.CompilationErrors);
 
-            Phase4GeneratorExecution rejected = Phase4GeneratorTestHarness.GenerateAndCompile(
+            // P3: allowReserved: true is supported (wire behavior is covered in
+            // Phase4ParameterSerializationTests).
+            Phase4GeneratorExecution reserved = Phase4GeneratorTestHarness.GenerateAndCompile(
                 CreateAllowReservedDocument(allowReserved: true));
-            Diagnostic diagnostic = Assert.Single(rejected.RunResult.Diagnostics);
 
-            Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("allowReserved set to true are not supported", diagnostic.GetMessage());
-            Assert.Contains(
-                "logical path '/paths/~1items/get/parameters/0/allowReserved'",
-                diagnostic.GetMessage());
+            Assert.Empty(reserved.RunResult.Diagnostics);
+            Assert.Empty(reserved.CompilationErrors);
         }
 
         [Fact]

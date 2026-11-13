@@ -22,7 +22,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("Content-Location")]
         [InlineData("Content-MD5")]
         [InlineData("Content-Range")]
-        [InlineData("CONTENT-TYPE")]
         [InlineData("Expires")]
         [InlineData("Last-Modified")]
         public void ContentOnlyHeaderParameterReportsSourceLocation(string name)
@@ -41,13 +40,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("aCcEpT")]
         [InlineData("Authorization")]
         [InlineData("AUTHORIZATION")]
+        [InlineData("Content-Type")]
+        [InlineData("CONTENT-TYPE")]
         public void IgnoredHeaderParameterReportsSourceLocation(string name)
         {
             Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
                 HeaderDocument(name)).RunResult.Diagnostics);
 
-            Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("ignored by OpenAPI", diagnostic.GetMessage());
+            // P3: ignored by OpenAPI, so it is a positioned OACG108 warning (not an error) and the
+            // client still compiles without the parameter.
+            Assert.Equal("OACG108", diagnostic.Id);
+            Assert.Equal(DiagnosticSeverity.Warning, diagnostic.Severity);
+            Assert.Contains("is ignored", diagnostic.GetMessage());
             Assert.Contains("/paths/~1value/get/parameters/0/name", diagnostic.GetMessage());
             Assert.Equal(TestBundleFactory.SourcePath, diagnostic.Location.GetLineSpan().Path);
         }

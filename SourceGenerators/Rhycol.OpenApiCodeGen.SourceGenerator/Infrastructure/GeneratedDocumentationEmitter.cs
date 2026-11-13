@@ -18,7 +18,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// <summary>True when any generated declaration is marked [Obsolete].</summary>
         internal static bool AnyDeprecated(OpenApiGenerationModel model)
         {
-            return model.Dtos.Any(static dto =>
+            return model.Operations.Any(static operation => operation.Deprecated) ||
+                   model.Dtos.Any(static dto =>
                        dto.Annotations.Deprecated ||
                        dto.Properties.Any(static property => property.Annotations.Deprecated)) ||
                    model.Enums.Any(static value => value.Annotations.Deprecated) ||

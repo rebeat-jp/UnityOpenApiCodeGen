@@ -5,7 +5,7 @@ using System.Text;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator
 {
-    internal sealed class HttpClientSourceEmitter
+    internal sealed partial class HttpClientSourceEmitter
     {
         internal GeneratedFile Emit(OpenApiGenerationModel model)
         {
@@ -29,17 +29,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        private readonly string _baseUrl;");
             source.AppendLine();
             AppendConstructors(source, model);
+            AppendServers(source, model);
             var responseValidators = new ResponseValidatorPlan(model);
             var responseJsonContracts = new ResponseJsonContractPlan(model);
+            var parameterSerializer = new HttpClientParameterSerializationEmitter(
+                model,
+                responseValidators.RequestJsonSerializerName,
+                responseValidators.HeaderValueValidatorName);
 
             foreach (GeneratedOperationModel operation in model.Operations)
             {
                 source.AppendLine();
-                AppendOperation(source, model, operation, responseValidators, responseJsonContracts);
+                AppendOperation(source, model, operation, responseValidators, responseJsonContracts, parameterSerializer);
             }
 
             source.AppendLine();
             AppendHelpers(source, responseValidators);
+            parameterSerializer.AppendHelpers(source);
             responseValidators.AppendMethods(source);
             responseJsonContracts.AppendMethods(source);
             source.AppendLine("    }");
@@ -71,7 +77,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiGenerationModel model,
             GeneratedOperationModel operation,
             ResponseValidatorPlan responseValidators,
-            ResponseJsonContractPlan responseJsonContracts)
+            ResponseJsonContractPlan responseJsonContracts,
+            HttpClientParameterSerializationEmitter parameters)
         {
             string summary = string.IsNullOrWhiteSpace(operation.Summary)
                 ? operation.Name
@@ -79,13 +86,36 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append("        /// <summary>")
                 .Append(EscapeXml(summary))
                 .AppendLine("</summary>");
+            if (!string.IsNullOrWhiteSpace(operation.Description))
+            {
+                var remarks = new StringBuilder();
+                GeneratedDocumentationEmitter.AppendSummary(remarks, "        ", operation.Description);
+                source.Append(remarks.ToString()
+                    .Replace("/// <summary>", "/// <remarks>")
+                    .Replace("/// </summary>", "/// </remarks>"));
+            }
+
             foreach (GeneratedParameterModel parameter in operation.Parameters)
             {
                 source.Append("        /// <param name=\"")
                     .Append(parameter.Name)
                     .Append("\">")
-                    .Append(EscapeXml(parameter.WireName))
-                    .AppendLine("</param>");
+                    .Append(EscapeXml(parameter.WireName));
+                if (parameter.Deprecated)
+                {
+                    source.Append(" (deprecated)");
+                }
+
+                if (!string.IsNullOrWhiteSpace(parameter.Description))
+                {
+                    source.Append(": ").Append(EscapeXml(string.Join(
+                        " ",
+                        parameter.Description.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(static line => line.Trim())
+                            .Where(static line => line.Length > 0))));
+                }
+
+                source.AppendLine("</param>");
             }
 
             if (operation.RequestBody is not null)
@@ -105,6 +135,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 ? "global::System.Threading.Tasks.Task"
                 : "global::System.Threading.Tasks.Task<" +
                   GeneratedSourceEmitter.TypeName(operation.ResponseType) + ">";
+            GeneratedDocumentationEmitter.AppendObsolete(source, "        ", operation.Deprecated);
             source.Append("        public async ").Append(taskType).Append(' ').Append(operation.Name).Append('(');
             bool first = true;
             foreach (GeneratedParameterModel parameter in operation.Parameters)
@@ -136,15 +167,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append("            string relativePath = ")
                 .Append(GeneratedSourceEmitter.StringLiteral(operation.Path))
                 .AppendLine(";");
-            AppendPathParameters(source, operation);
-            AppendQueryParameters(source, operation);
+            parameters.AppendPathParameters(source, operation);
+            parameters.AppendQueryParameters(source, operation);
             source.AppendLine("            ValidatePathSegments(relativePath);");
-            source.AppendLine("            var requestUri = CreateRequestUri(relativePath);");
+            if (operation.Servers.Count > 0)
+            {
+                source.Append("            var requestUri = CreateRequestUri(relativePath, ResolveOperationServerUrl(")
+                    .Append(GeneratedSourceEmitter.StringLiteral(OperationKey(operation))).Append(", ")
+                    .Append(GeneratedSourceEmitter.StringLiteral(operation.Servers[0].DefaultUrl))
+                    .AppendLine("));");
+            }
+            else
+            {
+                source.AppendLine("            var requestUri = CreateRequestUri(relativePath);");
+            }
             source.Append("            using (var request = new global::System.Net.Http.HttpRequestMessage(")
                 .Append(GetHttpMethod(operation.HttpMethod))
                 .AppendLine(", requestUri))");
             source.AppendLine("            {");
-            AppendHeaderParameters(source, operation, responseValidators);
+            parameters.AppendHeaderAndCookieParameters(source, operation);
             AppendRequestBody(source, operation.RequestBody, responseValidators);
             source.AppendLine("                using (var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false))");
             source.AppendLine("                {");
@@ -226,65 +267,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("                }");
             source.AppendLine("            }");
             source.AppendLine("        }");
-        }
-
-        private static void AppendPathParameters(StringBuilder source, GeneratedOperationModel operation)
-        {
-            foreach (GeneratedParameterModel parameter in operation.Parameters.Where(
-                         static value => value.LocationName == "path"))
-            {
-                source.Append("            relativePath = relativePath.Replace(")
-                    .Append(GeneratedSourceEmitter.StringLiteral("{" + parameter.WireName + "}"))
-                    .Append(", global::System.Uri.EscapeDataString(ConvertToString(")
-                    .Append(GetValueExpression(parameter))
-                    .AppendLine(")));");
-            }
-        }
-
-        private static void AppendQueryParameters(StringBuilder source, GeneratedOperationModel operation)
-        {
-            GeneratedParameterModel[] queryParameters = operation.Parameters
-                .Where(static value => value.LocationName == "query")
-                .ToArray();
-            if (queryParameters.Length == 0)
-            {
-                return;
-            }
-
-            source.AppendLine("            var queryParts = new global::System.Collections.Generic.List<string>();");
-            foreach (GeneratedParameterModel parameter in queryParameters)
-            {
-                string statement = "queryParts.Add(global::System.Uri.EscapeDataString(" +
-                                   GeneratedSourceEmitter.StringLiteral(parameter.WireName) +
-                                   ") + \"=\" + global::System.Uri.EscapeDataString(ConvertToString(" +
-                                   GetValueExpression(parameter) + ")));";
-                AppendConditionalStatement(source, parameter, statement, 12);
-            }
-
-            source.AppendLine("            if (queryParts.Count > 0)");
-            source.AppendLine("            {");
-            source.AppendLine("                relativePath += (relativePath.IndexOf('?') >= 0 ? \"&\" : \"?\") + string.Join(\"&\", queryParts);");
-            source.AppendLine("            }");
-        }
-
-        private static void AppendHeaderParameters(
-            StringBuilder source,
-            GeneratedOperationModel operation,
-            ResponseValidatorPlan validators)
-        {
-            foreach (GeneratedParameterModel parameter in operation.Parameters.Where(
-                         static value => value.LocationName == "header"))
-            {
-                string statement = "if (!request.Headers.TryAddWithoutValidation(" +
-                                   GeneratedSourceEmitter.StringLiteral(parameter.WireName) +
-                                   ", " + validators.HeaderValueValidatorName + "(ConvertToString(" +
-                                   GetValueExpression(parameter) + "), " +
-                                   GeneratedSourceEmitter.StringLiteral(parameter.WireName) + "))) " +
-                                   "throw new global::System.InvalidOperationException(" +
-                                   GeneratedSourceEmitter.StringLiteral(
-                                       "Unable to add request header '" + parameter.WireName + "'.") + ");";
-                AppendConditionalStatement(source, parameter, statement, 16);
-            }
         }
 
         private static void AppendRequestBodyValidation(
@@ -376,7 +358,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private static void AppendConditionalStatement(
+        internal static void AppendConditionalStatement(
             StringBuilder source,
             GeneratedParameterModel parameter,
             string statement,
@@ -396,7 +378,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append(indent).AppendLine("}");
         }
 
-        private static string? GetPresenceCondition(GeneratedParameterModel parameter)
+        internal static string? GetPresenceCondition(GeneratedParameterModel parameter)
         {
             if (parameter.Required)
             {
@@ -408,7 +390,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 : parameter.Name + " != null";
         }
 
-        private static string GetValueExpression(GeneratedParameterModel parameter)
+        internal static string GetValueExpression(GeneratedParameterModel parameter)
         {
             return !parameter.Required && parameter.Type.IsValueType
                 ? parameter.Name + ".Value"
@@ -500,9 +482,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine();
             source.AppendLine("        private global::System.Uri CreateRequestUri(string relativePath)");
             source.AppendLine("        {");
+            source.AppendLine("            return CreateRequestUri(relativePath, _baseUrl);");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        private global::System.Uri CreateRequestUri(string relativePath, string serverUrl)");
+            source.AppendLine("        {");
             source.AppendLine("            SplitPathAndQuery(relativePath, out string operationPath, out string operationQuery);");
-            source.AppendLine("            int baseFragment = _baseUrl.IndexOf('#');");
-            source.AppendLine("            string baseUrl = baseFragment < 0 ? _baseUrl : _baseUrl.Substring(0, baseFragment);");
+            source.AppendLine("            int baseFragment = serverUrl.IndexOf('#');");
+            source.AppendLine("            string baseUrl = baseFragment < 0 ? serverUrl : serverUrl.Substring(0, baseFragment);");
             source.AppendLine("            if (baseUrl.StartsWith(\"//\", global::System.StringComparison.Ordinal))");
             source.AppendLine("            {");
             source.AppendLine("                if (_httpClient.BaseAddress is null)");

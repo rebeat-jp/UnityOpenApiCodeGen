@@ -1,6 +1,8 @@
 Generated.Baseline.BaselineFixtureApi.BaselineFixtureApi ctor public (System.Net.Http.HttpClient httpClient)
 Generated.Baseline.BaselineFixtureApi.BaselineFixtureApi ctor public (System.Net.Http.HttpClient httpClient, string baseUrl)
 Generated.Baseline.BaselineFixtureApi.BaselineFixtureApi method public System.Threading.Tasks.Task<System.Collections.Generic.List<Generated.Baseline.BaselineFixtureApi.VerificationItem>> getItems(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineFixtureApi.BaselineFixtureApi method public static string BuildServerUrl(int index, System.Collections.Generic.IReadOnlyDictionary<string, string>? variables = null)
+Generated.Baseline.BaselineFixtureApi.BaselineFixtureApi property public static System.Collections.Generic.IReadOnlyList<string> Servers { get; }
 Generated.Baseline.BaselineFixtureApi.BaselineFixtureApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody)
 Generated.Baseline.BaselineFixtureApi.BaselineFixtureApiException property public System.Net.HttpStatusCode StatusCode { get; }
 Generated.Baseline.BaselineFixtureApi.BaselineFixtureApiException property public string ResponseBody { get; }

@@ -947,7 +947,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Theory]
         [InlineData("{}")]
         [InlineData("{\"type\":\"object\"}")]
-        [InlineData("{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}}")]
+        // P3: a map of primitives is a supported object parameter; a map of arrays is not.
+        [InlineData("{\"type\":\"object\",\"additionalProperties\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}}")]
         [InlineData("{\"type\":[\"string\",\"integer\"]}")]
         public void ParametersWithoutASingleScalarTypeAreRejected(string schema)
         {

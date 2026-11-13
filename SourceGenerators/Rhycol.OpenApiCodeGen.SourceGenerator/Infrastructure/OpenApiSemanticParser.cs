@@ -22,13 +22,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 "Allow", "Content-Disposition", "Content-Encoding", "Content-Language",
                 "Content-Length", "Content-Location", "Content-MD5", "Content-Range",
-                "Content-Type", "Expires", "Last-Modified"
-            };
-
-        private static readonly HashSet<string> IgnoredRequestHeaders =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "Accept", "Authorization"
+                "Expires", "Last-Modified"
             };
 
         private static readonly HashSet<string> AllowedReferenceSchemaSiblings =
@@ -166,7 +160,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 _injectWarnings?.Invoke(this, _root);
                 ValidateRootFeatures();
                 ParseInfo(RequireProperty(_root, "info"));
-                string baseUrl = ParseBaseUrl(GetProperty(_root, "servers"));
+                IReadOnlyList<OpenApiSemanticServer> servers = ParseServers(GetProperty(_root, "servers"), documentLevel: true);
+                string baseUrl = servers[0].DefaultUrl;
                 ParseComponentSchemas();
                 _componentsParsed = true;
                 ValidateRecursionIfObserved();
@@ -182,7 +177,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     schemas,
                     operations,
                     CreateLocation(_root),
-                    _warnings.ToList());
+                    _warnings.ToList(),
+                    servers);
             }
             catch (OpenApiSemanticException exception) when (_bundle is not null &&
                                                               string.IsNullOrEmpty(exception.Location.SourcePath))
@@ -212,6 +208,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     property.Name == "parameters" ||
                     property.Name == "requestBodies" ||
                     property.Name == "responses" ||
+                    (_minorVersion >= 1 && property.Name == "pathItems") ||
                     property.Name.StartsWith("x-", StringComparison.Ordinal))
                 {
                     continue;
@@ -243,37 +240,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             RequireString(RequireProperty(infoNode, "version"), "The info version must be a string.");
         }
 
-        private string ParseBaseUrl(SpecNode? serversNode)
+        private void ValidateServerUrl(SpecNode urlNode, string url)
         {
-            if (serversNode is null)
-            {
-                return "/";
-            }
-
-            RequireKind(serversNode, SpecValueKind.Array, "The 'servers' field must be an array.");
-            IReadOnlyList<SpecNode> servers = serversNode.EnumerateArray().ToArray();
-            if (servers.Count == 0)
-            {
-                return "/";
-            }
-
-            if (servers.Count > 1)
-            {
-                throw Unsupported(
-                    servers[1],
-                    "The Phase 4 MVP supports exactly one server URL. Supply a base URL override at runtime for other servers.");
-            }
-
-            SpecNode server = servers[0];
-            RequireKind(server, SpecValueKind.Object, "Each server entry must be an object.");
-            ThrowIfPresent(server, "variables", "Server URL variables are not supported by the Phase 4 MVP.");
-            SpecNode urlNode = RequireProperty(server, "url");
-            string url = RequireString(urlNode, "The server URL must be a string.");
-            if (url.IndexOf('{') >= 0 || url.IndexOf('}') >= 0)
-            {
-                throw Unsupported(urlNode, "Server URL variables are not supported by the Phase 4 MVP.");
-            }
-
             if (url.StartsWith("//", StringComparison.Ordinal))
             {
                 if (!Uri.TryCreate("https:" + url, UriKind.Absolute, out Uri? networkUrl) ||
@@ -307,8 +275,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 throw Invalid(urlNode, "The server URL is not a valid relative URI reference.");
             }
-
-            return url;
         }
 
         private static bool IsWellFormedRelativeServerUrl(string url)
@@ -412,6 +378,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             var operations = new List<OpenApiSemanticOperation>();
             var operationIds = new Dictionary<string, SpecNode>(StringComparer.Ordinal);
 
+            foreach (SpecProperty pathProperty in pathsNode.EnumerateObject())
+            {
+                if (!pathProperty.Name.StartsWith("x-", StringComparison.Ordinal))
+                {
+                    CollectExplicitOperationIds(pathProperty.Value, new HashSet<NormalizedSpecNodeIdentity>());
+                }
+            }
+
             foreach (SpecProperty pathProperty in pathsNode.EnumerateObject()
                          .OrderBy(static value => value.Name, StringComparer.Ordinal))
             {
@@ -440,38 +414,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         Array.Empty<OpenApiSourceLocation>());
                 }
 
-                SpecNode pathItem = pathProperty.Value;
-                RequireKind(pathItem, SpecValueKind.Object, "Each OpenAPI path item must be an object.");
-                ThrowIfPresent(pathItem, "$ref", "Path Item $ref values are not supported by the Phase 4 MVP.");
-                ThrowIfPresent(pathItem, "servers", "Path-level server overrides are not supported by the Phase 4 MVP.");
-                IReadOnlyList<OpenApiSemanticParameter> pathParameters =
-                    ParseParameters(GetProperty(pathItem, "parameters"), new HashSet<NormalizedSpecNodeIdentity>());
-
-                ValidatePathItemProperties(pathItem);
-                foreach (string method in HttpMethods)
-                {
-                    SpecNode? operationNode = GetProperty(pathItem, method);
-                    if (operationNode is null)
-                    {
-                        continue;
-                    }
-
-                    OpenApiSemanticOperation operation = ParseOperation(
-                        pathProperty.Name,
-                        method,
-                        operationNode,
-                        pathParameters);
-                    if (operationIds.TryGetValue(operation.OperationId, out _))
-                    {
-                        throw CreateException(
-                            OpenApiSemanticErrorKind.InvalidIdentifier,
-                            "The operationId '" + operation.OperationId + "' is declared more than once.",
-                            operationNode);
-                    }
-
-                    operationIds.Add(operation.OperationId, operationNode);
-                    operations.Add(operation);
-                }
+                ParsePathItem(
+                    pathProperty.Name,
+                    pathProperty.Value,
+                    new HashSet<NormalizedSpecNodeIdentity>(),
+                    operationIds,
+                    operations);
             }
 
             return operations
@@ -506,23 +454,28 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string path,
             string method,
             SpecNode operationNode,
-            IReadOnlyList<OpenApiSemanticParameter> pathParameters)
+            IReadOnlyList<OpenApiSemanticParameter> pathParameters,
+            IReadOnlyList<OpenApiSemanticServer> pathServers)
         {
             RequireKind(operationNode, SpecValueKind.Object, "Each OpenAPI operation must be an object.");
             ThrowIfPresent(operationNode, "callbacks", "OpenAPI callbacks are not supported by the Phase 4 MVP.");
             ThrowIfPresent(operationNode, "security", "Operation security requirements are not supported by the Phase 4 MVP.");
-            ThrowIfPresent(operationNode, "servers", "Operation-level server overrides are not supported by the Phase 4 MVP.");
             ValidateOperationProperties(operationNode);
 
-            string operationId = RequireString(
-                RequireProperty(operationNode, "operationId"),
-                "Each operation must define a string operationId.");
-            if (string.IsNullOrWhiteSpace(operationId))
+            string? explicitOperationId = GetOptionalString(operationNode, "operationId");
+            if (explicitOperationId is not null && string.IsNullOrWhiteSpace(explicitOperationId))
             {
                 throw Invalid(operationNode, "The operationId must not be empty.");
             }
 
+            string operationId = explicitOperationId ?? AllocateSynthesizedOperationId(method, path);
+            IReadOnlyList<OpenApiSemanticServer> operationServers =
+                ParseServers(GetProperty(operationNode, "servers"), documentLevel: false);
+            IReadOnlyList<OpenApiSemanticServer> effectiveServers =
+                operationServers.Count > 0 ? operationServers : pathServers;
             string summary = GetOptionalString(operationNode, "summary") ?? string.Empty;
+            string description = GetOptionalString(operationNode, "description") ?? string.Empty;
+            bool deprecated = GetOptionalBoolean(operationNode, "deprecated") ?? false;
             IReadOnlyList<OpenApiSemanticParameter> operationParameters = ParseParameters(
                 GetProperty(operationNode, "parameters"),
                 new HashSet<NormalizedSpecNodeIdentity>());
@@ -530,6 +483,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 pathParameters,
                 operationParameters);
             ValidatePathParameters(path, mergedParameters, operationNode);
+            ValidateCookieHeaderConflict(mergedParameters, operationNode);
 
             SpecNode? requestBodyNode = GetProperty(operationNode, "requestBody");
             if (method == "trace" && requestBodyNode is not null)
@@ -556,7 +510,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 responses.Schema,
                 responses.StatusCodes,
                 responses.MediaTypes,
-                CreateLocation(operationNode));
+                CreateLocation(operationNode),
+                description,
+                deprecated,
+                effectiveServers);
         }
 
         private static void ValidateOperationProperties(SpecNode operationNode)
@@ -592,7 +549,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             var identities = new HashSet<string>(StringComparer.Ordinal);
             foreach (SpecNode node in parametersNode.EnumerateArray())
             {
-                OpenApiSemanticParameter parameter = ParseParameter(node, referenceStack);
+                OpenApiSemanticParameter? parameter = ParseParameter(node, referenceStack);
+                if (parameter is null)
+                {
+                    continue;
+                }
+
                 if (!identities.Add(parameter.Identity))
                 {
                     throw Invalid(
@@ -607,7 +569,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return result.OrderBy(static value => value.Identity, StringComparer.Ordinal).ToArray();
         }
 
-        private OpenApiSemanticParameter ParseParameter(
+        private OpenApiSemanticParameter? ParseParameter(
             SpecNode node,
             HashSet<NormalizedSpecNodeIdentity> referenceStack)
         {
@@ -623,91 +585,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     target => ParseParameter(target, referenceStack));
             }
 
-            var supportedFields = new HashSet<string>(StringComparer.Ordinal)
-            {
-                "name", "in", "description", "required", "deprecated", "allowEmptyValue",
-                "style", "explode", "allowReserved", "schema", "example", "examples", "content"
-            };
-            foreach (SpecProperty property in node.EnumerateObject())
-            {
-                if (supportedFields.Contains(property.Name) ||
-                    property.Name.StartsWith("x-", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                throw Unsupported(property.Value, "Unsupported Parameter field: '" + property.Name + "'.");
-            }
-
-            ThrowIfPresent(node, "content", "Parameter content is not supported by the Phase 4 MVP.");
-            SpecNode nameNode = RequireProperty(node, "name");
-            string name = RequireString(nameNode, "The parameter name must be a string.");
-            string locationName = RequireString(RequireProperty(node, "in"), "The parameter 'in' value must be a string.");
-            if (locationName != "path" && locationName != "query" && locationName != "header")
-            {
-                throw Unsupported(node, "Only path, query, and header parameters are supported.");
-            }
-
-            if (locationName == "header" && !IsHttpFieldName(name))
-            {
-                throw Invalid(nameNode, "Header parameter names must be nonempty ASCII HTTP field-name tokens.");
-            }
-
-            if (locationName == "header" && ContentOnlyRequestHeaders.Contains(name))
-            {
-                throw Unsupported(nameNode, "The content-only header parameter '" + name +
-                    "' cannot be sent through request headers by the Phase 4 MVP.");
-            }
-
-            if (locationName == "header" && IgnoredRequestHeaders.Contains(name))
-            {
-                throw Unsupported(nameNode, "The header parameter '" + name +
-                    "' is ignored by OpenAPI and cannot be represented by the generated client.");
-            }
-
-            bool required = GetOptionalBoolean(node, "required") ?? false;
-            if (locationName == "path" && !required)
-            {
-                throw Invalid(node, "Path parameters must set required to true.");
-            }
-
-            ValidateParameterSerialization(node, locationName);
-            SpecNode schemaNode = RequireProperty(node, "schema");
-            OpenApiSemanticSchema schema = ParseSchema(
-                schemaNode,
-                name + "Parameter",
-                new HashSet<NormalizedSpecNodeIdentity>());
-            OpenApiSemanticSchema effectiveSchema = GetEffectiveSchema(schema);
-            if (effectiveSchema.Kind == OpenApiSemanticSchemaKind.Array ||
-                effectiveSchema.Kind == OpenApiSemanticSchemaKind.Object ||
-                effectiveSchema.Kind == OpenApiSemanticSchemaKind.Map ||
-                effectiveSchema.Kind == OpenApiSemanticSchemaKind.FreeObject)
-            {
-                throw Unsupported(node, "Array and object parameters require style/explode support and are outside the Phase 4 MVP.");
-            }
-
-            if (effectiveSchema.Kind == OpenApiSemanticSchemaKind.Any ||
-                effectiveSchema.Kind == OpenApiSemanticSchemaKind.Union)
-            {
-                throw Unsupported(
-                    node,
-                    "Parameters whose schema has no single scalar type are outside the Phase 4 MVP.");
-            }
-
-            if (required && IsSchemaNullable(schema))
-            {
-                throw Unsupported(
-                    schemaNode,
-                    "Required " + locationName + " parameter '" + name +
-                    "' cannot use a nullable schema in the Phase 4 MVP.");
-            }
-
-            return new OpenApiSemanticParameter(
-                name,
-                locationName,
-                required,
-                schema,
-                CreateLocation(node));
+            return ParseParameterCore(node);
         }
 
         private static bool IsHttpFieldName(string name)
@@ -731,41 +609,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             return true;
-        }
-
-        private static void ValidateParameterSerialization(SpecNode node, string locationName)
-        {
-            string? style = GetOptionalString(node, "style");
-            bool? explode = GetOptionalBoolean(node, "explode");
-            SpecNode? allowReservedNode = GetProperty(node, "allowReserved");
-            if (allowReservedNode is not null)
-            {
-                if (locationName != "query")
-                {
-                    throw Invalid(
-                        allowReservedNode,
-                        "The allowReserved field is valid only for query parameters.");
-                }
-
-                if (RequireBoolean(allowReservedNode, "The allowReserved field must be a boolean."))
-                {
-                    throw Unsupported(
-                        allowReservedNode,
-                        "Query parameters with allowReserved set to true are not supported by the Phase 4 MVP.");
-                }
-            }
-
-            string defaultStyle = locationName == "query" ? "form" : "simple";
-            bool defaultExplode = locationName == "query";
-            if (style is not null && style != defaultStyle)
-            {
-                throw Unsupported(node, "Only the default '" + defaultStyle + "' parameter style is supported for " + locationName + ".");
-            }
-
-            if (explode.HasValue && explode.Value != defaultExplode)
-            {
-                throw Unsupported(node, "Only the default explode value is supported for " + locationName + " parameters.");
-            }
         }
 
         private static IReadOnlyList<OpenApiSemanticParameter> MergeParameters(

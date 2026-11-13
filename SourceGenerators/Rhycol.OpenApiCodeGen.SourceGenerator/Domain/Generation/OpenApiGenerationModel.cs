@@ -15,9 +15,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<GeneratedOperationModel> operations,
             IReadOnlyList<GeneratedTypeNameCollision> typeNameCollisions,
             IReadOnlyList<OpenApiSemanticWarning>? warnings = null,
-            IReadOnlyList<GeneratedUnionModel>? unions = null)
+            IReadOnlyList<GeneratedUnionModel>? unions = null,
+            IReadOnlyList<OpenApiSemanticServer>? servers = null)
         {
             Unions = unions ?? Array.Empty<GeneratedUnionModel>();
+            Servers = servers ?? Array.Empty<OpenApiSemanticServer>();
             Warnings = warnings ?? Array.Empty<OpenApiSemanticWarning>();
             ApiName = apiName;
             GeneratedNamespace = generatedNamespace;
@@ -33,6 +35,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal string GeneratedNamespace { get; }
 
         internal string BaseUrl { get; }
+
+        /// <summary>Document-level servers (a Server Object each); BaseUrl is the default URL of the first.</summary>
+        internal IReadOnlyList<OpenApiSemanticServer> Servers { get; }
 
         internal IReadOnlyList<GeneratedDtoModel> Dtos { get; }
 
@@ -260,7 +265,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             GeneratedRequestBodyModel? requestBody,
             GeneratedTypeModel? responseType,
             IReadOnlyList<string> successStatusCodes,
-            IReadOnlyDictionary<string, IReadOnlyList<string>> responseMediaTypes)
+            IReadOnlyDictionary<string, IReadOnlyList<string>> responseMediaTypes,
+            string description = "",
+            bool deprecated = false,
+            IReadOnlyList<OpenApiSemanticServer>? servers = null)
         {
             Name = name;
             Summary = summary;
@@ -271,11 +279,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             ResponseType = responseType;
             SuccessStatusCodes = successStatusCodes;
             ResponseMediaTypes = responseMediaTypes;
+            Description = description ?? string.Empty;
+            Deprecated = deprecated;
+            Servers = servers ?? Array.Empty<OpenApiSemanticServer>();
         }
 
         internal string Name { get; }
 
         internal string Summary { get; }
+
+        internal string Description { get; }
+
+        internal bool Deprecated { get; }
+
+        /// <summary>Servers of the operation or its Path Item; empty to use the document servers.</summary>
+        internal IReadOnlyList<OpenApiSemanticServer> Servers { get; }
 
         internal string HttpMethod { get; }
 
@@ -299,13 +317,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string wireName,
             string locationName,
             bool required,
-            GeneratedTypeModel type)
+            GeneratedTypeModel type,
+            string style = "",
+            bool explode = false,
+            bool allowReserved = false,
+            string contentMediaType = "",
+            string description = "",
+            bool deprecated = false)
         {
             Name = name;
             WireName = wireName;
             LocationName = locationName;
             Required = required;
             Type = type;
+            Style = style ?? string.Empty;
+            Explode = explode;
+            AllowReserved = allowReserved;
+            ContentMediaType = contentMediaType ?? string.Empty;
+            Description = description ?? string.Empty;
+            Deprecated = deprecated;
         }
 
         internal string Name { get; }
@@ -317,6 +347,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal bool Required { get; }
 
         internal GeneratedTypeModel Type { get; }
+
+        /// <summary>Serialization style (empty for content parameters).</summary>
+        internal string Style { get; }
+
+        internal bool Explode { get; }
+
+        internal bool AllowReserved { get; }
+
+        /// <summary>JSON media type when the parameter is described by content; otherwise empty.</summary>
+        internal string ContentMediaType { get; }
+
+        internal bool IsContent => ContentMediaType.Length > 0;
+
+        internal string Description { get; }
+
+        internal bool Deprecated { get; }
     }
 
     internal sealed class GeneratedRequestBodyModel

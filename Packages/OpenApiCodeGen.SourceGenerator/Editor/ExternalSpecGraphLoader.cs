@@ -1060,11 +1060,51 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 {
                     CollectSwaggerDocument(root, path, references);
                 }
+                else if (IsBarePathItem(root))
+                {
+                    // An external Path Item $ref may point at a file that is only a Path Item
+                    // (no 'openapi' field): its parameters and operations still hold references.
+                    CollectPathItem(root, path, references);
+                }
                 else
                 {
                     // External documents may intentionally be a bare JSON Schema.
                     CollectSchema(node, path, references);
                 }
+            }
+
+            private static readonly string[] PathItemOnlyKeys =
+                { "$ref", "parameters", "servers", "summary", "description" };
+            private static readonly string[] SchemaOnlyKeys =
+            {
+                "$schema", "$id", "$defs", "definitions", "type", "properties", "patternProperties",
+                "additionalProperties", "items", "prefixItems", "allOf", "anyOf", "oneOf", "not", "enum",
+                "const", "required", "format", "nullable", "discriminator", "contains", "propertyNames",
+                "if", "then", "else", "dependentSchemas", "dependentRequired", "unevaluatedProperties",
+                "unevaluatedItems", "contentSchema", "$anchor", "$dynamicRef", "$dynamicAnchor"
+            };
+
+            // An external file without 'openapi' / 'swagger' is a bare Path Item when it has an
+            // HTTP method, or only Path Item keys ($ref, parameters, servers, summary, description),
+            // and no JSON Schema keyword. A file with any schema keyword stays a bare schema.
+            private static bool IsBarePathItem(SpecObjectNode root)
+            {
+                for (int index = 0; index < SchemaOnlyKeys.Length; index++)
+                {
+                    if (TryGetProperty(root, SchemaOnlyKeys[index], out _)) return false;
+                }
+
+                for (int index = 0; index < HttpMethods.Length; index++)
+                {
+                    if (TryGetProperty(root, HttpMethods[index], out _)) return true;
+                }
+
+                for (int index = 0; index < PathItemOnlyKeys.Length; index++)
+                {
+                    if (TryGetProperty(root, PathItemOnlyKeys[index], out _)) return true;
+                }
+
+                return false;
             }
 
             private static void CollectOpenApiDocument(

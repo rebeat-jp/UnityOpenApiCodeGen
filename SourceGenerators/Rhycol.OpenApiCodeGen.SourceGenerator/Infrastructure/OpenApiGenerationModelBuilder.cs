@@ -34,6 +34,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             _options = options;
             ReserveTypeName(options.ApiName, document.Location, emitsDeclaration: true);
             ReserveTypeName(options.ApiName + "Exception", document.Location, emitsDeclaration: true);
+            foreach (string memberName in new[]
+                     {
+                         "Servers", "BuildServerUrl", "ExpandServerUrl",
+                         "OperationServerUrls", "ResolveOperationServerUrl", "OperationNames", "GetOperationServers", "BuildOperationServerUrl"
+                     })
+            {
+                // Generated client members; a schema type with the same name would be shadowed by them.
+                if (!_typeNameAllocations.ContainsKey(memberName))
+                {
+                    ReserveTypeName(memberName, document.Location, emitsDeclaration: false);
+                }
+            }
         }
 
         internal static OpenApiGenerationModel Build(
@@ -70,7 +82,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 operations,
                 _typeNameCollisions.ToArray(),
                 _document.Warnings,
-                _unions.OrderBy(static value => value.Name, StringComparer.Ordinal).ToArray());
+                _unions.OrderBy(static value => value.Name, StringComparer.Ordinal).ToArray(),
+                _document.Servers);
         }
 
         private void AllocateComponentTypeNames()
@@ -113,7 +126,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 "ConvertToString",
                 "DateOnlyJsonConverter",
                 "ReadJsonResponseBodyAsync",
-                "HasPreamble"
+                "HasPreamble",
+                "Servers",
+                "BuildServerUrl",
+                "ExpandServerUrl",
+                "OperationServerUrls",
+                "ResolveOperationServerUrl",
+                "OperationNames",
+                "GetOperationServers",
+                "BuildOperationServerUrl"
             };
             var result = new List<GeneratedOperationModel>();
             foreach (OpenApiSemanticOperation operation in _document.Operations
@@ -128,6 +149,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     "cancellationToken",
                     "relativePath",
                     "queryParts",
+                    "cookieParts",
                     "requestUri",
                     "request",
                     "response",
@@ -158,7 +180,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         parameter.Name,
                         parameter.LocationName,
                         parameter.Required,
-                        type));
+                        type,
+                        parameter.Style,
+                        parameter.Explode,
+                        parameter.AllowReserved,
+                        parameter.ContentMediaType,
+                        parameter.Description,
+                        parameter.Deprecated));
                 }
 
                 GeneratedRequestBodyModel? requestBody = null;
@@ -198,7 +226,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     requestBody,
                     responseType,
                     operation.SuccessStatusCodes,
-                    operation.ResponseMediaTypes));
+                    operation.ResponseMediaTypes,
+                    operation.Description,
+                    operation.Deprecated,
+                    operation.Servers));
             }
 
             return result;
