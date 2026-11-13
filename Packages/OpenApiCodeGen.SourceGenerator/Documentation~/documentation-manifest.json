@@ -24,19 +24,19 @@
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.html",
-      "sha256": "8753019020273ddb906845afad951521e2a9eff6b6faf4b76e3671ad087f126d"
+      "sha256": "1b817c68ecf8ee1fccbe9049e1b591ac416ec4cd7e3486eadd46935322963567"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.ja.html",
-      "sha256": "c7c3d8f7e47e42e090ac689a4f34525367e18da9342deb11940280a36bae0be6"
+      "sha256": "16409ac1f18762b9c9a12517f08f16bf96fa507de10df88784a0b27f2c1e4d8f"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.ja.md",
-      "sha256": "21a84327bbe3a75ac9bcba5b1d2dd205c1ff41b832e60b275fdd03ea843da34f"
+      "sha256": "1f4d43af61879c337a257f5cf84d6df4aedd9aeb0ac446ab4bd6b90b7fe7d533"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.md",
-      "sha256": "81e5607b21e4873eeed6e935fa0bab40b0ab507e412c5dea60847414b05fba72"
+      "sha256": "ff71bf2b9c06205c6e1eb772f23da579c7216a0d96f925bb1a0018c775b29f25"
     },
     {
       "path": "SourceGenerators/OpenUPM/jp.rhycol.openapicodegen.source-generator.yml",

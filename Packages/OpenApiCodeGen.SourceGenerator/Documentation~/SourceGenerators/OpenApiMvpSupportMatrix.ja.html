@@ -95,7 +95,7 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 <tr>
 <td>external <code>$ref</code></td>
 <td>一部対応</td>
-<td>local external fileはreal/symbolic-link解決後もUnity project内。remote documentからlocal fileは不可。bare Schemaは可。参照先が完全なOpenAPI文書ならその<code>openapi</code>版と<code>jsonSchemaDialect</code>を検証し、入口とmajor.minor版が異なる場合は<code>OACG101</code>で拒否します。patch差は可。</td>
+<td>local external fileはreal/symbolic-link解決後もUnity project内。remote documentからlocal fileは不可。bare Schemaは可。参照先が完全なOpenAPI文書ならその<code>openapi</code>版と<code>jsonSchemaDialect</code>を検証し、入口とmajor.minor版が異なる場合は<code>OACG101</code>で拒否します。patch差は可。 Path Item <code>$ref</code>の参照先が<code>openapi</code>／<code>swagger</code>を持たないbareなPath Itemファイルは、HTTP methodを持つか、<code>$ref</code>・<code>parameters</code>・<code>servers</code>・<code>summary</code>・<code>description</code>だけを持ち、JSON Schema固有キーワード（<code>type</code>・<code>properties</code>・<code>items</code>・<code>allOf</code>・<code>enum</code>・<code>required</code>など）を持たない場合にPath Itemとして内部の参照を収集します。1つでもschemaキーワードがあればbare Schemaです（<code>$ref</code>だけのファイルはどちらでも同じ参照を収集します）。</td>
 </tr>
 <tr>
 <td>unresolved / cyclic <code>$ref</code></td>
@@ -363,27 +363,62 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td><code>servers</code></td>
 <td>一部対応</td>
-<td>URLは0個または1個、variablesなし。絶対URLはHTTP(S)のみで、FTPなどは<code>OACG101</code>です。root <code>servers</code>の省略・空配列は<code>/</code>を既定値とします。<code>//host/path</code>は<code>HttpClient.BaseAddress</code>のschemeで解決します。<code>/path</code>と既定の<code>/</code>は同じoriginのrootから解決し、<code>BaseAddress</code>のpathとqueryを引き継ぎません。<code>BaseAddress</code>が必要な場合に未設定なら送信前に<code>InvalidOperationException</code>です。明示的な空文字<code>baseUrl</code> overrideは相対URLとして扱います。相対server URLとoperation pathが<code>/</code>の場合、<code>BaseAddress</code>のqueryは1回だけ付加します。</td>
+<td>root <code>servers</code>は複数指定でき、各<code>variables</code>（<code>default</code>必須、<code>enum</code>は任意）も使えます。既定のコンストラクターはservers[0]の各variableを<code>default</code>で置換したURLを使います（省略・空配列は<code>/</code>）。生成クライアントは<code>public static IReadOnlyList&lt;string&gt; Servers</code>（<code>url</code>テンプレートの一覧）と<code>public static string BuildServerUrl(int index, IReadOnlyDictionary&lt;string, string&gt;? variables = null)</code>を持ち、展開したURLは<code>baseUrl</code>引数として渡せます。<code>BuildServerUrl</code>は渡されたvariablesを<code>enum</code>で検証し、宣言のない名前・<code>enum</code>外の値は<code>ArgumentException</code>、範囲外の<code>index</code>は<code>ArgumentOutOfRangeException</code>です。<code>url</code>の未宣言<code>{x}</code>は<code>OACG101</code>、<code>default</code>が<code>enum</code>外・空の<code>enum</code>は<code>OACG100</code>です。絶対URLはHTTP(S)のみで、FTPなどは<code>OACG101</code>です。<code>//host/path</code>は<code>HttpClient.BaseAddress</code>のschemeで解決します。<code>/path</code>と既定の<code>/</code>は同じoriginのrootから解決し、<code>BaseAddress</code>のpathとqueryを引き継ぎません。<code>BaseAddress</code>が必要な場合に未設定なら送信前に<code>InvalidOperationException</code>です。明示的な空文字<code>baseUrl</code> overrideは相対URLとして扱います。相対server URLとoperation pathが<code>/</code>の場合、<code>BaseAddress</code>のqueryは1回だけ付加します。</td>
+</tr>
+<tr>
+<td>path / operationの<code>servers</code></td>
+<td>一部対応</td>
+<td>operation、Path Item、documentの順に優先してserverを選びます。operationまたはPath Itemに<code>servers</code>があるoperationは、その先頭serverの各variableを<code>default</code>で置換したURLを使います。<strong>コンストラクターの<code>baseUrl</code>はdocument levelのserversだけを置き換え</strong>、path / operationのserversは置き換えません。実行時に差し替えるには、<code>public IDictionary&lt;string, string&gt; OperationServerUrls</code>（キーは生成メソッド名、値は展開済みのserver URL）へ設定します。このプロパティは、path / operationのserversを持つoperationがあるクライアントにだけ生成します。候補が複数あっても使うのは先頭だけです。候補の一覧と展開は<code>public static IReadOnlyList&lt;string&gt; GetOperationServers(string operationName)</code>と<code>public static string BuildOperationServerUrl(string operationName, int index, IReadOnlyDictionary&lt;string, string&gt;? variables = null)</code>（<code>BuildServerUrl</code>と同じ<code>enum</code>検証）で行い、operation名には生成メソッド名の定数を持つ<code>public static class OperationNames</code>を使います。<code>OperationServerUrls</code>のキーは生成メソッド名です（他のメンバーとの衝突回避で連番が付くことがあるため、<code>OperationNames</code>の定数を使ってください。未知のキーは無視されます）。<code>OperationServerUrls</code>は最初の送信より前（構成時）に設定してください。スレッド安全ではありません。</td>
 </tr>
 <tr>
 <td>server URLの検証</td>
 <td>一部対応</td>
-<td>不正な絶対URL風・相対URL参照は位置付き<code>OACG100</code>、未解決の<code>{...}</code>変数は<code>OACG101</code>です。不正な絶対URLを相対URLとして扱いません。有効なHTTP(S)・network-path・root-relative・path-relative形式は維持します。生のfragmentはoperation pathとの結合前に除き、エンコード済み<code>%23</code>はpath内に保持します。</td>
+<td>不正な絶対URL風・相対URL参照は位置付き<code>OACG100</code>、<code>variables</code>に宣言のない<code>{...}</code>は<code>OACG101</code>です。不正な絶対URLを相対URLとして扱いません。有効なHTTP(S)・network-path・root-relative・path-relative形式は維持します。生のfragmentはoperation pathとの結合前に除き、エンコード済み<code>%23</code>はpath内に保持します。</td>
 </tr>
 <tr>
 <td>parameter location</td>
+<td>対応</td>
+<td>path、query、header、cookieのparameterを扱います。</td>
+</tr>
+<tr>
+<td>cookie parameter</td>
 <td>一部対応</td>
-<td>path、query、headerのscalar parameterのみ。cookieは対象外です。</td>
+<td><code>Cookie</code>ヘッダーを1本にまとめて送信します（複数のcookie parameterは<code>; </code>で連結し、parameterの識別子順）。<code>form</code>styleで、<code>explode</code>の既定は<code>true</code>です。名前はRFC 6265のcookie-name（token）でなければ<code>OACG100</code>、値はRFC 3986のunreserved以外をpercent-encodeします（cookie-octetの部分集合）。配列・objectは<code>explode: true</code>なら<code>name=a; name=b</code>／<code>k=v; k=w</code>、<code>false</code>なら<code>name=a,b</code>／<code>name=k,v,k,w</code>です（区切りの<code>,</code>はOpenAPIの<code>form</code>どおりで、RFC 6265の厳密なcookie-octetには含まれません）。<code>HttpClientHandler.UseCookies=true</code>（既定）では<code>CookieContainer</code>の値が手動の<code>Cookie</code>ヘッダーと併用・上書きされることがあるため、cookie parameterを使う場合は<code>UseCookies=false</code>にするか、<code>CookieContainer</code>に値を入れてください（Unity / Monoでの上書き挙動は実機確認が必要です）。<code>Cookie</code>という名前のheader parameterとcookie parameterの併用は<code>OACG101</code>です。</td>
 </tr>
 <tr>
 <td>Parameter Objectの項目</td>
 <td>一部対応</td>
-<td>OpenAPI 3.0／3.1の標準項目と<code>x-*</code>拡張を認識します。<code>requird</code>などの未知項目は、path／operationのparameterや参照先でも位置付き<code>OACG101</code>です。parameterの<code>content</code>は引き続き非対応です。</td>
+<td>OpenAPI 3.0／3.1の標準項目と<code>x-*</code>拡張を認識します。<code>requird</code>などの未知項目は、path／operationのparameterや参照先でも位置付き<code>OACG101</code>です。<code>schema</code>と<code>content</code>の併記は<code>OACG100</code>です。<code>example</code>／<code>examples</code>／<code>allowEmptyValue</code>は受理するだけで、送信値には影響しません。</td>
 </tr>
 <tr>
 <td>parameter serialization</td>
 <td>一部対応</td>
-<td>defaultの<code>style</code>/<code>explode</code>のみ。<code>allowReserved: true</code>は対象外です。任意queryの<code>null</code>は省略し、明示的な空文字列は<code>name=</code>として送信します。<code>allowEmptyValue</code>は省略される値の代替を表し、明示的な空文字列には適用しません。</td>
+<td><code>style</code>／<code>explode</code>は次の組み合わせを対応します。path: <code>simple</code>（既定）・<code>label</code>・<code>matrix</code>、query: <code>form</code>（既定）・<code>spaceDelimited</code>・<code>pipeDelimited</code>・<code>deepObject</code>、header: <code>simple</code>、cookie: <code>form</code>。<code>explode</code>の既定は<code>form</code>だけ<code>true</code>、<code>deepObject</code>は省略時<code>true</code>（<code>false</code>の明示は仕様未定義で<code>OACG101</code>）です。locationに無効な<code>style</code>は<code>OACG100</code>、プリミティブへの<code>spaceDelimited</code>／<code>pipeDelimited</code>／<code>deepObject</code>、配列への<code>deepObject</code>、<code>spaceDelimited</code>／<code>pipeDelimited</code>の<code>explode: true</code>は仕様未定義のため<code>OACG101</code>です。任意parameterの<code>null</code>は省略し、明示的な空文字列は<code>name=</code>（query）として送信します。<code>allowEmptyValue</code>は省略される値の代替を表し、明示的な空文字列には適用しません。</td>
+</tr>
+<tr>
+<td>array / object parameter</td>
+<td>一部対応</td>
+<td>OpenAPI 3.xの「Style Examples」表（<code>color = blue,black,brown</code> / <code>R=100,G=200,B=150</code>／空値／単一値）どおりに送信します（テストが表の全セルを検証します）。対象はプリミティブの配列（<code>List&lt;T&gt;</code>）と、プリミティブpropertyだけのobject（DTOまたは<code>Dictionary&lt;string, T&gt;</code>）です。DTOは宣言したpropertyを名前の序数順にシリアライズします（<code>null</code>のpropertyは省略）。<code>additionalProperties</code>がプリミティブのschemaなら、追加memberを宣言propertyの後にキーの序数順で続けます（値が<code>null</code>のものは省略、プリミティブでない値は<code>ArgumentException</code>）。<code>additionalProperties</code>が省略・<code>true</code>の型なしopen DTOの追加memberは送りません。順序を指定したい場合は<code>Dictionary</code>を使ってください。配列要素の<code>null</code>は<code>ArgumentException</code>です。空の配列・objectは何も送りません（pathは空文字列）。値の区切りと<code>deepObject</code>の<code>[</code> <code>]</code>は表のとおりそのまま出力します（<code>|</code>は<code>System.Uri</code>が<code>%7C</code>にします）。header値はpercent-encodeしません。入れ子の配列・object、<code>{}</code>・<code>JObject</code>・union・複数型のparameterは<code>style</code>では表せないため<code>OACG101</code>です（<code>content</code>を使います）。</td>
+</tr>
+<tr>
+<td><code>allowReserved</code></td>
+<td>一部対応</td>
+<td><code>allowReserved: true</code>（queryのみ）は、予約文字<code>:/?[]@!$&amp;&#39;()*+,;=</code>と既存の<code>%XX</code>（RFC 6570の予約展開）を値でエンコードしません。<code>#</code>は区切りとしてURLのfragmentになりHTTP層で落ちるため、常に<code>%23</code>にします。名前と、<code>allowReserved</code>でないparameterは従来どおりエンコードします。</td>
+</tr>
+<tr>
+<td>parameter <code>content</code></td>
+<td>一部対応</td>
+<td><code>content</code>には<code>application/json</code>または具体的な<code>application/*+json</code>を1件だけ宣言でき、値をJSON直列化してからpercent-encodeして送ります（path・query・cookieはpercent-encode、headerはエンコードなしでASCIIだけ）。schemaは任意（object・array・<code>JToken</code>・union可）です。<code>style</code>／<code>explode</code>／<code>allowReserved</code>の併記は<code>OACG100</code>、複数のmedia typeや他のmedia typeは<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td><code>operationId</code>の省略</td>
+<td>対応</td>
+<td><code>operationId</code>のないoperationは、HTTP methodと、pathのセグメントを単語に分けたPascalCaseから決定的に命名します（<code>{param}</code>は<code>By</code>＋名前）。<code>GET /pets/{petId}</code>は<code>GetPetsByPetId</code>、<code>GET /</code>は<code>GetRoot</code>、<code>GET /report.{format}</code>は<code>GetReportByFormat</code>です。ほかのoperationId（明示指定が優先）や同じ規則で生成された名前と重なる場合は、pathの序数順に<code>2</code>、<code>3</code>…を付けます。メソッド名としての衝突回避は通常の命名規則（<code>AllocateUniqueName</code>）が引き続き行います。明示した<code>operationId</code>の重複は従来どおり<code>OACG106</code>です。</td>
+</tr>
+<tr>
+<td>Path Item <code>$ref</code> / <code>components.pathItems</code></td>
+<td>対応</td>
+<td>pathのPath Item <code>$ref</code>はinternalと、EditorがBundle v2のedgeへ解決したexternal documentの両方を辿ります（<code>#/paths/...</code>、OpenAPI 3.1の<code>#/components/pathItems/&lt;name&gt;</code>、他ファイルのfragment。<code>ref</code>先がさらに<code>$ref</code>でもよく、循環は<code>OACG103</code>）。<code>$ref</code>と併記できるのは<code>summary</code>／<code>description</code>／<code>x-*</code>だけで、operation・<code>parameters</code>・<code>servers</code>などの併記は仕様上未定義のため<code>OACG101</code>です。参照先のoperationはその参照元のpath keyで検証・命名します。<code>components.pathItems</code>は3.1のみ受理し（3.0は<code>OACG101</code>）、参照されたものだけを解析します。</td>
 </tr>
 <tr>
 <td>enum parameter formatting</td>
@@ -396,9 +431,9 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>path／query／headerの<code>float</code>／<code>double</code>に<code>NaN</code>・正負の無限大を渡すと、HTTP送信前に<code>ArgumentOutOfRangeException</code>です。任意parameterの省略と有限値は使用できます。</td>
 </tr>
 <tr>
-<td>complex parameter</td>
+<td>nested / untyped parameter</td>
 <td>非対応</td>
-<td>直接定義・多段<code>$ref</code>ともarray/object等のcomplex parameterは対象外です。</td>
+<td><code>style</code>で表せないparameter（入れ子のarray/object、<code>{}</code>・<code>JObject</code>・union・複数型）は直接定義・多段<code>$ref</code>ともに<code>OACG101</code>です。<code>content</code>を使うと任意のschemaを送れます。</td>
 </tr>
 <tr>
 <td>required nullable parameter</td>
@@ -431,9 +466,9 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>HTTP field-nameのASCII tokenのみを許可し、空白・コロン・非ASCIIなど不正な名前は<code>name</code>の位置付き<code>OACG100</code>です。</td>
 </tr>
 <tr>
-<td>予約header parameter</td>
-<td>非対応</td>
-<td><code>Accept</code>と<code>Authorization</code>は大小文字を問わず名前の位置で<code>OACG101</code>です。<code>Content-Type</code>は次のcontent専用header制限に含まれます。</td>
+<td>無視するheader parameter</td>
+<td>一部対応</td>
+<td><code>Accept</code>、<code>Content-Type</code>、<code>Authorization</code>は大小文字を問わず、OpenAPI仕様どおりparameterを無視し、名前の位置で<code>OACG108</code>のWarningを報告します。メソッド引数にもなりません。</td>
 </tr>
 <tr>
 <td>header parameterの値</td>
@@ -443,7 +478,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>content専用header parameter</td>
 <td>非対応</td>
-<td><code>Allow</code>、<code>Content-Disposition</code>、<code>Content-Encoding</code>、<code>Content-Language</code>、<code>Content-Length</code>、<code>Content-Location</code>、<code>Content-MD5</code>、<code>Content-Range</code>、<code>Content-Type</code>、<code>Expires</code>、<code>Last-Modified</code>は大小文字を問わず<code>OACG101</code>で拒否します。独自の<code>Content-*</code>名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に<code>InvalidOperationException</code>です。</td>
+<td><code>Allow</code>、<code>Content-Disposition</code>、<code>Content-Encoding</code>、<code>Content-Language</code>、<code>Content-Length</code>、<code>Content-Location</code>、<code>Content-MD5</code>、<code>Content-Range</code>、<code>Expires</code>、<code>Last-Modified</code>は大小文字を問わず<code>OACG101</code>で拒否します（<code>Content-Type</code>は上の無視対象です）。独自の<code>Content-*</code>名まで一律には拒否しません。通常headerの追加に失敗した場合も実行時に<code>InvalidOperationException</code>です。</td>
 </tr>
 <tr>
 <td>request body</td>
@@ -650,7 +685,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>description / title / deprecated / default</td>
 <td>対応</td>
-<td><code>title</code>と<code>description</code>はDTO・property・enum（とmember）のXML docへ出力します。<code>deprecated: true</code>はschemaとpropertyに<code>[Obsolete]</code>を付けます（生成コード内は<code>#pragma warning disable CS0612, CS0618</code>）。<code>default</code>はXML docだけで、wire contractは変えません（object／arrayのdefaultは無視）。operationとparameterの<code>deprecated</code>は後続フェーズで扱います。</td>
+<td><code>title</code>と<code>description</code>はDTO・property・enum（とmember）のXML docへ出力します。<code>deprecated: true</code>はschemaとpropertyに<code>[Obsolete]</code>を付けます（生成コード内は<code>#pragma warning disable CS0612, CS0618</code>）。<code>default</code>はXML docだけで、wire contractは変えません（object／arrayのdefaultは無視）。operationの<code>deprecated: true</code>は生成メソッドへ<code>[Obsolete]</code>を付け、<code>summary</code>は<code>&lt;summary&gt;</code>、<code>description</code>は<code>&lt;remarks&gt;</code>に出します。parameterの<code>deprecated</code>と<code>description</code>は<code>&lt;param&gt;</code>のXML docに反映します（C#の引数には<code>[Obsolete]</code>を付けられません）。</td>
 </tr>
 <tr>
 <td><code>allOf</code></td>
