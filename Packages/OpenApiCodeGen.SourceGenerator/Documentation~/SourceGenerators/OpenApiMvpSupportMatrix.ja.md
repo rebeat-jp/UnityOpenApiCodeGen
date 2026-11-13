@@ -42,7 +42,8 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 | JSON/YAML semantic parity | 対応 | 各normalizerがshared `SpecNode`へ正規化し、同じsemantic/generation pipelineを通ります。 |
 | `$ref` | 一部対応 | OpenAPI/Schema上の参照位置にあるinternal reference、またはEditorがBundle v2のedgeへ解決したexternal reference。example/default/enum/拡張データ内の同名キーはデータとして保持。fragmentはemptyまたはJSON Pointer。 |
 | external `$ref` | 一部対応 | local external fileはreal/symbolic-link解決後もUnity project内。remote documentからlocal fileは不可。bare Schemaは可。参照先が完全なOpenAPI文書ならその`openapi`版と`jsonSchemaDialect`を検証し、入口とmajor.minor版が異なる場合は`OACG101`で拒否します。patch差は可。 |
-| unresolved / cyclic `$ref` | 非対応 | それぞれ`OACG102`、`OACG103`を報告します。`OACG104`はBundle v1のexternal-reference互換診断です。 |
+| unresolved / cyclic `$ref` | 一部対応 | 解決できない参照は`OACG102`です。`$ref`のaliasだけの循環（A→B→A）と、array／mapだけを経由して名前付きDTO／enumで閉じない循環は`OACG103`です。property・items・additionalPropertiesを経由するobject／enumの自己再帰・相互再帰は許可します。`OACG104`はBundle v1のexternal-reference互換診断です。 |
+| schema `$ref` target | 対応 | schemaの`$ref`は`#/components/schemas/<name>`に限らず、任意のJSON Pointer（例: `#/components/schemas/A/properties/b`、`$defs`配下、拡張キー配下）と、Bundle v2のexternal documentの任意fragmentを指せます。型名はpointer末尾のtokenから付け（末尾が配列indexなら直前のtokenを前置）、名前の衝突は既存どおり連番と`OACG107`で解決します。inline定義と同じschemaを指す参照は別の型になる場合があります。parameters／responses／requestBodiesなど他のcomponent参照は従来どおり`#/components/<section>/<name>`だけです。 |
 | URL query / fragment | 一部対応 | queryはfetch identityに使いますが平文永続化しません。root URL fragment、userinfo、explicit `file:`は拒否。 |
 | URL format detection | 対応 | final URL extensionとContent-Typeが既知なら一致必須。片方だけ既知は可、両方不明・競合は拒否。content sniffing/hintはなし。 |
 
@@ -165,7 +166,7 @@ YAMLの診断IDは次のとおりです。
 | successful response | 一部対応 | 少なくとも1つの`2xx` responseが必要です。複数ある場合、別名参照を終端まで解決し、実効nullable性・型・各値の境界を含むcontractが一致する必要があります。inline enumの値の宣言順は比較に影響しません。schema付き成功本文の空・空白はnullableでも`JsonSerializationException`です。JSON `null`はnullable schemaだけで許可します。非nullableな配列要素がJSON `null`なら、入れ子の配列やDTO内の配列も含めて拒否します。 |
 | 本文を持てないレスポンス | 非対応 | HEADの全status、および成功204・205・`2XX`では非空の`content`宣言を位置付き`OACG101`で拒否します。Response Objectの参照先も検査します。空の`content`と本文なし応答は使用できます。`2XX`には204・205が含まれるため、型付き本文契約は対象外です。 |
 | 成功レスポンスの`Content-Type` | 一部対応 | そのstatusにcontent宣言がある場合、headerを宣言media typeと照合し、不一致・不正・複数値は`JsonSerializationException`です。content宣言のない成功応答では`Content-Type`を照合しません。headerがない場合は従来どおり本文を読みます。.NETがheaderを先に正規化した場合、元の区切り空白は識別できません。 |
-| 成功レスポンスのJSON | 一部対応 | RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTOの未宣言propertyを拒否し、Json.NETの`$id`／`$ref`／`$values`参照メタデータを互換拡張として維持します。配列schemaでも`$id`／`$values`で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の`1.0`／`1e0`を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限`float`／`double`は`JsonSerializationException`です。 受信JSONの構文検査は通常最大64階層で、ホストが`JsonConvert.DefaultSettings.MaxDepth`に正の値を設定した場合はその値を使い、`null`または未指定なら64階層を維持します。 |
+| 成功レスポンスのJSON | 一部対応 | RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTO（`additionalProperties: false`）の未宣言propertyを拒否し（open DTOとmapは許可し、宣言した値型を検査します）、Json.NETの`$id`／`$ref`／`$values`参照メタデータを互換拡張として維持します。配列schemaでも`$id`／`$values`で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の`1.0`／`1e0`を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限`float`／`double`は`JsonSerializationException`です。 受信JSONの構文検査は通常最大64階層で、ホストが`JsonConvert.DefaultSettings.MaxDepth`に正の値を設定した場合はその値を使い、`null`または未指定なら64階層を維持します。 |
 | レスポンスJSONの変換設定 | 一部対応 | 生成するレスポンスserializerは独立したJson.NET設定を使い、ホストの`JsonConvert.DefaultSettings`にあるconverter・contract resolverは検査済みの値を変えません。引き継ぐのは正の`MaxDepth`だけで、未指定・`null`・不正値なら64です。生成DTOのconverterと対応済みの`$id`／`$ref`／`$values`メタデータは維持します。 |
 | 成功レスポンスDTOのメタデータ名 | 非対応 | DTO propertyに`$id`、`$ref`、`$type`、`$values`を宣言すると、そのpropertyの位置で`OACG100`です。リクエスト専用DTOでは使用できます。schemaで宣言していないJson.NET参照メタデータの互換動作は維持します。 |
 | error/default response | 一部対応 | JSON以外の本文も許可します。schemaの構造・参照を検証し、成功本文のDTO生成制限は適用しません。例外は実際の本文を保持します。 |
@@ -182,25 +183,29 @@ status codeはASCII数字で検証します。属性付きのジェネリックc
 | 項目 | 対応状況 | 条件・制約 |
 | --- | --- | --- |
 | scalar | 対応 | `string`、`integer`、`number`、`boolean`。 |
-| object | 一部対応 | named propertiesと`required`を持ち、`additionalProperties: false`を明示したobject。省略、`true`、schema値はDTOを生成できず`OACG101`です。成功応答の未知propertyは拒否します。既存仕様で省略していた場合は明示してください。 |
+| object | 対応 | named propertiesと`required`を持つobjectをDTOへ生成します。`additionalProperties`の省略または`true`はopen objectで、宣言外のpropertyを`[JsonExtensionData]`の`IDictionary<string, JToken>`メンバー（既定名`AdditionalProperties`、宣言済みpropertyと重なる場合は連番）に保持して再送し、成功応答の未知propertyも許可します。schema値の`additionalProperties`はpropertiesがあればopen objectとして同じく保持し、成功応答では各値をその型で検査します（値は`JToken`のまま取り出し、`ToObject<T>()`で変換します）。`additionalProperties: false`はclosedで、成功応答の未知propertyを拒否します。propertiesがなく`false`なら空のclosed DTOです。 |
 | array | 一部対応 | supported schemaのarray。 |
-| string enum | 一部対応 | generated C# enumは宣言したwire文字列だけを大小文字・空白も含め完全一致で読み書きします。JSON数値と未宣言のC# enum値は拒否します。OpenAPI 3.1の`type: [string, null]`でも`enum`に文字列しかなければ非nullableです。`null`や重複値を含むenumは`OACG101`です。 |
+| string / integer enum | 一部対応 | generated C# enumは宣言したwire値だけを完全一致で読み書きします。string enumは大小文字・空白も含む文字列を、integer enumは明示値付きのC# enum（値が`int`を超えれば`long`）と数値のwireを使い、JSON文字列・小数（`2.0`や`1e0`のような整数値の字句も）・未宣言値・未宣言のC# enum値を拒否します（整数トークンだけを受理）。`type`を省略したenumは値の型（すべてstringまたはすべてinteger）から推論します。stringとintegerの混在、number enum、boolean enumは`enum`の位置で`OACG101`です。`enum`に`null`を含むとnullable（`Priority?`）として扱います。`x-enum-varnames`／`x-enumNames`（前者を優先）はC#のmember名、`x-enum-descriptions`はmemberのXML docに使い、長さ不一致などの不正な指定は`OACG108`で無視します。名前のないinteger enumのmemberは`Value<n>`（負数は`ValueMinus<n>`）です。OpenAPI 3.1の`type: [string, null]`でも`enum`に`null`が無ければ非nullableです。重複値は`OACG101`です。 |
 | direct schema reference | 対応 | supported schemaへの参照。多段参照のscalar／enumもnullableを保持します。 |
 | `$ref` sibling | 一部対応 | 注釈、literalデータ、`x-*`と既存の3.0 `nullable`は保持します。合成が必要な`type`、`properties`、`required`などは、該当位置の`OACG101`で拒否します。 |
 | nullable | 一部対応 | OpenAPI 3.0の`nullable`、OpenAPI 3.1の`type: [<type>, null]`。 |
 | optional nullable DTO property | 対応 | 未代入はJSONから省略し、`null`代入は明示的なJSON `null`、値の代入はその値を送ります。生成される`<PropertyName>Specified`を`false`へ戻すと再び省略します。 |
 | optional non-nullable DTO property | 対応 | JSONで省略できますが、明示的なJSON `null`を受信すると`JsonSerializationException`です。未設定値をシリアライズすると省略します。 |
 | required non-nullable DTO property | 対応 | 参照型の必須項目が`null`ならシリアライズ中に検出し、リクエストを送信しません。入れ子のDTOにも適用します。必須nullable項目のJSON `null`と必須値型の既定値は送信できます。 |
-| scalar format | 一部対応 | `integer`は通常`int`、`int64`は`long`。`number`は通常`double`、`float`は`float`、`decimal`は`decimal`。`date`、`date-time`、`uuid`は`DateTime`、`DateTimeOffset`、`Guid`へmappingします。成功レスポンスでは変換前にそれぞれ日付、タイムゾーン付き日時、ASCIIの8-4-4-4-12形式を字句検査します。字句が正しくてもCLRで表せない時刻・うるう秒などは変換時に拒否される場合があります。 |
-| formatの綴り | 一部対応 | `int64`、`float`、`decimal`、`date`、`date-time`、`uuid`、`binary`は小文字の完全一致だけを特別扱いします。大文字を含む未知の綴りはschemaの基底型として扱います。 |
+| scalar format | 一部対応 | `integer`は通常`int`、`int64`は`long`。`number`は通常`double`、`float`は`float`、`decimal`は`decimal`。`date`、`date-time`、`uuid`は`DateTime`、`DateTimeOffset`、`Guid`へmappingします。成功レスポンスでは変換前にそれぞれ日付、タイムゾーン付き日時、ASCIIの8-4-4-4-12形式を字句検査します。字句が正しくてもCLRで表せない時刻・うるう秒などは変換時に拒否される場合があります。 `byte`は`byte[]`にmappingします（成功応答はbase64を検査）。 |
+| formatの綴り | 一部対応 | `int64`、`float`、`decimal`、`date`、`date-time`、`uuid`、`byte`、`binary`は小文字の完全一致だけを特別扱いします。大文字を含む未知の綴りはschemaの基底型として扱います。 |
 | リクエスト数値 | 対応 | `float`／`double`の`NaN`・正負の無限大は本文直下・配列・DTO内ともHTTP送信前に`JsonSerializationException`で拒否します。省略指定した任意項目は検査しません。 |
-| map / free-form object | 非対応 | `additionalProperties`などのmap/free-form表現は対象外です。 |
-| schema assertions | 非対応 | 生成モデルが保持しない`const`、`pattern`、`minLength`、`minimum`、`minItems`などのassertionは、そのkeywordの位置で`OACG101`です。説明用annotation、`default`、`x-*`は許可します。 |
+| map / free-form object | 対応 | propertiesがなく`additionalProperties`がschemaなら`Dictionary<string, T>`です。成功応答では各値を検査し（非nullableな参照型のnull、型不一致、Json.NETの`$id`／`$ref`／`$type`／`$values`キーを拒否）、requestでは値の型に応じたnull・非有限数を検査します。propertiesがなく`additionalProperties`が省略または`true`の`type: object`（free-form）は`JObject`です。 |
+| any / type inference | 対応 | `{}`、OpenAPI 3.1のboolean schema `true`、`type: "null"`、およびnull以外の型を複数持つ3.1の型配列（例: `["string","integer"]`）は`JToken`です（JSON `null`を受け付けるため常にnullable）。`type`を省略した場合は、`properties`／`additionalProperties`があればobject、`items`があればarray、`enum`の値からstring／integer、`const`の値からその型を推論します。boolean schema `false`は`OACG101`です。parameterの`{}`や複数型は`OACG101`のままです。 |
+| schema assertions | 非対応 | 生成モデルが保持しない`pattern`、`minLength`、`minimum`、`minItems`などのassertionは、そのkeywordの位置で`OACG101`です。説明用annotation、`default`、`x-*`は許可します。`const`と`$defs`はOpenAPI 3.1のkeywordで、3.0では`OACG101`です。 |
+| `const` | 一部対応 | OpenAPI 3.1のscalar const（string／integer／number／boolean）。成功応答では値の一致を検査し（integer／numberは数値として比較するため`2.0`は`2`と等価）、不一致は`JsonSerializationException`です。request DTOでは、string／整数／浮動小数／decimal／booleanのDTO propertyの初期値になるだけで、request側で値は検証しません（nullableな任意propertyは初期値の対象外）。object／array値は`OACG101`、schema型と合わない値は`OACG100`です。`null`や単一のscalar型を持たないschemaのconst、`enum`と併記したconstは`OACG108`で無視します。 |
+| description / title / deprecated / default | 対応 | `title`と`description`はDTO・property・enum（とmember）のXML docへ出力します。`deprecated: true`はschemaとpropertyに`[Obsolete]`を付けます（生成コード内は`#pragma warning disable CS0612, CS0618`）。`default`はXML docだけで、wire contractは変えません（object／arrayのdefaultは無視）。operationとparameterの`deprecated`は後続フェーズで扱います。 |
 | composition | 非対応 | `allOf`、`anyOf`、`oneOf`、`not`、discriminatorは対象外です。 |
-| binary / readOnly / writeOnly | 非対応 | 生成contractでは対象外です。 |
+| readOnly / writeOnly | 対応 | `readOnly`なDTO propertyはrequestへ送信せず（生成される`ShouldSerialize<Name>()`が`false`）、requestのrequired検査からも外します。成功応答ではschemaの`required`どおり必須です。`writeOnly`なpropertyは成功応答で欠落しても許可し、requestではrequiredのままです。`$ref`先のschemaに付いた`readOnly`／`writeOnly`も、参照するpropertyに適用します。readOnly propertyの値はrequestで検証もしません。Unity IL2CPPのmanaged strippingでreflection専用メンバーが削除されないよう、`ShouldSerialize<Name>()`と`AdditionalProperties`にはinternalな`PreserveAttribute`を付け、`ShouldSerialize<Name>()`は`EditorBrowsable(Never)`にします。 |
+| `format: byte` | 対応 | `byte[]`（Json.NET標準のbase64）へmappingします（従来は`string`）。成功応答は文字列かつ有効なbase64であることを検査し、path/query/header parameterは標準base64文字列で送ります。`format: binary`はJSON schemaでは`OACG101`のままで、multipartやoctet-streamは後続フェーズで扱います。 |
 
 `$ref`と併記できる注釈・データのキーは`$comment`、`default`、`deprecated`、
-`description`、`example`、`examples`、`externalDocs`、`summary`、`title`、`xml`、`x-*`です。
+`description`、`example`、`examples`、`externalDocs`、`readOnly`、`summary`、`title`、`writeOnly`、`xml`、`x-*`です。
 OpenAPI 3.0では既存互換として`nullable`も扱います。
 
 リクエストJSONの`format: date`は`yyyy-MM-dd`へ変換します。公開型の`DateTime`は維持し、

@@ -67,12 +67,30 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal GeneratedDtoModel(
             string name,
             IReadOnlyList<GeneratedDtoPropertyModel> properties,
-            OpenApiSemanticAnnotations? annotations = null)
+            OpenApiSemanticAnnotations? annotations = null,
+            string? extensionDataName = null,
+            GeneratedTypeModel? extensionDataValueType = null)
         {
             Name = name;
             Properties = properties;
             Annotations = annotations ?? OpenApiSemanticAnnotations.Empty;
+            ExtensionDataName = extensionDataName;
+            ExtensionDataValueType = extensionDataValueType;
         }
+
+        /// <summary>
+        /// Member name of the IDictionary&lt;string, JToken&gt; that keeps undeclared members.
+        /// Null for a closed DTO.
+        /// </summary>
+        internal string? ExtensionDataName { get; }
+
+        /// <summary>
+        /// Declared value type of undeclared members (additionalProperties schema), used to validate
+        /// response values. Null when the members are untyped.
+        /// </summary>
+        internal GeneratedTypeModel? ExtensionDataValueType { get; }
+
+        internal bool IsOpen => ExtensionDataName is not null;
 
         internal OpenApiSemanticAnnotations Annotations { get; }
 
@@ -129,6 +147,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal string Name { get; }
 
         internal IReadOnlyList<GeneratedEnumMemberModel> Members { get; }
+
+        /// <summary>True when the members are integers (numeric wire values).</summary>
+        internal bool IsInteger => Members.Count > 0 &&
+            Members.All(static member => member.Value.Kind == OpenApiSemanticLiteralKind.Integer);
     }
 
     internal sealed class GeneratedEnumMemberModel
@@ -136,8 +158,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal GeneratedEnumMemberModel(
             string name,
             string wireValue,
-            OpenApiSemanticLiteral? value = null)
+            OpenApiSemanticLiteral? value = null,
+            string? description = null)
         {
+            Description = description ?? string.Empty;
             if (value.HasValue &&
                 !string.Equals(value.Value.RawText, wireValue, StringComparison.Ordinal))
             {
@@ -150,6 +174,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             WireValue = wireValue;
             Value = value ?? OpenApiSemanticLiteral.FromString(wireValue);
         }
+
+        /// <summary>Documentation from x-enum-descriptions.</summary>
+        internal string Description { get; }
 
         /// <summary>Typed enum value. WireValue is its RawText.</summary>
         internal OpenApiSemanticLiteral Value { get; }
@@ -275,7 +302,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         Any,
         Map,
         Union,
-        Binary
+        Binary,
+        /// <summary>An untyped JSON object (JObject).</summary>
+        FreeObject
     }
 
     internal sealed class GeneratedTypeModel : IEquatable<GeneratedTypeModel>
@@ -286,8 +315,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string name = "",
             GeneratedTypeModel? itemType = null,
             GeneratedTypeModel? valueType = null,
-            IReadOnlyList<GeneratedTypeModel>? unionMembers = null)
+            IReadOnlyList<GeneratedTypeModel>? unionMembers = null,
+            OpenApiSemanticLiteral? constValue = null)
         {
+            ConstValue = constValue;
             Kind = kind;
             Nullable = nullable;
             Name = name ?? string.Empty;
@@ -295,6 +326,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             ValueType = valueType;
             UnionMembers = unionMembers ?? Array.Empty<GeneratedTypeModel>();
         }
+
+        /// <summary>
+        /// JSON Schema const value for scalar types. Part of the type identity so that response
+        /// validation can be generated per const value.
+        /// </summary>
+        internal OpenApiSemanticLiteral? ConstValue { get; }
 
         /// <summary>Value type when Kind is Map.</summary>
         internal GeneratedTypeModel? ValueType { get; }
@@ -314,7 +351,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             return nullable == Nullable
                 ? this
-                : new GeneratedTypeModel(Kind, nullable, Name, ItemType, ValueType, UnionMembers);
+                : new GeneratedTypeModel(Kind, nullable, Name, ItemType, ValueType, UnionMembers, ConstValue);
+        }
+
+        internal GeneratedTypeModel WithConst(OpenApiSemanticLiteral? constValue)
+        {
+            return System.Nullable.Equals(constValue, ConstValue)
+                ? this
+                : new GeneratedTypeModel(Kind, Nullable, Name, ItemType, ValueType, UnionMembers, constValue);
         }
 
         /// <summary>
@@ -343,6 +387,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                    string.Equals(Name, other.Name, StringComparison.Ordinal) &&
                    Equals(ItemType, other.ItemType) &&
                    Equals(ValueType, other.ValueType) &&
+                   System.Nullable.Equals(ConstValue, other.ConstValue) &&
                    UnionMembers.SequenceEqual(other.UnionMembers);
         }
 
@@ -360,6 +405,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 hashCode = (hashCode * 397) ^ StringComparer.Ordinal.GetHashCode(Name);
                 hashCode = (hashCode * 397) ^ (ItemType?.GetHashCode() ?? 0);
                 hashCode = (hashCode * 397) ^ (ValueType?.GetHashCode() ?? 0);
+                hashCode = (hashCode * 397) ^ ConstValue.GetHashCode();
                 foreach (GeneratedTypeModel member in UnionMembers)
                 {
                     hashCode = (hashCode * 397) ^ member.GetHashCode();
