@@ -75,6 +75,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 case GeneratedTypeKind.Binary:
                     name = "byte[]";
                     break;
+                case GeneratedTypeKind.FreeObject:
+                    name = "global::Newtonsoft.Json.Linq.JObject";
+                    break;
                 case GeneratedTypeKind.Map:
                     name = "global::System.Collections.Generic.Dictionary<string, " +
                            TypeName(type.ValueType!) + ">";

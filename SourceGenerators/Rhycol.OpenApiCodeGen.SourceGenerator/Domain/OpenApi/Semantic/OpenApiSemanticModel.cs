@@ -238,7 +238,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         Any,
         Map,
         Union,
-        Binary
+        Binary,
+        /// <summary>An object with no declared properties whose members are not constrained (JObject).</summary>
+        FreeObject
+    }
+
+    /// <summary>How an object schema treats members that are not listed in properties.</summary>
+    internal enum OpenApiSemanticAdditionalProperties
+    {
+        /// <summary>additionalProperties: false.</summary>
+        Closed,
+        /// <summary>additionalProperties omitted or true: unknown members are preserved untyped.</summary>
+        Open,
+        /// <summary>additionalProperties is a schema (ValueSchema).</summary>
+        Typed
     }
 
     internal sealed class OpenApiSemanticSchema
@@ -258,8 +271,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiSemanticAnnotations? annotations = null,
             IReadOnlyList<OpenApiSemanticLiteral>? typedEnumValues = null,
             OpenApiSemanticSchema? valueSchema = null,
-            IReadOnlyList<OpenApiSemanticSchema>? unionMembers = null)
+            IReadOnlyList<OpenApiSemanticSchema>? unionMembers = null,
+            OpenApiSemanticAdditionalProperties additionalProperties = OpenApiSemanticAdditionalProperties.Closed,
+            IReadOnlyList<string?>? enumMemberNames = null,
+            IReadOnlyList<string?>? enumMemberDescriptions = null)
         {
+            AdditionalProperties = additionalProperties;
+            EnumMemberNames = enumMemberNames ?? Array.Empty<string?>();
+            EnumMemberDescriptions = enumMemberDescriptions ?? Array.Empty<string?>();
             Annotations = annotations ?? OpenApiSemanticAnnotations.Empty;
             ValueSchema = valueSchema;
             UnionMembers = unionMembers ?? Array.Empty<OpenApiSemanticSchema>();
@@ -328,7 +347,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// <summary>description / deprecated / readOnly / writeOnly / default / const.</summary>
         internal OpenApiSemanticAnnotations Annotations { get; }
 
-        /// <summary>Value schema when Kind is Map.</summary>
+        /// <summary>Handling of undeclared members when Kind is Object.</summary>
+        internal OpenApiSemanticAdditionalProperties AdditionalProperties { get; }
+
+        /// <summary>
+        /// C# member names from x-enum-varnames / x-enumNames, parallel to TypedEnumValues.
+        /// Empty when the schema declares none; an entry is null when not provided.
+        /// </summary>
+        internal IReadOnlyList<string?> EnumMemberNames { get; }
+
+        /// <summary>Per-value descriptions from x-enum-descriptions, parallel to TypedEnumValues.</summary>
+        internal IReadOnlyList<string?> EnumMemberDescriptions { get; }
+
+        /// <summary>
+        /// Value schema when Kind is Map, or when Kind is Object and AdditionalProperties is Typed.
+        /// </summary>
         internal OpenApiSemanticSchema? ValueSchema { get; }
 
         /// <summary>Members when Kind is Union.</summary>

@@ -9,24 +9,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         private const string Properties = "\"properties\":{\"name\":{\"type\":\"string\"}}";
 
         [Theory]
-        [InlineData("3.0.3", "", "/components/schemas/Payload")]
-        [InlineData("3.1.0", "", "/components/schemas/Payload")]
-        [InlineData("3.0.3", "\"additionalProperties\":true,", "/components/schemas/Payload/additionalProperties")]
-        [InlineData("3.1.0", "\"additionalProperties\":true,", "/components/schemas/Payload/additionalProperties")]
-        [InlineData("3.0.3", "\"additionalProperties\":{\"type\":\"string\"},", "/components/schemas/Payload/additionalProperties")]
-        [InlineData("3.1.0", "\"additionalProperties\":{\"type\":\"string\"},", "/components/schemas/Payload/additionalProperties")]
-        public void OpenNamedObjectsAreRejectedAtTheirSourceLocation(
-            string version,
-            string additionalProperties,
-            string expectedPath)
+        [InlineData("3.0.3", "")]
+        [InlineData("3.1.0", "")]
+        [InlineData("3.0.3", "\"additionalProperties\":true,")]
+        [InlineData("3.1.0", "\"additionalProperties\":true,")]
+        [InlineData("3.0.3", "\"additionalProperties\":{\"type\":\"string\"},")]
+        [InlineData("3.1.0", "\"additionalProperties\":{\"type\":\"string\"},")]
+        public void OpenNamedObjectsGenerateExtensionData(string version, string additionalProperties)
         {
-            Diagnostic diagnostic = GetOnlyDiagnostic(DocumentWithComponent(
-                "{\"type\":\"object\"," + additionalProperties + Properties + "}",
-                version));
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                DocumentWithComponent("{\"type\":\"object\"," + additionalProperties + Properties + "}", version));
 
-            Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Equal(TestBundleFactory.SourcePath, diagnostic.Location.GetLineSpan().Path);
-            Assert.Contains("logical path '" + expectedPath + "'", diagnostic.GetMessage());
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.Contains("JsonExtensionData", execution.GeneratedSource);
         }
 
         [Theory]
@@ -42,12 +38,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Fact]
         public void NestedObjectAndArrayItemAssertionsAreCheckedAtTheirOwnLocations()
         {
+            // An object without additionalProperties is open now, so it is no longer rejected.
             const string NestedObject = "{\"type\":\"object\",\"additionalProperties\":false," +
                                         "\"properties\":{\"child\":{\"type\":\"object\"," +
                                         "\"properties\":{\"name\":{\"type\":\"string\"}}}}}";
-            Diagnostic openChild = GetOnlyDiagnostic(DocumentWithComponent(NestedObject));
-            Assert.Equal("OACG101", openChild.Id);
-            Assert.Contains("/components/schemas/Payload/properties/child'", openChild.GetMessage());
+            AssertGenerates(DocumentWithComponent(NestedObject));
+
+            const string NestedObjectWithConstraint = "{\"type\":\"object\",\"additionalProperties\":false," +
+                                        "\"properties\":{\"child\":{\"type\":\"object\"," +
+                                        "\"properties\":{\"name\":{\"type\":\"string\",\"maxLength\":3}}}}}";
+            Diagnostic constrainedChild = GetOnlyDiagnostic(DocumentWithComponent(NestedObjectWithConstraint));
+            Assert.Equal("OACG101", constrainedChild.Id);
+            Assert.Contains(
+                "/components/schemas/Payload/properties/child/properties/name/maxLength'",
+                constrainedChild.GetMessage());
 
             const string ArrayItem = "{\"type\":\"array\",\"items\":{\"type\":\"string\"," +
                                      "\"minLength\":2}}";
@@ -70,13 +74,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("3.0.3", "uniqueItems", "true")]
         [InlineData("3.0.3", "maxProperties", "3")]
         [InlineData("3.0.3", "minProperties", "1")]
-        [InlineData("3.1.0", "const", "\"fixed\"")]
+        // const and $defs are OpenAPI 3.1 keywords (supported there since P1); 3.0 still rejects them.
+        [InlineData("3.0.3", "const", "\"fixed\"")]
+        [InlineData("3.0.3", "$defs", "{\"Part\":{\"type\":\"string\"}}")]
         [InlineData("3.1.0", "exclusiveMaximum", "10")]
         [InlineData("3.1.0", "minContains", "1")]
         [InlineData("3.1.0", "maxContains", "2")]
         [InlineData("3.1.0", "propertyNames", "{\"pattern\":\"^[a-z]+$\"}")]
         [InlineData("3.1.0", "contentSchema", "{\"type\":\"string\"}")]
-        [InlineData("3.1.0", "$defs", "{\"Part\":{\"type\":\"string\"}}")]
         [InlineData("3.1.0", "dependentSchemas", "{\"name\":{\"type\":\"string\"}}")]
         [InlineData("3.1.0", "unevaluatedProperties", "false")]
         [InlineData("3.1.0", "customAssertion", "true")]
@@ -135,15 +140,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Theory]
-        [InlineData("{\"type\":\"object\",\"additionalProperties\":false}", "Free-form object schemas")]
-        [InlineData("{\"type\":\"object\",\"additionalProperties\":true}", "additionalProperties maps")]
-        [InlineData("{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}}", "additionalProperties maps")]
-        public void FreeFormAndMapObjectsRemainUnsupported(string schema, string expectedMessage)
+        [InlineData("{\"type\":\"object\",\"additionalProperties\":false}")]
+        [InlineData("{\"type\":\"object\",\"additionalProperties\":true}")]
+        [InlineData("{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}}")]
+        public void FreeFormAndMapObjectsGenerate(string schema)
         {
-            Diagnostic diagnostic = GetOnlyDiagnostic(DocumentWithComponent(schema));
-
-            Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains(expectedMessage, diagnostic.GetMessage());
+            AssertGenerates(DocumentWithComponent(schema));
         }
 
         private static string DocumentWithComponent(string schema, string version = "3.1.0")

@@ -4,7 +4,24 @@
 
 ### Added
 
-- Add warning `OACG108` ("Ignored OpenAPI element"), reported with a logical path when the analyzer deliberately ignores an OpenAPI element. No element is reported yet.
+- Add warning `OACG108` ("Ignored OpenAPI element"), reported with a logical path when the analyzer deliberately ignores an OpenAPI element. It is currently reported for malformed `x-enum-*` arrays and for `const` values that cannot be enforced.
+- Generate open objects, maps and free-form objects: an object schema that omits `additionalProperties` (or sets `true` / a schema) keeps undeclared members in an `IDictionary<string, JToken>` `[JsonExtensionData]` member and no longer rejects them in successful responses; `additionalProperties: <schema>` without properties becomes `Dictionary<string, T>`, and a plain `type: object` becomes `JObject`. `additionalProperties: false` stays a closed DTO.
+- Infer `type` from `properties`, `items`, `enum` and `const`; map `{}`, the OpenAPI 3.1 boolean schema `true`, and multi-type arrays to `JToken`. The `false` schema reports `OACG101`.
+- Allow recursive schemas through properties, array items and `additionalProperties` (self and mutual). Pure `$ref` alias cycles and cycles made only of arrays/maps still report `OACG103`.
+- Allow schema `$ref` to any JSON Pointer (property schemas, `$defs`, extension keys) and to any fragment of an external document. The type name comes from the last pointer token and uses the existing `OACG107` collision handling.
+- Support integer enums (explicit C# values, numeric wire, `long` when needed), enums containing `null` (nullable), enums without `type`, `x-enum-varnames` / `x-enumNames` and `x-enum-descriptions`. Number, boolean and mixed-type enums still report `OACG101`.
+- Support `const` (OpenAPI 3.1): validated in successful responses and used as the initial value of request DTO properties.
+- Support `readOnly` (not sent in requests, not required in requests) and `writeOnly` (may be absent from responses).
+- Emit `title` / `description` / `default` as XML documentation and `deprecated: true` as `[Obsolete]` on schemas and properties; the generated files disable CS0612 / CS0618.
+- A JSON-valued `DateTime` held by a `JToken` is no longer truncated to a date by the request serializer's date converter.
+
+### Changed
+
+- `format: byte` now maps to `byte[]` (base64 on the wire, validated in successful responses) instead of `string`. Source that assigned or read these members as `string` must be updated.
+- `deprecated: true` on a schema or DTO property now adds `[Obsolete]` to the generated member, so callers see compiler warnings (CS0612 / CS0618) for deprecated members.
+- Object schemas that omit `additionalProperties` generate an open DTO with an extra `AdditionalProperties` member instead of reporting `OACG101`.
+- `x-enum-varnames` / `x-enumNames` now name the generated C# enum members. A string enum that already declared these extensions previously got names derived from its values, so its member names (and any code using them) change.
+- Generated DTOs with `readOnly` properties or an open `AdditionalProperties` member add an internal `PreserveAttribute` so Unity IL2CPP stripping keeps the reflection-only members.
 
 ## [0.5.1] - 2026-11-10
 

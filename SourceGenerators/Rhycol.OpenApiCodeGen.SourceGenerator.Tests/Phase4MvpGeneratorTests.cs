@@ -144,11 +144,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "OACG104",
                 "External $ref values are not supported"
             };
+            // A%2F decodes to a nested pointer (schema refs may target any pointer since P1), so the
+            // reference is now unresolved rather than a non-component target.
             yield return new object[]
             {
                 "#/components/schemas/A%2FB",
-                "OACG101",
-                "requires $ref values to target a named component directly"
+                "OACG102",
+                "could not be resolved"
             };
             yield return new object[]
             {
@@ -407,7 +409,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Theory]
         [InlineData("readOnly")]
         [InlineData("writeOnly")]
-        public void ReadOnlyAndWriteOnlySchemasAreRejected(string keyword)
+        public void ReadOnlyAndWriteOnlySchemasAreAccepted(string keyword)
         {
             string document = @"{
   ""openapi"": ""3.1.0"",
@@ -420,13 +422,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 }";
 
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
-            Diagnostic diagnostic = Assert.Single(execution.RunResult.Diagnostics);
 
-            Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("Schema keyword '" + keyword + "' is not supported", diagnostic.GetMessage());
-            Assert.Contains(
-                "logical path '/components/schemas/Payload/properties/value/" + keyword + "'",
-                diagnostic.GetMessage());
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
         }
 
         [Fact]

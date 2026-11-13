@@ -65,14 +65,16 @@ personal access tokenを使ってください。`github.com`のページ、REST 
 対応するOpenAPI要素、YAMLの範囲、診断は[日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)に記載しています。
 YAMLの二重引用符内では有効な`\u`サロゲート対を非BMP文字として保持し、
 孤立・不一致のサロゲートは位置付き`YAML006`で拒否します。
-OpenAPI 3.1は標準schema dialectのみを受け付けます。独自dialectや`null`入りstring enumは診断で拒否します。
+OpenAPI 3.1は標準schema dialectのみを受け付けます。独自dialectは診断で拒否します。
 参照先が完全なOpenAPI文書の場合、その文書の`openapi`版と`jsonSchemaDialect`も確認します。
 入口文書とmajor.minor版が異なる参照先、および未対応dialectは位置付き診断で拒否します。
 版のpatch差と、`openapi`を持たない外部bare schemaは許可します。
 string enumは宣言したwire文字列と大小文字・空白も含め完全一致で送受信します。重複値、JSON数値、未宣言値は拒否します。
 path／query／headerのenum値も専用のJson.NET serializerで変換し、ホストの
 `JsonConvert.DefaultSettings`のconverterやcontract resolverによる書き換えを防ぎます。
-名前付きobjectのDTO生成には`additionalProperties: false`の明示が必要です。省略や追加プロパティの許可、
+`additionalProperties`を省略した、または`true`やschemaを指定したobjectは、宣言外のメンバーを
+`[JsonExtensionData]`の`IDictionary<string, JToken>`（`AdditionalProperties`）に保持するopen DTOになります。
+未知のresponse propertyを拒否するclosed DTOにするには`additionalProperties: false`を指定します。
 `pattern`・`minimum`・`minItems`などの未対応assertionは`OACG101`になります。
 header parameterはscalarに対応しますが、`Content-Language`や`Content-Encoding`などの
 content専用headerは位置付き診断で拒否します。対象名は[日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)を参照してください。

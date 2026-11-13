@@ -171,16 +171,18 @@ For an optional schema-nullable DTO property, assignment marks the property as
 present: an assigned `null` writes JSON `null`, while an untouched property is
 omitted. Set the generated `<PropertyName>Specified` flag to `false` to omit it
 again. OpenAPI 3.1 supports the default or explicitly declared OAS base schema
-dialect; unsupported dialects and string enums containing `null` receive
+dialect; unsupported dialects receive
 source-located diagnostics.
 When a schema member's generated CLR name would be interpreted as another
 member's `Specified` flag by Json.NET, the generator assigns a unique CLR name
 and keeps its JSON property name.
-Named object DTO schemas must explicitly set `additionalProperties: false`.
-Schemas that omit it, allow extra properties, or use unsupported assertions
-such as `pattern`, `minimum`, and `minItems` receive `OACG101` instead of
-generating a weaker contract. Duplicate string-enum wire values also receive
-`OACG101`.
+Object schemas that omit `additionalProperties` or set it to `true` or a schema
+generate an open DTO whose undeclared members are kept in an
+`IDictionary<string, JToken>` `[JsonExtensionData]` member
+(`AdditionalProperties`); set `additionalProperties: false` for a closed DTO
+that rejects unknown response properties. Unsupported assertions such as
+`pattern`, `minimum`, and `minItems` receive `OACG101` instead of generating a
+weaker contract. Duplicate enum wire values also receive `OACG101`.
 
 An optional non-nullable DTO property may be absent from JSON, but an explicit
 JSON `null` raises `JsonSerializationException`. An unset property is omitted

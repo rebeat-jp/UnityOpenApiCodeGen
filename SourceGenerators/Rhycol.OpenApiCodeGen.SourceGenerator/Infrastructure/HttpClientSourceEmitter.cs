@@ -16,6 +16,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             var source = new StringBuilder();
             source.AppendLine("#nullable enable");
+            if (GeneratedDocumentationEmitter.AnyDeprecated(model))
+            {
+                source.AppendLine(GeneratedDocumentationEmitter.PragmaLine);
+            }
+
             source.Append("namespace ").Append(model.GeneratedNamespace).AppendLine();
             source.AppendLine("{");
             source.Append("    public partial class ").Append(model.ApiName).AppendLine();
@@ -737,6 +742,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("                return text;");
             source.AppendLine("            }");
             source.AppendLine();
+            source.AppendLine("            if (value is byte[] bytes)");
+            source.AppendLine("            {");
+            source.AppendLine("                return global::System.Convert.ToBase64String(bytes);");
+            source.AppendLine("            }");
+            source.AppendLine();
             source.AppendLine("            if (value is bool boolean)");
             source.AppendLine("            {");
             source.AppendLine("                return boolean ? \"true\" : \"false\";");
@@ -784,6 +794,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("                if (value == null)");
             source.AppendLine("                {");
             source.AppendLine("                    writer.WriteNull();");
+            source.AppendLine("                    return;");
+            source.AppendLine("                }");
+            source.AppendLine();
+            source.AppendLine("                // JValue writes its DateTime through a converter with a default serializer. Only members typed as date use the request serializer that carries this converter, so a DateTime held by a JToken keeps its full value.");
+            source.AppendLine("                if (!serializer.Converters.Contains(this))");
+            source.AppendLine("                {");
+            source.AppendLine("                    writer.WriteValue((global::System.DateTime)value);");
             source.AppendLine("                    return;");
             source.AppendLine("                }");
             source.AppendLine();
@@ -958,6 +975,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private sealed class ResponseJsonContractPlan
         {
             private readonly IReadOnlyDictionary<string, GeneratedDtoModel> _dtos;
+            private readonly IReadOnlyDictionary<string, GeneratedEnumModel> _enums;
             private readonly List<GeneratedTypeModel> _types = new List<GeneratedTypeModel>();
             private readonly Dictionary<GeneratedTypeModel, int> _indices =
                 new Dictionary<GeneratedTypeModel, int>();
@@ -966,6 +984,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             internal ResponseJsonContractPlan(OpenApiGenerationModel model)
             {
                 _dtos = model.Dtos.ToDictionary(static dto => dto.Name, StringComparer.Ordinal);
+                _enums = model.Enums.ToDictionary(static value => value.Name, StringComparer.Ordinal);
                 var occupied = new HashSet<string>(StringComparer.Ordinal) { model.ApiName };
                 occupied.UnionWith(model.Dtos.Select(static dto => dto.Name));
                 occupied.UnionWith(model.Enums.Select(static value => value.Name));
@@ -1024,12 +1043,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 {
                     Register(type.ItemType!);
                 }
+                else if (type.Kind == GeneratedTypeKind.Map)
+                {
+                    Register(type.ValueType!);
+                }
                 else if (type.Kind == GeneratedTypeKind.Named &&
                          _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
                 {
                     foreach (GeneratedDtoPropertyModel property in dto.Properties)
                     {
                         Register(property.Type);
+                    }
+
+                    if (dto.ExtensionDataValueType is not null)
+                    {
+                        Register(dto.ExtensionDataValueType);
                     }
                 }
             }
@@ -1105,6 +1133,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     type.Kind == GeneratedTypeKind.DateTimeOffset || type.Kind == GeneratedTypeKind.Guid))
                 {
                     AppendStringFormatHelpers(source);
+                }
+
+                if (_types.Any(static type => type.Kind == GeneratedTypeKind.Binary))
+                {
+                    AppendBase64Helper(source);
+                }
+
+                if (_types.Any(static type => type.ConstValue.HasValue &&
+                                              (type.ConstValue.Value.Kind == OpenApiSemanticLiteralKind.Integer ||
+                                               type.ConstValue.Value.Kind == OpenApiSemanticLiteralKind.Number)))
+                {
+                    AppendNumberEqualsHelper(source);
                 }
 
                 AppendSyntaxHelpers(source);
@@ -1297,6 +1337,37 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         .Append(type.ItemType!.Nullable ? "true" : "false").AppendLine(", json, lineStarts, replacements);");
                     source.AppendLine("            }");
                 }
+                else if (type.Kind == GeneratedTypeKind.Any)
+                {
+                    // Any JSON value (including null) is valid; there is nothing to check.
+                }
+                else if (type.Kind == GeneratedTypeKind.FreeObject)
+                {
+                    source.AppendLine("            if (!(token is global::Newtonsoft.Json.Linq.JObject))");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Expected a response object at \" + path + \".\");");
+                }
+                else if (type.Kind == GeneratedTypeKind.Map)
+                {
+                    source.AppendLine("            if (!(token is global::Newtonsoft.Json.Linq.JObject mapToken))");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Expected a response object at \" + path + \".\");");
+                    source.AppendLine("            foreach (var property in mapToken.Properties())");
+                    source.AppendLine("            {");
+                    source.AppendLine("                if (property.Name == \"$id\" || property.Name == \"$ref\" || property.Name == \"$type\" || property.Name == \"$values\")");
+                    source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"A response map key conflicts with Json.NET metadata at \" + path + \".\" + property.Name + \".\");");
+                    source.Append("                ").Append(MethodName(type.ValueType!))
+                        .Append("(property.Value, path + \".\" + property.Name, ")
+                        .Append(type.ValueType!.Nullable ? "true" : "false")
+                        .AppendLine(", json, lineStarts, replacements);");
+                    source.AppendLine("            }");
+                }
+                else if (type.Kind == GeneratedTypeKind.Binary)
+                {
+                    source.AppendLine("            if (token.Type != global::Newtonsoft.Json.Linq.JTokenType.String)");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Unexpected response JSON token at \" + path + \".\");");
+                    source.Append("            if (!").Append(_prefix)
+                        .AppendLine("IsBase64((string)((global::Newtonsoft.Json.Linq.JValue)token).Value!))");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Invalid base64 response string at \" + path + \".\");");
+                }
                 else if (type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
                 {
                     source.AppendLine("            if (!(token is global::Newtonsoft.Json.Linq.JObject objectToken))");
@@ -1321,7 +1392,24 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     }
                     source.AppendLine("                    default:");
                     source.AppendLine("                        if (property.Name == \"$id\") break;");
-                    source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"Undeclared response property at \" + path + \".\" + property.Name + \".\");");
+                    if (!dto.IsOpen)
+                    {
+                        source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"Undeclared response property at \" + path + \".\" + property.Name + \".\");");
+                    }
+                    else
+                    {
+                        // An open DTO keeps undeclared members in its extension data. When
+                        // additionalProperties declares a value schema, those values are validated.
+                        if (dto.ExtensionDataValueType is not null)
+                        {
+                            source.Append("                        ").Append(MethodName(dto.ExtensionDataValueType))
+                                .Append("(property.Value, path + \".\" + property.Name, ")
+                                .Append(dto.ExtensionDataValueType.Nullable ? "true" : "false")
+                                .AppendLine(", json, lineStarts, replacements);");
+                        }
+
+                        source.AppendLine("                        break;");
+                    }
                     source.AppendLine("                }");
                     source.AppendLine("            }");
                 }
@@ -1342,7 +1430,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     }
                     else
                     {
-                        string expected = type.Kind == GeneratedTypeKind.Int32 || type.Kind == GeneratedTypeKind.Int64
+                        bool integerEnum = type.Kind == GeneratedTypeKind.NamedEnum &&
+                            _enums.TryGetValue(type.Name, out GeneratedEnumModel? enumModel) && enumModel.IsInteger;
+                        string expected = type.Kind == GeneratedTypeKind.Int32 || type.Kind == GeneratedTypeKind.Int64 || integerEnum
                             ? "Integer"
                             : type.Kind == GeneratedTypeKind.Boolean ? "Boolean" : "String";
                         source.Append("            if (token.Type != global::Newtonsoft.Json.Linq.JTokenType.")
@@ -1359,9 +1449,75 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                             .AppendLine("((string)((global::Newtonsoft.Json.Linq.JValue)token).Value!))");
                         source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Invalid response string format at \" + path + \".\");");
                     }
+
+                    AppendConstCheck(source, type);
                 }
 
                 source.AppendLine("        }");
+            }
+
+            private void AppendConstCheck(StringBuilder source, GeneratedTypeModel type)
+            {
+                if (!type.ConstValue.HasValue)
+                {
+                    return;
+                }
+
+                OpenApiSemanticLiteral literal = type.ConstValue.Value;
+                const string Failure =
+                    "                throw new global::Newtonsoft.Json.JsonSerializationException(\"The response value does not equal the declared const at \" + path + \".\");";
+                switch (literal.Kind)
+                {
+                    case OpenApiSemanticLiteralKind.String:
+                        source.Append("            if (!global::System.String.Equals((string)((global::Newtonsoft.Json.Linq.JValue)token).Value!, ")
+                            .Append(GeneratedSourceEmitter.StringLiteral(literal.RawText))
+                            .AppendLine(", global::System.StringComparison.Ordinal))");
+                        source.AppendLine(Failure);
+                        break;
+                    case OpenApiSemanticLiteralKind.Boolean:
+                        source.Append("            if ((bool)((global::Newtonsoft.Json.Linq.JValue)token).Value! != ")
+                            .Append(literal.RawText).AppendLine(")");
+                        source.AppendLine(Failure);
+                        break;
+                    case OpenApiSemanticLiteralKind.Integer:
+                    case OpenApiSemanticLiteralKind.Number:
+                        source.Append("            if (!").Append(_prefix).Append("NumberEquals(token, ")
+                            .Append(GeneratedSourceEmitter.StringLiteral(literal.RawText)).AppendLine("))");
+                        source.AppendLine(Failure);
+                        break;
+                }
+            }
+
+            private void AppendBase64Helper(StringBuilder source)
+            {
+                source.AppendLine(@"
+        private static bool __PREFIX__IsBase64(string value)
+        {
+            try
+            {
+                global::System.Convert.FromBase64String(value);
+                return true;
+            }
+            catch (global::System.FormatException)
+            {
+                return false;
+            }
+        }
+".Replace("__PREFIX__", _prefix));
+            }
+
+            private void AppendNumberEqualsHelper(StringBuilder source)
+            {
+                source.AppendLine(@"
+        private static bool __PREFIX__NumberEquals(global::Newtonsoft.Json.Linq.JToken token, string expected)
+        {
+            var value = ((global::Newtonsoft.Json.Linq.JValue)token).Value;
+            string actual = global::System.Convert.ToString(value, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+            return global::System.Decimal.TryParse(actual, global::System.Globalization.NumberStyles.Float, global::System.Globalization.CultureInfo.InvariantCulture, out var left) &&
+                   global::System.Decimal.TryParse(expected, global::System.Globalization.NumberStyles.Float, global::System.Globalization.CultureInfo.InvariantCulture, out var right) &&
+                   left == right;
+        }
+".Replace("__PREFIX__", _prefix));
             }
 
             private void AppendStringFormatHelpers(StringBuilder source)
@@ -1625,6 +1781,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                            RequiresValidation(itemType, visited);
                 }
 
+                if (type.Kind == GeneratedTypeKind.Map)
+                {
+                    GeneratedTypeModel valueType = type.ValueType!;
+                    return (!valueType.Nullable && !valueType.IsValueType) ||
+                           RequiresValidation(valueType, visited);
+                }
+
                 if (type.Kind != GeneratedTypeKind.Named ||
                     !_dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto) ||
                     !visited.Add(type.Name))
@@ -1654,6 +1817,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 if (type.Kind == GeneratedTypeKind.Array)
                 {
                     Register(type.ItemType!);
+                }
+                else if (type.Kind == GeneratedTypeKind.Map)
+                {
+                    Register(type.ValueType!);
                 }
                 else if (type.Kind == GeneratedTypeKind.Named &&
                          _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
@@ -1725,25 +1892,57 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
                     source.AppendLine("            }");
                 }
+                else if (type.Kind == GeneratedTypeKind.Map)
+                {
+                    GeneratedTypeModel valueType = type.ValueType!;
+                    source.AppendLine("            foreach (var entry in value)");
+                    source.AppendLine("            {");
+                    source.AppendLine("                var item = entry.Value;");
+                    source.AppendLine("                string itemPath = path + \".\" + entry.Key;");
+                    if (!valueType.Nullable && !valueType.IsValueType)
+                    {
+                        source.AppendLine("                if (item is null)");
+                        source.AppendLine("                {");
+                        source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-nullable \" + contract + \" map value was null at \" + itemPath + \".\");");
+                        source.AppendLine("                }");
+                    }
+
+                    if (TryGetMethodName(valueType, out string? valueMethodName))
+                    {
+                        source.Append("                ").Append(valueMethodName)
+                            .AppendLine("(item, itemPath, contract, visited);");
+                    }
+
+                    source.AppendLine("            }");
+                }
                 else if (type.Kind == GeneratedTypeKind.Named)
                 {
                     foreach (GeneratedDtoPropertyModel property in _dtos[type.Name].Properties)
                     {
                         if (TryGetMethodName(property.Type, out string? propertyMethodName))
                         {
+                            // readOnly members are never sent, so their values are not request-validated.
+                            string? guard = property.Annotations.ReadOnly
+                                ? "contract != \"request\""
+                                : null;
                             if (property.UseSpecified)
                             {
-                                source.Append("            if (contract != \"request\" || value.")
-                                    .Append(property.Name).AppendLine("Specified)");
+                                guard = (guard is null ? string.Empty : guard + " && ") +
+                                        "(contract != \"request\" || value." + property.Name + "Specified)";
+                            }
+
+                            if (guard is not null)
+                            {
+                                source.Append("            if (").Append(guard).AppendLine(")");
                                 source.AppendLine("            {");
                             }
 
-                            string indent = property.UseSpecified ? "                " : "            ";
+                            string indent = guard is not null ? "                " : "            ";
                             source.Append(indent).Append(propertyMethodName)
                                 .Append("(value.").Append(property.Name).Append(", path + \".\" + ")
                                 .Append(GeneratedSourceEmitter.StringLiteral(property.WireName))
                                 .AppendLine(", contract, visited);");
-                            if (property.UseSpecified)
+                            if (guard is not null)
                             {
                                 source.AppendLine("            }");
                             }

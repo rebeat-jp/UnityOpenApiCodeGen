@@ -41,8 +41,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 "example",
                 "examples",
                 "externalDocs",
+                "readOnly",
                 "summary",
                 "title",
+                "writeOnly",
                 "xml"
             };
 
@@ -52,7 +54,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 "$comment", "$ref", "$schema", "additionalProperties", "default", "deprecated",
                 "description", "enum", "example", "examples", "externalDocs", "format", "items",
                 "nullable", "properties", "required", "summary", "title", "type", "xml",
-                "contentEncoding", "contentMediaType"
+                "contentEncoding", "contentMediaType", "readOnly", "writeOnly"
+            };
+
+        // Keywords that exist only in the OpenAPI 3.1 (JSON Schema 2020-12) dialect.
+        private static readonly HashSet<string> OpenApi31SchemaKeywords =
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "const", "$defs"
             };
 
         private readonly SpecNode _root;
@@ -158,9 +167,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 ParseInfo(RequireProperty(_root, "info"));
                 string baseUrl = ParseBaseUrl(GetProperty(_root, "servers"));
                 ParseComponentSchemas();
+                _componentsParsed = true;
+                ValidateRecursionIfObserved();
                 IReadOnlyDictionary<NormalizedSpecNodeIdentity, OpenApiSemanticSchema> schemas = _schemas;
                 ValidateNonSchemaComponents();
                 IReadOnlyList<OpenApiSemanticOperation> operations = ParsePaths(RequireProperty(_root, "paths"));
+                ValidateRecursionIfObserved();
 
                 return new OpenApiSemanticDocument(
                     _minorVersion,
@@ -336,8 +348,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
 
                 var stack = new HashSet<NormalizedSpecNodeIdentity> { identity };
-                OpenApiSemanticSchema schema = ParseSchema(property.Value, property.Name, stack);
-                AddSchema(identity, schema);
+                _schemasInProgress.Add(identity);
+                try
+                {
+                    OpenApiSemanticSchema schema = ParseSchema(property.Value, property.Name, stack);
+                    AddSchema(identity, schema);
+                }
+                finally
+                {
+                    _schemasInProgress.Remove(identity);
+                }
             }
         }
 
@@ -657,9 +677,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 new HashSet<NormalizedSpecNodeIdentity>());
             OpenApiSemanticSchema effectiveSchema = GetEffectiveSchema(schema);
             if (effectiveSchema.Kind == OpenApiSemanticSchemaKind.Array ||
-                effectiveSchema.Kind == OpenApiSemanticSchemaKind.Object)
+                effectiveSchema.Kind == OpenApiSemanticSchemaKind.Object ||
+                effectiveSchema.Kind == OpenApiSemanticSchemaKind.Map ||
+                effectiveSchema.Kind == OpenApiSemanticSchemaKind.FreeObject)
             {
                 throw Unsupported(node, "Array and object parameters require style/explode support and are outside the Phase 4 MVP.");
+            }
+
+            if (effectiveSchema.Kind == OpenApiSemanticSchemaKind.Any)
+            {
+                throw Unsupported(
+                    node,
+                    "Parameters whose schema has no single scalar type are outside the Phase 4 MVP.");
             }
 
             if (required && IsSchemaNullable(schema))
@@ -934,9 +963,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 return;
             }
 
+            if (schema.Kind == OpenApiSemanticSchemaKind.Map && schema.ValueSchema is not null)
+            {
+                ValidateResponseMetadataProperties(schema.ValueSchema, visited);
+                return;
+            }
+
             if (schema.Kind != OpenApiSemanticSchemaKind.Object)
             {
                 return;
+            }
+
+            if (schema.ValueSchema is not null)
+            {
+                ValidateResponseMetadataProperties(schema.ValueSchema, visited);
             }
 
             foreach (OpenApiSemanticProperty property in schema.Properties)
@@ -1137,35 +1177,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             ValidateResponseSchemaKeywordShapes(node);
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
-                ResolvedSpecReference resolved = ResolveReference(reference, referenceNode);
-                if (_bundle is null ||
-                    resolved.Pointer.StartsWith("/components/schemas/", StringComparison.Ordinal))
-                {
-                    _resolver.GetComponentName(
-                        _currentDocumentId,
-                        reference,
-                        "schemas",
-                        referenceNode);
-                }
-                else if (resolved.Pointer.Length == 0)
-                {
-                    if ((resolved.Node.ValueKind != SpecValueKind.Object &&
-                         resolved.Node.ValueKind != SpecValueKind.True &&
-                         resolved.Node.ValueKind != SpecValueKind.False) ||
-                        resolved.Node.TryGetProperty("openapi", out _))
-                    {
-                        throw Unsupported(
-                            referenceNode,
-                            "An external document root may be used only when it is a bare schema.");
-                    }
-                }
-                else
-                {
-                    throw Unsupported(
-                        referenceNode,
-                        "Schema $ref values must target a component schema or an external bare schema root.");
-                }
-
+                ResolvedSpecReference resolved = ResolveSchemaReference(reference, referenceNode, out _);
                 if (referenceStack.Contains(resolved.Identity))
                 {
                     throw CreateException(
@@ -1175,7 +1187,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         new[] { CreateLocation(resolved.Node, resolved.DocumentId) });
                 }
 
-                if (!_validatedResponseSchemas.Contains(resolved.Identity))
+                // Registered before descending so that recursion through a container (property,
+                // items, additionalProperties) terminates; the alias stack above still rejects
+                // pure $ref cycles.
+                if (_validatedResponseSchemas.Add(resolved.Identity))
                 {
                     ParseResolvedReferenced(
                         reference,
@@ -1187,11 +1202,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                             ValidateResponseSchemaReferences(target, referenceStack);
                             return true;
                         });
-                    _validatedResponseSchemas.Add(resolved.Identity);
                 }
             }
 
-            ValidateResponseSchemaProperty(node, "items", referenceStack);
+            // Containers start a fresh alias stack (see ParseSchema); other applicators keep the
+            // current one so that a schema composed of itself is still rejected.
+            ValidateResponseSchemaProperty(node, "items", new HashSet<NormalizedSpecNodeIdentity>());
             ValidateResponseSchemaProperty(node, "not", referenceStack);
             ValidateResponseSchemaProperty(node, "contains", referenceStack);
             ValidateResponseSchemaProperty(node, "propertyNames", referenceStack);
@@ -1200,7 +1216,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             ValidateResponseSchemaProperty(node, "if", referenceStack);
             ValidateResponseSchemaProperty(node, "then", referenceStack);
             ValidateResponseSchemaProperty(node, "else", referenceStack);
-            ValidateResponseSchemaMap(node, "properties", referenceStack);
+            ValidateResponseSchemaMap(node, "properties", new HashSet<NormalizedSpecNodeIdentity>());
             ValidateResponseSchemaMap(node, "patternProperties", referenceStack);
             ValidateResponseSchemaMap(node, "dependentSchemas", referenceStack);
             ValidateResponseSchemaArray(node, "allOf", referenceStack);
@@ -1213,7 +1229,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 additionalProperties.ValueKind != SpecValueKind.True &&
                 additionalProperties.ValueKind != SpecValueKind.False)
             {
-                ValidateResponseSchemaReferences(additionalProperties, referenceStack);
+                ValidateResponseSchemaReferences(additionalProperties, new HashSet<NormalizedSpecNodeIdentity>());
             }
         }
 
@@ -1253,10 +1269,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (enumNode is not null)
             {
                 RequireKind(enumNode, SpecValueKind.Array, "The schema enum field must be an array.");
-                if (enumNode.EnumerateArray().Any(static value => value.ValueKind == SpecValueKind.Null))
-                {
-                    throw Unsupported(enumNode, "String enums containing null are not supported by the Phase 4 MVP.");
-                }
             }
 
             ValidateOptionalStringKeyword(node, "format");
@@ -1399,277 +1411,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 "' is not supported. Use UTF-8, UTF-16, or UTF-16BE.");
         }
 
-        private OpenApiSemanticSchema ParseSchema(
-            SpecNode node,
-            string suggestedName,
-            HashSet<NormalizedSpecNodeIdentity> referenceStack)
-        {
-            RequireKind(node, SpecValueKind.Object, "A schema must be an object in the Phase 4 MVP.");
-            ValidateUnsupportedSchemaKeywords(node);
-
-            if (TryGetReference(node, out string reference, out SpecNode referenceNode))
-            {
-                ValidateReferenceSchemaSiblings(node);
-                string referenceName;
-                ResolvedSpecReference resolved;
-                if (_bundle is null)
-                {
-                    referenceName = _resolver.GetComponentName(
-                        _currentDocumentId,
-                        reference,
-                        "schemas",
-                        referenceNode);
-                    resolved = ResolveReference(reference, referenceNode);
-                }
-                else
-                {
-                    resolved = ResolveReference(reference, referenceNode);
-                    if (resolved.Pointer.StartsWith("/components/schemas/", StringComparison.Ordinal))
-                    {
-                        referenceName = _resolver.GetComponentName(
-                            _currentDocumentId,
-                            reference,
-                            "schemas",
-                            referenceNode);
-                    }
-                    else if (resolved.Pointer.Length == 0)
-                    {
-                        if (resolved.Node.ValueKind != SpecValueKind.Object ||
-                            resolved.Node.TryGetProperty("openapi", out _))
-                        {
-                            throw Unsupported(
-                                referenceNode,
-                                "An external document root may be used only when it is a bare schema.");
-                        }
-
-                        referenceName = GetBareSchemaName(resolved);
-                    }
-                    else
-                    {
-                        throw Unsupported(
-                            referenceNode,
-                            "Schema $ref values must target a component schema or an external bare schema root.");
-                    }
-                }
-
-                OpenApiSemanticSchema targetSchema;
-                if (referenceStack.Contains(resolved.Identity))
-                {
-                    throw CreateException(
-                        OpenApiSemanticErrorKind.CyclicReference,
-                        "A cyclic internal $ref was detected at '" + reference + "'.",
-                        referenceNode,
-                        new[] { CreateLocation(resolved.Node, resolved.DocumentId) });
-                }
-
-                if (!_schemas.TryGetValue(resolved.Identity, out targetSchema))
-                {
-                    targetSchema = ParseResolvedReferenced(
-                        reference,
-                        referenceNode,
-                        referenceStack,
-                        resolved,
-                        target => ParseSchema(target, referenceName, referenceStack));
-                    AddSchema(resolved.Identity, targetSchema);
-                }
-
-                return new OpenApiSemanticSchema(
-                    OpenApiSemanticSchemaKind.Reference,
-                    suggestedName,
-                    string.Empty,
-                    ParseNullable(node),
-                    referenceName,
-                    Array.Empty<OpenApiSemanticProperty>(),
-                    null,
-                    Array.Empty<string>(),
-                    CreateLocation(node),
-                    identity: new NormalizedSpecNodeIdentity(_currentDocumentId, node.LogicalPath),
-                    referenceIdentity: resolved.Identity);
-            }
-
-            bool nullable = ParseNullable(node);
-            string type = ParseSchemaType(node, ref nullable);
-            string format = GetOptionalString(node, "format") ?? string.Empty;
-            if (type == "string" && string.Equals(format, "binary", StringComparison.Ordinal))
-            {
-                throw Unsupported(node, "Binary schemas are outside the JSON-only Phase 4 MVP.");
-            }
-
-            SpecNode? enumNode = GetProperty(node, "enum");
-            if (enumNode is not null)
-            {
-                if (type != "string")
-                {
-                    throw Unsupported(enumNode, "Only string enums are supported by the Phase 4 MVP.");
-                }
-
-                RequireKind(enumNode, SpecValueKind.Array, "The schema enum field must be an array.");
-                if (enumNode.EnumerateArray().Any(static value => value.ValueKind == SpecValueKind.Null))
-                {
-                    throw Unsupported(enumNode, "String enums containing null are not supported by the Phase 4 MVP.");
-                }
-
-                IReadOnlyList<string> enumValues = ParseStringArray(enumNode, "Enum values must be strings.");
-                if (enumValues.Count == 0)
-                {
-                    throw Invalid(enumNode, "An enum must contain at least one value.");
-                }
-
-                var seenEnumValues = new HashSet<string>(StringComparer.Ordinal);
-                int enumIndex = 0;
-                foreach (SpecNode enumValue in enumNode.EnumerateArray())
-                {
-                    if (!seenEnumValues.Add(enumValues[enumIndex++]))
-                    {
-                        throw Unsupported(
-                            enumValue,
-                            "String enum values must be unique for the Phase 4 generated C# enum contract.");
-                    }
-                }
-
-                if (_minorVersion == 1)
-                {
-                    nullable = false;
-                }
-
-                return new OpenApiSemanticSchema(
-                    OpenApiSemanticSchemaKind.Enum,
-                    suggestedName,
-                    format,
-                    nullable,
-                    string.Empty,
-                    Array.Empty<OpenApiSemanticProperty>(),
-                    null,
-                    enumValues,
-                    CreateLocation(node));
-            }
-
-            switch (type)
-            {
-                case "string":
-                    return CreateSimpleSchema(OpenApiSemanticSchemaKind.String, node, suggestedName, format, nullable);
-                case "integer":
-                    return CreateSimpleSchema(OpenApiSemanticSchemaKind.Integer, node, suggestedName, format, nullable);
-                case "number":
-                    return CreateSimpleSchema(OpenApiSemanticSchemaKind.Number, node, suggestedName, format, nullable);
-                case "boolean":
-                    return CreateSimpleSchema(OpenApiSemanticSchemaKind.Boolean, node, suggestedName, format, nullable);
-                case "array":
-                    OpenApiSemanticSchema itemSchema = ParseSchema(
-                        RequireProperty(node, "items"),
-                        suggestedName + "Item",
-                        referenceStack);
-                    return new OpenApiSemanticSchema(
-                        OpenApiSemanticSchemaKind.Array,
-                        suggestedName,
-                        format,
-                        nullable,
-                        string.Empty,
-                        Array.Empty<OpenApiSemanticProperty>(),
-                        itemSchema,
-                        Array.Empty<string>(),
-                        CreateLocation(node));
-                case "object":
-                    return ParseObjectSchema(node, suggestedName, format, nullable, referenceStack);
-                default:
-                    throw Unsupported(node, "Unsupported schema type: '" + type + "'.");
-            }
-        }
-
-        private OpenApiSemanticSchema ParseObjectSchema(
-            SpecNode node,
-            string suggestedName,
-            string format,
-            bool nullable,
-            HashSet<NormalizedSpecNodeIdentity> referenceStack)
-        {
-            SpecNode? additionalProperties = GetProperty(node, "additionalProperties");
-            if (additionalProperties is not null && additionalProperties.ValueKind != SpecValueKind.False)
-            {
-                throw Unsupported(additionalProperties, "additionalProperties maps are not supported by the Phase 4 MVP.");
-            }
-
-            SpecNode? propertiesNode = GetProperty(node, "properties");
-            if (propertiesNode is null)
-            {
-                throw Unsupported(node, "Free-form object schemas are not supported by the Phase 4 MVP.");
-            }
-
-            RequireKind(propertiesNode, SpecValueKind.Object, "The schema properties field must be an object.");
-            if (additionalProperties is null)
-            {
-                throw Unsupported(
-                    node,
-                    "Named object schemas must set additionalProperties to false for the Phase 4 closed DTO contract.");
-            }
-
-            var required = new HashSet<string>(StringComparer.Ordinal);
-            var requiredLocations = new Dictionary<string, SpecNode>(StringComparer.Ordinal);
-            SpecNode? requiredNode = GetProperty(node, "required");
-            if (requiredNode is not null)
-            {
-                RequireKind(requiredNode, SpecValueKind.Array, "Required property names must be strings.");
-                foreach (SpecNode requiredItem in requiredNode.EnumerateArray())
-                {
-                    string value = RequireString(requiredItem, "Required property names must be strings.");
-                    if (!required.Add(value))
-                    {
-                        throw Invalid(
-                            requiredItem,
-                            "The required array contains the property name '" + value + "' more than once.");
-                    }
-
-                    requiredLocations.Add(value, requiredItem);
-                }
-            }
-
-            var properties = new List<OpenApiSemanticProperty>();
-            var propertyNames = new HashSet<string>(StringComparer.Ordinal);
-            foreach (SpecProperty property in propertiesNode.EnumerateObject()
-                         .OrderBy(static value => value.Name, StringComparer.Ordinal))
-            {
-                propertyNames.Add(property.Name);
-                OpenApiSemanticSchema propertySchema = ParseSchema(
-                    property.Value,
-                    suggestedName + ToPascalFragment(property.Name),
-                    referenceStack);
-                properties.Add(new OpenApiSemanticProperty(
-                    property.Name,
-                    required.Contains(property.Name),
-                    propertySchema,
-                    CreateLocation(property.Value)));
-            }
-
-            string[] missingRequiredProperties = required
-                .Where(value => !propertyNames.Contains(value))
-                .OrderBy(static value => value, StringComparer.Ordinal)
-                .ToArray();
-            if (missingRequiredProperties.Length > 0)
-            {
-                string missingProperty = missingRequiredProperties[0];
-                throw Invalid(
-                    requiredLocations[missingProperty],
-                    "Required property '" + missingProperty + "' is not declared in schema properties.");
-            }
-
-            return new OpenApiSemanticSchema(
-                OpenApiSemanticSchemaKind.Object,
-                suggestedName,
-                format,
-                nullable,
-                string.Empty,
-                properties,
-                null,
-                Array.Empty<string>(),
-                CreateLocation(node));
-        }
-
         private void ValidateUnsupportedSchemaKeywords(SpecNode node)
         {
             ValidateSchemaDialect(node);
             foreach (SpecProperty property in node.EnumerateObject())
             {
                 if (!SupportedSchemaKeywords.Contains(property.Name) &&
+                    !(_minorVersion == 1 && OpenApi31SchemaKeywords.Contains(property.Name)) &&
                     !property.Name.StartsWith("x-", StringComparison.Ordinal))
                 {
                     throw Unsupported(
@@ -1736,30 +1484,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             return RequireBoolean(nullableNode, "The nullable field must be a boolean.");
-        }
-
-        private string ParseSchemaType(SpecNode node, ref bool nullable)
-        {
-            SpecNode typeNode = RequireProperty(node, "type");
-            if (typeNode.ValueKind == SpecValueKind.String)
-            {
-                return typeNode.GetString() ?? string.Empty;
-            }
-
-            if (_minorVersion != 1 || typeNode.ValueKind != SpecValueKind.Array)
-            {
-                throw Invalid(typeNode, "The schema type must be a string, or a nullable two-item type array in OpenAPI 3.1.");
-            }
-
-            IReadOnlyList<string> types = ParseStringArray(typeNode, "OpenAPI 3.1 type union entries must be strings.");
-            string[] nonNullTypes = types.Where(static value => value != "null").Distinct(StringComparer.Ordinal).ToArray();
-            if (types.Count != 2 || nonNullTypes.Length != 1 || !types.Contains("null"))
-            {
-                throw Unsupported(typeNode, "Only a single schema type combined with 'null' is supported for OpenAPI 3.1.");
-            }
-
-            nullable = true;
-            return nonNullTypes[0];
         }
 
         private T ParseReferenced<T>(
@@ -1969,12 +1693,30 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                             false,
                             property.WireName,
                             property.Required ? "1" : "0",
-                            GetSchemaSignature(property.Schema))).ToArray());
+                            GetSchemaSignature(property.Schema)))
+                            .Concat(new[]
+                            {
+                                BuildSchemaSignature(
+                                    "additional",
+                                    false,
+                                    schema.AdditionalProperties.ToString(),
+                                    schema.ValueSchema is null ? string.Empty : GetSchemaSignature(schema.ValueSchema))
+                            }).ToArray());
+                case OpenApiSemanticSchemaKind.Map:
+                    return BuildSchemaSignature(
+                        "map",
+                        nullable,
+                        schema.ValueSchema is null ? string.Empty : GetSchemaSignature(schema.ValueSchema));
                 case OpenApiSemanticSchemaKind.Enum:
                     return BuildSchemaSignature(
                         "enum",
                         nullable,
-                        schema.EnumValues.OrderBy(static value => value, StringComparer.Ordinal).ToArray());
+                        schema.TypedEnumValues
+                            .Select(static value => value.Kind == OpenApiSemanticLiteralKind.String
+                                ? value.RawText
+                                : value.Kind + ":" + value.RawText)
+                            .OrderBy(static value => value, StringComparer.Ordinal)
+                            .ToArray());
                 default:
                     return BuildSchemaSignature(schema.Kind.ToString(), nullable, schema.Format);
             }
@@ -1986,25 +1728,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                    parts.Length.ToString(CultureInfo.InvariantCulture) + ":" +
                    string.Concat(parts.Select(part =>
                        part.Length.ToString(CultureInfo.InvariantCulture) + ":" + part));
-        }
-
-        private OpenApiSemanticSchema CreateSimpleSchema(
-            OpenApiSemanticSchemaKind kind,
-            SpecNode node,
-            string suggestedName,
-            string format,
-            bool nullable)
-        {
-            return new OpenApiSemanticSchema(
-                kind,
-                suggestedName,
-                format,
-                nullable,
-                string.Empty,
-                Array.Empty<OpenApiSemanticProperty>(),
-                null,
-                Array.Empty<string>(),
-                CreateLocation(node));
         }
 
         private static IReadOnlyList<string> ParseStringArray(SpecNode node, string errorMessage)
@@ -2269,11 +1992,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 {
                     _schemas[identity] = schema;
                 }
-
-                return;
+            }
+            else
+            {
+                _schemas.Add(identity, schema);
             }
 
-            _schemas.Add(identity, schema);
+            if (_componentsParsed)
+            {
+                ValidateRecursionIfObserved();
+            }
         }
 
         private string GetBareSchemaName(ResolvedSpecReference resolved)

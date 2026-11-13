@@ -134,6 +134,36 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return ExtractComponentName(resolved.Pointer, reference, componentSection, referenceNode);
         }
 
+        /// <summary>
+        /// Derives a type-name seed for a schema reference that may target any JSON pointer
+        /// (components, $defs, a property schema, ...). The seed is the last pointer token; when that
+        /// token is an array index the previous token is prepended so the name stays meaningful.
+        /// Schema references are the only references that may leave /components/schemas.
+        /// </summary>
+        internal static string GetSchemaPointerName(string pointer, SpecNode referenceNode)
+        {
+            if (pointer.Length == 0 || pointer[0] != '/')
+            {
+                throw new OpenApiSemanticException(
+                    OpenApiSemanticErrorKind.UnresolvedReference,
+                    "The schema $ref must be a JSON Pointer fragment beginning with '#/': '" + pointer + "'.",
+                    referenceNode);
+            }
+
+            string[] encodedTokens = pointer.Substring(1).Split(new[] { '/' }, StringSplitOptions.None);
+            var tokens = new string[encodedTokens.Length];
+            for (int index = 0; index < encodedTokens.Length; index++)
+            {
+                tokens[index] = DecodePointerToken(encodedTokens[index], referenceNode);
+            }
+
+            string last = tokens[tokens.Length - 1];
+            bool isIndex = last.Length > 0 && last.All(static character => character >= '0' && character <= '9');
+            return isIndex && tokens.Length > 1
+                ? tokens[tokens.Length - 2] + last
+                : last;
+        }
+
         internal ResolvedSpecReference ResolveComponent(
             string sourceDocumentId,
             string reference,

@@ -203,17 +203,31 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             switch (schema.Kind)
             {
                 case OpenApiSemanticSchemaKind.String:
-                    return ResolveStringType(schema);
+                    return AttachConst(ResolveStringType(schema), schema);
                 case OpenApiSemanticSchemaKind.Integer:
-                    return new GeneratedTypeModel(
-                        string.Equals(schema.Format, "int64", StringComparison.Ordinal)
-                            ? GeneratedTypeKind.Int64
-                            : GeneratedTypeKind.Int32,
-                        schema.Nullable);
+                    return AttachConst(
+                        new GeneratedTypeModel(
+                            string.Equals(schema.Format, "int64", StringComparison.Ordinal)
+                                ? GeneratedTypeKind.Int64
+                                : GeneratedTypeKind.Int32,
+                            schema.Nullable),
+                        schema);
                 case OpenApiSemanticSchemaKind.Number:
-                    return new GeneratedTypeModel(ResolveNumberKind(schema.Format), schema.Nullable);
+                    return AttachConst(
+                        new GeneratedTypeModel(ResolveNumberKind(schema.Format), schema.Nullable),
+                        schema);
                 case OpenApiSemanticSchemaKind.Boolean:
-                    return new GeneratedTypeModel(GeneratedTypeKind.Boolean, schema.Nullable);
+                    return AttachConst(new GeneratedTypeModel(GeneratedTypeKind.Boolean, schema.Nullable), schema);
+                case OpenApiSemanticSchemaKind.Any:
+                    // JToken can hold JSON null, so it is always nullable.
+                    return new GeneratedTypeModel(GeneratedTypeKind.Any, true);
+                case OpenApiSemanticSchemaKind.FreeObject:
+                    return new GeneratedTypeModel(GeneratedTypeKind.FreeObject, schema.Nullable);
+                case OpenApiSemanticSchemaKind.Map:
+                    return new GeneratedTypeModel(
+                        GeneratedTypeKind.Map,
+                        schema.Nullable,
+                        valueType: ResolveType(schema.ValueSchema!));
                 case OpenApiSemanticSchemaKind.Array:
                     return new GeneratedTypeModel(
                         GeneratedTypeKind.Array,
@@ -278,12 +292,55 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 kind = GeneratedTypeKind.Guid;
             }
+            else if (string.Equals(schema.Format, "byte", StringComparison.Ordinal))
+            {
+                // format: byte is a base64 string; Json.NET reads and writes byte[] as base64.
+                kind = GeneratedTypeKind.Binary;
+            }
             else
             {
                 kind = GeneratedTypeKind.String;
             }
 
             return new GeneratedTypeModel(kind, schema.Nullable);
+        }
+
+        private static GeneratedTypeModel AttachConst(GeneratedTypeModel type, OpenApiSemanticSchema schema)
+        {
+            return schema.Annotations.Const.HasValue ? type.WithConst(schema.Annotations.Const) : type;
+        }
+
+        /// <summary>
+        /// Property-level annotations. readOnly / writeOnly declared on a referenced schema also
+        /// apply to the property that references it; the other annotations describe the property
+        /// itself and are not inherited.
+        /// </summary>
+        private OpenApiSemanticAnnotations GetPropertyAnnotations(OpenApiSemanticSchema schema)
+        {
+            OpenApiSemanticAnnotations own = schema.Annotations;
+            bool readOnly = own.ReadOnly;
+            bool writeOnly = own.WriteOnly;
+            var visited = new HashSet<NormalizedSpecNodeIdentity>();
+            OpenApiSemanticSchema current = schema;
+            while (current.Kind == OpenApiSemanticSchemaKind.Reference &&
+                   !current.ReferenceIdentity.IsEmpty &&
+                   visited.Add(current.ReferenceIdentity) &&
+                   _document.Schemas.TryGetValue(current.ReferenceIdentity, out OpenApiSemanticSchema? referenced))
+            {
+                readOnly |= referenced.Annotations.ReadOnly;
+                writeOnly |= referenced.Annotations.WriteOnly;
+                current = referenced;
+            }
+
+            return readOnly == own.ReadOnly && writeOnly == own.WriteOnly
+                ? own
+                : new OpenApiSemanticAnnotations(
+                    own.Description,
+                    own.Deprecated,
+                    readOnly,
+                    writeOnly,
+                    own.Default,
+                    own.Const);
         }
 
         private static GeneratedTypeKind ResolveNumberKind(string format)
@@ -358,7 +415,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         property.WireName,
                         property.Required,
                         useSpecified,
-                        type));
+                        type,
+                        GetPropertyAnnotations(property.Schema)));
                 }
 
                 // Json.NET treats any CLR member named FooSpecified as Foo's presence flag,
@@ -376,12 +434,59 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     string safeName = AllocateJsonNetSafePropertyName(
                         member, usedPropertyNames, allocatedProperties.Values);
                     allocatedProperties[property] = new GeneratedDtoPropertyModel(
-                        safeName, member.WireName, member.Required, member.UseSpecified, member.Type);
+                        safeName,
+                        member.WireName,
+                        member.Required,
+                        member.UseSpecified,
+                        member.Type,
+                        member.Annotations);
+                }
+
+                // A readOnly property gets a ShouldSerialize<Name>() method; make sure no other
+                // member (or the type itself) already owns that name.
+                foreach (OpenApiSemanticProperty property in orderedProperties)
+                {
+                    GeneratedDtoPropertyModel member = allocatedProperties[property];
+                    if (!member.Annotations.ReadOnly)
+                    {
+                        continue;
+                    }
+
+                    string readOnlyName = member.Name;
+                    if (usedPropertyNames.Contains("ShouldSerialize" + readOnlyName))
+                    {
+                        readOnlyName = AllocateShouldSerializeSafeName(
+                            member, usedPropertyNames, allocatedProperties.Values);
+                        allocatedProperties[property] = new GeneratedDtoPropertyModel(
+                            readOnlyName,
+                            member.WireName,
+                            member.Required,
+                            member.UseSpecified,
+                            member.Type,
+                            member.Annotations);
+                    }
+
+                    usedPropertyNames.Add("ShouldSerialize" + readOnlyName);
+                }
+
+                string? extensionDataName = null;
+                GeneratedTypeModel? extensionDataValueType = null;
+                if (schema.AdditionalProperties != OpenApiSemanticAdditionalProperties.Closed)
+                {
+                    // Undeclared members are kept in an IDictionary<string, JToken> member.
+                    extensionDataName = AllocateUniqueName("AdditionalProperties", usedPropertyNames);
+                    if (schema.ValueSchema is not null)
+                    {
+                        extensionDataValueType = ResolveType(schema.ValueSchema);
+                    }
                 }
 
                 _dtos.Add(new GeneratedDtoModel(
                     typeName,
-                    orderedProperties.Select(value => allocatedProperties[value]).ToArray()));
+                    orderedProperties.Select(value => allocatedProperties[value]).ToArray(),
+                    schema.Annotations,
+                    extensionDataName,
+                    extensionDataValueType));
             }
             finally
             {
@@ -395,16 +500,52 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 typeName
             };
-            var members = new List<GeneratedEnumMemberModel>();
-            foreach (string wireValue in schema.EnumValues.OrderBy(
-                         static value => value,
-                         StringComparer.Ordinal))
+            bool isInteger = schema.TypedEnumValues.Count > 0 &&
+                             schema.TypedEnumValues.All(static value =>
+                                 value.Kind == OpenApiSemanticLiteralKind.Integer);
+
+            // Each value keeps its position so x-enum-varnames / x-enum-descriptions line up.
+            var indexed = new List<(OpenApiSemanticLiteral Value, int Index)>();
+            for (int index = 0; index < schema.TypedEnumValues.Count; index++)
             {
-                string name = AllocateUniqueName(ToIdentifier(wireValue, pascalCase: true), usedNames);
-                members.Add(new GeneratedEnumMemberModel(name, wireValue));
+                indexed.Add((schema.TypedEnumValues[index], index));
             }
 
-            return new GeneratedEnumModel(typeName, members);
+            IEnumerable<(OpenApiSemanticLiteral Value, int Index)> ordered = isInteger
+                ? indexed.OrderBy(static item => long.Parse(
+                    item.Value.RawText,
+                    System.Globalization.CultureInfo.InvariantCulture))
+                : indexed.OrderBy(static item => item.Value.RawText, StringComparer.Ordinal);
+            var members = new List<GeneratedEnumMemberModel>();
+            foreach ((OpenApiSemanticLiteral value, int index) in ordered)
+            {
+                string? declaredName = index < schema.EnumMemberNames.Count
+                    ? schema.EnumMemberNames[index]
+                    : null;
+                string? description = index < schema.EnumMemberDescriptions.Count
+                    ? schema.EnumMemberDescriptions[index]
+                    : null;
+                string requestedName;
+                if (!string.IsNullOrWhiteSpace(declaredName))
+                {
+                    requestedName = ToIdentifier(declaredName!, pascalCase: true);
+                }
+                else if (isInteger)
+                {
+                    requestedName = value.RawText.StartsWith("-", StringComparison.Ordinal)
+                        ? "ValueMinus" + value.RawText.Substring(1)
+                        : "Value" + value.RawText;
+                }
+                else
+                {
+                    requestedName = ToIdentifier(value.RawText, pascalCase: true);
+                }
+
+                string name = AllocateUniqueName(requestedName, usedNames);
+                members.Add(new GeneratedEnumMemberModel(name, value.RawText, value, description));
+            }
+
+            return new GeneratedEnumModel(typeName, members, schema.Annotations);
         }
 
         private string GetOrAllocateSchemaTypeName(OpenApiSemanticSchema schema)
@@ -525,6 +666,34 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 usedNames.Add(candidate + "Specified");
             }
+            return candidate;
+        }
+
+        private static string AllocateShouldSerializeSafeName(
+            GeneratedDtoPropertyModel member,
+            HashSet<string> usedNames,
+            IEnumerable<GeneratedDtoPropertyModel> members)
+        {
+            string baseName = member.Name;
+            string candidate = baseName + 2;
+            int suffix = 3;
+            while (usedNames.Contains(candidate) ||
+                   usedNames.Contains("ShouldSerialize" + candidate) ||
+                   (member.UseSpecified && usedNames.Contains(candidate + "Specified")) ||
+                   members.Any(other =>
+                       !ReferenceEquals(other, member) &&
+                       (string.Equals(candidate, other.Name + "Specified", StringComparison.Ordinal) ||
+                        string.Equals(other.Name, candidate + "Specified", StringComparison.Ordinal))))
+            {
+                candidate = baseName + suffix++;
+            }
+
+            usedNames.Add(candidate);
+            if (member.UseSpecified)
+            {
+                usedNames.Add(candidate + "Specified");
+            }
+
             return candidate;
         }
 
