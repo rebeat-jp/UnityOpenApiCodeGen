@@ -100,8 +100,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<OpenApiSemanticOperation> operations,
             OpenApiSourceLocation location,
             IReadOnlyList<OpenApiSemanticWarning>? warnings = null,
-            IReadOnlyList<OpenApiSemanticServer>? servers = null)
+            IReadOnlyList<OpenApiSemanticServer>? servers = null,
+            IReadOnlyList<OpenApiSemanticSecurityScheme>? securitySchemes = null)
         {
+            SecuritySchemes = securitySchemes ?? Array.Empty<OpenApiSemanticSecurityScheme>();
             Servers = servers ?? Array.Empty<OpenApiSemanticServer>();
             Warnings = warnings ?? Array.Empty<OpenApiSemanticWarning>();
             MinorVersion = minorVersion;
@@ -112,6 +114,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         }
 
         internal int MinorVersion { get; }
+
+        /// <summary>components.securitySchemes in key order.</summary>
+        internal IReadOnlyList<OpenApiSemanticSecurityScheme> SecuritySchemes { get; }
 
         internal string BaseUrl { get; }
 
@@ -144,8 +149,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string description = "",
             bool deprecated = false,
             IReadOnlyList<OpenApiSemanticServer>? servers = null,
-            IReadOnlyList<OpenApiSemanticResponse>? responses = null)
+            IReadOnlyList<OpenApiSemanticResponse>? responses = null,
+            IReadOnlyList<OpenApiSemanticSecurityRequirement>? securityRequirements = null)
         {
+            SecurityRequirements = securityRequirements ?? Array.Empty<OpenApiSemanticSecurityRequirement>();
             Responses = responses ?? Array.Empty<OpenApiSemanticResponse>();
             Description = description ?? string.Empty;
             Deprecated = deprecated;
@@ -169,6 +176,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal string Description { get; }
 
         internal bool Deprecated { get; }
+
+        /// <summary>
+        /// The effective security requirements (OR): the operation's own, otherwise the document's.
+        /// Empty means no authentication.
+        /// </summary>
+        internal IReadOnlyList<OpenApiSemanticSecurityRequirement> SecurityRequirements { get; }
 
         /// <summary>
         /// Servers declared on the operation, otherwise on its Path Item. Empty when the operation

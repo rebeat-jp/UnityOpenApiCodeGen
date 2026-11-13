@@ -18,7 +18,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             "oacgContent", "oacgForm", "oacgPart", "oacgMultipart", "oacgText", "oacgFile",
             "oacgStatus", "oacgBody", "oacgBytes", "oacgData", "oacgMediaType", "oacgHeaders",
             "oacgHeader", "oacgValues", "oacgError", "oacgErrorBody", "oacgErrorFailure", "oacgItem",
-            "oacgItems", "oacgAccept", "oacgResult", "oacgValue", "oacgHeader0", "oacgHeader1", "oacgHeader2", "oacgHeader3", "oacgHeader4", "oacgHeader5", "oacgHeader6", "oacgHeader7", "oacgHeader8", "oacgHeader9"
+            "oacgItems", "oacgSecurity", "oacgAccept", "oacgResult", "oacgValue", "oacgHeader0", "oacgHeader1", "oacgHeader2", "oacgHeader3", "oacgHeader4", "oacgHeader5", "oacgHeader6", "oacgHeader7", "oacgHeader8", "oacgHeader9"
         };
         private bool _usesFileParameter;
 

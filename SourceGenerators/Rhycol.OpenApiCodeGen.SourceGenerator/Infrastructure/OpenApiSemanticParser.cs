@@ -167,6 +167,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 ValidateRecursionIfObserved();
                 IReadOnlyDictionary<NormalizedSpecNodeIdentity, OpenApiSemanticSchema> schemas = _schemas;
                 ValidateNonSchemaComponents();
+                ParseSecuritySchemes();
+                _rootSecurity = ParseSecurityRequirements(GetProperty(_root, "security"));
                 IReadOnlyList<OpenApiSemanticOperation> operations = ParsePaths(RequireProperty(_root, "paths"));
                 ValidateDiscriminatedUnionMembers();
                 ValidateRecursionIfObserved();
@@ -179,7 +181,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     operations,
                     CreateLocation(_root),
                     _warnings.ToList(),
-                    servers);
+                    servers,
+                    _securitySchemeList.ToList());
             }
             catch (OpenApiSemanticException exception) when (_bundle is not null &&
                                                               string.IsNullOrEmpty(exception.Location.SourcePath))
@@ -193,7 +196,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             ValidateDocumentDialect(_root, _minorVersion);
 
             ThrowIfPresent(_root, "swagger", "Swagger 2.0 documents are not supported by the Phase 4 Source Generator.");
-            ThrowIfPresent(_root, "security", "OpenAPI security requirements are not supported by the Phase 4 MVP.");
             ThrowIfPresent(_root, "webhooks", "OpenAPI webhooks are not supported by the Phase 4 MVP.");
 
             SpecNode? components = GetProperty(_root, "components");
@@ -210,6 +212,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     property.Name == "requestBodies" ||
                     property.Name == "responses" ||
                     property.Name == "headers" ||
+                    property.Name == "securitySchemes" ||
                     (_minorVersion >= 1 && property.Name == "pathItems") ||
                     property.Name.StartsWith("x-", StringComparison.Ordinal))
                 {
@@ -465,7 +468,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             RequireKind(operationNode, SpecValueKind.Object, "Each OpenAPI operation must be an object.");
             ThrowIfPresent(operationNode, "callbacks", "OpenAPI callbacks are not supported by the Phase 4 MVP.");
-            ThrowIfPresent(operationNode, "security", "Operation security requirements are not supported by the Phase 4 MVP.");
             ValidateOperationProperties(operationNode);
 
             string? explicitOperationId = GetOptionalString(operationNode, "operationId");
@@ -489,6 +491,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 pathParameters,
                 operationParameters);
             ValidatePathParameters(path, mergedParameters, operationNode);
+            SpecNode? securityNode = GetProperty(operationNode, "security");
+            IReadOnlyList<OpenApiSemanticSecurityRequirement> securityRequirements =
+                securityNode is null ? _rootSecurity : ParseSecurityRequirements(securityNode);
             ValidateCookieHeaderConflict(mergedParameters, operationNode);
 
             SpecNode? requestBodyNode = GetProperty(operationNode, "requestBody");
@@ -525,7 +530,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 description,
                 deprecated,
                 effectiveServers,
-                responses.Responses);
+                responses.Responses,
+                securityRequirements);
         }
 
         private static void ValidateOperationProperties(SpecNode operationNode)

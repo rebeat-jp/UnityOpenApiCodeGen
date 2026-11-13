@@ -302,11 +302,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 mode == MethodMode.HttpInfo ? " (with status code and headers)" : string.Empty);
             AppendNumericParameterValidation(source, operation);
             AppendRequestBodyValidation(source, body, variant);
+            parameters.Security.AppendResolve(source, operation);
             source.Append("            string relativePath = ")
                 .Append(GeneratedSourceEmitter.StringLiteral(operation.Path))
                 .AppendLine(";");
             parameters.AppendPathParameters(source, operation);
             parameters.AppendQueryParameters(source, operation);
+            parameters.Security.AppendQuery(source, operation);
             source.AppendLine("            ValidatePathSegments(relativePath);");
             if (operation.Servers.Count > 0)
             {
@@ -325,6 +327,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 .AppendLine(", requestUri))");
             source.AppendLine("            {");
             parameters.AppendHeaderAndCookieParameters(source, operation);
+            parameters.Security.AppendHeaders(source, operation);
             if (body is not null && variant is not null)
             {
                 AppendRequestBody(source, body, variant, responseValidators, parameters, helpers);

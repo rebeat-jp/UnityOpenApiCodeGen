@@ -144,6 +144,17 @@ objectを、OpenAPIの`style`／`explode`のすべての組み合わせで送信
 JSON media typeの`content`にも対応します。cookie parameterは1本の`Cookie`ヘッダーで送信します。
 手動の`Cookie`ヘッダーは`CookieContainer`の値と併用・上書きされることがあるため、
 `HttpClientHandler.UseCookies = false`にするか`CookieContainer`を使ってください。
+securityScheme（`components.securitySchemes`: header／query／cookieの`apiKey`、`http`の`bearer`／`basic`／その他のscheme、
+`oauth2`、`openIdConnect`、`mutualTLS`）とsecurity requirement（document・operation単位。`security: []`で認証なし）に
+対応します。生成クライアントにはschemeごとにpublicプロパティが付きます: `string? <Scheme>ApiKey`、
+`string? <Scheme>AccessToken`と非同期の`Func<CancellationToken, Task<string?>>? <Scheme>AccessTokenProvider`
+（bearer・oauth2・openIdConnect）、`string? <Scheme>Username`／`<Scheme>Password`（basic）、
+`string? <Scheme>Credentials`（その他のhttp scheme）。送信時は、文書順のrequirement（OR）のうち、含まれるすべてのscheme（AND）に
+資格情報が設定された最初のものを使い、満たせるものがなければ認証なしで送ります。oauth2とopenIdConnectは、
+渡されたtokenをBearerとして送るだけで、tokenの取得・更新はしません。`mutualTLS`はプロパティを持たず、
+クライアント証明書は`HttpClientHandler`に設定します。cookieのapiKeyは、cookie parameterと同じ1本の`Cookie`ヘッダーにまとめます。
+資格情報プロパティはスレッドセーフではないため、送信前に設定してください。不正なschemeと、未定義のschemeを指すrequirementは
+位置付き`OACG100`です。
 明示的な`baseUrl=""`の上書きは相対URLのままです。
 相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。
 リクエスト本文は`application/json`（具体的な`application/<subtype>+json`も可）、

@@ -79,6 +79,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             IReadOnlyList<GeneratedOperationModel> operations = BuildOperations();
+            IReadOnlyList<GeneratedSecuritySchemeModel> securitySchemes = BuildSecuritySchemes();
             return new OpenApiGenerationModel(
                 _options.ApiName,
                 _options.GeneratedNamespace,
@@ -90,7 +91,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 _document.Warnings,
                 _unions.OrderBy(static value => value.Name, StringComparer.Ordinal).ToArray(),
                 _document.Servers,
-                _usesFileParameter ? _fileParameterTypeName : null);
+                _usesFileParameter ? _fileParameterTypeName : null,
+                securitySchemes);
         }
 
         private void AllocateComponentTypeNames()
@@ -143,6 +145,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 "GetOperationServers",
                 "BuildOperationServerUrl"
             };
+            _clientMemberNames = usedMethodNames;
             var result = new List<GeneratedOperationModel>();
             foreach (OpenApiSemanticOperation operation in _document.Operations
                          .OrderBy(static value => value.Path, StringComparer.Ordinal)
@@ -247,7 +250,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     operation.Deprecated,
                     operation.Servers,
                     responsePlan,
-                    errorResponses));
+                    errorResponses,
+                    operation.SecurityRequirements));
             }
 
             return result;

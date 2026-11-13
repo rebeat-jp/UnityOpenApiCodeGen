@@ -83,6 +83,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         /// <summary>
+        /// P5 surface: the credential properties of every security scheme kind (apiKey, bearer with
+        /// its async provider, basic, other http schemes, oauth2, openIdConnect; mutualTLS adds none).
+        /// </summary>
+        [Fact]
+        public void SecuritySpecKeepsPublicSurface()
+        {
+            AssertBaseline(
+                "security",
+                "BaselineSecurityApi",
+                File.ReadAllText(SpecPath("security.json")));
+        }
+
+        /// <summary>
         /// NOT the Unity fixture document itself: the external YAML reference
         /// ("VerificationItem.yaml") is rewritten to an internal component reference and the
         /// component is added, because this test uses a single-document bundle.
