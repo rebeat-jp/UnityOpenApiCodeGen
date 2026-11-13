@@ -47,14 +47,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string apiName = ApiName,
             string generatedNamespace = GeneratedNamespace,
             string specId = TestBundleFactory.SpecId,
-            string? bundle = null)
+            string? bundle = null,
+            ApiClientCodeGenerator? generator = null)
         {
             CSharpCompilation compilation = CreateCompilation(apiName, generatedNamespace, specId);
             GeneratorDriver driver = CreateDriver(
                 compilation,
                 ImmutableArray.Create<AdditionalText>(CreateBundleText(
                     specId,
-                    bundle ?? TestBundleFactory.Create(openApiJson, specId: specId))));
+                    bundle ?? TestBundleFactory.Create(openApiJson, specId: specId))),
+                generator);
             driver = driver.RunGeneratorsAndUpdateCompilation(
                 compilation,
                 out Compilation outputCompilation,
@@ -97,10 +99,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         internal static GeneratorDriver CreateDriver(
             CSharpCompilation compilation,
-            ImmutableArray<AdditionalText> additionalTexts)
+            ImmutableArray<AdditionalText> additionalTexts,
+            ApiClientCodeGenerator? generator = null)
         {
             return CSharpGeneratorDriver.Create(
-                generators: new[] { new ApiClientCodeGenerator().AsSourceGenerator() },
+                generators: new[] { (generator ?? new ApiClientCodeGenerator()).AsSourceGenerator() },
                 additionalTexts: additionalTexts,
                 parseOptions: (CSharpParseOptions)compilation.SyntaxTrees.First().Options,
                 driverOptions: new GeneratorDriverOptions(

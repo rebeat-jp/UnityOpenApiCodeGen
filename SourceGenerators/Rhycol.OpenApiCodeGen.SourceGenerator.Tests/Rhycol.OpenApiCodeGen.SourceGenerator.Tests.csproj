@@ -29,6 +29,23 @@
   </ItemGroup>
 
   <!--
+    Public API surface snapshot inputs. Specs and baselines are copied next to the test assembly
+    so the tests do not depend on source paths. The project directory is exposed through
+    assembly metadata only so the update mode (UPDATE_PUBLIC_API_BASELINE=1) can write back to
+    the source tree.
+  -->
+  <ItemGroup>
+    <None Include="ApiSurfaceSpecs/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="ApiSurfaceBaselines/*.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../BuildTools/UnityVerificationFixture/Specs/openapi.json"
+          Link="ApiSurfaceSpecs/unity-fixture-openapi.json" CopyToOutputDirectory="PreserveNewest" />
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ProjectDirectory</_Parameter1>
+      <_Parameter2>$(MSBuildProjectDirectory)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <!--
     The parity test intentionally executes the package's editor normalizers rather than a
     test-only reimplementation. Keep the parser glob linked so new parser files are compiled
     into this test assembly automatically; AssemblyInfo is excluded because its Unity-only

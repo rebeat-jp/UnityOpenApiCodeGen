@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator
 {
@@ -12,8 +13,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<GeneratedDtoModel> dtos,
             IReadOnlyList<GeneratedEnumModel> enums,
             IReadOnlyList<GeneratedOperationModel> operations,
-            IReadOnlyList<GeneratedTypeNameCollision> typeNameCollisions)
+            IReadOnlyList<GeneratedTypeNameCollision> typeNameCollisions,
+            IReadOnlyList<OpenApiSemanticWarning>? warnings = null)
         {
+            Warnings = warnings ?? Array.Empty<OpenApiSemanticWarning>();
             ApiName = apiName;
             GeneratedNamespace = generatedNamespace;
             BaseUrl = baseUrl;
@@ -35,6 +38,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         internal IReadOnlyList<GeneratedOperationModel> Operations { get; }
         internal IReadOnlyList<GeneratedTypeNameCollision> TypeNameCollisions { get; }
+
+        /// <summary>Warnings about ignored elements, reported as OACG108.</summary>
+        internal IReadOnlyList<OpenApiSemanticWarning> Warnings { get; }
     }
 
     internal sealed class GeneratedTypeNameCollision
@@ -58,11 +64,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
     internal sealed class GeneratedDtoModel
     {
-        internal GeneratedDtoModel(string name, IReadOnlyList<GeneratedDtoPropertyModel> properties)
+        internal GeneratedDtoModel(
+            string name,
+            IReadOnlyList<GeneratedDtoPropertyModel> properties,
+            OpenApiSemanticAnnotations? annotations = null)
         {
             Name = name;
             Properties = properties;
+            Annotations = annotations ?? OpenApiSemanticAnnotations.Empty;
         }
+
+        internal OpenApiSemanticAnnotations Annotations { get; }
 
         internal string Name { get; }
 
@@ -76,8 +88,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string wireName,
             bool required,
             bool useSpecified,
-            GeneratedTypeModel type)
+            GeneratedTypeModel type,
+            OpenApiSemanticAnnotations? annotations = null)
         {
+            Annotations = annotations ?? OpenApiSemanticAnnotations.Empty;
             Name = name;
             WireName = wireName;
             Required = required;
@@ -94,15 +108,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal bool UseSpecified { get; }
 
         internal GeneratedTypeModel Type { get; }
+
+        internal OpenApiSemanticAnnotations Annotations { get; }
     }
 
     internal sealed class GeneratedEnumModel
     {
-        internal GeneratedEnumModel(string name, IReadOnlyList<GeneratedEnumMemberModel> members)
+        internal GeneratedEnumModel(
+            string name,
+            IReadOnlyList<GeneratedEnumMemberModel> members,
+            OpenApiSemanticAnnotations? annotations = null)
         {
             Name = name;
             Members = members;
+            Annotations = annotations ?? OpenApiSemanticAnnotations.Empty;
         }
+
+        internal OpenApiSemanticAnnotations Annotations { get; }
 
         internal string Name { get; }
 
@@ -111,11 +133,26 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
     internal sealed class GeneratedEnumMemberModel
     {
-        internal GeneratedEnumMemberModel(string name, string wireValue)
+        internal GeneratedEnumMemberModel(
+            string name,
+            string wireValue,
+            OpenApiSemanticLiteral? value = null)
         {
+            if (value.HasValue &&
+                !string.Equals(value.Value.RawText, wireValue, StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    "wireValue must equal value.RawText.",
+                    nameof(wireValue));
+            }
+
             Name = name;
             WireValue = wireValue;
+            Value = value ?? OpenApiSemanticLiteral.FromString(wireValue);
         }
+
+        /// <summary>Typed enum value. WireValue is its RawText.</summary>
+        internal OpenApiSemanticLiteral Value { get; }
 
         internal string Name { get; }
 
@@ -233,7 +270,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         Guid,
         Named,
         NamedEnum,
-        Array
+        Array,
+        // Added for the spec-coverage work. The model builder does not produce these yet.
+        Any,
+        Map,
+        Union,
+        Binary
     }
 
     internal sealed class GeneratedTypeModel : IEquatable<GeneratedTypeModel>
@@ -242,13 +284,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             GeneratedTypeKind kind,
             bool nullable = false,
             string name = "",
-            GeneratedTypeModel? itemType = null)
+            GeneratedTypeModel? itemType = null,
+            GeneratedTypeModel? valueType = null,
+            IReadOnlyList<GeneratedTypeModel>? unionMembers = null)
         {
             Kind = kind;
             Nullable = nullable;
             Name = name ?? string.Empty;
             ItemType = itemType;
+            ValueType = valueType;
+            UnionMembers = unionMembers ?? Array.Empty<GeneratedTypeModel>();
         }
+
+        /// <summary>Value type when Kind is Map.</summary>
+        internal GeneratedTypeModel? ValueType { get; }
+
+        /// <summary>Member types when Kind is Union.</summary>
+        internal IReadOnlyList<GeneratedTypeModel> UnionMembers { get; }
 
         internal GeneratedTypeKind Kind { get; }
 
@@ -262,8 +314,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             return nullable == Nullable
                 ? this
-                : new GeneratedTypeModel(Kind, nullable, Name, ItemType);
+                : new GeneratedTypeModel(Kind, nullable, Name, ItemType, ValueType, UnionMembers);
         }
+
+        /// <summary>
+        /// Any (JToken), Map (Dictionary), Union (named wrapper class) and Binary (byte[]) are
+        /// reference types, so they are intentionally absent from <see cref="IsValueType"/>.
+        /// </summary>
+        internal bool IsReferenceType => !IsValueType;
 
         internal bool IsValueType =>
             Kind == GeneratedTypeKind.Int32 ||
@@ -283,7 +341,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                    Kind == other.Kind &&
                    Nullable == other.Nullable &&
                    string.Equals(Name, other.Name, StringComparison.Ordinal) &&
-                   Equals(ItemType, other.ItemType);
+                   Equals(ItemType, other.ItemType) &&
+                   Equals(ValueType, other.ValueType) &&
+                   UnionMembers.SequenceEqual(other.UnionMembers);
         }
 
         public override bool Equals(object? obj)
@@ -299,6 +359,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 hashCode = (hashCode * 397) ^ Nullable.GetHashCode();
                 hashCode = (hashCode * 397) ^ StringComparer.Ordinal.GetHashCode(Name);
                 hashCode = (hashCode * 397) ^ (ItemType?.GetHashCode() ?? 0);
+                hashCode = (hashCode * 397) ^ (ValueType?.GetHashCode() ?? 0);
+                foreach (GeneratedTypeModel member in UnionMembers)
+                {
+                    hashCode = (hashCode * 397) ^ member.GetHashCode();
+                }
+
                 return hashCode;
             }
         }
