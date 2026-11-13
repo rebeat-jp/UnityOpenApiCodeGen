@@ -14,6 +14,10 @@
 - Support `readOnly` (not sent in requests, not required in requests) and `writeOnly` (may be absent from responses).
 - Emit `title` / `description` / `default` as XML documentation and `deprecated: true` as `[Obsolete]` on schemas and properties; the generated files disable CS0612 / CS0618.
 - A JSON-valued `DateTime` held by a `JToken` is no longer truncated to a date by the request serializer's date converter.
+- Support schema composition. `allOf` is flattened into one sealed DTO (required is the union of the parts, closedness is evaluated on the composed object, and parts that declare a property with different types report `OACG101`); `allOf: [ { $ref } ]` with annotations stays a plain reference. In OpenAPI 3.1 a `$ref` with structural siblings (`properties`, `required`, ...) is treated as `allOf: [ { $ref }, { siblings } ]`.
+- Support `oneOf` / `anyOf` with a `discriminator` (explicit `mapping` or the schema name): a sealed union wrapper class (`FromX`, implicit conversion, `TryGetX`, `AsX`) over plain member DTOs, with a polymorphic `JsonConverter` that cannot recurse into the members. A discriminator on a base schema whose subtypes use `allOf` is supported as well. Unknown discriminator values are rejected in responses; mappings that point to another file report `OACG101`.
+- Support `oneOf` / `anyOf` without a discriminator: `[X, null]` becomes a nullable `X`, anything else is a union wrapper that keeps the raw `JToken` (`FromJToken`, `TryGetX`, `AsX`, primitive candidates included). Responses are checked structurally: `oneOf` must match exactly one candidate, `anyOf` at least one. When several `oneOf` candidates match, the candidates that declare every property of the response are preferred; `oneOf` candidates that cannot be told apart still fail.
+- Evaluate `not` while validating successful responses (a value that matches the `not` schema is rejected). It never changes the generated type; a `not` that cannot be evaluated reliably is ignored with `OACG108`.
 
 ### Changed
 
@@ -22,6 +26,8 @@
 - Object schemas that omit `additionalProperties` generate an open DTO with an extra `AdditionalProperties` member instead of reporting `OACG101`.
 - `x-enum-varnames` / `x-enumNames` now name the generated C# enum members. A string enum that already declared these extensions previously got names derived from its values, so its member names (and any code using them) change.
 - Generated DTOs with `readOnly` properties or an open `AdditionalProperties` member add an internal `PreserveAttribute` so Unity IL2CPP stripping keeps the reflection-only members.
+- Successful response validation now also rejects a missing required DTO property and an undeclared enum value in the JSON check, before deserialization (the exception type is still `JsonSerializationException`; only the message differs).
+- OpenAPI 3.1: a `$ref` with `type`, `properties`, `required` or other structural siblings no longer reports `OACG101`; it is composed as `allOf` (siblings that cannot be part of an object composition still report `OACG101`).
 
 ## [0.5.1] - 2026-11-10
 

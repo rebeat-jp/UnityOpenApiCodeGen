@@ -1,0 +1,59 @@
+Generated.Baseline.BaselineCompositionApi.Base ctor public ()
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi ctor public (System.Net.Http.HttpClient httpClient)
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi ctor public (System.Net.Http.HttpClient httpClient, string baseUrl)
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineCompositionApi.Extended> getExtended(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineCompositionApi.Holder> getNullableName(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineCompositionApi.Pet> createPet(Generated.Baseline.BaselineCompositionApi.Pet body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineCompositionApi.Value> getValue(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody)
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException property public System.Net.HttpStatusCode StatusCode { get; }
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException property public string ResponseBody { get; }
+Generated.Baseline.BaselineCompositionApi.Cat ctor public ()
+Generated.Baseline.BaselineCompositionApi.Dog ctor public ()
+Generated.Baseline.BaselineCompositionApi.Extended ctor public ()
+Generated.Baseline.BaselineCompositionApi.Holder ctor public ()
+Generated.Baseline.BaselineCompositionApi.Holder property public bool NameSpecified { get; set; }
+Generated.Baseline.BaselineCompositionApi.Pet field public const string DiscriminatorPropertyName = "petType"
+Generated.Baseline.BaselineCompositionApi.Pet method public Generated.Baseline.BaselineCompositionApi.Cat AsCat()
+Generated.Baseline.BaselineCompositionApi.Pet method public Generated.Baseline.BaselineCompositionApi.Dog AsDog()
+Generated.Baseline.BaselineCompositionApi.Pet method public bool TryGetCat(out Generated.Baseline.BaselineCompositionApi.Cat value)
+Generated.Baseline.BaselineCompositionApi.Pet method public bool TryGetDog(out Generated.Baseline.BaselineCompositionApi.Dog value)
+Generated.Baseline.BaselineCompositionApi.Pet method public static Generated.Baseline.BaselineCompositionApi.Pet FromCat(Generated.Baseline.BaselineCompositionApi.Cat value)
+Generated.Baseline.BaselineCompositionApi.Pet method public static Generated.Baseline.BaselineCompositionApi.Pet FromDog(Generated.Baseline.BaselineCompositionApi.Dog value)
+Generated.Baseline.BaselineCompositionApi.Pet method public static Generated.Baseline.BaselineCompositionApi.Pet op_Implicit(Generated.Baseline.BaselineCompositionApi.Cat value)
+Generated.Baseline.BaselineCompositionApi.Pet method public static Generated.Baseline.BaselineCompositionApi.Pet op_Implicit(Generated.Baseline.BaselineCompositionApi.Dog value)
+Generated.Baseline.BaselineCompositionApi.Pet property public object Value { get; }
+Generated.Baseline.BaselineCompositionApi.Pet property public string DiscriminatorValue { get; }
+Generated.Baseline.BaselineCompositionApi.Value method public Generated.Baseline.BaselineCompositionApi.Cat AsCat()
+Generated.Baseline.BaselineCompositionApi.Value method public Newtonsoft.Json.Linq.JToken ToJToken()
+Generated.Baseline.BaselineCompositionApi.Value method public bool TryGetCat(out Generated.Baseline.BaselineCompositionApi.Cat value)
+Generated.Baseline.BaselineCompositionApi.Value method public bool TryGetInt32(out int value)
+Generated.Baseline.BaselineCompositionApi.Value method public bool TryGetString(out string value)
+Generated.Baseline.BaselineCompositionApi.Value method public int AsInt32()
+Generated.Baseline.BaselineCompositionApi.Value method public static Generated.Baseline.BaselineCompositionApi.Value FromCat(Generated.Baseline.BaselineCompositionApi.Cat value)
+Generated.Baseline.BaselineCompositionApi.Value method public static Generated.Baseline.BaselineCompositionApi.Value FromInt32(int value)
+Generated.Baseline.BaselineCompositionApi.Value method public static Generated.Baseline.BaselineCompositionApi.Value FromJToken(Newtonsoft.Json.Linq.JToken token)
+Generated.Baseline.BaselineCompositionApi.Value method public static Generated.Baseline.BaselineCompositionApi.Value FromString(string value)
+Generated.Baseline.BaselineCompositionApi.Value method public static Generated.Baseline.BaselineCompositionApi.Value op_Implicit(Generated.Baseline.BaselineCompositionApi.Cat value)
+Generated.Baseline.BaselineCompositionApi.Value method public static Generated.Baseline.BaselineCompositionApi.Value op_Implicit(int value)
+Generated.Baseline.BaselineCompositionApi.Value method public static Generated.Baseline.BaselineCompositionApi.Value op_Implicit(string value)
+Generated.Baseline.BaselineCompositionApi.Value method public string AsString()
+[Generated.Baseline.BaselineCompositionApi.PreserveAttribute] [Newtonsoft.Json.JsonExtensionDataAttribute] Generated.Baseline.BaselineCompositionApi.Base property public System.Collections.Generic.IDictionary<string, Newtonsoft.Json.Linq.JToken> AdditionalProperties { get; set; }
+[Generated.Baseline.BaselineCompositionApi.PreserveAttribute] [Newtonsoft.Json.JsonExtensionDataAttribute] Generated.Baseline.BaselineCompositionApi.Extended property public System.Collections.Generic.IDictionary<string, Newtonsoft.Json.Linq.JToken> AdditionalProperties { get; set; }
+[Newtonsoft.Json.JsonConverterAttribute(typeof(Generated.Baseline.BaselineCompositionApi.PetJsonConverter))] type public sealed class Generated.Baseline.BaselineCompositionApi.Pet
+[Newtonsoft.Json.JsonConverterAttribute(typeof(Generated.Baseline.BaselineCompositionApi.ValueJsonConverter))] type public sealed class Generated.Baseline.BaselineCompositionApi.Value
+[Newtonsoft.Json.JsonObjectAttribute(Newtonsoft.Json.MemberSerialization.OptIn)] type public sealed class Generated.Baseline.BaselineCompositionApi.Base
+[Newtonsoft.Json.JsonObjectAttribute(Newtonsoft.Json.MemberSerialization.OptIn)] type public sealed class Generated.Baseline.BaselineCompositionApi.Cat
+[Newtonsoft.Json.JsonObjectAttribute(Newtonsoft.Json.MemberSerialization.OptIn)] type public sealed class Generated.Baseline.BaselineCompositionApi.Dog
+[Newtonsoft.Json.JsonObjectAttribute(Newtonsoft.Json.MemberSerialization.OptIn)] type public sealed class Generated.Baseline.BaselineCompositionApi.Extended
+[Newtonsoft.Json.JsonObjectAttribute(Newtonsoft.Json.MemberSerialization.OptIn)] type public sealed class Generated.Baseline.BaselineCompositionApi.Holder
+[Newtonsoft.Json.JsonPropertyAttribute("bark", NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore, Required = Newtonsoft.Json.Required.DisallowNull)] Generated.Baseline.BaselineCompositionApi.Dog property public string? Bark { get; set; }
+[Newtonsoft.Json.JsonPropertyAttribute("id", DefaultValueHandling = Newtonsoft.Json.DefaultValueHandling.Include, NullValueHandling = Newtonsoft.Json.NullValueHandling.Include, Required = Newtonsoft.Json.Required.Always)] Generated.Baseline.BaselineCompositionApi.Base property public int Id { get; set; }
+[Newtonsoft.Json.JsonPropertyAttribute("id", DefaultValueHandling = Newtonsoft.Json.DefaultValueHandling.Include, NullValueHandling = Newtonsoft.Json.NullValueHandling.Include, Required = Newtonsoft.Json.Required.Always)] Generated.Baseline.BaselineCompositionApi.Extended property public int Id { get; set; }
+[Newtonsoft.Json.JsonPropertyAttribute("label", DefaultValueHandling = Newtonsoft.Json.DefaultValueHandling.Include, NullValueHandling = Newtonsoft.Json.NullValueHandling.Include, Required = Newtonsoft.Json.Required.Always)] Generated.Baseline.BaselineCompositionApi.Extended property public string Label { get; set; }
+[Newtonsoft.Json.JsonPropertyAttribute("meow", DefaultValueHandling = Newtonsoft.Json.DefaultValueHandling.Include, NullValueHandling = Newtonsoft.Json.NullValueHandling.Include, Required = Newtonsoft.Json.Required.Always)] Generated.Baseline.BaselineCompositionApi.Cat property public bool Meow { get; set; }
+[Newtonsoft.Json.JsonPropertyAttribute("name", DefaultValueHandling = Newtonsoft.Json.DefaultValueHandling.Include, NullValueHandling = Newtonsoft.Json.NullValueHandling.Include, Required = Newtonsoft.Json.Required.Default)] Generated.Baseline.BaselineCompositionApi.Holder property public string? Name { get; set; }
+[Newtonsoft.Json.JsonPropertyAttribute("petType", NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore, Required = Newtonsoft.Json.Required.DisallowNull)] Generated.Baseline.BaselineCompositionApi.Cat property public string? PetType { get; set; }
+[Newtonsoft.Json.JsonPropertyAttribute("petType", NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore, Required = Newtonsoft.Json.Required.DisallowNull)] Generated.Baseline.BaselineCompositionApi.Dog property public string? PetType { get; set; }
+[Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiClientDefinitionAttribute("0123456789abcdef0123456789abcdef", "BaselineCompositionApi", "Generated.Baseline.BaselineCompositionApi", Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.Json)] type public class Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi
+type public sealed class Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException : System.Exception

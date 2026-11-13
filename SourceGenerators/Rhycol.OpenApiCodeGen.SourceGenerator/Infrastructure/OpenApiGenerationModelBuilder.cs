@@ -7,7 +7,7 @@ using Microsoft.CodeAnalysis.CSharp;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator
 {
-    internal sealed class OpenApiGenerationModelBuilder
+    internal sealed partial class OpenApiGenerationModelBuilder
     {
         private readonly OpenApiSemanticDocument _document;
         private readonly GeneratorOptions _options;
@@ -18,6 +18,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private readonly HashSet<string> _usedTypeNames = new HashSet<string>(StringComparer.Ordinal);
         private readonly List<GeneratedDtoModel> _dtos = new List<GeneratedDtoModel>();
         private readonly List<GeneratedEnumModel> _enums = new List<GeneratedEnumModel>();
+        private readonly List<GeneratedUnionModel> _unions = new List<GeneratedUnionModel>();
+        // Discriminator values that select a DTO, per DTO (see CollectDiscriminatorValues).
+        private readonly Dictionary<NormalizedSpecNodeIdentity, List<KeyValuePair<string, IReadOnlyList<string>>>> _discriminatorValues =
+            new Dictionary<NormalizedSpecNodeIdentity, List<KeyValuePair<string, IReadOnlyList<string>>>>();
         private readonly HashSet<NormalizedSpecNodeIdentity> _buildingSchemas =
             new HashSet<NormalizedSpecNodeIdentity>();
         private readonly List<GeneratedTypeNameCollision> _typeNameCollisions = new List<GeneratedTypeNameCollision>();
@@ -48,6 +52,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private OpenApiGenerationModel BuildCore()
         {
             AllocateComponentTypeNames();
+            CollectDiscriminatorValues();
             foreach (KeyValuePair<NormalizedSpecNodeIdentity, OpenApiSemanticSchema> pair in _document.Schemas
                          .OrderBy(static value => value.Key.DocumentId, StringComparer.Ordinal)
                          .ThenBy(static value => value.Key.Pointer, StringComparer.Ordinal))
@@ -64,7 +69,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 _enums.OrderBy(static value => value.Name, StringComparer.Ordinal).ToArray(),
                 operations,
                 _typeNameCollisions.ToArray(),
-                _document.Warnings);
+                _document.Warnings,
+                _unions.OrderBy(static value => value.Name, StringComparer.Ordinal).ToArray());
         }
 
         private void AllocateComponentTypeNames()
@@ -200,6 +206,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private GeneratedTypeModel ResolveType(OpenApiSemanticSchema schema)
         {
+            GeneratedTypeModel type = ResolveTypeCore(schema);
+            foreach (OpenApiSemanticSchema notSchema in schema.NotSchemas)
+            {
+                type = type.WithNot(ResolveType(notSchema));
+            }
+
+            return type;
+        }
+
+        private GeneratedTypeModel ResolveTypeCore(OpenApiSemanticSchema schema)
+        {
             switch (schema.Kind)
             {
                 case OpenApiSemanticSchemaKind.String:
@@ -249,14 +266,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     }
 
                     if (referencedSchema.Kind == OpenApiSemanticSchemaKind.Object ||
-                        referencedSchema.Kind == OpenApiSemanticSchemaKind.Enum)
+                        referencedSchema.Kind == OpenApiSemanticSchemaKind.Enum ||
+                        referencedSchema.Kind == OpenApiSemanticSchemaKind.Union)
                     {
-                        return new GeneratedTypeModel(
+                        GeneratedTypeModel named = new GeneratedTypeModel(
                             referencedSchema.Kind == OpenApiSemanticSchemaKind.Enum
                                 ? GeneratedTypeKind.NamedEnum
-                                : GeneratedTypeKind.Named,
+                                : referencedSchema.Kind == OpenApiSemanticSchemaKind.Union
+                                    ? GeneratedTypeKind.Union
+                                    : GeneratedTypeKind.Named,
                             schema.Nullable || referencedSchema.Nullable,
                             _componentTypeNames[referenceIdentity]);
+                        foreach (OpenApiSemanticSchema notSchema in referencedSchema.NotSchemas)
+                        {
+                            named = named.WithNot(ResolveType(notSchema));
+                        }
+
+                        return named;
                     }
 
                     GeneratedTypeModel resolvedType = ResolveType(referencedSchema);
@@ -264,12 +290,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         resolvedType.Nullable || schema.Nullable || referencedSchema.Nullable);
                 case OpenApiSemanticSchemaKind.Object:
                 case OpenApiSemanticSchemaKind.Enum:
+                case OpenApiSemanticSchemaKind.Union:
                     string typeName = GetOrAllocateSchemaTypeName(schema);
                     EnsureDeclaration(schema, typeName);
                     return new GeneratedTypeModel(
                         schema.Kind == OpenApiSemanticSchemaKind.Enum
                             ? GeneratedTypeKind.NamedEnum
-                            : GeneratedTypeKind.Named,
+                            : schema.Kind == OpenApiSemanticSchemaKind.Union
+                                ? GeneratedTypeKind.Union
+                                : GeneratedTypeKind.Named,
                         schema.Nullable,
                         typeName);
                 default:
@@ -369,8 +398,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             try
             {
                 if (_dtos.Any(value => value.Name == typeName) ||
-                    _enums.Any(value => value.Name == typeName))
+                    _enums.Any(value => value.Name == typeName) ||
+                    _unions.Any(value => value.Name == typeName))
                 {
+                    return;
+                }
+
+                if (schema.Kind == OpenApiSemanticSchemaKind.Union)
+                {
+                    _unions.Add(BuildUnion(schema, typeName));
                     return;
                 }
 
@@ -389,7 +425,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 {
                     typeName
                 };
+                GetDiscriminatorInjections(
+                    key,
+                    schema,
+                    out Dictionary<string, OpenApiSemanticLiteral?> discriminatorConsts,
+                    out List<OpenApiSemanticProperty> injectedProperties);
                 OpenApiSemanticProperty[] orderedProperties = schema.Properties
+                    .Concat(injectedProperties)
                     .OrderBy(static value => value.WireName, StringComparer.Ordinal)
                     .ToArray();
                 var propertyTypes = orderedProperties.Select(property => new
@@ -483,7 +525,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
                 _dtos.Add(new GeneratedDtoModel(
                     typeName,
-                    orderedProperties.Select(value => allocatedProperties[value]).ToArray(),
+                    orderedProperties.Select(value => WithDiscriminatorInitialValue(allocatedProperties[value], discriminatorConsts)).ToArray(),
                     schema.Annotations,
                     extensionDataName,
                     extensionDataValueType));
@@ -605,7 +647,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private static bool EmitsDeclaration(OpenApiSemanticSchema schema)
         {
             return schema.Kind == OpenApiSemanticSchemaKind.Object ||
-                   schema.Kind == OpenApiSemanticSchemaKind.Enum;
+                   schema.Kind == OpenApiSemanticSchemaKind.Enum ||
+                   schema.Kind == OpenApiSemanticSchemaKind.Union;
         }
 
         private static string AllocateUniqueName(string name, HashSet<string> usedNames)

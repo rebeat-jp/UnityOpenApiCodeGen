@@ -453,9 +453,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Theory]
-        [InlineData("type", "\"object\"")]
-        [InlineData("properties", "{\"name\":{\"type\":\"string\"}}")]
-        [InlineData("required", "[\"name\"]")]
+        // P2 (G09): in 3.1 a $ref with siblings is allOf [ref, siblings], so type / properties / required
+        // are composed instead of rejected. Siblings that cannot be part of an object composition still
+        // report their own position.
+        [InlineData("items", "{\"type\":\"string\"}")]
+        [InlineData("enum", "[\"a\"]")]
         public void MeaningfulReferenceSchemaSiblingsReportTheirSourcePosition(
             string keyword,
             string value)
@@ -483,7 +485,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Phase4GeneratorTestHarness.GenerateAndCompile(document).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("Schema keyword '" + keyword + "' cannot be combined with $ref", diagnostic.GetMessage());
+            Assert.Contains("must be an object schema", diagnostic.GetMessage());
             Assert.Contains("/schema/" + keyword, diagnostic.GetMessage());
         }
 
@@ -537,7 +539,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     } } }
   } } }
 }";
-            const string Alias = "{\"$ref\":\"value.yaml\",\"type\":\"string\"}";
+            const string Alias = "{\"$ref\":\"value.yaml\",\"items\":{\"type\":\"string\"}}";
             const string Value = "{\"type\":\"string\"}";
             const string RootPointer = "/paths/~1values/get/responses/200/content/application~1json/schema/$ref";
             const string AliasPointer = "/$ref";
@@ -574,9 +576,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Phase4GeneratorTestHarness.GenerateAndCompile(Root, bundle: bundle).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("Schema keyword 'type' cannot be combined with $ref", diagnostic.GetMessage());
+            Assert.Contains("must be an object schema", diagnostic.GetMessage());
             Assert.Contains("Assets/Specs/alias.yaml", diagnostic.GetMessage());
-            Assert.Contains("logical path '/type'", diagnostic.GetMessage());
+            Assert.Contains("logical path '/items'", diagnostic.GetMessage());
         }
 
         [Theory]

@@ -54,7 +54,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 "$comment", "$ref", "$schema", "additionalProperties", "default", "deprecated",
                 "description", "enum", "example", "examples", "externalDocs", "format", "items",
                 "nullable", "properties", "required", "summary", "title", "type", "xml",
-                "contentEncoding", "contentMediaType", "readOnly", "writeOnly"
+                "contentEncoding", "contentMediaType", "readOnly", "writeOnly",
+                "allOf", "anyOf", "oneOf", "not", "discriminator"
             };
 
         // Keywords that exist only in the OpenAPI 3.1 (JSON Schema 2020-12) dialect.
@@ -172,6 +173,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 IReadOnlyDictionary<NormalizedSpecNodeIdentity, OpenApiSemanticSchema> schemas = _schemas;
                 ValidateNonSchemaComponents();
                 IReadOnlyList<OpenApiSemanticOperation> operations = ParsePaths(RequireProperty(_root, "paths"));
+                ValidateDiscriminatedUnionMembers();
                 ValidateRecursionIfObserved();
 
                 return new OpenApiSemanticDocument(
@@ -684,7 +686,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 throw Unsupported(node, "Array and object parameters require style/explode support and are outside the Phase 4 MVP.");
             }
 
-            if (effectiveSchema.Kind == OpenApiSemanticSchemaKind.Any)
+            if (effectiveSchema.Kind == OpenApiSemanticSchemaKind.Any ||
+                effectiveSchema.Kind == OpenApiSemanticSchemaKind.Union)
             {
                 throw Unsupported(
                     node,
@@ -966,6 +969,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (schema.Kind == OpenApiSemanticSchemaKind.Map && schema.ValueSchema is not null)
             {
                 ValidateResponseMetadataProperties(schema.ValueSchema, visited);
+                return;
+            }
+
+            if (schema.Kind == OpenApiSemanticSchemaKind.Union)
+            {
+                foreach (OpenApiSemanticSchema member in schema.UnionMembers)
+                {
+                    ValidateResponseMetadataProperties(member, visited);
+                }
+
                 return;
             }
 
@@ -1458,7 +1471,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 if (property.Name == "$ref" ||
                     property.Name.StartsWith("x-", StringComparison.Ordinal) ||
                     AllowedReferenceSchemaSiblings.Contains(property.Name) ||
-                    (_minorVersion == 0 && property.Name == "nullable"))
+                    (_minorVersion == 0 && property.Name == "nullable") ||
+                    (_minorVersion == 1 && (property.Name == "not" || property.Name == "type")))
                 {
                     continue;
                 }
@@ -1648,6 +1662,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private string GetSchemaSignature(OpenApiSemanticSchema? schema)
         {
+            return GetSchemaSignature(schema, new HashSet<NormalizedSpecNodeIdentity>());
+        }
+
+        // active holds the referenced schemas whose signature is being built: a union (or object) can
+        // lead back to an alias such as an array, and that cycle ends in a reference signature.
+        private string GetSchemaSignature(
+            OpenApiSemanticSchema? schema,
+            HashSet<NormalizedSpecNodeIdentity> active)
+        {
             if (schema is null)
             {
                 return "void";
@@ -1675,15 +1698,60 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             if (!terminalIdentity.IsEmpty &&
                 (schema.Kind == OpenApiSemanticSchemaKind.Object ||
-                 schema.Kind == OpenApiSemanticSchemaKind.Enum))
+                 schema.Kind == OpenApiSemanticSchemaKind.Enum ||
+                 schema.Kind == OpenApiSemanticSchemaKind.Union))
             {
                 return BuildSchemaSignature("ref", nullable, terminalIdentity.ToString());
             }
 
+            if (!terminalIdentity.IsEmpty && !active.Add(terminalIdentity))
+            {
+                return BuildSchemaSignature("ref", nullable, terminalIdentity.ToString());
+            }
+
+            try
+            {
+                return GetShapeSignature(schema, nullable, active);
+            }
+            finally
+            {
+                if (!terminalIdentity.IsEmpty)
+                {
+                    active.Remove(terminalIdentity);
+                }
+            }
+        }
+
+        private string GetShapeSignature(
+            OpenApiSemanticSchema schema,
+            bool nullable,
+            HashSet<NormalizedSpecNodeIdentity> active)
+        {
             switch (schema.Kind)
             {
+                case OpenApiSemanticSchemaKind.Union:
+                    // Members are compared as a set (order does not change the accepted values);
+                    // the discriminator and oneOf / anyOf mode do.
+                    return BuildSchemaSignature(
+                        "union",
+                        nullable,
+                        new[]
+                            {
+                                schema.UnionIsOneOf ? "oneOf" : "anyOf",
+                                schema.Discriminator is null
+                                    ? string.Empty
+                                    : schema.Discriminator.PropertyName
+                            }
+                            .Concat(schema.UnionMembers
+                                .Select(member => GetSchemaSignature(member, active))
+                                .OrderBy(static value => value, StringComparer.Ordinal))
+                            .ToArray());
+                case OpenApiSemanticSchemaKind.Any:
+                    return BuildSchemaSignature("any", true);
+                case OpenApiSemanticSchemaKind.FreeObject:
+                    return BuildSchemaSignature("freeObject", nullable);
                 case OpenApiSemanticSchemaKind.Array:
-                    return BuildSchemaSignature("array", nullable, GetSchemaSignature(schema.ItemSchema));
+                    return BuildSchemaSignature("array", nullable, GetSchemaSignature(schema.ItemSchema, active));
                 case OpenApiSemanticSchemaKind.Object:
                     return BuildSchemaSignature(
                         "object",
@@ -1693,20 +1761,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                             false,
                             property.WireName,
                             property.Required ? "1" : "0",
-                            GetSchemaSignature(property.Schema)))
+                            GetSchemaSignature(property.Schema, active)))
                             .Concat(new[]
                             {
                                 BuildSchemaSignature(
                                     "additional",
                                     false,
                                     schema.AdditionalProperties.ToString(),
-                                    schema.ValueSchema is null ? string.Empty : GetSchemaSignature(schema.ValueSchema))
+                                    schema.ValueSchema is null ? string.Empty : GetSchemaSignature(schema.ValueSchema, active))
                             }).ToArray());
                 case OpenApiSemanticSchemaKind.Map:
                     return BuildSchemaSignature(
                         "map",
                         nullable,
-                        schema.ValueSchema is null ? string.Empty : GetSchemaSignature(schema.ValueSchema));
+                        schema.ValueSchema is null ? string.Empty : GetSchemaSignature(schema.ValueSchema, active));
                 case OpenApiSemanticSchemaKind.Enum:
                     return BuildSchemaSignature(
                         "enum",

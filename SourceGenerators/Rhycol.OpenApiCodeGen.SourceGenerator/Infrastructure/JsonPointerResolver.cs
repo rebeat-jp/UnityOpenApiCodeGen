@@ -377,6 +377,38 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                    (value >= 'a' && value <= 'f');
         }
 
+        /// <summary>
+        /// Resolves a JSON pointer inside one document without a $ref node. Used for schema
+        /// references that are not written as $ref (discriminator mapping values, allOf subtypes of
+        /// a discriminator base), so no reference edge exists for them in a v2 bundle.
+        /// </summary>
+        internal ResolvedSpecReference ResolveInternalPointer(
+            string documentId,
+            string pointer,
+            SpecNode referenceNode)
+        {
+            SpecNode root = _root;
+            NormalizedSpecDocument? document = null;
+            string resolvedDocumentId = "root";
+            if (_bundle is not null)
+            {
+                if (!_documents.TryGetValue(documentId, out document))
+                {
+                    throw CreateUnresolved("#" + pointer, referenceNode);
+                }
+
+                root = document.Root;
+                resolvedDocumentId = documentId;
+            }
+
+            if (!TryResolvePointer(root, pointer, out SpecNode? targetNode) || targetNode is null)
+            {
+                throw CreateUnresolved("#" + pointer, referenceNode);
+            }
+
+            return new ResolvedSpecReference(resolvedDocumentId, pointer, document, targetNode);
+        }
+
         private static OpenApiSemanticException CreateUnresolved(string reference, SpecNode node)
         {
             return new OpenApiSemanticException(

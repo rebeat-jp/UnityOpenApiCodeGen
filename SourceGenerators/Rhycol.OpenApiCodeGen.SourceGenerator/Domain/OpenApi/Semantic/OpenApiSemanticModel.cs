@@ -234,7 +234,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         Array,
         Reference,
         Enum,
-        // Added for the spec-coverage work. The parser does not produce these yet.
+        // Any, Map, FreeObject and Union are produced by the parser; Binary is not yet.
         Any,
         Map,
         Union,
@@ -274,8 +274,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<OpenApiSemanticSchema>? unionMembers = null,
             OpenApiSemanticAdditionalProperties additionalProperties = OpenApiSemanticAdditionalProperties.Closed,
             IReadOnlyList<string?>? enumMemberNames = null,
-            IReadOnlyList<string?>? enumMemberDescriptions = null)
+            IReadOnlyList<string?>? enumMemberDescriptions = null,
+            OpenApiSemanticDiscriminator? discriminator = null,
+            bool unionIsOneOf = true,
+            IReadOnlyList<OpenApiSemanticSchema>? notSchemas = null)
         {
+            Discriminator = discriminator;
+            UnionIsOneOf = unionIsOneOf;
+            NotSchemas = notSchemas ?? Array.Empty<OpenApiSemanticSchema>();
             AdditionalProperties = additionalProperties;
             EnumMemberNames = enumMemberNames ?? Array.Empty<string?>();
             EnumMemberDescriptions = enumMemberDescriptions ?? Array.Empty<string?>();
@@ -367,11 +373,86 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// <summary>Members when Kind is Union.</summary>
         internal IReadOnlyList<OpenApiSemanticSchema> UnionMembers { get; }
 
+        /// <summary>Discriminator of a Union (null when the union has none).</summary>
+        internal OpenApiSemanticDiscriminator? Discriminator { get; }
+
+        /// <summary>True for oneOf (exactly one member matches), false for anyOf (at least one).</summary>
+        internal bool UnionIsOneOf { get; }
+
+        /// <summary>
+        /// Schemas of the not keyword. They only take part in response validation: a value that
+        /// matches one of them is rejected. They never change the generated type.
+        /// </summary>
+        internal IReadOnlyList<OpenApiSemanticSchema> NotSchemas { get; }
+
+        internal OpenApiSemanticSchema WithNullable(bool nullable)
+        {
+            return nullable == Nullable ? this : Clone(nullable, Annotations, NotSchemas);
+        }
+
+        internal OpenApiSemanticSchema WithAnnotations(OpenApiSemanticAnnotations annotations)
+        {
+            return Clone(Nullable, annotations, NotSchemas);
+        }
+
+        internal OpenApiSemanticSchema WithNot(OpenApiSemanticSchema notSchema)
+        {
+            return Clone(Nullable, Annotations, NotSchemas.Concat(new[] { notSchema }).ToArray());
+        }
+
+        private OpenApiSemanticSchema Clone(
+            bool nullable,
+            OpenApiSemanticAnnotations annotations,
+            IReadOnlyList<OpenApiSemanticSchema> notSchemas)
+        {
+            return new OpenApiSemanticSchema(
+                Kind,
+                SuggestedName,
+                Format,
+                nullable,
+                ReferenceName,
+                Properties,
+                ItemSchema,
+                EnumValues,
+                Location,
+                Identity,
+                ReferenceIdentity,
+                annotations,
+                TypedEnumValues,
+                ValueSchema,
+                UnionMembers,
+                AdditionalProperties,
+                EnumMemberNames,
+                EnumMemberDescriptions,
+                Discriminator,
+                UnionIsOneOf,
+                notSchemas);
+        }
+
         internal OpenApiSourceLocation Location { get; }
 
         internal NormalizedSpecNodeIdentity Identity { get; }
 
         internal NormalizedSpecNodeIdentity ReferenceIdentity { get; }
+    }
+
+    /// <summary>
+    /// A discriminator of a Union. MemberValues is parallel to the union members: the wire values
+    /// that select the member (the first one is written for requests).
+    /// </summary>
+    internal sealed class OpenApiSemanticDiscriminator
+    {
+        internal OpenApiSemanticDiscriminator(
+            string propertyName,
+            IReadOnlyList<IReadOnlyList<string>> memberValues)
+        {
+            PropertyName = propertyName;
+            MemberValues = memberValues;
+        }
+
+        internal string PropertyName { get; }
+
+        internal IReadOnlyList<IReadOnlyList<string>> MemberValues { get; }
     }
 
     internal sealed class OpenApiSemanticProperty

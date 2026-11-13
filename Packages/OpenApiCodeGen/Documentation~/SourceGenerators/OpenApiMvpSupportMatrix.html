@@ -100,7 +100,7 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 <tr>
 <td>unresolved / cyclic <code>$ref</code></td>
 <td>Partial</td>
-<td>解決できない参照は<code>OACG102</code>です。<code>$ref</code>のaliasだけの循環（A→B→A）と、array／mapだけを経由して名前付きDTO／enumで閉じない循環は<code>OACG103</code>です。property・items・additionalPropertiesを経由するobject／enumの自己再帰・相互再帰は許可します。<code>OACG104</code>はBundle v1のexternal-reference互換診断です。</td>
+<td>解決できない参照は<code>OACG102</code>です。<code>$ref</code>のaliasだけの循環（A→B→A）と、array／mapだけを経由して名前付きDTO／enumで閉じない循環は<code>OACG103</code>です。property・items・additionalPropertiesを経由するobject／enumの自己再帰・相互再帰は許可します。<code>oneOf</code>／<code>anyOf</code>のunionラッパーもobject・enumと同じ名前付きの型なので、unionを経由する再帰（<code>Node: oneOf [Leaf, array of Node]</code>など）も許可します。<code>OACG104</code>はBundle v1のexternal-reference互換診断です。</td>
 </tr>
 <tr>
 <td>schema <code>$ref</code> target</td>
@@ -518,7 +518,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>successful response JSON</td>
 <td>Partial</td>
-<td>RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTO（<code>additionalProperties: false</code>）の未宣言propertyを拒否し（open DTOとmapは許可し、宣言した値型を検査します）、Json.NETの<code>$id</code>／<code>$ref</code>／<code>$values</code>参照メタデータを互換拡張として維持します。配列schemaでも<code>$id</code>／<code>$values</code>で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の<code>1.0</code>／<code>1e0</code>を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限<code>float</code>／<code>double</code>は<code>JsonSerializationException</code>です。 受信JSONの構文検査は通常最大64階層で、ホストが<code>JsonConvert.DefaultSettings.MaxDepth</code>に正の値を設定した場合はその値を使い、<code>null</code>または未指定なら64階層を維持します。</td>
+<td>RFC 8259の構文、重複しないproperty名、宣言schemaに合うJSON token型を本文と入れ子の値で検査します。closed DTO（<code>additionalProperties: false</code>）の未宣言propertyを拒否し（open DTOとmapは許可し、宣言した値型を検査します）、Json.NETの<code>$id</code>／<code>$ref</code>／<code>$values</code>参照メタデータを互換拡張として維持します。配列schemaでも<code>$id</code>／<code>$values</code>で包まれたJSON objectを受け付け、配列要素を検査します。整数は数学的整数値の<code>1.0</code>／<code>1e0</code>を許可し、小数・CLR型の範囲外を拒否します。型不一致・未知property・非有限<code>float</code>／<code>double</code>は<code>JsonSerializationException</code>です。DTOの必須property（<code>writeOnly</code>を除く）の欠落とenumの未宣言値も、変換前のJSON検査で<code>JsonSerializationException</code>にします（従来はJson.NETの変換時に拒否）。 受信JSONの構文検査は通常最大64階層で、ホストが<code>JsonConvert.DefaultSettings.MaxDepth</code>に正の値を設定した場合はその値を使い、<code>null</code>または未指定なら64階層を維持します。</td>
 </tr>
 <tr>
 <td>response JSON conversion settings</td>
@@ -590,7 +590,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td><code>$ref</code> sibling</td>
 <td>Partial</td>
-<td>注釈、literalデータ、<code>x-*</code>と既存の3.0 <code>nullable</code>は保持します。合成が必要な<code>type</code>、<code>properties</code>、<code>required</code>などは、該当位置の<code>OACG101</code>で拒否します。</td>
+<td>注釈、literalデータ、<code>x-*</code>と3.0の<code>nullable</code>は保持して参照のままです（3.1で<code>type</code>だけ、または<code>not</code>を併記した場合も参照のままです）。OpenAPI 3.1で<code>properties</code>、<code>required</code>、<code>additionalProperties</code>、<code>allOf</code>などの構造を併記すると<code>allOf: [ {$ref}, {siblings} ]</code>として扱い、下の<code>allOf</code>の規則で1つのDTOへ平坦化します。3.0では従来どおり、合成が必要な兄弟keywordを該当位置の<code>OACG101</code>で拒否します。</td>
 </tr>
 <tr>
 <td>nullable</td>
@@ -653,9 +653,29 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td><code>title</code>と<code>description</code>はDTO・property・enum（とmember）のXML docへ出力します。<code>deprecated: true</code>はschemaとpropertyに<code>[Obsolete]</code>を付けます（生成コード内は<code>#pragma warning disable CS0612, CS0618</code>）。<code>default</code>はXML docだけで、wire contractは変えません（object／arrayのdefaultは無視）。operationとparameterの<code>deprecated</code>は後続フェーズで扱います。</td>
 </tr>
 <tr>
-<td>composition</td>
-<td>Unsupported</td>
-<td><code>allOf</code>、<code>anyOf</code>、<code>oneOf</code>、<code>not</code>、discriminatorは対象外です。</td>
+<td><code>allOf</code></td>
+<td>Partial</td>
+<td>各partの<code>properties</code>・<code>required</code>・<code>additionalProperties</code>を1つのsealed DTOへ平坦化します（<code>$ref</code>先は再帰的に展開し、入れ子の<code>allOf</code>も可）。<code>required</code>は和集合です。<strong>closednessは合成後に評価</strong>します。どれか1つのpart（または3.1の<code>$ref</code>siblings）が<code>additionalProperties: false</code>ならDTO全体をclosedにし、許可するpropertyは全partのpropertiesの和集合です（partごとの<code>false</code>を単純合算して、他のpartのpropertyを拒否することはしません）。<code>additionalProperties</code>がschemaのpartがあればtyped open（複数あれば同じschemaが必要）、それ以外はopen objectです。同名propertyの型がpart間で異なれば<code>OACG101</code>（2つ目の宣言の位置、1つ目はadditional location）、同じ型なら統合します。partが<code>object</code>以外の<code>type</code>・<code>items</code>・<code>enum</code>・<code>const</code>を持つ場合、partが<code>oneOf</code>／<code>anyOf</code>を持つ場合（discriminator付きのbaseを除く）は<code>OACG101</code>、どのpartも宣言しない<code>required</code>は<code>OACG100</code>、<code>allOf</code>の循環は<code>OACG103</code>です。part内の<code>not</code>は<code>OACG108</code>で無視します。<code>allOf: [ {$ref} ]</code>の1要素に<code>description</code>・<code>nullable</code>などの注釈だけを併記する定番の形は、新しい型を作らない参照です（nullableも保持）。</td>
+</tr>
+<tr>
+<td><code>oneOf</code> / <code>anyOf</code> + discriminator</td>
+<td>Partial</td>
+<td>discriminator付きの<code>oneOf</code>／<code>anyOf</code>は、sealedなunionラッパークラス（例: <code>Pet</code>）とメンバーのDTO（<code>Cat</code>、<code>Dog</code>）を生成します。メンバーのDTOはラッパーを継承しない通常のsealed DTOです。ラッパーに付ける<code>JsonConverter</code>が具象DTOの書き出しで再入して無限再帰することはありません。ラッパーは<code>FromCat(Cat)</code>・暗黙変換・<code>TryGetCat(out Cat)</code>・<code>AsCat()</code>、保持している具象値<code>Value</code>、選択値<code>DiscriminatorValue</code>を持ちます。メンバーは<code>$ref</code>でobjectを指す必要があります（inline、またはobject以外は、メンバーの位置の<code>OACG101</code>）。discriminator値は<code>mapping</code>（値はschema名、<code>#/components/schemas/X</code>のinternal pointer、または<code>oneOf</code>内の<code>$ref</code>と同じ文字列）と、mappingのないメンバーの暗黙値（schema名）で解決します。メンバーにmappingがあればその値だけが有効で、複数あれば最初の値を送ります。他ファイルを指すmapping、メンバーでないschemaを指すmappingは<code>OACG101</code>、複数のメンバーに同じ値を割り当てると<code>OACG100</code>です。メンバーDTOがdiscriminator propertyを宣言していなければ生成側が任意のstring propertyとして追加し、選択値が1つならDTOの初期値にします（宣言済みのstring propertyにも同じ初期値を付けます）。この初期値は検証せず、requiredにもしないため、unionを経由しない単独利用のDTO（discriminatorを持たない応答など）は有効なままです。discriminatorの有無と値の検査はunion（converterと成功応答の契約検査）だけが行います。requestはunionが常に選択値を書きます。成功応答は値でメンバーを選び、未知・欠落・stringでない値は<code>JsonSerializationException</code>で、選んだメンバーのDTO検査（closedなら未宣言property、必須property）も行います。ラッパーの<code>JsonConverter</code>クラスにはIL2CPP用の<code>PreserveAttribute</code>を付けます。</td>
+</tr>
+<tr>
+<td>discriminator付きbase（継承）</td>
+<td>Partial</td>
+<td><code>oneOf</code>／<code>anyOf</code>を持たず<code>discriminator</code>だけを持つschema（子が<code>allOf: [ {$ref: base}, … ]</code>で継承する形）は、mappingの対象と、同じdocumentの<code>components.schemas</code>で<code>allOf</code>にbaseを直接<code>$ref</code>しているschema（孫まで）をメンバーとするunionになります。baseの<code>properties</code>は子のDTOへ<code>allOf</code>で平坦化されます。base自身は（値が<code>Pet</code>などでも）メンバーにならず、そのdiscriminator値は未知の値として拒否します。子もmappingもない<code>discriminator</code>は<code>OACG108</code>で無視します。他のdocumentのschemaは子として探しません。<code>oneOf</code>＋discriminatorを持つschemaを子が<code>allOf</code>で継承する形では、子はそのschemaの<code>properties</code>だけを引き継ぎ、<code>oneOf</code>は引き継ぎません。</td>
+</tr>
+<tr>
+<td><code>oneOf</code> / <code>anyOf</code>（discriminatorなし）</td>
+<td>Partial</td>
+<td><code>type: null</code>だけの部品を除いた候補が1つなら、その型のnullableに正規化します（<code>[X, null]</code>）。それ以外は成功応答の生の<code>JToken</code>を保持するunionラッパーです（<code>FromJToken(JToken)</code>、<code>ToJToken()</code>、候補ごとの<code>FromX(T)</code>・暗黙変換・<code>TryGetX(out T)</code>・<code>AsX()</code>。string／integerなどのプリミティブ候補も扱います。アクセサ名は型名で、<code>String</code>、<code>Int32</code>、<code>CatList</code>などです）。成功応答は候補ごとに既存のJSON契約検査を試し、<code>oneOf</code>はちょうど1件、<code>anyOf</code>は1件以上の一致を求めます（違反は一致件数つきの<code>JsonSerializationException</code>）。一致は構造検査（型、closed DTOの未宣言property、必須property、enumの値、const）で決めます。<code>oneOf</code>で複数の候補が一致した場合は、応答JSONのすべてのpropertyを宣言している候補（closedとみなした一致）に絞り込み、ちょうど1件ならそれを選びます（open DTO同士が重なる典型ケース）。絞り込んでも1件にならなければエラーです。<code>integer</code>と<code>number</code>のように区別できない<code>oneOf</code>や、同じpropertyだけを持つ候補は失敗し得るので、<code>required</code>・<code>additionalProperties: false</code>・<code>discriminator</code>で区別できるようにしてください。<code>anyOf</code>は絞り込まず1件以上の一致で足ります。<code>TryGetX</code>も同じ規則で候補を選びます。<code>TryGetX</code>は、<code>FromX</code>で渡した値か、保持しているJSONをJson.NETの厳密な設定（未宣言memberはエラー）で変換できるかで判定します。requestは渡された候補値または<code>JToken</code>をそのまま直列化します（候補値のrequest検査は行いません）。同じschemaへ<code>properties</code>／<code>required</code>など形を決めるkeywordを併記する、<code>allOf</code>と<code>oneOf</code>、<code>oneOf</code>と<code>anyOf</code>を併記する場合は<code>OACG101</code>です（keywordはメンバー側へ移します）。unionのparameterも<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td><code>not</code></td>
+<td>Partial</td>
+<td>成功応答の検査だけで評価し（<code>not</code>のschemaに一致した値を<code>JsonSerializationException</code>で拒否）、生成する型は変えません。schema・property・<code>$ref</code>先のどこの<code>not</code>も対象で、一致は構造検査（型、enum値、const、DTOの形）で決めます。<code>required</code>だけのような形を持たない<code>not</code>、boolean schema、再帰する<code>not</code>、未対応の要素を含む<code>not</code>は、全値を拒否してしまうか判定できないため<code>OACG108</code>で無視します。requestでは評価しません。</td>
 </tr>
 <tr>
 <td>readOnly / writeOnly</td>
@@ -680,6 +700,7 @@ OpenAPI 3.0では既存互換として<code>nullable</code>も扱います。</p
 <li>任意かつschema上nullableなDTO propertyの<code>&lt;PropertyName&gt;Specified</code>による存在状態の管理</li>
 <li>任意かつschema上nullableなrequest bodyの<code>&lt;BodyParameterName&gt;Specified</code>による明示的なJSON <code>null</code>送信</li>
 <li>宣言したwire文字列を完全一致で扱うstring enum converterと<code>List&lt;T&gt;</code></li>
+<li><code>oneOf</code>／<code>anyOf</code>のsealed unionラッパークラス（<code>FromX</code>／<code>TryGetX</code>／<code>AsX</code>、discriminatorなしは<code>FromJToken</code>／<code>ToJToken</code>）と、internalな<code>JsonConverter</code></li>
 <li>injected <code>HttpClient</code>を使うasync client API。documentまたはexplicit base URLを指定するconstructorを使用可能</li>
 <li>path/query/header/body、<code>JsonConvert</code>、<code>CancellationToken</code>、宣言された<code>2xx</code> response handling</li>
 <li>generated <code>&lt;ApiName&gt;Exception</code></li>

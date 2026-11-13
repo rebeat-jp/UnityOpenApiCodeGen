@@ -20,6 +20,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             var usedTypeNames = new HashSet<string>(model.Enums.Select(static value => value.Name),
                 StringComparer.Ordinal);
             usedTypeNames.UnionWith(model.Dtos.Select(static value => value.Name));
+            usedTypeNames.UnionWith(model.Unions.Select(static value => value.Name));
             usedTypeNames.Add(model.ApiName);
             usedTypeNames.Add(model.ApiName + "Exception");
             bool usePreserve = NeedsPreserve(model) && !usedTypeNames.Contains(PreserveAttributeName);
@@ -43,6 +44,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 files.Add(EmitDto(model.GeneratedNamespace, dto, suppressObsoleteWarnings, usePreserve));
             }
+
+            files.AddRange(new PolymorphicConverterEmitter().Emit(
+                model,
+                usedTypeNames,
+                usePreserve ? PreserveAttributeName : null,
+                suppressObsoleteWarnings));
 
             // Unity's managed stripping (IL2CPP) removes members that are only reached through
             // reflection. Json.NET finds ShouldSerialize<Name>() and the extension data member by
@@ -202,8 +209,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private static bool NeedsPreserve(OpenApiGenerationModel model)
         {
-            return model.Dtos.Any(static dto =>
-                dto.IsOpen || dto.Properties.Any(static property => property.Annotations.ReadOnly));
+            return model.Unions.Count > 0 ||
+                   model.Dtos.Any(static dto =>
+                       dto.IsOpen || dto.Properties.Any(static property => property.Annotations.ReadOnly));
         }
 
         private static GeneratedFile EmitPreserveAttribute(string generatedNamespace)
@@ -342,7 +350,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         .Append(' ')
                         .Append(property.Name)
                         .Append(" { get; set; }");
-                    string? constInitializer = GetConstInitializer(property.Type);
+                    string? constInitializer = GetConstInitializer(
+                        property.InitialValue.HasValue ? property.Type.WithConst(property.InitialValue) : property.Type);
                     if (constInitializer is not null)
                     {
                         source.Append(" = ").Append(constInitializer).Append(';');

@@ -14,8 +14,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<GeneratedEnumModel> enums,
             IReadOnlyList<GeneratedOperationModel> operations,
             IReadOnlyList<GeneratedTypeNameCollision> typeNameCollisions,
-            IReadOnlyList<OpenApiSemanticWarning>? warnings = null)
+            IReadOnlyList<OpenApiSemanticWarning>? warnings = null,
+            IReadOnlyList<GeneratedUnionModel>? unions = null)
         {
+            Unions = unions ?? Array.Empty<GeneratedUnionModel>();
             Warnings = warnings ?? Array.Empty<OpenApiSemanticWarning>();
             ApiName = apiName;
             GeneratedNamespace = generatedNamespace;
@@ -35,6 +37,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal IReadOnlyList<GeneratedDtoModel> Dtos { get; }
 
         internal IReadOnlyList<GeneratedEnumModel> Enums { get; }
+
+        /// <summary>Union wrapper types (oneOf / anyOf).</summary>
+        internal IReadOnlyList<GeneratedUnionModel> Unions { get; }
 
         internal IReadOnlyList<GeneratedOperationModel> Operations { get; }
         internal IReadOnlyList<GeneratedTypeNameCollision> TypeNameCollisions { get; }
@@ -107,8 +112,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             bool required,
             bool useSpecified,
             GeneratedTypeModel type,
-            OpenApiSemanticAnnotations? annotations = null)
+            OpenApiSemanticAnnotations? annotations = null,
+            OpenApiSemanticLiteral? initialValue = null)
         {
+            InitialValue = initialValue;
             Annotations = annotations ?? OpenApiSemanticAnnotations.Empty;
             Name = name;
             WireName = wireName;
@@ -124,6 +131,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal bool Required { get; }
 
         internal bool UseSpecified { get; }
+
+        /// <summary>Initial value of a string member that selects a union member (not validated).</summary>
+        internal OpenApiSemanticLiteral? InitialValue { get; }
 
         internal GeneratedTypeModel Type { get; }
 
@@ -184,6 +194,59 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal string Name { get; }
 
         internal string WireValue { get; }
+    }
+
+    /// <summary>
+    /// A oneOf / anyOf wrapper class. With a discriminator the members are DTOs selected by the
+    /// discriminator value; without one the wrapper keeps the raw JSON.
+    /// </summary>
+    internal sealed class GeneratedUnionModel
+    {
+        internal GeneratedUnionModel(
+            string name,
+            bool isOneOf,
+            string? discriminatorPropertyName,
+            IReadOnlyList<GeneratedUnionMemberModel> members,
+            OpenApiSemanticAnnotations? annotations = null)
+        {
+            Name = name;
+            IsOneOf = isOneOf;
+            DiscriminatorPropertyName = discriminatorPropertyName;
+            Members = members;
+            Annotations = annotations ?? OpenApiSemanticAnnotations.Empty;
+        }
+
+        internal string Name { get; }
+
+        internal bool IsOneOf { get; }
+
+        /// <summary>Null when the union has no discriminator.</summary>
+        internal string? DiscriminatorPropertyName { get; }
+
+        internal IReadOnlyList<GeneratedUnionMemberModel> Members { get; }
+
+        internal OpenApiSemanticAnnotations Annotations { get; }
+    }
+
+    internal sealed class GeneratedUnionMemberModel
+    {
+        internal GeneratedUnionMemberModel(
+            string accessorName,
+            GeneratedTypeModel type,
+            IReadOnlyList<string>? discriminatorValues = null)
+        {
+            AccessorName = accessorName;
+            Type = type;
+            DiscriminatorValues = discriminatorValues ?? Array.Empty<string>();
+        }
+
+        /// <summary>Suffix of the generated FromX / TryGetX / AsX members.</summary>
+        internal string AccessorName { get; }
+
+        internal GeneratedTypeModel Type { get; }
+
+        /// <summary>Wire values that select this member (the first is written). Empty without a discriminator.</summary>
+        internal IReadOnlyList<string> DiscriminatorValues { get; }
     }
 
     internal sealed class GeneratedOperationModel
@@ -298,7 +361,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         Named,
         NamedEnum,
         Array,
-        // Added for the spec-coverage work. The model builder does not produce these yet.
+        // Any, Map, FreeObject, Union (a named wrapper class) and Binary (byte[]).
         Any,
         Map,
         Union,
@@ -316,8 +379,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             GeneratedTypeModel? itemType = null,
             GeneratedTypeModel? valueType = null,
             IReadOnlyList<GeneratedTypeModel>? unionMembers = null,
-            OpenApiSemanticLiteral? constValue = null)
+            OpenApiSemanticLiteral? constValue = null,
+            IReadOnlyList<GeneratedTypeModel>? notTypes = null)
         {
+            NotTypes = notTypes ?? Array.Empty<GeneratedTypeModel>();
             ConstValue = constValue;
             Kind = kind;
             Nullable = nullable;
@@ -339,6 +404,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// <summary>Member types when Kind is Union.</summary>
         internal IReadOnlyList<GeneratedTypeModel> UnionMembers { get; }
 
+        /// <summary>
+        /// Types of the not keyword. Part of the type identity because response validation is
+        /// generated per type: a value that matches one of them is rejected.
+        /// </summary>
+        internal IReadOnlyList<GeneratedTypeModel> NotTypes { get; }
+
+        internal GeneratedTypeModel WithNot(GeneratedTypeModel notType)
+        {
+            return new GeneratedTypeModel(
+                Kind, Nullable, Name, ItemType, ValueType, UnionMembers, ConstValue,
+                NotTypes.Concat(new[] { notType }).ToArray());
+        }
+
         internal GeneratedTypeKind Kind { get; }
 
         internal bool Nullable { get; }
@@ -351,14 +429,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             return nullable == Nullable
                 ? this
-                : new GeneratedTypeModel(Kind, nullable, Name, ItemType, ValueType, UnionMembers, ConstValue);
+                : new GeneratedTypeModel(Kind, nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes);
         }
 
         internal GeneratedTypeModel WithConst(OpenApiSemanticLiteral? constValue)
         {
             return System.Nullable.Equals(constValue, ConstValue)
                 ? this
-                : new GeneratedTypeModel(Kind, Nullable, Name, ItemType, ValueType, UnionMembers, constValue);
+                : new GeneratedTypeModel(Kind, Nullable, Name, ItemType, ValueType, UnionMembers, constValue, NotTypes);
         }
 
         /// <summary>
@@ -388,6 +466,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                    Equals(ItemType, other.ItemType) &&
                    Equals(ValueType, other.ValueType) &&
                    System.Nullable.Equals(ConstValue, other.ConstValue) &&
+                   NotTypes.SequenceEqual(other.NotTypes) &&
                    UnionMembers.SequenceEqual(other.UnionMembers);
         }
 
@@ -406,6 +485,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 hashCode = (hashCode * 397) ^ (ItemType?.GetHashCode() ?? 0);
                 hashCode = (hashCode * 397) ^ (ValueType?.GetHashCode() ?? 0);
                 hashCode = (hashCode * 397) ^ ConstValue.GetHashCode();
+                foreach (GeneratedTypeModel notType in NotTypes)
+                {
+                    hashCode = (hashCode * 397) ^ notType.GetHashCode();
+                }
+
                 foreach (GeneratedTypeModel member in UnionMembers)
                 {
                     hashCode = (hashCode * 397) ^ member.GetHashCode();
