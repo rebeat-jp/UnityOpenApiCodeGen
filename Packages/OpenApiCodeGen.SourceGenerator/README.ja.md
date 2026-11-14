@@ -65,7 +65,9 @@ personal access tokenを使ってください。`github.com`のページ、REST 
 対応するOpenAPI要素、YAMLの範囲、診断は[日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)に記載しています。
 YAMLの二重引用符内では有効な`\u`サロゲート対を非BMP文字として保持し、
 孤立・不一致のサロゲートは位置付き`YAML006`で拒否します。
-OpenAPI 3.1は標準schema dialectのみを受け付けます。独自dialectは診断で拒否します。
+OpenAPI 3.1と3.2は標準schema dialectのみを受け付けます。独自dialectは診断で拒否します。
+OpenAPI 3.2では`query` method、`additionalOperations`、`in: querystring`、`components.mediaTypes`、
+discriminatorの`defaultMapping`を追加で扱います。streaming（`text/event-stream`、`itemSchema`の逐次処理）は対象外です。
 参照先が完全なOpenAPI文書の場合、その文書の`openapi`版と`jsonSchemaDialect`も確認します。
 入口文書とmajor.minor版が異なる参照先、および未対応dialectは位置付き診断で拒否します。
 版のpatch差と、`openapi`を持たない外部bare schemaは許可します。
@@ -126,7 +128,7 @@ root `servers`を省略するか空配列にした場合は`/`が既定値とな
 不正な絶対URL風・相対URL参照は位置付き`OACG100`、`variables`に宣言のない`{...}`は`OACG101`です。server URLのfragmentは操作pathとの結合前に除き、
 エンコード済みの`%23`はpath内に保持します。
 Response Objectの`contents`など未知項目も位置付き`OACG101`です。
-Parameter ObjectもOpenAPI 3.0／3.1の標準項目と`x-*`拡張を認識し、`requird`などの未知項目は
+Parameter ObjectもOpenAPI 3.0／3.1／3.2の標準項目と`x-*`拡張を認識し、`requird`などの未知項目は
 path直下・components・外部参照先を含めて位置付き`OACG101`です。
 path templateで対応しない`{`／`}`は、`/pets}`や`/pets/{id}}`を含めて位置付き`OACG100`です。
 header parameterの名前はASCIIのHTTP field-name tokenに限り、不正な名前は位置付き`OACG100`です。

@@ -29,7 +29,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 schema.UnionIsOneOf,
                 schema.Discriminator?.PropertyName,
                 members,
-                schema.Annotations);
+                schema.Annotations,
+                schema.Discriminator?.DefaultMemberIndex ?? -1);
         }
 
         private static string GetAccessorName(GeneratedTypeModel type)

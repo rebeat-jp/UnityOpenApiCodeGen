@@ -160,7 +160,7 @@ kind, status, redirect count, and bundle hash.
 
 ## Generated contract and diagnostics
 
-For supported OpenAPI 3.0.* and 3.1.* input, the generator emits public
+For supported OpenAPI 3.0.*, 3.1.* and 3.2.* input, the generator emits public
 mutable sealed Newtonsoft.Json DTOs, string enums with an exact wire-value converter,
 `List<T>` collections, an async `HttpClient` client, and
 `<ApiName>Exception`. Generated source is a regenerated public contract, not a
@@ -170,9 +170,12 @@ is documented in the [support matrix](Documentation~/SourceGenerators/OpenApiMvp
 For an optional schema-nullable DTO property, assignment marks the property as
 present: an assigned `null` writes JSON `null`, while an untouched property is
 omitted. Set the generated `<PropertyName>Specified` flag to `false` to omit it
-again. OpenAPI 3.1 supports the default or explicitly declared OAS base schema
+again. OpenAPI 3.1 and 3.2 support the default or explicitly declared OAS base schema
 dialect; unsupported dialects receive
-source-located diagnostics.
+source-located diagnostics. OpenAPI 3.2 additionally accepts the `query` method,
+`additionalOperations`, `in: querystring` parameters, `components.mediaTypes` and the
+discriminator `defaultMapping`; streaming (`text/event-stream`, incremental `itemSchema`)
+is not supported (see the support matrix).
 When a schema member's generated CLR name would be interpreted as another
 member's `Specified` flag by Json.NET, the generator assigns a unique CLR name
 and keeps its JSON property name.
@@ -282,7 +285,7 @@ response decides. Typed errors: `<ApiName>Exception` keeps `StatusCode` and `Res
 typed headers, data); a missing required header raises `JsonSerializationException`.
 HEAD responses and successful 204 or 205 responses cannot declare body content, including through
 a response reference (`OACG101`).
-Parameter Objects recognize standard OpenAPI 3.0/3.1 fields and `x-*` extensions.
+Parameter Objects recognize standard OpenAPI 3.0/3.1/3.2 fields and `x-*` extensions.
 Unknown fields such as `requird` receive positioned `OACG101`, including in
 path-level parameters, components, and external reference targets.
 Parameter, Request Body, and Response `$ref` siblings are checked: OpenAPI 3.1

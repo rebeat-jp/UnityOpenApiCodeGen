@@ -230,8 +230,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             bool isOneOf,
             string? discriminatorPropertyName,
             IReadOnlyList<GeneratedUnionMemberModel> members,
-            OpenApiSemanticAnnotations? annotations = null)
+            OpenApiSemanticAnnotations? annotations = null,
+            int defaultMemberIndex = -1)
         {
+            DefaultMemberIndex = defaultMemberIndex;
             Name = name;
             IsOneOf = isOneOf;
             DiscriminatorPropertyName = discriminatorPropertyName;
@@ -247,6 +249,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal string? DiscriminatorPropertyName { get; }
 
         internal IReadOnlyList<GeneratedUnionMemberModel> Members { get; }
+
+        /// <summary>Index of the discriminator defaultMapping member (OpenAPI 3.2); -1 when there is none.</summary>
+        internal int DefaultMemberIndex { get; }
 
         internal OpenApiSemanticAnnotations Annotations { get; }
     }
@@ -376,8 +381,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             bool allowReserved = false,
             string contentMediaType = "",
             string description = "",
-            bool deprecated = false)
+            bool deprecated = false,
+            IReadOnlyList<GeneratedFormFieldModel>? formFields = null)
         {
+            FormFields = formFields;
             Name = name;
             WireName = wireName;
             LocationName = locationName;
@@ -412,6 +419,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal string ContentMediaType { get; }
 
         internal bool IsContent => ContentMediaType.Length > 0;
+
+        /// <summary>The fields of an in: querystring application/x-www-form-urlencoded parameter; null otherwise.</summary>
+        internal IReadOnlyList<GeneratedFormFieldModel>? FormFields { get; }
 
         internal string Description { get; }
 

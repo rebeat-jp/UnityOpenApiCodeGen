@@ -222,8 +222,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             bool allowReserved = false,
             string contentMediaType = "",
             string description = "",
-            bool deprecated = false)
+            bool deprecated = false,
+            IReadOnlyDictionary<string, OpenApiSemanticEncoding>? encodings = null)
         {
+            Encodings = encodings;
             Name = name;
             LocationName = locationName;
             Required = required;
@@ -247,6 +249,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         /// <summary>Media type of the parameter content; empty when the parameter uses schema.</summary>
         internal string ContentMediaType { get; }
+
+        /// <summary>Encoding Objects of an in: querystring form-urlencoded content; null otherwise.</summary>
+        internal IReadOnlyDictionary<string, OpenApiSemanticEncoding>? Encodings { get; }
 
         internal string Description { get; }
 
@@ -542,15 +547,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
     {
         internal OpenApiSemanticDiscriminator(
             string propertyName,
-            IReadOnlyList<IReadOnlyList<string>> memberValues)
+            IReadOnlyList<IReadOnlyList<string>> memberValues,
+            int defaultMemberIndex = -1)
         {
             PropertyName = propertyName;
             MemberValues = memberValues;
+            DefaultMemberIndex = defaultMemberIndex;
         }
 
         internal string PropertyName { get; }
 
         internal IReadOnlyList<IReadOnlyList<string>> MemberValues { get; }
+
+        /// <summary>OpenAPI 3.2 defaultMapping: index of the member used when no mapping matches; -1 when absent.</summary>
+        internal int DefaultMemberIndex { get; }
     }
 
     internal sealed class OpenApiSemanticProperty

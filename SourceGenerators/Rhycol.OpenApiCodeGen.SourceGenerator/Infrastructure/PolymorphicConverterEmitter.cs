@@ -178,15 +178,24 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 .AppendLine(");");
             source.AppendLine("            }");
             source.Append("            var discriminator = objectToken[").Append(propertyLiteral).AppendLine("];");
-            source.AppendLine("            if (discriminator == null || discriminator.Type != global::Newtonsoft.Json.Linq.JTokenType.String)");
-            source.AppendLine("            {");
-            source.Append("                throw new global::Newtonsoft.Json.JsonSerializationException(")
-                .Append(GeneratedSourceEmitter.StringLiteral(
-                    "The discriminator property '" + union.DiscriminatorPropertyName + "' of " + name +
-                    " is missing or is not a string."))
-                .AppendLine(");");
-            source.AppendLine("            }");
-            source.AppendLine("            string discriminatorText = (string)discriminator!;");
+            if (union.DefaultMemberIndex >= 0)
+            {
+                // OpenAPI 3.2 defaultMapping: a missing, non-string or unmapped value selects the default member.
+                source.AppendLine("            string? discriminatorText = discriminator != null && discriminator.Type == global::Newtonsoft.Json.Linq.JTokenType.String ? (string?)discriminator : null;");
+            }
+            else
+            {
+                source.AppendLine("            if (discriminator == null || discriminator.Type != global::Newtonsoft.Json.Linq.JTokenType.String)");
+                source.AppendLine("            {");
+                source.Append("                throw new global::Newtonsoft.Json.JsonSerializationException(")
+                    .Append(GeneratedSourceEmitter.StringLiteral(
+                        "The discriminator property '" + union.DiscriminatorPropertyName + "' of " + name +
+                        " is missing or is not a string."))
+                    .AppendLine(");");
+                source.AppendLine("            }");
+                source.AppendLine("            string discriminatorText = (string)discriminator!;");
+            }
+
             source.AppendLine("            switch (discriminatorText)");
             source.AppendLine("            {");
             for (int index = 0; index < union.Members.Count; index++)
@@ -203,13 +212,24 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             source.AppendLine("                default:");
-            source.Append("                    throw new global::Newtonsoft.Json.JsonSerializationException(")
-                .Append(GeneratedSourceEmitter.StringLiteral(
-                    "The discriminator value '"))
-                .Append(" + discriminatorText + ")
-                .Append(GeneratedSourceEmitter.StringLiteral(
-                    "' of property '" + union.DiscriminatorPropertyName + "' does not select a schema of " + name + "."))
-                .AppendLine(");");
+            if (union.DefaultMemberIndex >= 0)
+            {
+                GeneratedUnionMemberModel defaultMember = union.Members[union.DefaultMemberIndex];
+                string defaultTypeName = GeneratedSourceEmitter.TypeName(defaultMember.Type.WithNullable(false));
+                source.Append("                    return ").Append(name).Append(".From").Append(defaultMember.AccessorName)
+                    .Append("(objectToken.ToObject<").Append(defaultTypeName).AppendLine(">(serializer)!);");
+            }
+            else
+            {
+                source.Append("                    throw new global::Newtonsoft.Json.JsonSerializationException(")
+                    .Append(GeneratedSourceEmitter.StringLiteral(
+                        "The discriminator value '"))
+                    .Append(" + discriminatorText + ")
+                    .Append(GeneratedSourceEmitter.StringLiteral(
+                        "' of property '" + union.DiscriminatorPropertyName + "' does not select a schema of " + name + "."))
+                    .AppendLine(");");
+            }
+
             source.AppendLine("            }");
             source.AppendLine("        }");
             source.AppendLine();

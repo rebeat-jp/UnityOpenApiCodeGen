@@ -156,49 +156,57 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             RequireKind(contentNode, SpecValueKind.Object, "The content field must be an object.");
             var parsed = new List<(OpenApiSemanticMediaContent Content, SpecNode Node)>();
             SpecNode? skippedWildcardJson = null;
-            foreach (SpecProperty mediaProperty in contentNode.EnumerateObject()
+            foreach (SpecProperty mediaEntry in contentNode.EnumerateObject()
                          .OrderBy(static value => value.Name, StringComparer.Ordinal))
             {
-                ParsedOpenApiMediaType mediaType = ParseMediaType(mediaProperty, allowWildcard: true);
-                RequireKind(mediaProperty.Value, SpecValueKind.Object, "Each media type entry must be an object.");
-                OpenApiSemanticContentKind kind = ClassifyMedia(mediaType);
-                bool wildcard = mediaType.Type.IndexOf('*') >= 0 || mediaType.Subtype.IndexOf('*') >= 0;
-                if (isRequest && kind == OpenApiSemanticContentKind.Json && wildcard)
+                (OpenApiSemanticMediaContent Content, SpecNode Node)? item =
+                    WithResolvedMediaType<(OpenApiSemanticMediaContent Content, SpecNode Node)?>(mediaEntry, mediaProperty =>
                 {
-                    skippedWildcardJson ??= mediaProperty.Value;
-                    continue;
-                }
+                    ParsedOpenApiMediaType mediaType = ParseMediaType(mediaProperty, allowWildcard: true);
+                    RequireKind(mediaProperty.Value, SpecValueKind.Object, "Each media type entry must be an object.");
+                    OpenApiSemanticContentKind kind = ClassifyMedia(mediaType);
+                    bool wildcard = mediaType.Type.IndexOf('*') >= 0 || mediaType.Subtype.IndexOf('*') >= 0;
+                    if (isRequest && kind == OpenApiSemanticContentKind.Json && wildcard)
+                    {
+                        skippedWildcardJson ??= mediaProperty.Value;
+                        return null;
+                    }
 
-                if (!isRequest &&
-                    (kind == OpenApiSemanticContentKind.FormUrlEncoded || kind == OpenApiSemanticContentKind.Multipart))
+                    if (!isRequest &&
+                        (kind == OpenApiSemanticContentKind.FormUrlEncoded || kind == OpenApiSemanticContentKind.Multipart))
+                    {
+                        throw Unsupported(
+                            mediaProperty.Value,
+                            "The response media type '" + mediaProperty.Name +
+                            "' is not supported: multipart and form-urlencoded bodies are request-only.");
+                    }
+
+                    if (isRequest && kind == OpenApiSemanticContentKind.Multipart &&
+                        !string.Equals(mediaType.Subtype, "form-data", StringComparison.Ordinal))
+                    {
+                        throw Unsupported(
+                            mediaProperty.Value,
+                            "Only multipart/form-data request bodies are supported: '" + mediaProperty.Name + "'.");
+                    }
+
+                    string? normalizedCharset = isRequest &&
+                                                (kind == OpenApiSemanticContentKind.Json ||
+                                                 kind == OpenApiSemanticContentKind.Text)
+                        ? GetSupportedRequestCharset(mediaType, mediaProperty.Value)
+                        : null;
+                    string normalized = mediaType.ToNormalizedString(normalizedCharset);
+                    OpenApiSemanticMediaContent content = ParseMediaContent(
+                        mediaProperty,
+                        normalized,
+                        kind,
+                        wildcard,
+                        suggestedName);
+                    return (content, mediaProperty.Value);
+                });
+                if (item.HasValue)
                 {
-                    throw Unsupported(
-                        mediaProperty.Value,
-                        "The response media type '" + mediaProperty.Name +
-                        "' is not supported: multipart and form-urlencoded bodies are request-only.");
+                    parsed.Add(item.Value);
                 }
-
-                if (isRequest && kind == OpenApiSemanticContentKind.Multipart &&
-                    !string.Equals(mediaType.Subtype, "form-data", StringComparison.Ordinal))
-                {
-                    throw Unsupported(
-                        mediaProperty.Value,
-                        "Only multipart/form-data request bodies are supported: '" + mediaProperty.Name + "'.");
-                }
-
-                string? normalizedCharset = isRequest &&
-                                            (kind == OpenApiSemanticContentKind.Json ||
-                                             kind == OpenApiSemanticContentKind.Text)
-                    ? GetSupportedRequestCharset(mediaType, mediaProperty.Value)
-                    : null;
-                string normalized = mediaType.ToNormalizedString(normalizedCharset);
-                OpenApiSemanticMediaContent content = ParseMediaContent(
-                    mediaProperty,
-                    normalized,
-                    kind,
-                    wildcard,
-                    suggestedName);
-                parsed.Add((content, mediaProperty.Value));
             }
 
             if (parsed.Count == 0)
@@ -293,6 +301,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string suggestedName)
         {
             SpecNode mediaNode = mediaProperty.Value;
+            AuditMediaTypeFields32(mediaProperty, normalizedMediaType, kind);
             SpecNode? schemaNode = GetProperty(mediaNode, "schema");
             OpenApiSemanticSchema schema;
             IReadOnlyDictionary<string, OpenApiSemanticEncoding> encodings = NoEncodings;
@@ -411,6 +420,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         field.Name == "explode" || field.Name == "allowReserved" ||
                         field.Name.StartsWith("x-", StringComparison.Ordinal))
                     {
+                        continue;
+                    }
+
+                    if (IsOpenApi32 &&
+                        (field.Name == "encoding" || field.Name == "prefixEncoding" || field.Name == "itemEncoding"))
+                    {
+                        AddIgnoredWarning(
+                            field.Value,
+                            "The Encoding Object field '" + field.Name +
+                            "' configures nested or sequential content and was ignored.");
                         continue;
                     }
 
@@ -795,7 +814,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             ValidateResponseProperties(node);
-            RequireString(RequireProperty(node, "description"), "The response description must be a string.");
+            if (IsOpenApi32)
+            {
+                // OpenAPI 3.2 made the response description optional and added summary.
+                foreach (string field in new[] { "description", "summary" })
+                {
+                    SpecNode? textNode = GetProperty(node, field);
+                    if (textNode is not null)
+                    {
+                        RequireString(textNode, "The response " + field + " must be a string.");
+                    }
+                }
+            }
+            else
+            {
+                RequireString(RequireProperty(node, "description"), "The response description must be a string.");
+            }
+
             IReadOnlyList<OpenApiSemanticHeader> headers = ParseResponseHeaders(GetProperty(node, "headers"));
             WarnIgnoredLinks(node);
             SpecNode? contentNode = GetProperty(node, "content");
@@ -836,50 +871,58 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// </summary>
         private IReadOnlyList<OpenApiSemanticMediaContent> ParseErrorContents(SpecNode contentNode, string suggestedName)
         {
-            foreach (SpecProperty mediaProperty in contentNode.EnumerateObject()
+            foreach (SpecProperty mediaEntry in contentNode.EnumerateObject()
                          .OrderBy(static value => value.Name, StringComparer.Ordinal))
             {
-                ParsedOpenApiMediaType mediaType = ParseMediaType(mediaProperty, allowWildcard: true);
-                if (!mediaType.IsJson || GetProperty(mediaProperty.Value, "schema") is not SpecNode schemaNode)
+                OpenApiSemanticMediaContent? errorContent = WithResolvedMediaType<OpenApiSemanticMediaContent?>(
+                    mediaEntry,
+                    mediaProperty => ParseErrorMediaContent(mediaProperty, suggestedName));
+                if (errorContent is not null)
                 {
-                    continue;
+                    return new[] { errorContent };
                 }
-
-                OpenApiSemanticSchema schema;
-                try
-                {
-                    schema = ParseSchema(schemaNode, suggestedName, new HashSet<NormalizedSpecNodeIdentity>());
-                }
-                catch (OpenApiSemanticException exception)
-                {
-                    AddIgnoredWarning(
-                        schemaNode,
-                        "The error response schema cannot be generated (" + exception.Message +
-                        "); the error body is available as text only (ResponseBody).");
-                    continue;
-                }
-
-                if (FindBinarySchema(schema, new HashSet<NormalizedSpecNodeIdentity>()) is not null)
-                {
-                    AddIgnoredWarning(
-                        schemaNode,
-                        "The error response schema contains a binary (format: binary) value; the error body is available as a string only.");
-                    continue;
-                }
-
-                return new[]
-                {
-                    new OpenApiSemanticMediaContent(
-                        mediaType.ToNormalizedString(),
-                        OpenApiSemanticContentKind.Json,
-                        schema,
-                        NoEncodings,
-                        mediaType.Subtype.IndexOf('*') >= 0,
-                        CreateLocation(mediaProperty.Value))
-                };
             }
 
             return Array.Empty<OpenApiSemanticMediaContent>();
+        }
+
+        private OpenApiSemanticMediaContent? ParseErrorMediaContent(SpecProperty mediaProperty, string suggestedName)
+        {
+            ParsedOpenApiMediaType mediaType = ParseMediaType(mediaProperty, allowWildcard: true);
+            if (!mediaType.IsJson || GetProperty(mediaProperty.Value, "schema") is not SpecNode schemaNode)
+            {
+                return null;
+            }
+
+            OpenApiSemanticSchema schema;
+            try
+            {
+                schema = ParseSchema(schemaNode, suggestedName, new HashSet<NormalizedSpecNodeIdentity>());
+            }
+            catch (OpenApiSemanticException exception)
+            {
+                AddIgnoredWarning(
+                    schemaNode,
+                    "The error response schema cannot be generated (" + exception.Message +
+                    "); the error body is available as text only (ResponseBody).");
+                return null;
+            }
+
+            if (FindBinarySchema(schema, new HashSet<NormalizedSpecNodeIdentity>()) is not null)
+            {
+                AddIgnoredWarning(
+                    schemaNode,
+                    "The error response schema contains a binary (format: binary) value; the error body is available as a string only.");
+                return null;
+            }
+
+            return new OpenApiSemanticMediaContent(
+                mediaType.ToNormalizedString(),
+                OpenApiSemanticContentKind.Json,
+                schema,
+                NoEncodings,
+                mediaType.Subtype.IndexOf('*') >= 0,
+                CreateLocation(mediaProperty.Value));
         }
 
         // ---- binary --------------------------------------------------------------------------------

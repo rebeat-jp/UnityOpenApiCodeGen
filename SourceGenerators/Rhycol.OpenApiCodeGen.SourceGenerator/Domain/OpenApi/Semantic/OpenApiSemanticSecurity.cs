@@ -19,8 +19,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string name,
             string authorizationUrl,
             string tokenUrl,
-            IReadOnlyList<KeyValuePair<string, string>> scopes)
+            IReadOnlyList<KeyValuePair<string, string>> scopes,
+            string deviceAuthorizationUrl = "")
         {
+            DeviceAuthorizationUrl = deviceAuthorizationUrl ?? string.Empty;
             Name = name;
             AuthorizationUrl = authorizationUrl ?? string.Empty;
             TokenUrl = tokenUrl ?? string.Empty;
@@ -32,6 +34,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal string AuthorizationUrl { get; }
 
         internal string TokenUrl { get; }
+
+        /// <summary>OpenAPI 3.2 deviceAuthorization flow: the device authorization endpoint (documentation only).</summary>
+        internal string DeviceAuthorizationUrl { get; }
 
         internal IReadOnlyList<KeyValuePair<string, string>> Scopes { get; }
     }
@@ -49,8 +54,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string httpScheme = "",
             string bearerFormat = "",
             IReadOnlyList<OpenApiSemanticOAuthFlow>? flows = null,
-            string openIdConnectUrl = "")
+            string openIdConnectUrl = "",
+            string oauth2MetadataUrl = "")
         {
+            OAuth2MetadataUrl = oauth2MetadataUrl ?? string.Empty;
             Key = key;
             Type = type;
             Description = description ?? string.Empty;
@@ -85,6 +92,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal IReadOnlyList<OpenApiSemanticOAuthFlow> Flows { get; }
 
         internal string OpenIdConnectUrl { get; }
+
+        /// <summary>OpenAPI 3.2 oauth2MetadataUrl (RFC 8414 metadata; documentation only, never contacted).</summary>
+        internal string OAuth2MetadataUrl { get; }
     }
 
     /// <summary>One scheme use inside a requirement, with its scopes (documentation only).</summary>

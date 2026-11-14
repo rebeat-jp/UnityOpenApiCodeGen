@@ -14,7 +14,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
     /// large share of real specs and their output must not change). Everything else goes through
     /// one generated static helper, so the generated client stays small.
     /// </summary>
-    internal sealed class HttpClientParameterSerializationEmitter
+    internal sealed partial class HttpClientParameterSerializationEmitter
     {
         private const int KindScalar = 0;
         private const int KindArray = 1;
