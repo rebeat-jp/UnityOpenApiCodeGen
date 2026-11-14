@@ -1,4 +1,4 @@
-# OpenAPI MVP 対応表
+# OpenAPI 対応表
 
 [元の対応表](OpenApiMvpSupportMatrix.md)
 
@@ -12,22 +12,23 @@ GitHub Actionsや外部仕様へのリンクを開く場合はネット接続が
 ## 目的と対象読者
 
 この文書は、`Rhycol.OpenApiCodeGen.SourceGenerator`で生成できるOpenAPI documentの
-MVP範囲を、API仕様の作成者とUnity利用者が判断するためのmatrixです。
+対応範囲を、API仕様の作成者とUnity利用者が判断するためのmatrixです。
 対象はSource Generator providerで選択したlocal `.json`、`.yaml`、`.yml`
-document（extension case-insensitive）とHTTP(S) URLです。Editorは参照グラフ全体を
+document（extension case-insensitive）とHTTP(S) URLです。documentの版はSwagger 2.0（`swagger: "2.0"`）とOpenAPI 3.0／3.1／3.2です。Editorは参照グラフ全体を
 canonical Normalized Spec Bundle v2へ正規化し、Analyzerは1 specIdにつき1 AdditionalFile
 だけを読みます。Bundle v1はAnalyzerの後方互換入力として読み込めます。
 
 生成器は、wire formatに影響する未対応要素を黙って省略または推測しません。
 Unsupportedに分類された要素と、Partialの制約外へ出た要素は診断を報告し、生成を完了しません。
-入力・bundle・definitionの既存診断`OACG001`–`OACG009`に加え、semantic generationでは
-`OACG100`–`OACG106`を使用します。型名の重複をsuffixで解消した場合はwarning `OACG107`を、無視した要素があればwarning `OACG108`を報告します。
+入力・bundle・definitionの診断`OACG001`–`OACG009`に加え、semantic generationではError `OACG100`–`OACG106`を使用します。型名の重複をsuffixで解消した場合はWarning `OACG107`を報告します。
+意図して無視する要素（webhooksなどclientの呼び出しに無関係なもの、仕様上無視すべきheader parameterなど）は、wire contractを変えないWarning `OACG108`で報告します。
+診断IDごとの報告場面は「診断」、ギャップ別の最終状況と対象外の項目は「ギャップ別の最終状況」「対象外の項目」の節にまとめています。
 
 | 対応状況 | 意味 |
 | --- | --- |
 | 対応 | 記載した条件で生成・実行対象です。 |
 | 一部対応 | 記載した部分だけを生成します。条件外は診断となります。 |
-| 非対応 | MVPの対象外です。診断となります。 |
+| 非対応 | 対象外です。診断となります。 |
 
 ## 入力と参照
 
@@ -198,48 +199,6 @@ YAMLの診断IDは次のとおりです。
 
 status codeはASCII数字で検証します。属性付きのジェネリックclassは`OACG005`で拒否します。
 
-## OpenAPI 3.2
-
-OpenAPI 3.2のdocument（`openapi: 3.2.*`）は、3.1と同じJSON Schema 2020-12 dialectとschema規則で処理します。3.2だけの項目は3.0／3.1では従来どおり診断になります（`query`は`OACG101`など）。
-
-| 項目 | 対応状況 | 条件・制約 |
-| --- | --- | --- |
-| Path Itemの`query` | 対応 | 安全なmethodで本文を持ちます。`new HttpMethod("QUERY")`で送り、requestBody・parameter・responseは他のoperationと同じです。`operationId`の省略時は`GET`などと同じ規則で命名します（`QueryPetsSearch`）。3.0／3.1の`query`は位置付き`OACG101`です。 |
-| Path Itemの`additionalOperations` | 対応 | method名（HTTP token）からOperationへのmapで、各entryにクライアントメソッドを生成し、methodは**書かれたとおりの表記**（大小文字を含む）で送ります。tokenがHTTP tokenでない場合、`GET`・`PUT`・`POST`・`DELETE`・`OPTIONS`・`HEAD`・`PATCH`・`TRACE`・`QUERY`（大小文字を区別せず比較）と重複する場合は、そのentryの位置で`OACG100`です。`operationId`がなければ、method token（英数字だけを残し、先頭だけ大文字）とpathから決定的に命名し（`PURGE /pets`は`PurgePets`）、entryはtokenの序数順に処理します。名前の衝突は既存の`operationId`の一意化（連番）に従い、明示した`operationId`の重複は`OACG106`です。 |
-| `in: querystring` parameter | 一部対応 | `content`が**クエリ文字列全体**を表します（`schema`との併記は`OACG100`、`content`は1つのmedia type）。`application/x-www-form-urlencoded`はobject schemaで、各propertyをform-urlencoded本文と同じ規則（`encoding`の`style`／`explode`／`allowReserved`）で直列化し`?`の後ろに付けます。具体的なJSON media typeは、JSON textをpercent-encodeしたものがクエリ文字列です。それ以外のmedia typeは`OACG101`です。1つのoperationに複数の`in: querystring`、または`in: query`との併記は、`OACG105`です。media typeは`components.mediaTypes`への`$ref`でも宣言できます。 |
-| tagsの`parent`／`kind`／`summary` | 対応 | ドキュメント専用で、生成コードは変わりません。形式（文字列）と、`parent`が宣言済みのtagを指し循環しないことだけを検証します（違反は`OACG100`）。tag名の重複も`OACG100`ですが、これは3.2だけの検査で、3.0／3.1では検査しません。 |
-| root `$self` | 一部対応 | 受理します。形式は文字列で、fragmentを持てません（違反は`OACG100`）。内部の`$ref`は基準URIに依存しません。他のdocumentへの相対`$ref`は、`$self`ではなくdocumentファイルの位置を基準に解決するため、参照先のdocumentがある場合（Bundleが複数documentのとき）だけ`$self`の位置で`OACG108`を報告します。 |
-| media typeの`itemSchema` | 一部対応 | streaming（SSEと逐次処理）は対象外です。`text/event-stream`に`itemSchema`があれば`OACG101`、順次media type以外（`application/json`など）の`itemSchema`も`OACG101`です。`application/jsonl`・`application/x-ndjson`・`application/ndjson`・`application/json-seq`・`application/geo+json-seq`の`itemSchema`は解釈せず`OACG108`で通知し、本文は従来どおり`byte[]`（binary）です（itemごとの読み取りは行いません）。`itemSchema`は解析しないため、その中の`$ref`はEditorも収集せず、DTOも生成しません。Media Type Objectで`encoding`と`prefixEncoding`／`itemEncoding`を併記すると`OACG100`です（仕様上の禁止）。単独の`prefixEncoding`／`itemEncoding`（Media Type Object）と、Encoding Objectの入れ子の`encoding`／`prefixEncoding`／`itemEncoding`は`OACG108`で無視します。`itemSchema`は3.0／3.1では従来どおり未知の項目として無視します。 |
-| discriminatorの`defaultMapping` | 対応 | discriminatorの値がmappingのどれにも一致しない、またはdiscriminatorの項目がない・文字列でないときに使うメンバーです。値はスキーマ名または参照で、`oneOf`／`anyOf`のメンバー（継承形のbaseでは子または参照先のschema）でなければ`OACG101`です。変換器は該当するJSON objectをそのメンバー型へ読みます（応答の契約検査も同じ。メンバー自身のschemaに合わない本文は従来どおり拒否します）。指定がなければ、従来どおり未知の値は`JsonSerializationException`です。書き出す値はそのメンバーの最初のdiscriminator値で、読んだ未知の値は保持しません。3.0／3.1では従来どおり無視します。 |
-| `components.mediaTypes` | 一部対応 | `content`の各media typeを`$ref: '#/components/mediaTypes/<name>'`で参照できます（requestBody・成功／エラーresponse・`in: querystring`のcontent。他のdocumentの`<file>#/components/mediaTypes/<name>`も可）。componentはobjectと、あればそのschemaを検証し、参照元の`content`のキーがmedia typeを決めます。通常のparameterの`content`からの`$ref`は`OACG101`です。3.0／3.1の`components.mediaTypes`は`OACG101`です。 |
-| `oauth2`の`deviceAuthorization` flowと`oauth2MetadataUrl` | 一部対応 | 受理し、URL・scopesをXML docに出すだけです（`deviceAuthorizationUrl`と`tokenUrl`が必須、なければ`OACG100`）。tokenの取得・更新とmetadataの取得は行わず、外から渡されたtokenをBearerで送ります。security schemeの`deprecated`は形式だけ検証します。3.0／3.1の`deviceAuthorization`は未知のflowとして`OACG100`です。 |
-| Responseの`summary`と省略可能な`description` | 対応 | 3.2ではResponseの`summary`を受理し（ドキュメント専用）、`description`を省略できます。3.0／3.1の`summary`は`OACG101`、`description`の省略は`OACG100`です。 |
-| その他の3.2の項目 | 対応 | Serverの`name`、Exampleの`dataValue`／`serializedValue`、XML Objectの`nodeType`、Tag Objectの`summary`は、ドキュメント専用として黙って受理します。 |
-
-## Swagger 2.0
-
-Swagger 2.0のdocument（`swagger: "2.0"`）は、意味解析の前にOpenAPI 3.0（`3.0.3`）の等価なtreeへ正規化してから、3.0と同じ処理（parser、生成model、出力、診断、実行時検証）に渡します。専用の生成器はなく、生成されるクライアントは、同じ内容を手で書いたOpenAPI 3.0 documentのものと一致します。YAMLのSwagger 2.0も同じです。`openapi`と`swagger`を併記したdocument、`"2.0"`以外の`swagger`の値（`"1.2"`、数値の`2.0`など）は、`swagger`の位置で`OACG101`です。
-
-| 項目 | 対応状況 | 条件・制約 |
-| --- | --- | --- |
-| `host`・`basePath`・`schemes` | 一部対応 | `servers`になります。`schemes`の各値が1つのserverで、`https://<host><basePath>`の形です（`schemes`の順序が`servers`の順序です）。`schemes`がなければ`https`、`basePath`が`/`または省略なら末尾の`/`なし、`basePath`の末尾の`/`は除きます。`host`がなければ相対serverで、`basePath`（なければ`/`）だけです（`schemes`は使いません）。`host`も`basePath`も`schemes`もなければ`servers`は付けません。operationの`schemes`は、`host`があればそのoperationのserversになります（`host`がなければ相対serverに適用できないため、`schemes`の位置で`OACG108`を報告して無視します）。`ws`／`wss`は他の非HTTP(S) serverと同じく診断です。 |
-| `definitions`・`parameters`・`responses`・`securityDefinitions` | 対応 | それぞれ`components.schemas`・`components.parameters`・`components.responses`・`components.securitySchemes`になります。`parameters`のうち`in: body`／`in: formData`は、使う側のoperationの`requestBody`になるため、componentにはなりません（使われないbody／formDataのparameterは検証しません）。 |
-| `$ref` | 対応 | `#/definitions/X`は`#/components/schemas/X`、`#/parameters/X`は`#/components/parameters/X`、`#/responses/X`は`#/components/responses/X`に書き換えます。外部の`file.json#/definitions/X`も同じです（Editorは3.0と同じ規則で参照先のdocumentを集めます）。`#/definitions/`以外（schema）、`#/parameters/`・`#/responses/`以外（それぞれのparameter・response）を指す`$ref`、Path Itemの`$ref`は`OACG101`です。`$ref`の兄弟項目は3.0の規則（`description`、`x-nullable`→`nullable`など）に従います。 |
-| 複数document（Swagger 2.0同士） | 一部対応 | Swagger 2.0のdocumentからSwagger 2.0のdocumentの`definitions`・`parameters`・`responses`を参照できます。参照先がOpenAPI 3.xのdocument、`openapi`も`swagger`も持たないbare schemaのfile、また3.xのdocumentからSwagger 2.0のdocumentへの参照は、参照の位置で`OACG101`です（版を混ぜられません）。他のdocumentのbody／formData parameterを`$ref`で使うことも`OACG101`です。 |
-| `in: body` parameter | 対応 | `requestBody`になります。media typeはoperationの`consumes`、なければdocumentの`consumes`、なければ`application/json`で、列挙した各media typeに同じschemaを付けます。`description`・`required`は`requestBody`へ移ります。`consumes`にxmlがJSONと併記されている場合はxmlを`OACG108`で無視します（上の`produces`の行と同じ）。`schema`がない、またはbodyが複数なら`OACG100`、`in: formData`との併記も`OACG100`です。path itemのbody parameterは、operationの同名・同`in`のparameterで置き換わります。 |
-| `in: formData` parameter | 対応 | 1つのobject schemaの`requestBody`になります（各parameterがproperty、`required: true`のものが`required`、`description`はpropertyのdescription、`type: file`は`type: string`／`format: binary`、`additionalProperties: false`）。`type: file`のparameterがあれば`multipart/form-data`、なければ`consumes`が挙げる`multipart/form-data`／`application/x-www-form-urlencoded`（両方なら両方）、どちらもなければ`application/x-www-form-urlencoded`です。url-encodedで配列のparameterは`collectionFormat`を`encoding`の`style`／`explode`に写します（下表の`query`と同じ。省略時の`csv`も含みます）。multipartの配列は要素ごとにpartを繰り返し、`collectionFormat`は使いません。parameter名の重複は`OACG100`です。 |
-| 非body parameter | 対応 | `type`・`format`・`items`・`enum`・`default`・`minimum`／`maximum`／`exclusiveMinimum`／`exclusiveMaximum`・`minLength`／`maxLength`・`pattern`・`minItems`／`maxItems`・`uniqueItems`・`multipleOf`は`schema`へ移ります（`x-nullable: true`は`nullable: true`）。`name`・`in`・`description`・`required`・`allowEmptyValue`・`x-*`はそのままです。`type`がない、`type: file`（formData以外）、`in`が`query`／`header`／`path`／`formData`／`body`以外（`cookie`を含みます）は`OACG100`です。path itemのparameterはpath itemに残り、3.0と同じくoperationのparameterが同名・同`in`のものを置き換えます。 |
-| `collectionFormat` | 一部対応 | 配列parameterだけに効きます（省略時は`csv`）。`query`は、`csv`→`style: form`＋`explode: false`、`ssv`→`spaceDelimited`、`pipes`→`pipeDelimited`、`multi`→`explode: true`（`form`の既定）です。`path`・`header`は`csv`（`simple`、既定）だけで、他の値は`OACG101`です。`tsv`は3.0に相当する表現がなく、どこでも`OACG101`です（`collectionFormat`の位置）。`items`の入れ子の`collectionFormat`は`csv`以外が`OACG101`です。 |
-| `produces`と応答 | 対応 | responseの`schema`は、operationの`produces`、なければdocumentの`produces`の各media typeの`content`へ付きます（なければ`application/json`、`type: file`なら`application/octet-stream`）。`schema`のないresponseは`content`を持ちません。`components.responses`はdocumentの`produces`だけを使います（operationごとの`produces`は参照元で変えられません）。`examples`（media typeごとの例）はドキュメント専用なので黙って捨てます。`produces`／`consumes`に`application/xml`とJSONが併記され、schemaがobject・arrayの場合、xmlの項目は`OACG108`で無視してJSONで生成します（位置は`in: body`ならそのparameter、応答なら`schema`です。xmlだけなら`OACG101`です）。 |
-| 応答の`type: file` | 対応 | `type: string`／`format: binary`になり、3.0と同じく`byte[]`で受け取ります。 |
-| 応答の`headers` | 対応 | Header Objectになり、`type`・`format`・`items`・`enum`などは`schema`へ移ります。`description`は残ります。配列の`collectionFormat`は`csv`だけです。 |
-| `securityDefinitions` | 対応 | `basic`→`type: http`＋`scheme: basic`、`apiKey`→そのまま、`oauth2`→`flows`です。flowは`implicit`→`implicit`、`password`→`password`、`application`→`clientCredentials`、`accessCode`→`authorizationCode`で、`authorizationUrl`・`tokenUrl`・`scopes`（なければ空）を移します。未知のflowは`OACG100`、上記以外の`type`は`OACG101`です。`security`（document・operation）は3.0と同じで、資格情報の扱いは「Security」の節に従います。 |
-| schemaの項目 | 対応 | `x-nullable: true`→`nullable: true`（真偽値以外は`OACG100`）、文字列の`discriminator`→`{ propertyName }`（継承形のbaseとして扱います）、`type: file`→`type: string`／`format: binary`です。`allOf`・`readOnly`・`example`・`xml`・`externalDocs`・制約キーワード・`x-*`はそのまま3.0のschemaとして処理します。 |
-| document直下の`info`・`tags`・`externalDocs`・`x-*` | 対応 | 3.0にも同じ項目があるため、そのまま受理します（ドキュメント専用で、診断はありません）。`x-ms-*`などのベンダー拡張も他の`x-*`と同じく黙って無視します（`x-ms-paths`のようにpathを増やす拡張は解釈しません）。それ以外の未知の項目は、3.0と同じく、項目を知っているobjectで診断になります。 |
-| 診断の位置 | 対応 | 正規化したtreeの各nodeは、元のSwagger 2.0 nodeの行・桁・logical pathを持ちます。診断（`OACG100`／`OACG101`／`OACG102`／`OACG108`など）は、書いたSwagger 2.0の位置を指します。例: `definitions`のschemaの誤りは`/definitions/X/...`、formData parameterの誤りは`/paths/~1p/post/parameters/N`、body parameterのschemaは`/paths/~1p/post/parameters/N/schema/...`、応答のschemaは`/paths/~1p/get/responses/200/schema`です。複数のmedia typeへ複製したschemaは、どれも同じ元のnodeを指します。formData parameterをまとめたobject schema・`requestBody`の誤りは、最初のformData parameterの位置です。 |
-| `OACG101`の対象 | 一部対応 | 3.0に相当する表現がないものは、黙って落とさず`OACG101`です: `collectionFormat: tsv`、`path`／`header`の`csv`以外の`collectionFormat`、Path Itemの`$ref`、`#/definitions/`・`#/parameters/`・`#/responses/`以外を指す`$ref`、複数documentの版の混在、他documentのbody／formData parameterの参照、`oauth2`・`basic`・`apiKey`以外の`securityDefinitions`のtype。 |
-| 既存の別の生成器 | 対応 | `GenerationService.GenerateFromApiDocument`が使う、Phase 3以前の別のSwagger用の生成器（`SwaggerCSharpClientFileGenerator`）は、そのまま残しています。Source Generatorの入口（`ApiClientCodeGenerator`）は使わず、Swagger 2.0は常にこの節の正規化とPhase 4のpipelineを通ります。 |
-
 ## Security
 
 | 項目 | 対応状況 | 条件・制約 |
@@ -301,6 +260,113 @@ OpenAPI 3.0では既存互換として`nullable`も扱います。
 リクエストJSONの`format: date`は`yyyy-MM-dd`へ変換します。公開型の`DateTime`は維持し、
 `date-time`の`DateTimeOffset`にはdate用converterを適用しません。
 
+## OpenAPI 3.2
+
+OpenAPI 3.2のdocument（`openapi: 3.2.*`）は、3.1と同じJSON Schema 2020-12 dialectとschema規則で処理します。3.2だけの項目は3.0／3.1では従来どおり診断になります（`query`は`OACG101`など）。
+
+| 項目 | 対応状況 | 条件・制約 |
+| --- | --- | --- |
+| Path Itemの`query` | 対応 | 安全なmethodで本文を持ちます。`new HttpMethod("QUERY")`で送り、requestBody・parameter・responseは他のoperationと同じです。`operationId`の省略時は`GET`などと同じ規則で命名します（`QueryPetsSearch`）。3.0／3.1の`query`は位置付き`OACG101`です。 |
+| Path Itemの`additionalOperations` | 対応 | method名（HTTP token）からOperationへのmapで、各entryにクライアントメソッドを生成し、methodは**書かれたとおりの表記**（大小文字を含む）で送ります。tokenがHTTP tokenでない場合、`GET`・`PUT`・`POST`・`DELETE`・`OPTIONS`・`HEAD`・`PATCH`・`TRACE`・`QUERY`（大小文字を区別せず比較）と重複する場合は、そのentryの位置で`OACG100`です。`operationId`がなければ、method token（英数字だけを残し、先頭だけ大文字）とpathから決定的に命名し（`PURGE /pets`は`PurgePets`）、entryはtokenの序数順に処理します。名前の衝突は既存の`operationId`の一意化（連番）に従い、明示した`operationId`の重複は`OACG106`です。 |
+| `in: querystring` parameter | 一部対応 | `content`が**クエリ文字列全体**を表します（`schema`との併記は`OACG100`、`content`は1つのmedia type）。`application/x-www-form-urlencoded`はobject schemaで、各propertyをform-urlencoded本文と同じ規則（`encoding`の`style`／`explode`／`allowReserved`）で直列化し`?`の後ろに付けます。具体的なJSON media typeは、JSON textをpercent-encodeしたものがクエリ文字列です。それ以外のmedia typeは`OACG101`です。1つのoperationに複数の`in: querystring`、または`in: query`との併記は、`OACG105`です。media typeは`components.mediaTypes`への`$ref`でも宣言できます。 |
+| tagsの`parent`／`kind`／`summary` | 対応 | ドキュメント専用で、生成コードは変わりません。形式（文字列）と、`parent`が宣言済みのtagを指し循環しないことだけを検証します（違反は`OACG100`）。tag名の重複も`OACG100`ですが、これは3.2だけの検査で、3.0／3.1では検査しません。 |
+| root `$self` | 一部対応 | 受理します。形式は文字列で、fragmentを持てません（違反は`OACG100`）。内部の`$ref`は基準URIに依存しません。他のdocumentへの相対`$ref`は、`$self`ではなくdocumentファイルの位置を基準に解決するため、参照先のdocumentがある場合（Bundleが複数documentのとき）だけ`$self`の位置で`OACG108`を報告します。 |
+| media typeの`itemSchema` | 一部対応 | streaming（SSEと逐次処理）は対象外です。`text/event-stream`に`itemSchema`があれば`OACG101`、順次media type以外（`application/json`など）の`itemSchema`も`OACG101`です。`application/jsonl`・`application/x-ndjson`・`application/ndjson`・`application/json-seq`・`application/geo+json-seq`の`itemSchema`は解釈せず`OACG108`で通知し、本文は従来どおり`byte[]`（binary）です（itemごとの読み取りは行いません）。`itemSchema`は解析しないため、その中の`$ref`はEditorも収集せず、DTOも生成しません。Media Type Objectで`encoding`と`prefixEncoding`／`itemEncoding`を併記すると`OACG100`です（仕様上の禁止）。単独の`prefixEncoding`／`itemEncoding`（Media Type Object）と、Encoding Objectの入れ子の`encoding`／`prefixEncoding`／`itemEncoding`は`OACG108`で無視します。`itemSchema`は3.0／3.1では従来どおり未知の項目として無視します。 |
+| discriminatorの`defaultMapping` | 対応 | discriminatorの値がmappingのどれにも一致しない、またはdiscriminatorの項目がない・文字列でないときに使うメンバーです。値はスキーマ名または参照で、`oneOf`／`anyOf`のメンバー（継承形のbaseでは子または参照先のschema）でなければ`OACG101`です。変換器は該当するJSON objectをそのメンバー型へ読みます（応答の契約検査も同じ。メンバー自身のschemaに合わない本文は従来どおり拒否します）。指定がなければ、従来どおり未知の値は`JsonSerializationException`です。書き出す値はそのメンバーの最初のdiscriminator値で、読んだ未知の値は保持しません。3.0／3.1では従来どおり無視します。 |
+| `components.mediaTypes` | 一部対応 | `content`の各media typeを`$ref: '#/components/mediaTypes/<name>'`で参照できます（requestBody・成功／エラーresponse・`in: querystring`のcontent。他のdocumentの`<file>#/components/mediaTypes/<name>`も可）。componentはobjectと、あればそのschemaを検証し、参照元の`content`のキーがmedia typeを決めます。通常のparameterの`content`からの`$ref`は`OACG101`です。3.0／3.1の`components.mediaTypes`は`OACG101`です。 |
+| `oauth2`の`deviceAuthorization` flowと`oauth2MetadataUrl` | 一部対応 | 受理し、URL・scopesをXML docに出すだけです（`deviceAuthorizationUrl`と`tokenUrl`が必須、なければ`OACG100`）。tokenの取得・更新とmetadataの取得は行わず、外から渡されたtokenをBearerで送ります。security schemeの`deprecated`は形式だけ検証します。3.0／3.1の`deviceAuthorization`は未知のflowとして`OACG100`です。 |
+| Responseの`summary`と省略可能な`description` | 対応 | 3.2ではResponseの`summary`を受理し（ドキュメント専用）、`description`を省略できます。3.0／3.1の`summary`は`OACG101`、`description`の省略は`OACG100`です。 |
+| その他の3.2の項目 | 対応 | Serverの`name`、Exampleの`dataValue`／`serializedValue`、XML Objectの`nodeType`、Tag Objectの`summary`は、ドキュメント専用として黙って受理します。 |
+
+## Swagger 2.0
+
+Swagger 2.0のdocument（`swagger: "2.0"`）は、意味解析の前にOpenAPI 3.0（`3.0.3`）の等価なtreeへ正規化してから、3.0と同じ処理（parser、生成model、出力、診断、実行時検証）に渡します。専用の生成器はなく、生成されるクライアントは、同じ内容を手で書いたOpenAPI 3.0 documentのものと一致します。YAMLのSwagger 2.0も同じです。`openapi`と`swagger`を併記したdocument、`"2.0"`以外の`swagger`の値（`"1.2"`、数値の`2.0`など）は、`swagger`の位置で`OACG101`です。
+
+| 項目 | 対応状況 | 条件・制約 |
+| --- | --- | --- |
+| `host`・`basePath`・`schemes` | 一部対応 | `servers`になります。`schemes`の各値が1つのserverで、`https://<host><basePath>`の形です（`schemes`の順序が`servers`の順序です）。`schemes`がなければ`https`、`basePath`が`/`または省略なら末尾の`/`なし、`basePath`の末尾の`/`は除きます。`host`がなければ相対serverで、`basePath`（なければ`/`）だけです（`schemes`は使いません）。`host`も`basePath`も`schemes`もなければ`servers`は付けません。operationの`schemes`は、`host`があればそのoperationのserversになります（`host`がなければ相対serverに適用できないため、`schemes`の位置で`OACG108`を報告して無視します）。`ws`／`wss`は他の非HTTP(S) serverと同じく診断です。 |
+| `definitions`・`parameters`・`responses`・`securityDefinitions` | 対応 | それぞれ`components.schemas`・`components.parameters`・`components.responses`・`components.securitySchemes`になります。`parameters`のうち`in: body`／`in: formData`は、使う側のoperationの`requestBody`になるため、componentにはなりません（使われないbody／formDataのparameterは検証しません）。 |
+| `$ref` | 対応 | `#/definitions/X`は`#/components/schemas/X`、`#/parameters/X`は`#/components/parameters/X`、`#/responses/X`は`#/components/responses/X`に書き換えます。外部の`file.json#/definitions/X`も同じです（Editorは3.0と同じ規則で参照先のdocumentを集めます）。`#/definitions/`以外（schema）、`#/parameters/`・`#/responses/`以外（それぞれのparameter・response）を指す`$ref`、Path Itemの`$ref`は`OACG101`です。`$ref`の兄弟項目は3.0の規則（`description`、`x-nullable`→`nullable`など）に従います。 |
+| 複数document（Swagger 2.0同士） | 一部対応 | Swagger 2.0のdocumentからSwagger 2.0のdocumentの`definitions`・`parameters`・`responses`を参照できます。参照先がOpenAPI 3.xのdocument、`openapi`も`swagger`も持たないbare schemaのfile、また3.xのdocumentからSwagger 2.0のdocumentへの参照は、参照の位置で`OACG101`です（版を混ぜられません）。他のdocumentのbody／formData parameterを`$ref`で使うことも`OACG101`です。 |
+| `in: body` parameter | 対応 | `requestBody`になります。media typeはoperationの`consumes`、なければdocumentの`consumes`、なければ`application/json`で、列挙した各media typeに同じschemaを付けます。`description`・`required`は`requestBody`へ移ります。`consumes`にxmlがJSONと併記されている場合はxmlを`OACG108`で無視します（上の`produces`の行と同じ）。`schema`がない、またはbodyが複数なら`OACG100`、`in: formData`との併記も`OACG100`です。path itemのbody parameterは、operationの同名・同`in`のparameterで置き換わります。 |
+| `in: formData` parameter | 対応 | 1つのobject schemaの`requestBody`になります（各parameterがproperty、`required: true`のものが`required`、`description`はpropertyのdescription、`type: file`は`type: string`／`format: binary`、`additionalProperties: false`）。`type: file`のparameterがあれば`multipart/form-data`、なければ`consumes`が挙げる`multipart/form-data`／`application/x-www-form-urlencoded`（両方なら両方）、どちらもなければ`application/x-www-form-urlencoded`です。url-encodedで配列のparameterは`collectionFormat`を`encoding`の`style`／`explode`に写します（下表の`query`と同じ。省略時の`csv`も含みます）。multipartの配列は要素ごとにpartを繰り返し、`collectionFormat`は使いません。parameter名の重複は`OACG100`です。 |
+| 非body parameter | 対応 | `type`・`format`・`items`・`enum`・`default`・`minimum`／`maximum`／`exclusiveMinimum`／`exclusiveMaximum`・`minLength`／`maxLength`・`pattern`・`minItems`／`maxItems`・`uniqueItems`・`multipleOf`は`schema`へ移ります（`x-nullable: true`は`nullable: true`）。`name`・`in`・`description`・`required`・`allowEmptyValue`・`x-*`はそのままです。`type`がない、`type: file`（formData以外）、`in`が`query`／`header`／`path`／`formData`／`body`以外（`cookie`を含みます）は`OACG100`です。path itemのparameterはpath itemに残り、3.0と同じくoperationのparameterが同名・同`in`のものを置き換えます。 |
+| `collectionFormat` | 一部対応 | 配列parameterだけに効きます（省略時は`csv`）。`query`は、`csv`→`style: form`＋`explode: false`、`ssv`→`spaceDelimited`、`pipes`→`pipeDelimited`、`multi`→`explode: true`（`form`の既定）です。`path`・`header`は`csv`（`simple`、既定）だけで、他の値は`OACG101`です。`tsv`は3.0に相当する表現がなく、どこでも`OACG101`です（`collectionFormat`の位置）。`items`の入れ子の`collectionFormat`は`csv`以外が`OACG101`です。 |
+| `produces`と応答 | 対応 | responseの`schema`は、operationの`produces`、なければdocumentの`produces`の各media typeの`content`へ付きます（なければ`application/json`、`type: file`なら`application/octet-stream`）。`schema`のないresponseは`content`を持ちません。`components.responses`はdocumentの`produces`だけを使います（operationごとの`produces`は参照元で変えられません）。`examples`（media typeごとの例）はドキュメント専用なので黙って捨てます。`produces`／`consumes`に`application/xml`とJSONが併記され、schemaがobject・arrayの場合、xmlの項目は`OACG108`で無視してJSONで生成します（位置は`in: body`ならそのparameter、応答なら`schema`です。xmlだけなら`OACG101`です）。 |
+| 応答の`type: file` | 対応 | `type: string`／`format: binary`になり、3.0と同じく`byte[]`で受け取ります。 |
+| 応答の`headers` | 対応 | Header Objectになり、`type`・`format`・`items`・`enum`などは`schema`へ移ります。`description`は残ります。配列の`collectionFormat`は`csv`だけです。 |
+| `securityDefinitions` | 対応 | `basic`→`type: http`＋`scheme: basic`、`apiKey`→そのまま、`oauth2`→`flows`です。flowは`implicit`→`implicit`、`password`→`password`、`application`→`clientCredentials`、`accessCode`→`authorizationCode`で、`authorizationUrl`・`tokenUrl`・`scopes`（なければ空）を移します。未知のflowは`OACG100`、上記以外の`type`は`OACG101`です。`security`（document・operation）は3.0と同じで、資格情報の扱いは「Security」の節に従います。 |
+| schemaの項目 | 対応 | `x-nullable: true`→`nullable: true`（真偽値以外は`OACG100`）、文字列の`discriminator`→`{ propertyName }`（継承形のbaseとして扱います）、`type: file`→`type: string`／`format: binary`です。`allOf`・`readOnly`・`example`・`xml`・`externalDocs`・制約キーワード・`x-*`はそのまま3.0のschemaとして処理します。 |
+| document直下の`info`・`tags`・`externalDocs`・`x-*` | 対応 | 3.0にも同じ項目があるため、そのまま受理します（ドキュメント専用で、診断はありません）。`x-ms-*`などのベンダー拡張も他の`x-*`と同じく黙って無視します（`x-ms-paths`のようにpathを増やす拡張は解釈しません）。それ以外の未知の項目は、3.0と同じく、項目を知っているobjectで診断になります。 |
+| 診断の位置 | 対応 | 正規化したtreeの各nodeは、元のSwagger 2.0 nodeの行・桁・logical pathを持ちます。診断（`OACG100`／`OACG101`／`OACG102`／`OACG108`など）は、書いたSwagger 2.0の位置を指します。例: `definitions`のschemaの誤りは`/definitions/X/...`、formData parameterの誤りは`/paths/~1p/post/parameters/N`、body parameterのschemaは`/paths/~1p/post/parameters/N/schema/...`、応答のschemaは`/paths/~1p/get/responses/200/schema`です。複数のmedia typeへ複製したschemaは、どれも同じ元のnodeを指します。formData parameterをまとめたobject schema・`requestBody`の誤りは、最初のformData parameterの位置です。 |
+| `OACG101`の対象 | 一部対応 | 3.0に相当する表現がないものは、黙って落とさず`OACG101`です: `collectionFormat: tsv`、`path`／`header`の`csv`以外の`collectionFormat`、Path Itemの`$ref`、`#/definitions/`・`#/parameters/`・`#/responses/`以外を指す`$ref`、複数documentの版の混在、他documentのbody／formData parameterの参照、`oauth2`・`basic`・`apiKey`以外の`securityDefinitions`のtype。 |
+| 既存の別の生成器 | 対応 | `GenerationService.GenerateFromApiDocument`が使う、従来の別のSwagger用の生成器（`SwaggerCSharpClientFileGenerator`）は、そのまま残しています。Source Generatorの入口（`ApiClientCodeGenerator`）は使わず、Swagger 2.0は常にこの節の正規化とSource Generatorのpipelineを通ります。 |
+
+## ギャップ別の最終状況
+
+Source Generatorの仕様対応で洗い出した33項目（G01–G33）の最終状況です。詳細な条件は、右端の列が指す本文の節・行を参照してください。**対象外**の項目は診断を報告し、黙って省略しません。
+
+| ID | 項目 | 対応状況 | 参照先・診断 |
+| --- | --- | --- | --- |
+| G01–G04 | open object（`additionalProperties`の省略または`true`。`[JsonExtensionData]`の`IDictionary<string, JToken>`） | 対応 | Schemaの「object」。`additionalProperties`の省略は従来の`OACG101`ではなくopen objectです |
+| G01–G04 | map（`Dictionary<string, T>`）とfree-form object（`JObject`） | 対応 | Schemaの「map / free-form object」 |
+| G01–G04 | 型の推論と`{}`・boolean schema `true`（`JToken`） | 対応 | Schemaの「any / type inference」。boolean schema `false`は`OACG101` |
+| G01–G04 | 複数型の型配列（3.1）と`[X, null]` | 対応 | `JToken`、または`X`のnullable。「any / type inference」「`oneOf` / `anyOf`（discriminatorなし）」 |
+| G01–G04 | 再帰schema | 一部対応 | property・items・additionalPropertiesとunion経由の再帰は可。`$ref`のaliasだけ、array／mapだけの循環は`OACG103`（「unresolved / cyclic `$ref`」） |
+| G05 | `operationId`の欠落（method + pathから決定的に命名） | 対応 | 「`operationId`の省略」。重複は`OACG106` |
+| G06–G09 | `allOf`の平坦化 | 一部対応 | 「`allOf`」。型の衝突は`OACG101`、循環は`OACG103` |
+| G06–G09 | `oneOf`／`anyOf` + discriminator（mapping明示・暗黙、継承形のbase） | 一部対応 | 「`oneOf` / `anyOf` + discriminator」「discriminator付きbase」。メンバーがinline・object以外なら`OACG101` |
+| G06–G09 | discriminatorなしのunion、`[X, null]`イディオム | 一部対応 | 「`oneOf` / `anyOf`（discriminatorなし）」 |
+| G06–G09 | 3.1の`$ref`とsibling | 一部対応 | 「`$ref` sibling」。3.0で合成が必要なsiblingは`OACG101` |
+| G06–G09 | `not` | 一部対応 | 「`not`」。成功応答の検査だけ。評価できない`not`は`OACG108` |
+| G10 | `components`以外へのJSON Pointer、`$defs`、externalの任意fragment（schema参照） | 対応 | 「schema `$ref` target」 |
+| G11–G14 | integer enum、`null`を含むenum、`type`のないenum | 対応 | 「string / integer enum」。number・boolean・混在のenumは`OACG101` |
+| G11–G14 | `x-enum-varnames`／`x-enumNames`、`const` | 一部対応 | 「string / integer enum」「`const`」。不正な指定は`OACG108`、object／array値のconstは`OACG101` |
+| G11–G14 | `readOnly`／`writeOnly` | 対応 | 「readOnly / writeOnly」 |
+| G11–G14 | `description`／`deprecated`／`default`のXML docと`[Obsolete]` | 対応 | 「description / title / deprecated / default」 |
+| G15 | `format: byte`（`byte[]`） | 対応 | 「`format: byte`」。従来の`string`から変わります |
+| G15 | `format: binary` | 一部対応 | 「`format: binary`」。JSON本文・parameter・headerでは`OACG101` |
+| G16–G20 | cookie parameter | 一部対応 | 「cookie parameter」 |
+| G16–G20 | 配列・object parameterと全`style`／`explode` | 一部対応 | 「parameter serialization」「array / object parameter」。入れ子・型なしは`OACG101` |
+| G16–G20 | `allowReserved`、parameterの`content` | 一部対応 | 「`allowReserved`」「parameter `content`」 |
+| G16–G20 | `Accept`／`Content-Type`／`Authorization`のheader parameter | 一部対応 | parameterを無視して`OACG108`（「ignored header parameters」） |
+| G16–G20 | Path Item `$ref`、`components.pathItems` | 対応 | 「Path Item `$ref` / `components.pathItems`」 |
+| G16–G20 | path／operation単位の`servers` | 一部対応 | 「path / operationの`servers`」 |
+| G21–G26 | requestBodyのmultipart、form-urlencoded、octet-stream、text、`encoding`、複数のmedia type | 一部対応 | 「request body」から「Encoding Object」までの各行。object・arrayのxmlは`OACG101`（他にJSONなどがあれば`OACG108`） |
+| G21–G26 | text・binary応答 | 一部対応 | 「text / binary response」「response `Accept` header」 |
+| G21–G26 | status別の結果型、defaultのみ・`responses`なし | 一部対応 | 「status-keyed result type」「default-only / omitted responses / 3XX」 |
+| G21–G26 | 型付きエラー | 対応 | 「typed error」「error/default response」 |
+| G21–G26 | response headers（`WithHttpInfo`） | 一部対応 | 「response header」 |
+| G27 | `servers`の複数指定・`variables` | 一部対応 | 「`servers`」。`Servers`・`BuildServerUrl`・`OperationServerUrls` |
+| G28 | security（全`securitySchemes`とrequirement） | 対応 | 「Security」の節。oauth2／OIDCは外から渡されたtokenをBearerで送るだけです（取得・更新・discoveryは対象外） |
+| G29–G30 | 制約キーワードの実行時検証 | 対応 | 「schema assertions」から「検証の範囲と例外」までの各行。requestは`ArgumentException`、responseは`JsonSerializationException` |
+| G29–G30 | `patternProperties`／`propertyNames`／`contains`／`prefixItems`／`dependentRequired`（3.1） | 一部対応 | 3.0では`OACG101`。`if`／`then`／`else`などは対象外 |
+| G31 | webhooks／callbacks／links／`components.examples`など | 一部対応 | `OACG108`で受理し、client memberは生成しません（「webhooks / callbacks / links」「components の各 section」） |
+| G32 | Swagger 2.0 | 一部対応 | 「Swagger 2.0」の節。OpenAPI 3.0へ正規化して同じpipelineで処理し、対応できない構成は`OACG101` |
+| G33 | OpenAPI 3.2（`query`、`additionalOperations`、`in: querystring`、tagsの`parent`／`kind`、`$self`、`itemSchema`の非streaming部分） | 一部対応 | 「OpenAPI 3.2」の節。streamingは対象外 |
+
+## 対象外の項目
+
+次の項目は意図して対象外にしており、診断を報告するか、何も生成せずにドキュメントとして扱います。
+
+| 項目 | 対応状況 | 結果 |
+| --- | --- | --- |
+| `$id`／`$anchor`／`$dynamicAnchor`／`$dynamicRef` | 非対応 | `OACG101` |
+| `if`／`then`／`else`、`dependentSchemas`、`unevaluatedProperties`／`unevaluatedItems`、`contentSchema`、未知のschemaキーワード | 非対応 | そのキーワードの位置で`OACG101` |
+| object・arrayのschemaの`application/xml`（`+xml`） | 非対応 | `OACG101`。同じ`content`に生成できる他のmedia typeがあれば、xmlの項目だけを`OACG108`で無視します |
+| number・boolean・型が混在するenum、boolean schema `false` | 非対応 | `OACG101` |
+| `required: true`かつnullableなpath／query／header parameter | 非対応 | `OACG101` |
+| 入れ子・型なしのparameter（`style`で表せないもの） | 非対応 | `OACG101`（`content`を使います） |
+| 既定以外の`jsonSchemaDialect`・`$schema` | 非対応 | `OACG101`（不正なURIは`OACG100`） |
+| OpenAPI 3.2のstreaming（`text/event-stream`、`itemSchema`の逐次処理） | 非対応 | `text/event-stream`の`itemSchema`と、順次media type以外の`itemSchema`は`OACG101`。`application/jsonl`などの`itemSchema`は`OACG108`で通知し、本文は`byte[]`です |
+| TRACEの`requestBody`、HEAD・204・205の非空`content` | 非対応 | `OACG101` |
+| `Stream`や`HttpResponseMessage`を返すメソッド | 非対応 | 生成しません（巨大な本文は`byte[]`に全読みします） |
+| `format`の検証（`email`、`uri`など） | 非対応 | 受理するだけで検証しません（`date`・`date-time`・`uuid`の解析は従来どおりです） |
+| YAMLの拡張（tag、directive、複数document、merge key、複雑なkey） | 非対応 | `YAML001`–`YAML015`（「YAMLの対応範囲」） |
+| oauth2 flowによるtoken取得・更新、OpenID Connect discovery | 非対応 | 行いません。外から渡されたtokenをBearerで送ります |
+| `mutualTLS`のクライアント証明書の設定 | 非対応 | client側では行いません。`HttpClientHandler`で設定します |
+| Swagger 2.0で3.0に相当する表現がないもの（`collectionFormat: tsv`など） | 非対応 | `OACG101`（「Swagger 2.0」） |
+
 ## 生成結果と利用上の制約
 
 生成結果は次のpublic API contractです。
@@ -330,24 +396,37 @@ namespace-levelのため、同じnamespaceには共存できません。
 `_httpClient`、`_baseUrl`、`DateOnlyJsonConverterInstance`、`CreateRequestUri`、
 `CombineAbsoluteUri`、`CombinePaths`、`CombineQueries`、`AppendQuery`、
 `SplitPathAndQuery`、`ValidatePathSegments`、`CreateJsonContent`、
-`ConvertToString`、`DateOnlyJsonConverter`です。
+`ConvertToString`、`DateOnlyJsonConverter`、`ReadJsonResponseBodyAsync`、`HasPreamble`、
+`Servers`、`BuildServerUrl`、`ExpandServerUrl`、`OperationServerUrls`、
+`ResolveOperationServerUrl`、`OperationNames`、`GetOperationServers`、
+`BuildOperationServerUrl`です。
 schemaの項目名が別項目のCLR名に`Specified`を付けた名前と衝突する場合、JSON上の名前を保ったまま
 CLR名に番号を付けます。Json.NETがschemaのboolean値を存在フラグと誤認することを防ぎます。
 
 ## 診断
 
-| ID | 意味 |
-| --- | --- |
-| `OACG005` | 生成メンバーの予約名を`apiName`に使う場合など、不正なクライアント定義 |
-| `OACG100` | InvalidDocument |
-| `OACG101` | UnsupportedElement（bare non-Schema、`$id`/`$anchor`/`$dynamicAnchor`/`$dynamicRef`、Swagger 2.0でOpenAPI 3.0に相当する表現がないもの（`collectionFormat: tsv`など）など） |
-| `OACG102` | Unresolved document or JSON Pointer target |
-| `OACG103` | Cyclic reference |
-| `OACG104` | ExternalReference（Bundle v1 compatibility） |
-| `OACG105` | InconsistentResponse（1つのresponse・requestBody内で、schemaが異なる複数のJSON media typeを宣言した場合と、OpenAPI 3.2で1つのoperationに複数の`in: querystring` parameter、または`in: querystring`と`in: query`を併記した場合。status間でcontractが異なる成功responseはstatus別の結果型になります） |
-| `OACG106` | InvalidIdentifier |
-| `OACG107` | Warning: deterministic type-name collision resolution |
-| `OACG108` | Warning: ignored OpenAPI element, reported with its logical path (never changes the wire contract) |
+診断は位置付き（logical path）で報告します。`OACG001`–`OACG009`はBundle・入力・client定義の診断で、`OACG100`–`OACG108`はOpenAPI document（Swagger 2.0を含む）のsemantic generationの診断です。ErrorはGenerateを完了させず、Warningは生成を続けます。
+
+| ID | 重大度 | Title | 報告する場面 |
+| --- | --- | --- | --- |
+| `OACG001` | Error | Malformed normalized spec bundle | Bundleの構造・参照edgeの不正 |
+| `OACG002` | Error | Unsupported normalized spec bundle version | Bundleのformat versionが未対応 |
+| `OACG003` | Error | OpenAPI generation failed | semantic generationが失敗した場合の通知 |
+| `OACG004` | Error | Duplicate normalized spec bundle ID | 同じSpec IDを宣言するBundleが複数ある |
+| `OACG005` | Error | Invalid OpenAPI client definition | `apiName`が生成メンバーの予約名（「生成結果と利用上の制約」）と一致する場合など |
+| `OACG006` | Error | Missing normalized spec bundle | Spec IDに対応するBundleがない |
+| `OACG007` | Error | Duplicate OpenAPI client definition ID | 同じSpec IDのclient定義が複数ある |
+| `OACG008` | Error | Unsupported OpenAPI document format | document formatが`Json`（0）・`Yaml`（1）以外 |
+| `OACG009` | Error | Normalized spec bundle ID mismatch | Bundle内のSpec IDとAdditionalFile名が一致しない |
+| `OACG100` | Error | Invalid OpenAPI document | 仕様に反する、または矛盾した値（必須項目の欠落、不正な`pattern`・`style`・`$self`、`schema`と`content`の併記、未定義のsecurity scheme、重複するdiscriminator値・tag名など）。Swagger 2.0の正規化中の不正（body parameterの`schema`欠落、未知のflowなど）も含みます |
+| `OACG101` | Error | Unsupported OpenAPI element | 対象外の要素（上の「対象外の項目」）、未知の項目（`requird`、未知のschemaキーワード、未知のcomponents section）、版に合わない項目（3.0／3.1の`query`・`in: querystring`、3.0のschemaで`patternProperties`など）、Swagger 2.0で3.0に相当しない表現 |
+| `OACG102` | Error | Unresolved OpenAPI reference | `$ref`が文書・JSON Pointerとして存在しない場合。OACG108で無視するsubtree内の`$ref`は解析しないので報告しません |
+| `OACG103` | Error | Cyclic OpenAPI reference | `$ref`のaliasだけ、array／mapだけを経由して名前付き型で閉じない循環、`allOf`の循環、DTOを介さないsubschemaの自己参照 |
+| `OACG104` | Error | External OpenAPI reference is unsupported | Bundle v1のexternal参照（互換診断） |
+| `OACG105` | Error | Inconsistent OpenAPI response contract | 1つのresponse・requestBody内でschemaが異なる複数のJSON media type、3.2で複数の`in: querystring`、または`in: querystring`と`in: query`の併記。status間でcontractが異なる成功responseはstatus別の結果型になり、報告しません |
+| `OACG106` | Error | Invalid generated API identifier | 明示した`operationId`が複数のoperationで重複した場合（省略した`operationId`は連番で一意にするので報告しません） |
+| `OACG107` | Warning | Generated type name collision | 型名が衝突し、決定的なsuffix（連番）で解消した場合 |
+| `OACG108` | Warning | Ignored OpenAPI element | 要素を意図して無視した場合。wire contractは変わりません。ドキュメント専用の要素（`description`・`example`など）は黙って受理するので報告しません。主な場面: `Accept`／`Content-Type`／`Authorization`のheader parameter、webhooks・callbacks・links（とcomponentsの`links`・`callbacks`）、生成できる他のmedia typeがあるときのobject・arrayのxml、処理できない別media typeや生成できないerror schema、評価できない`not`・`const`・`x-enum-*`・`discriminator`、.NET構文を要する`pattern`、binaryに付いた制約キーワード、Encoding Objectの無視した項目、3.2の`itemSchema`（逐次media type）・`prefixEncoding`／`itemEncoding`・他documentを参照する`$self`、Swagger 2.0でhostがないときのoperationの`schemes` |
 
 ## 検証済み環境
 
@@ -355,6 +434,8 @@ GitHub ActionsのUnity検証とCD dry-runは実装済みです。レビュー対
 `adefab2c5bf367c3ecf5971fa555f1cbb68afa24`では、
 [run 34987295723](https://github.com/rebeat-jp/UnityOpenApiCodeGen/actions/runs/34987295723)
 で3版のUnity検証とCD dry-runが成功しています。
+
+以下の検証結果は2026-09-20時点の記録で、その後に追加した対応範囲（上の各節）のテスト件数や、現在のテスト件数を表すものではありません。
 
 2026-09-20の追加レビュー対応後のローカル検証では、.NET 168/168、Node 50/50が成功しました。
 Analyzer再現ビルド・同梱DLL同期・package inspection・tarball再現性と、同一候補を使った

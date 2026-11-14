@@ -1,6 +1,6 @@
 # OpenApiCodeGen Source Generator (Beta)
 
-[English](README.md) · [OpenAPI MVP日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)
+[English](README.md) · [OpenAPI日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)
 
 Unity 6のRoslyn Source Generatorで型付きC# RESTクライアントを生成する追加パッケージです。
 **生成機能はベータ版**です。基本パッケージ`jp.rhycol.openapicodegen`が必要です。
@@ -95,6 +95,146 @@ path／query／headerのenum値も専用のJson.NET serializerで変換し、ホ
 `not`は成功応答の検査だけで評価します。詳細は対応表を参照してください。
 path・query・header・cookieのparameterに対応しますが、`Content-Language`や`Content-Encoding`などの
 content専用headerは位置付き診断で拒否します。対象名は[日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)を参照してください。
+
+## 対応する版と主な機能
+
+| 入力 | 対応 |
+| --- | --- |
+| Swagger 2.0（`swagger: "2.0"`） | OpenAPI 3.0へ正規化し、同じpipelineで生成します。診断は元のSwagger 2.0の位置を指します。 |
+| OpenAPI 3.0.* | 対応します。 |
+| OpenAPI 3.1.* | 既定のOAS 3.1 schema dialectと3.1のJSON Schemaキーワードを含めて対応します。 |
+| OpenAPI 3.2.* | streamingを除いて対応します（`query`、`additionalOperations`、`in: querystring`、`components.mediaTypes`、tagの`parent`／`kind`）。 |
+
+主な機能: open object・map・free-form object、`allOf`・`oneOf`／`anyOf`・`discriminator`、integer enumとnullable enum、
+`readOnly`／`writeOnly`、すべてのparameter locationと`style`、JSON・form-urlencoded・multipart・text・binaryの
+request body、型付き・status別のresponse、型付きエラー、response header、variables付きの複数server、security scheme、
+制約キーワードの実行時検証、意図して無視した要素へのOACG108 Warning。対象外の要素（`$dynamicRef`、
+`if`／`then`／`else`、streaming、oauth2のtoken取得など）は位置付きの診断のままです。全要素と全診断の最終状況は
+[対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)にあります。
+
+## 使い方のメモ
+
+以下は`PetApi`という架空のAPIの例です。メソッド名は`operationId`（なければmethodとpathから決めた名前）に従います。
+示したメンバーは、その機能を使うすべての生成clientにあります。
+
+### 認証
+
+security schemeごとに、`components.securitySchemes`のキー名に由来するpublicプロパティが生成されます
+（`bearerAuth`なら`BearerAuth...`）。リクエストは、含まれるすべてのschemeに資格情報が設定済みの最初の
+requirementを使い、満たせるものがなければ認証なしで送ります。
+
+```csharp
+var client = new PetApi(httpClient);
+client.HeaderKeyApiKey = "secret";               // apiKey: string? <Scheme>ApiKey
+client.BasicAuthUsername = "user";               // http basic: <Scheme>Username / <Scheme>Password
+client.BasicAuthPassword = "pass";
+client.BearerAuthAccessToken = "token";          // http bearer / oauth2 / openIdConnect
+client.OauthAccessTokenProvider = async ct =>    // Func<CancellationToken, Task<string?>>?
+    await tokenStore.GetAccessTokenAsync(ct);    // プロパティより優先され、送信ごとに呼ばれます
+```
+
+oauth2とopenIdConnectは、渡されたtokenをBearerとして送るだけで、取得も更新もしません。その他の`http` schemeは
+`<Scheme>Credentials`です。プロパティは送信前に設定してください（スレッドセーフではありません）。
+
+### server の選択
+
+```csharp
+IReadOnlyList<string> templates = PetApi.Servers;               // serverのURLテンプレート
+string url = PetApi.BuildServerUrl(0, new Dictionary<string, string> { ["region"] = "eu" });
+var client = new PetApi(httpClient, url);                       // baseUrlはdocument levelのserversを置き換えます
+
+// Path Itemやoperationが独自のserversを宣言しているoperation:
+client.OperationServerUrls[PetApi.OperationNames.search] = "https://search.example.com";
+```
+
+`BuildServerUrl`はvariablesを`enum`で検証します（違反は`ArgumentException`、範囲外のindexは
+`ArgumentOutOfRangeException`）。既定のコンストラクターは`servers[0]`の`default`値を使います。
+`OperationServerUrls`と`OperationNames`は、serversを宣言したoperationがある場合だけ生成されます。`OperationServerUrls`は
+最初の送信より前に設定してください。`GetOperationServers`と`BuildOperationServerUrl`で、1つのoperationの候補を
+列挙・展開できます。
+
+### 実行時の制約検証
+
+`minLength`、`maxLength`、`pattern`、`minimum`／`maximum`（とexclusive形式）、`multipleOf`、`minItems`、`maxItems`、
+`uniqueItems`、`minProperties`、`maxProperties`と、3.1のobject・array向けキーワードを実行時に検証します。
+
+```csharp
+try { await client.createPet(new Pet { Name = "x" }); }          // schema: minLength 3
+catch (ArgumentException e) { /* 送信前に拒否。e.ParamNameが引数名 */ }
+
+try { var pet = await client.getPet(1); }
+catch (Newtonsoft.Json.JsonSerializationException e) { /* responseが制約（またはschema）に違反 */ }
+```
+
+requestの違反は`ArgumentException`で、`HttpClient`は呼ばれません。responseの違反は`JsonSerializationException`です。
+メッセージには値ではなくパス（`$.items[2].name`）とkeywordを含めます。これらのキーワードを持つ仕様は従来拒否されて
+いたため、挙動の変更にあたります。
+
+### ファイルparameterとmultipart
+
+multipartのobject schemaの`format: binary` propertyは、生成される`<ApiName>FileParameter`になります。
+
+```csharp
+var file = new PetApiFileParameter(File.OpenRead(path), "avatar.png", "image/png"); // (byte[] data, ...)も可
+await client.uploadPetAsMultipart(new PetForm { Name = "Rex", Avatar = file });
+```
+
+`Stream`はリクエストと一緒に破棄されるため、呼び出しごとに新しいstreamを渡してください。binaryのrequest bodyは
+`byte[]`で、wildcardのmedia typeでは任意引数`<body>ContentType`が加わります。複数のrequest media typeを宣言した
+operationは、優先順位が最上位のものがoperation名を使い、残りは`<name>AsFormUrlEncoded`・`<name>AsMultipart`・
+`<name>AsText`・`<name>AsBinary`になります。
+
+### 型付きresponseとエラー
+
+```csharp
+var result = await client.getStatus();                  // 2xxのcontractが異なるときのstatus別の結果
+if (result.IsStatus200) Use(result.Status200!);         // StatusCode、Is<Status>、型付きStatus<Code>
+
+var info = await client.getWithHeadersWithHttpInfo();  // response headerを宣言したoperationだけ
+Use(info.Data, info.StatusCode, info.Headers);          // 宣言したheaderごとの型付きプロパティもあります
+
+try { await client.getPet(1); }
+catch (PetApiException e)                               // <ApiName>Exception
+{
+    var status = e.StatusCode; var body = e.ResponseBody;      // 常に利用できます
+    if (e.TryGetError<Problem>(out var problem)) { }           // 宣言したJSONエラー本文
+    var parseFailure = e.ErrorDeserializationException;        // 本文を解析できなかったときに設定
+}
+```
+
+textの成功本文は`string`、binaryは`byte[]`です。`Error`は、そのstatusにJSON本文の宣言がない場合や逆シリアル化に
+失敗した場合は`null`で、`ResponseBody`には常に本文の文字列が残ります。
+
+### OACG108 Warning
+
+`OACG108`はErrorではなくWarningです。analyzerが意図して要素を無視しただけで、生成されるwire contractは変わりません。
+メッセージには無視した要素のlogical pathが入ります。主な原因は、`Accept`／`Content-Type`／`Authorization`のheader
+parameter（仕様どおり無視）、`webhooks`・operationの`callbacks`・responseの`links`（client memberは生成しません。
+`components.schemas`に宣言したschemaのDTOは生成します）、生成できるmedia typeと並ぶ`application/xml`、.NET構文を要する
+`pattern`などです。全一覧は対応表の`OACG108`の行を参照してください。
+
+### 診断ID
+
+| ID | Title | 補足 |
+| --- | --- | --- |
+| `OACG001` | Malformed normalized spec bundle | Bundleの構造・参照edgeの不正 |
+| `OACG002` | Unsupported normalized spec bundle version | Bundleのformat versionが未対応 |
+| `OACG003` | OpenAPI generation failed | 生成失敗の通知 |
+| `OACG004` | Duplicate normalized spec bundle ID | 同じSpec IDのBundleが複数 |
+| `OACG005` | Invalid OpenAPI client definition | 予約名の`apiName`など |
+| `OACG006` | Missing normalized spec bundle | Spec IDのBundleがない |
+| `OACG007` | Duplicate OpenAPI client definition ID | 同じSpec IDのclient定義が複数 |
+| `OACG008` | Unsupported OpenAPI document format | `Json`・`Yaml`以外 |
+| `OACG009` | Normalized spec bundle ID mismatch | Spec IDとAdditionalFile名の不一致 |
+| `OACG100` | Invalid OpenAPI document | 不正なdocument |
+| `OACG101` | Unsupported OpenAPI element | 対象外の要素 |
+| `OACG102` | Unresolved OpenAPI reference | 解決できない参照 |
+| `OACG103` | Cyclic OpenAPI reference | 循環参照 |
+| `OACG104` | External OpenAPI reference is unsupported | Bundle v1の互換診断 |
+| `OACG105` | Inconsistent OpenAPI response contract | responseの不整合 |
+| `OACG106` | Invalid generated API identifier | `operationId`の重複 |
+| `OACG107` | Generated type name collision | Warning。型名をsuffixで解消 |
+| `OACG108` | Ignored OpenAPI element | Warning。無視した要素（wire contractは不変） |
 
 ## 生成されたDTOとHTTPクライアント
 

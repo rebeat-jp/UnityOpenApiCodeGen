@@ -96,6 +96,22 @@ Similarly, `responses.x-*` inside an operation is extension data, while a
 component response named `x-*` is a Response or Reference Object. Bare Schema
 roots follow the same Schema rules.
 
+The same context rules cover the later OpenAPI features. Subtrees that the analyzer
+deliberately ignores are never parsed, so their `$ref` values are opaque: a root
+`webhooks`, an operation `callbacks`, a response `links`, `components.callbacks`,
+`components.links`, `components.examples`, and Media Type `itemSchema`. They need
+no reference edge, are not collected by the Editor, and an unresolved or external
+`$ref` inside them cannot fail bundling (the analyzer reports `OACG108` for the
+element instead). OpenAPI 3.2 adds reference locations that are collected like the
+other Path Item and Media Type contexts: the `query` operation, `additionalOperations`
+(a map of Operation Objects), and `components.mediaTypes` (a Media Type Object may be
+a Reference Object). A Swagger 2.0 document is bundled as written: its `$ref` values
+under `definitions`, `parameters`, `responses` and in operation parameters and
+responses are collected with the same edges, and the analyzer normalizes the tree to
+OpenAPI 3.0 after reading the Bundle. The normalized nodes keep the original line,
+column and logical path, so diagnostics point at the Swagger 2.0 source. The Bundle
+format itself is unchanged.
+
 Edges are sorted by `sourceDocumentId`, then `sourcePointer` in ordinal order.
 Duplicate source identities, missing edges, invalid pointers, missing target
 documents, and unresolved targets are invalid Bundle structure. The analyzer
@@ -128,7 +144,10 @@ The hard limits are 30 seconds per request, 120 seconds per graph, 4 MiB per
 document, 32 MiB per graph, 64 documents, five redirects, and reference depth
 256. Automatic retry and ETag revalidation are not performed.
 
-The supported external graph includes bare Schema documents. Bare non-Schema
+The supported external graph includes bare Schema documents and bare Path Item
+documents (a file without `openapi` / `swagger` that has an HTTP method, or only
+`$ref`, `parameters`, `servers`, `summary` and `description`, and no JSON Schema
+keyword; any schema keyword makes it a bare Schema). Other bare non-Schema
 documents and `$id`, `$anchor`, `$dynamicAnchor`, and `$dynamicRef` are
 unsupported. Unresolved targets report `OACG102`; cycles report `OACG103`.
 Bundle v1 external-reference input retains `OACG104` for compatibility.

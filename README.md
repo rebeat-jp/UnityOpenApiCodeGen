@@ -83,7 +83,7 @@ URL behavior.
 ## Support and release documents
 
 - [Source Generator README](Packages/OpenApiCodeGen.SourceGenerator/README.md)
-- [OpenAPI MVP support matrix](SourceGenerators/OpenApiMvpSupportMatrix.md)
+- [OpenAPI support matrix](SourceGenerators/OpenApiMvpSupportMatrix.md)
 - [Normalized Spec Bundle v2](SourceGenerators/NormalizedSpecBundleV2.md)
 - [Release and rollback procedure](RELEASE.md)
 
