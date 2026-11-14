@@ -32,7 +32,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string jsonSerializerName,
             string headerValidatorName,
             ConstraintValidationEmitter constraints,
-            JsonSerializerProfile json)
+            JsonSerializerProfile json,
+            bool unityWebRequest = false)
         {
             _json = json;
             Constraints = constraints;
@@ -41,7 +42,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             _headerValidatorName = headerValidatorName;
             _dtos = model.Dtos.ToDictionary(static dto => dto.Name, StringComparer.Ordinal);
             _prefix = CreatePrefix(model, "__OacgParam_");
-            Security = new SecurityEmitter(model, headerValidatorName);
+            Security = new SecurityEmitter(model, headerValidatorName, unityWebRequest);
         }
 
         /// <summary>The security (authentication) emitter of the same client.</summary>

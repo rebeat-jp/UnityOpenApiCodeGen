@@ -105,10 +105,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         }
 
         /// <summary>
-        /// transport / serializer の組み合わせ別に emitter を選ぶ切替点。
-        /// 後続フェーズで UnityWebRequest の emitter をここへ追加する。
-        /// Selection point that picks the emitters for a transport / serializer combination.
-        /// Later phases add the UnityWebRequest emitters here.
+        /// transport / serializer の組み合わせ別に emitter を選ぶ切替点。UnityWebRequest は
+        /// HttpClient と同じ emitter が送信部だけをアダプタに差し替える。
+        /// Selection point that picks the emitters for a transport / serializer combination. UnityWebRequest
+        /// uses the same client emitter with only the send step replaced by the adapter.
         /// </summary>
         internal IReadOnlyList<GeneratedFile> EmitMvpModel(
             OpenApiGenerationModel model,
@@ -138,7 +138,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 files.AddRange(new NewtonsoftDtoSourceEmitter().Emit(model));
             }
 
-            files.Add(new HttpClientSourceEmitter(json).Emit(model));
+            files.Add(new HttpClientSourceEmitter(json, httpTransport).Emit(model));
             files.AddRange(new HttpContentEmitter(json).Emit(model));
             return files.OrderBy(static file => file.FileName, StringComparer.Ordinal).ToArray();
         }

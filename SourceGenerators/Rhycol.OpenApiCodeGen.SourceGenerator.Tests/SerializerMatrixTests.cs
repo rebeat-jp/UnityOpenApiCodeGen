@@ -101,7 +101,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
         // ---- request: the same wire ------------------------------------------------------------------
 
-        private static object FullWidget(Assembly api, string serializer)
+        internal static object FullWidget(Assembly api, string serializer)
         {
             return New(
                 api,

@@ -79,16 +79,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         }
 
         /// <summary>
-        /// 実装済みの組み合わせか。後続フェーズで UnityWebRequest を実装したらここを広げる。
-        /// HttpClient + SystemTextJson は composition と constraint の検証を含めて実装済み。
-        /// Whether an emitter exists for the combination. Widen this as UnityWebRequest lands.
-        /// HttpClient + SystemTextJson is implemented, composition and constraint validation included.
+        /// 実装済みの組み合わせか。現在は 2 つの transport と 2 つのシリアライザのすべての組み合わせ。
+        /// UnityWebRequest は HttpRequestMessage / HttpResponseMessage を介するアダプタ方式。
+        /// Whether an emitter exists for the combination. All four combinations of the two transports and the
+        /// two serializers are implemented; UnityWebRequest goes through the HttpRequestMessage /
+        /// HttpResponseMessage adapter.
         /// </summary>
         internal static bool IsImplemented(HttpTransportKind transport, JsonSerializerKind serializer)
         {
-            return transport == HttpTransportKind.HttpClient &&
-                   (serializer == JsonSerializerKind.NewtonsoftJson ||
-                    serializer == JsonSerializerKind.SystemTextJson);
+            return IsDefined(transport) && IsDefined(serializer);
         }
 
         /// <summary>
@@ -155,6 +154,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                             LibrarySelectionIssueKind.HttpImplementationMissing,
                             transport.ToString(),
                             LibraryAvailability.UnityWebRequestMarkerType));
+                    }
+
+                    // The adapter builds System.Net.Http.HttpRequestMessage / HttpContent and reads an
+                    // HttpResponseMessage, so the System.Net.Http types are needed as well.
+                    if (!availability.HasHttpClient)
+                    {
+                        issues.Add(new LibrarySelectionIssue(
+                            LibrarySelectionIssueKind.HttpImplementationMissing,
+                            transport + " (its adapter uses the System.Net.Http request and response types)",
+                            LibraryAvailability.HttpClientMarkerType));
                     }
 
                     break;

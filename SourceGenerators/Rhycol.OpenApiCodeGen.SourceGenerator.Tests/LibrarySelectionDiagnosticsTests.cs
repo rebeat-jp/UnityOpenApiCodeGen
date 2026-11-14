@@ -72,7 +72,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Theory]
         [InlineData("UnityWebRequest", "NewtonsoftJson")]
         [InlineData("UnityWebRequest", "SystemTextJson")]
-        public void UnimplementedCombinationsReportOACG010WhenLibrariesArePresent(
+        public void UnityWebRequestCombinationsGenerateWhenLibrariesArePresent(
             string httpTransport,
             string jsonSerializer)
         {
@@ -83,11 +83,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 JsonSerializer = jsonSerializer
             });
 
-            Assert.Equal(new[] { "OACG010" }, SelectionDiagnosticIds(execution));
-            Assert.Empty(execution.RunResult.GeneratedTrees);
-            Assert.Contains(
-                "is not implemented",
-                execution.RunResult.Diagnostics.Single(static item => item.Id == "OACG010").GetMessage());
+            Assert.Empty(SelectionDiagnosticIds(execution));
+            Assert.NotEmpty(execution.RunResult.GeneratedTrees);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.Contains("SendUnityWebRequestAsync", execution.GeneratedSource);
+            Assert.DoesNotContain("_httpClient", execution.GeneratedSource);
         }
 
         [Fact]
@@ -136,18 +136,35 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void MissingUnityWebRequestReportsOACG012AlongsideTheUnimplementedCombination()
+        public void MissingUnityWebRequestReportsOACG012WithoutGenerating()
         {
             Phase4GeneratorExecution execution = Run(new Phase4CompilationOptions
             {
                 HttpTransport = "UnityWebRequest"
             });
 
-            Assert.Equal(new[] { "OACG010", "OACG012" }, SelectionDiagnosticIds(execution));
+            Assert.Equal(new[] { "OACG012" }, SelectionDiagnosticIds(execution));
             Assert.Empty(execution.RunResult.GeneratedTrees);
             Assert.Contains(
                 "UnityEngine.Networking.UnityWebRequest",
                 execution.RunResult.Diagnostics.Single(static item => item.Id == "OACG012").GetMessage());
+        }
+
+        [Fact]
+        public void UnityWebRequestNeedsTheSystemNetHttpTypesOfItsAdapter()
+        {
+            Phase4GeneratorExecution execution = Run(new Phase4CompilationOptions
+            {
+                HttpClient = false,
+                UnityWebRequestStub = true,
+                HttpTransport = "UnityWebRequest"
+            });
+
+            Assert.Equal(new[] { "OACG012" }, SelectionDiagnosticIds(execution));
+            Assert.Empty(execution.RunResult.GeneratedTrees);
+            string message = execution.RunResult.Diagnostics.Single(static item => item.Id == "OACG012").GetMessage();
+            Assert.Contains("System.Net.Http.HttpClient", message);
+            Assert.Contains("UnityWebRequest", message);
         }
 
         [Fact]
@@ -221,7 +238,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 HttpTransport = "UnityWebRequest"
             });
 
-            Assert.Equal(new[] { "OACG010" }, SelectionDiagnosticIds(execution));
+            Assert.Empty(SelectionDiagnosticIds(execution));
+            Assert.NotEmpty(execution.RunResult.GeneratedTrees);
         }
 
         [Fact]
@@ -255,9 +273,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Equal(
                 new[]
                 {
-                    LibrarySelectionIssueKind.NotImplemented,
                     LibrarySelectionIssueKind.JsonLibraryMissing,
-                    LibrarySelectionIssueKind.HttpImplementationMissing
+                    LibrarySelectionIssueKind.HttpImplementationMissing,
+                    LibrarySelectionIssueKind.HttpImplementationMissing  // UnityWebRequest itself, then the System.Net.Http types of its adapter
                 },
                 Kinds(HttpTransportKind.UnityWebRequest, JsonSerializerKind.SystemTextJson, nothing));
             Assert.Equal(
@@ -270,7 +288,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Equal(
                 new[]
                 {
-                    LibrarySelectionIssueKind.NotImplemented,
                     LibrarySelectionIssueKind.VersionTooLow
                 },
                 Kinds(HttpTransportKind.UnityWebRequest, JsonSerializerKind.SystemTextJson, tooOld));
@@ -397,7 +414,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void EmitMvpModelRejectsUnimplementedCombinations()
+        public void EmitMvpModelEmitsEveryDefinedCombinationAndRejectsUndefinedOnes()
         {
             var service = new GenerationService();
             OpenApiGenerationModel model = service.BuildMvpModelFromOpenApiNode(
@@ -413,14 +430,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 model,
                 HttpTransportKind.HttpClient,
                 JsonSerializerKind.SystemTextJson));
-            Assert.Throws<NotSupportedException>(() => service.EmitMvpModel(
+            Assert.NotEmpty(service.EmitMvpModel(
                 model,
                 HttpTransportKind.UnityWebRequest,
                 JsonSerializerKind.SystemTextJson));
-            Assert.Throws<NotSupportedException>(() => service.EmitMvpModel(
+            Assert.NotEmpty(service.EmitMvpModel(
                 model,
                 HttpTransportKind.UnityWebRequest,
                 JsonSerializerKind.NewtonsoftJson));
+            Assert.Throws<NotSupportedException>(() => service.EmitMvpModel(
+                model,
+                (HttpTransportKind)5,
+                JsonSerializerKind.NewtonsoftJson));
+            Assert.Throws<NotSupportedException>(() => service.EmitMvpModel(
+                model,
+                HttpTransportKind.HttpClient,
+                (JsonSerializerKind)5));
         }
 
         [Fact]
@@ -436,7 +461,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             string source = Phase4GeneratorTestHarness.AttributeContract + "namespace Multi\n{\n" +
                 Definition(TestBundleFactory.SpecId, "Plain", string.Empty) +
                 Definition(SecondSpecId, "FirstUwr", ", HttpTransport = global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiHttpTransport.UnityWebRequest") +
-                Definition(ThirdSpecId, "SecondUwr", ", HttpTransport = global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiHttpTransport.UnityWebRequest") +
+                Definition(ThirdSpecId, "SecondBad", ", HttpTransport = (global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiHttpTransport)5") +
                 "}\n";
             CSharpCompilation compilation = CSharpCompilation.Create(
                 "MultiDefinitions",
@@ -454,12 +479,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                         ThirdSpecId, TestBundleFactory.Create(EmptyDocument, specId: ThirdSpecId))));
             GeneratorDriverRunResult result = driver.RunGenerators(compilation).GetRunResult();
 
-            Assert.Equal(2, result.Diagnostics.Count(static item => item.Id == "OACG010"));
-            Assert.Equal(2, result.Diagnostics.Count(static item => item.Id == "OACG012"));
-            Assert.Equal(
-                2,
-                result.Diagnostics.Where(static item => item.Id == "OACG012")
-                    .Select(static item => item.Location.SourceSpan.Start).Distinct().Count());
+            // FirstUwr selects UnityWebRequest without referencing it (OACG012); SecondBad names an unknown transport (OACG010).
+            Diagnostic unknown = Assert.Single(result.Diagnostics, static item => item.Id == "OACG010");
+            Diagnostic notReferenced = Assert.Single(result.Diagnostics, static item => item.Id == "OACG012");
+            Assert.NotEqual(unknown.Location.SourceSpan.Start, notReferenced.Location.SourceSpan.Start);
             Assert.All(
                 result.GeneratedTrees,
                 static tree => Assert.Contains("Plain", tree.ToString()));

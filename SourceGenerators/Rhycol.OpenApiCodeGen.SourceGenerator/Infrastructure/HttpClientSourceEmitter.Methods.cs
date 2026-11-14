@@ -345,7 +345,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 AppendAcceptHeader(source, plan);
             }
 
-            source.AppendLine("                using (var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false))");
+            source.AppendLine(IsUnityWebRequest
+                ? "                using (var response = await SendUnityWebRequestAsync(request, cancellationToken))"
+                : "                using (var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false))");
             source.AppendLine("                {");
             if (plan is null)
             {

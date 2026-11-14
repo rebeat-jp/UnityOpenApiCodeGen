@@ -1,0 +1,22 @@
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApi ctor public (System.Uri? baseAddress)
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApi ctor public (System.Uri? baseAddress, string baseUrl)
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApi method public System.Threading.Tasks.Task GetPetsByPetId(string? session, string petId, string? path, System.Collections.Generic.List<string>? tags, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApi method public static System.Collections.Generic.IReadOnlyList<string> GetOperationServers(string operationName)
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApi method public static string BuildOperationServerUrl(string operationName, int index, System.Collections.Generic.IReadOnlyDictionary<string, string>? variables = null)
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApi method public static string BuildServerUrl(int index, System.Collections.Generic.IReadOnlyDictionary<string, string>? variables = null)
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApi property public System.Action<UnityEngine.Networking.UnityWebRequest>? ConfigureUnityWebRequest { get; set; }
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApi property public System.Collections.Generic.IDictionary<string, string> OperationServerUrls { get; }
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApi property public System.TimeSpan? RequestTimeout { get; set; }
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApi property public static System.Collections.Generic.IReadOnlyList<string> Servers { get; }
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApi.OperationNames field public const string search = "search"
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody)
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody, object? error, System.Exception? errorDeserializationException)
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApiException method public bool TryGetError<T>(out T value)
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApiException property public System.Exception? ErrorDeserializationException { get; }
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApiException property public System.Net.HttpStatusCode StatusCode { get; }
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApiException property public object? Error { get; }
+Generated.Baseline.BaselineOperationsApi.BaselineOperationsApiException property public string ResponseBody { get; }
+[Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiClientDefinitionAttribute("0123456789abcdef0123456789abcdef", "BaselineOperationsApi", "Generated.Baseline.BaselineOperationsApi", Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.Json, HttpTransport = Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiHttpTransport.UnityWebRequest)] type public class Generated.Baseline.BaselineOperationsApi.BaselineOperationsApi
+[System.ObsoleteAttribute] Generated.Baseline.BaselineOperationsApi.BaselineOperationsApi method public System.Threading.Tasks.Task search(System.Collections.Generic.Dictionary<string, int>? color, System.Collections.Generic.Dictionary<string, int>? filter, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+type public sealed class Generated.Baseline.BaselineOperationsApi.BaselineOperationsApiException : System.Exception
+type public static class Generated.Baseline.BaselineOperationsApi.BaselineOperationsApi.OperationNames

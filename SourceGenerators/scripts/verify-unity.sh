@@ -176,6 +176,10 @@ for required_file in \
   "${verification_fixture}/Specs/VerificationItem.yaml" \
   "${verification_fixture}/Target/GeneratedClientProbe.cs" \
   "${verification_fixture}/Editor/SourceGeneratorVerticalGeneration.cs" \
+  "${verification_fixture}/Tests/Editor/UnityWebRequestTransportUnityTests.cs" \
+  "${verification_fixture}/UnityWebRequestClient/Unity.OpenApiCodeGen.SourceGenerator.Verification.UnityWebRequest.asmdef" \
+  "${verification_fixture}/UnityWebRequestClient/Specs/openapi.json" \
+  "${verification_fixture}/UnityWebRequestClient/Generated/UwrApi.g.cs" \
   "${package_removal_fixture}/Editor/SourceGeneratorPackageRemovalVerification.cs"; do
   if [[ ! -f "${required_file}" ]]; then
     fail_not_run "required Unity gate input is missing: ${required_file}"
@@ -604,6 +608,7 @@ assert_test_passed \
   'Rhycol.OpenApiCodeGen.Test.Core.SettingMenuProviderFieldsTests.ProjectSettingsPersistenceUsesUnityAssetsDirectoryFromExternalWorkingDirectory'
 assert_test_class_ran "${results}" 'RawJsonNormalizerTests'
 assert_test_class_ran "${results}" 'NormalizedSpecCacheServiceTests'
+assert_test_class_ran "${results}" 'UnityWebRequestTransportUnityTests'
 
 # A second Generate with unchanged input must reuse the same specId and leave
 # both the compiler mirror and owned partial byte-identical.

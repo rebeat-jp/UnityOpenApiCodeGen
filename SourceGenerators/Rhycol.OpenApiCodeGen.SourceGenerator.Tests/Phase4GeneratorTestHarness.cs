@@ -219,10 +219,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             if (options.UnityWebRequestStub)
             {
-                references.Add(CreateStubReference(
-                    "UnityEngine.UnityWebRequestModule",
-                    new Version(0, 0, 0, 0),
-                    "namespace UnityEngine.Networking { public class UnityWebRequest { } }"));
+                references.Add(UnityEngineStub.CreateReference(options.ReferencePaths));
             }
 
             return references;
