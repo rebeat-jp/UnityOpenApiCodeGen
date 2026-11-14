@@ -68,6 +68,11 @@ YAMLの二重引用符内では有効な`\u`サロゲート対を非BMP文字と
 OpenAPI 3.1と3.2は標準schema dialectのみを受け付けます。独自dialectは診断で拒否します。
 OpenAPI 3.2では`query` method、`additionalOperations`、`in: querystring`、`components.mediaTypes`、
 discriminatorの`defaultMapping`を追加で扱います。streaming（`text/event-stream`、`itemSchema`の逐次処理）は対象外です。
+対応する入力はOpenAPI 3.0.*、3.1.*、3.2.*とSwagger 2.0（`swagger: "2.0"`）です。Swagger 2.0は、
+`host`／`basePath`／`schemes`を`servers`、`definitions`を`components.schemas`、`body`と`formData`のparameterを
+`requestBody`、`collectionFormat`を`style`／`explode`、`securityDefinitions`を`securitySchemes`、`x-nullable`を
+`nullable`へ読み替えたOpenAPI 3.0として同じ生成pipelineで処理し、診断は元のSwagger 2.0の位置を指します。
+OpenAPI 3.0に相当する表現がないもの（`collectionFormat: tsv`、Swagger 2.0とOpenAPI 3.xの参照の混在など）は`OACG101`です。
 参照先が完全なOpenAPI文書の場合、その文書の`openapi`版と`jsonSchemaDialect`も確認します。
 入口文書とmajor.minor版が異なる参照先、および未対応dialectは位置付き診断で拒否します。
 版のpatch差と、`openapi`を持たない外部bare schemaは許可します。

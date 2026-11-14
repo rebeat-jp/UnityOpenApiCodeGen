@@ -110,6 +110,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         /// <summary>
+        /// P9 surface (Swagger 2.0): body, query, path, header and formData parameters with a file, the
+        /// collectionFormat variants, a discriminated union, all security definitions, produces / consumes,
+        /// response headers and host / basePath / schemes servers.
+        /// </summary>
+        [Fact]
+        public void Swagger2SpecKeepsPublicSurface()
+        {
+            AssertBaseline(
+                "swagger2",
+                "BaselineSwagger2Api",
+                File.ReadAllText(SpecPath("swagger2.json")));
+        }
+
+        /// <summary>
         /// NOT the Unity fixture document itself: the external YAML reference
         /// ("VerificationItem.yaml") is rewritten to an internal component reference and the
         /// component is added, because this test uses a single-document bundle.

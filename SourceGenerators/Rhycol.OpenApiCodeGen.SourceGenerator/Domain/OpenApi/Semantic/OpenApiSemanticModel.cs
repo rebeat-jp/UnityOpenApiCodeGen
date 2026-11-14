@@ -16,13 +16,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string documentId,
             int line,
             int column,
-            string logicalPath)
+            string logicalPath,
+            string? identityLogicalPath = null)
         {
             SourcePath = sourcePath ?? string.Empty;
             DocumentId = documentId ?? "root";
             Line = line;
             Column = column;
             LogicalPath = logicalPath ?? string.Empty;
+            IdentityLogicalPath = identityLogicalPath ?? LogicalPath;
         }
 
         internal string SourcePath { get; }
@@ -33,7 +35,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         internal int Column { get; }
 
+        /// <summary>
+        /// The path reported in diagnostics. For a node synthesized from a Swagger 2.0 document this is
+        /// the original Swagger path.
+        /// </summary>
         internal string LogicalPath { get; }
+
+        /// <summary>
+        /// The path of the node in the tree the parser walked (the key of the node's identity). Equal to
+        /// <see cref="LogicalPath"/> except for nodes synthesized from a Swagger 2.0 document.
+        /// </summary>
+        internal string IdentityLogicalPath { get; }
 
         internal static OpenApiSourceLocation FromNode(SpecNode node)
         {
@@ -42,7 +54,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 throw new ArgumentNullException(nameof(node));
             }
 
-            return new OpenApiSourceLocation(node.Line, node.Column, node.LogicalPath);
+            return new OpenApiSourceLocation(
+                string.Empty,
+                "root",
+                node.Line,
+                node.Column,
+                node.DiagnosticLogicalPath,
+                node.LogicalPath);
         }
 
         internal static OpenApiSourceLocation FromNode(
@@ -60,6 +78,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 documentId,
                 node.Line,
                 node.Column,
+                node.DiagnosticLogicalPath,
                 node.LogicalPath);
         }
 
@@ -69,7 +88,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                    Column == other.Column &&
                    string.Equals(SourcePath, other.SourcePath, StringComparison.Ordinal) &&
                    string.Equals(DocumentId, other.DocumentId, StringComparison.Ordinal) &&
-                   string.Equals(LogicalPath, other.LogicalPath, StringComparison.Ordinal);
+                   string.Equals(LogicalPath, other.LogicalPath, StringComparison.Ordinal) &&
+                   string.Equals(IdentityLogicalPath, other.IdentityLogicalPath, StringComparison.Ordinal);
         }
 
         public override bool Equals(object? obj)
@@ -86,6 +106,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 hashCode = (hashCode * 397) ^ StringComparer.Ordinal.GetHashCode(SourcePath);
                 hashCode = (hashCode * 397) ^ StringComparer.Ordinal.GetHashCode(DocumentId);
                 hashCode = (hashCode * 397) ^ StringComparer.Ordinal.GetHashCode(LogicalPath);
+                hashCode = (hashCode * 397) ^ StringComparer.Ordinal.GetHashCode(IdentityLogicalPath);
                 return hashCode;
             }
         }

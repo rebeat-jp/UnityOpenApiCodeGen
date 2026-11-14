@@ -156,6 +156,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             RequireKind(contentNode, SpecValueKind.Object, "The content field must be an object.");
             var parsed = new List<(OpenApiSemanticMediaContent Content, SpecNode Node)>();
             SpecNode? skippedWildcardJson = null;
+            bool hasNonXmlMediaType = contentNode.EnumerateObject().Any(static entry =>
+                entry.Name.IndexOf("xml", StringComparison.OrdinalIgnoreCase) < 0);
             foreach (SpecProperty mediaEntry in contentNode.EnumerateObject()
                          .OrderBy(static value => value.Name, StringComparer.Ordinal))
             {
@@ -187,6 +189,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         throw Unsupported(
                             mediaProperty.Value,
                             "Only multipart/form-data request bodies are supported: '" + mediaProperty.Name + "'.");
+                    }
+
+                    if (kind == OpenApiSemanticContentKind.Text && hasNonXmlMediaType &&
+                        IsXmlMediaType(mediaType) &&
+                        IsNonScalarBodySchema(GetProperty(mediaProperty.Value, "schema"), suggestedName))
+                    {
+                        // An XML representation of an object or array cannot be generated, but the same
+                        // content map offers another media type that can: skip only the XML entry.
+                        AddIgnoredWarning(
+                            mediaProperty.Value,
+                            "The media type '" + mediaProperty.Name +
+                            "' with an object or array schema is not supported (XML bodies cannot be generated) and was " +
+                            "ignored; the other media types of this content map are used.");
+                        return null;
                     }
 
                     string? normalizedCharset = isRequest &&
@@ -284,6 +300,39 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             return handled;
+        }
+
+        private static bool IsXmlMediaType(ParsedOpenApiMediaType mediaType)
+        {
+            return string.Equals(mediaType.Subtype, "xml", StringComparison.Ordinal) ||
+                   mediaType.Subtype.EndsWith("+xml", StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// True when the schema parses to something other than a scalar, enum or binary payload (an object,
+        /// array, union, ...): the shapes a text media type such as XML cannot carry.
+        /// </summary>
+        private bool IsNonScalarBodySchema(SpecNode? schemaNode, string suggestedName)
+        {
+            if (schemaNode is null)
+            {
+                return false;
+            }
+
+            OpenApiSemanticSchema effective = GetEffectiveSchema(
+                ParseSchema(schemaNode, suggestedName, new HashSet<NormalizedSpecNodeIdentity>()));
+            switch (effective.Kind)
+            {
+                case OpenApiSemanticSchemaKind.String:
+                case OpenApiSemanticSchemaKind.Integer:
+                case OpenApiSemanticSchemaKind.Number:
+                case OpenApiSemanticSchemaKind.Boolean:
+                case OpenApiSemanticSchemaKind.Enum:
+                case OpenApiSemanticSchemaKind.Binary:
+                    return false;
+                default:
+                    return true;
+            }
         }
 
         private string GetBodyTypeKey(OpenApiSemanticMediaContent content)

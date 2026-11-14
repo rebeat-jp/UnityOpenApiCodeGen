@@ -160,7 +160,7 @@ kind, status, redirect count, and bundle hash.
 
 ## Generated contract and diagnostics
 
-For supported OpenAPI 3.0.*, 3.1.* and 3.2.* input, the generator emits public
+For supported OpenAPI 3.0.*, 3.1.* and 3.2.* input (and Swagger 2.0 input, see below), the generator emits public
 mutable sealed Newtonsoft.Json DTOs, string enums with an exact wire-value converter,
 `List<T>` collections, an async `HttpClient` client, and
 `<ApiName>Exception`. Generated source is a regenerated public contract, not a
@@ -176,6 +176,15 @@ source-located diagnostics. OpenAPI 3.2 additionally accepts the `query` method,
 `additionalOperations`, `in: querystring` parameters, `components.mediaTypes` and the
 discriminator `defaultMapping`; streaming (`text/event-stream`, incremental `itemSchema`)
 is not supported (see the support matrix).
+
+Swagger 2.0 documents (`swagger: "2.0"`) are accepted too: they are normalized into an equivalent
+OpenAPI 3.0 document (`host`/`basePath`/`schemes` become `servers`, `definitions` become
+`components.schemas`, `body` and `formData` parameters become a `requestBody`, `collectionFormat`
+becomes `style`/`explode`, `securityDefinitions` become `securitySchemes`, `x-nullable` becomes
+`nullable`) before the same generation pipeline runs, and diagnostics point at the original
+Swagger 2.0 location. Swagger 2.0 constructs with no OpenAPI 3.0 equivalent (`collectionFormat: tsv`,
+mixed Swagger 2.0 / OpenAPI 3.x references) receive `OACG101` (see the support matrix).
+
 When a schema member's generated CLR name would be interpreted as another
 member's `Specified` flag by Json.NET, the generator assigns a unique CLR name
 and keeps its JSON property name.
