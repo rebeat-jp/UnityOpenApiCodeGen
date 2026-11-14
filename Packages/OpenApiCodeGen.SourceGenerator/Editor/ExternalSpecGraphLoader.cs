@@ -114,7 +114,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             private static readonly string[] HttpMethods =
                 { "delete", "get", "head", "options", "patch", "post", "put", "trace" };
             private static readonly string[] ReferenceObjectComponentMaps =
-                { "securitySchemes", "links" };
+                { "securitySchemes" };
             private static readonly string[] SchemaMapProperties =
                 { "properties", "patternProperties", "dependentSchemas", "$defs", "definitions" };
             private static readonly string[] SchemaProperties =
@@ -131,7 +131,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             private static readonly ReferenceCollector ParameterCollector = CollectParameter;
             private static readonly ReferenceCollector ReferenceObjectCollector = CollectReferenceObject;
             private static readonly ReferenceCollector RequestBodyCollector = CollectRequestBody;
-            private static readonly ReferenceCollector CallbackCollector = CollectCallback;
 
             private readonly ExternalSpecGraphLoader owner;
             private readonly string specId;
@@ -1112,14 +1111,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 ReferencePath path,
                 List<ReferenceValue> references)
             {
+                // webhooks, callbacks, links and examples are ignored by the analyzer (OACG108 or
+                // documentation only) and never parsed, so their $refs are not collected: an
+                // unresolvable or external $ref there must not fail the bundling.
                 CollectPathMapProperty(root, path, "paths", PathItemCollector, references);
-                CollectPathMapProperty(root, path, "webhooks", PathItemCollector, references);
                 if (!TryGetObjectProperty(root, "components", out SpecObjectNode? components)) return;
                 path.Push("components");
                 CollectObjectMapProperty(components, path, "schemas", SchemaCollector, references);
                 CollectObjectMapProperty(components, path, "responses", ResponseCollector, references);
                 CollectObjectMapProperty(components, path, "parameters", ParameterCollector, references);
-                CollectObjectMapProperty(components, path, "examples", ReferenceObjectCollector, references);
                 CollectObjectMapProperty(components, path, "requestBodies", RequestBodyCollector, references);
                 CollectObjectMapProperty(components, path, "headers", ParameterCollector, references);
                 for (int index = 0; index < ReferenceObjectComponentMaps.Length; index++)
@@ -1132,7 +1132,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                         references);
                 }
 
-                CollectObjectMapProperty(components, path, "callbacks", CallbackCollector, references);
                 CollectObjectMapProperty(components, path, "pathItems", PathItemCollector, references);
                 path.Pop();
             }
@@ -1183,7 +1182,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     ResponseCollector,
                     references,
                     true);
-                CollectObjectMapProperty(operation, path, "callbacks", CallbackCollector, references);
             }
 
             private static void CollectParameter(
@@ -1196,7 +1194,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 if (parameter == null) return;
                 CollectProperty(parameter, path, "schema", SchemaCollector, references);
                 CollectContentProperty(parameter, path, references);
-                CollectObjectMapProperty(parameter, path, "examples", ReferenceObjectCollector, references);
                 CollectProperty(parameter, path, "items", SchemaCollector, references);
             }
 
@@ -1223,26 +1220,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 CollectContentProperty(response, path, references);
                 CollectProperty(response, path, "schema", SchemaCollector, references);
                 CollectObjectMapProperty(response, path, "headers", ParameterCollector, references);
-                CollectObjectMapProperty(response, path, "links", ReferenceObjectCollector, references);
-            }
-
-            private static void CollectCallback(
-                SpecNode node,
-                ReferencePath path,
-                List<ReferenceValue> references)
-            {
-                int originalCount = references.Count;
-                CollectDirectReference(node, path, references);
-                if (references.Count != originalCount) return;
-                SpecObjectNode? callback = node as SpecObjectNode;
-                if (callback == null) return;
-                foreach (SpecProperty expression in callback.Properties)
-                {
-                    if (expression.Name.StartsWith("x-", StringComparison.Ordinal)) continue;
-                    path.Push(expression.Name);
-                    CollectPathItem(expression.Value, path, references);
-                    path.Pop();
-                }
             }
 
             private static void CollectContentProperty(
@@ -1258,7 +1235,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     if (media == null) continue;
                     path.Push(mediaType.Name);
                     CollectProperty(media, path, "schema", SchemaCollector, references);
-                    CollectObjectMapProperty(media, path, "examples", ReferenceObjectCollector, references);
                     if (TryGetObjectProperty(media, "encoding", out SpecObjectNode? encodings))
                     {
                         path.Push("encoding");

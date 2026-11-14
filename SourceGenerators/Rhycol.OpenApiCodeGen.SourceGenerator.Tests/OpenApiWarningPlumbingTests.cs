@@ -130,10 +130,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Fact]
         public void FatalErrorReportsOnlyTheErrorAndDropsCollectedWarnings()
         {
-            // webhooks is rejected (OACG101) after the injector already collected a warning.
+            // An unsupported components section is rejected (OACG101) after the injector already
+            // collected a warning.
             string spec = MinimalSpec.Replace(
                 "\"paths\"",
-                "\"webhooks\": {}, \"paths\"");
+                "\"components\": { \"foo\": {} }, \"paths\"");
 
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
                 spec,
