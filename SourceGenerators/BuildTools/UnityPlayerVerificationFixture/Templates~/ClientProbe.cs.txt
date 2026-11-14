@@ -1,0 +1,100 @@
+// Written by PlayerVerificationGenerate for the __COMBO__ client (HttpTransport=__TRANSPORT__, JsonSerializer=__SERIALIZER__).
+// It runs in the player: one GET and one POST through the generated client against the local verification server.
+// The definition file of the client is compiled only while OPENAPI_CODEGEN_SOURCE_GENERATOR is defined for the build
+// target (the base package sets it per target), so the probe is guarded the same way.
+#if OPENAPI_CODEGEN_SOURCE_GENERATOR
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+namespace PlayerVerification.__COMBO__
+{
+    public static class Probe
+    {
+        [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void Start()
+        {
+            PvRunner.Run("__COMBO__", "__TRANSPORT__", "__SERIALIZER__", RunAsync);
+        }
+
+        private static __COMBO__Api CreateClient(Uri origin)
+        {
+__CREATE_CLIENT__
+        }
+
+        private static async Task RunAsync(PvContext context)
+        {
+            __COMBO__Api api = CreateClient(context.ServerOrigin);
+
+            // GET: the server's canned JSON is deserialized into DTOs, enums, dates, maps and a oneOf union.
+            Gadget got = await api.getGadget(7);
+            context.Equal("get.id", 7L, got.Id);
+            context.Equal("get.name", "gadget-seven", got.Name);
+            context.Equal("get.quantity", 12, got.Quantity.GetValueOrDefault(-1));
+            context.Check("get.enum-string", got.Color == Color.DarkBlue, "color=" + got.Color);
+            context.Check("get.enum-integer", got.Level == Level.Value2, "level=" + got.Level);
+            context.Equal("get.date-time", new DateTimeOffset(2024, 5, 6, 7, 8, 9, TimeSpan.Zero), got.CreatedAt);
+            context.Equal("get.date", new DateTime(1990, 1, 2), got.Birthday.GetValueOrDefault());
+            context.Check(
+                "get.map",
+                got.Scores != null && got.Scores.Count == 2 && got.Scores["a"] == 1 && got.Scores["b"] == 2,
+                "scores=" + (got.Scores == null ? "null" : got.Scores.Count.ToString()));
+            context.Check("get.array", got.Tags != null && got.Tags.Count == 2 && got.Tags[1] == "y", string.Empty);
+            context.Check(
+                "get.union",
+                got.Shape != null && got.Shape.TryGetCircle(out Circle circle) && circle.Radius == 2.5,
+                "discriminator=" + (got.Shape == null ? "null" : got.Shape.DiscriminatorValue));
+
+            // POST: the generated request serializer writes the body, the server echoes it, and the response
+            // deserializer reads it back. The server also checks the wire format of what it received.
+            var request = new Gadget
+            {
+                Id = 42,
+                Name = "posted",
+                Quantity = 5,
+                Color = Color.Red,
+                Level = Level.Value3,
+                CreatedAt = new DateTimeOffset(2025, 1, 2, 3, 4, 5, TimeSpan.Zero),
+                Birthday = new DateTime(2000, 12, 31),
+                Scores = new Dictionary<string, int> { { "x", 10 } },
+                Tags = new List<string> { "one", "two", "three" },
+                Shape = Shape.FromSquare(new Square { Side = 3 }),
+            };
+            Gadget echoed = await api.createGadget(request);
+            context.Equal("post.id", request.Id, echoed.Id);
+            context.Equal("post.name", request.Name, echoed.Name);
+            context.Equal("post.quantity", 5, echoed.Quantity.GetValueOrDefault(-1));
+            context.Check("post.enum-string", echoed.Color == Color.Red, "color=" + echoed.Color);
+            context.Check("post.enum-integer", echoed.Level == Level.Value3, "level=" + echoed.Level);
+            context.Equal("post.date-time", request.CreatedAt, echoed.CreatedAt);
+            context.Equal("post.date", request.Birthday.GetValueOrDefault(), echoed.Birthday.GetValueOrDefault());
+            context.Check(
+                "post.map",
+                echoed.Scores != null && echoed.Scores.Count == 1 && echoed.Scores["x"] == 10,
+                string.Empty);
+            context.Check("post.array", echoed.Tags != null && echoed.Tags.Count == 3 && echoed.Tags[2] == "three", string.Empty);
+            context.Check(
+                "post.union",
+                echoed.Shape != null && echoed.Shape.TryGetSquare(out Square square) && square.Side == 3,
+                "discriminator=" + (echoed.Shape == null ? "null" : echoed.Shape.DiscriminatorValue));
+
+            // Constraint: a value outside the schema is rejected before a request is sent
+            // (the server counts requests, so the harness can tell a rejected call from a sent one).
+            bool rejected = false;
+            string rejection = "no exception";
+            try
+            {
+                request.Quantity = 101;
+                await api.createGadget(request);
+            }
+            catch (Exception exception)
+            {
+                rejected = true;
+                rejection = exception.GetType().Name;
+            }
+
+            context.Check("constraint.maximum", rejected, rejection);
+        }
+    }
+}
+#endif

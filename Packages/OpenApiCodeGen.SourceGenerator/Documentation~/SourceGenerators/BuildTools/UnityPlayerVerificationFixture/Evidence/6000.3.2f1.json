@@ -1,0 +1,373 @@
+{
+  "schemaVersion": 1,
+  "unityVersion": "6000.3.2f1",
+  "hostPlatform": "win32",
+  "dates": {
+    "finalRun": "2026-11-14T15:09:56.325Z"
+  },
+  "browser": "chrome.exe",
+  "finalResults": [
+    {
+      "cell": "webgl-il2cpp-high-uwr-newtonsoft",
+      "verdict": "pass",
+      "buildSeconds": 166,
+      "runSeconds": 6,
+      "checks": "21/21 passed",
+      "server": {
+        "gets": 1,
+        "posts": 1,
+        "wireValid": true
+      },
+      "diagnostics": [],
+      "firstFailure": null
+    },
+    {
+      "cell": "webgl-il2cpp-high-uwr-stj",
+      "verdict": "pass",
+      "buildSeconds": 117,
+      "runSeconds": 6,
+      "checks": "21/21 passed",
+      "server": {
+        "gets": 1,
+        "posts": 1,
+        "wireValid": true
+      },
+      "diagnostics": [],
+      "firstFailure": null
+    },
+    {
+      "cell": "webgl-il2cpp-minimal-httpclient-newtonsoft",
+      "verdict": "unsupported",
+      "buildSeconds": 175,
+      "runSeconds": 94,
+      "checks": "0/1 passed",
+      "server": {
+        "gets": 0,
+        "posts": 0,
+        "wireValid": true
+      },
+      "diagnostics": [
+        "OACG014"
+      ],
+      "firstFailure": "watchdog: the probe did not finish within 90 seconds"
+    },
+    {
+      "cell": "webgl-il2cpp-minimal-uwr-newtonsoft",
+      "verdict": "pass",
+      "buildSeconds": 181,
+      "runSeconds": 6,
+      "checks": "21/21 passed",
+      "server": {
+        "gets": 1,
+        "posts": 1,
+        "wireValid": true
+      },
+      "diagnostics": [],
+      "firstFailure": null
+    },
+    {
+      "cell": "webgl-il2cpp-minimal-uwr-stj",
+      "verdict": "pass",
+      "buildSeconds": 120,
+      "runSeconds": 6,
+      "checks": "21/21 passed",
+      "server": {
+        "gets": 1,
+        "posts": 1,
+        "wireValid": true
+      },
+      "diagnostics": [],
+      "firstFailure": null
+    },
+    {
+      "cell": "win64-il2cpp-high-httpclient-newtonsoft",
+      "verdict": "pass",
+      "buildSeconds": 99,
+      "runSeconds": 2,
+      "checks": "21/21 passed",
+      "server": {
+        "gets": 1,
+        "posts": 1,
+        "wireValid": true
+      },
+      "diagnostics": [],
+      "firstFailure": null
+    },
+    {
+      "cell": "win64-il2cpp-high-httpclient-stj",
+      "verdict": "pass",
+      "buildSeconds": 83,
+      "runSeconds": 2,
+      "checks": "21/21 passed",
+      "server": {
+        "gets": 1,
+        "posts": 1,
+        "wireValid": true
+      },
+      "diagnostics": [],
+      "firstFailure": null
+    },
+    {
+      "cell": "win64-il2cpp-high-uwr-newtonsoft",
+      "verdict": "pass",
+      "buildSeconds": 87,
+      "runSeconds": 2,
+      "checks": "21/21 passed",
+      "server": {
+        "gets": 1,
+        "posts": 1,
+        "wireValid": true
+      },
+      "diagnostics": [],
+      "firstFailure": null
+    },
+    {
+      "cell": "win64-il2cpp-high-uwr-stj",
+      "verdict": "pass",
+      "buildSeconds": 74,
+      "runSeconds": 2,
+      "checks": "21/21 passed",
+      "server": {
+        "gets": 1,
+        "posts": 1,
+        "wireValid": true
+      },
+      "diagnostics": [],
+      "firstFailure": null
+    },
+    {
+      "cell": "win64-il2cpp-minimal-httpclient-newtonsoft",
+      "verdict": "pass",
+      "buildSeconds": 157,
+      "runSeconds": 2,
+      "checks": "21/21 passed",
+      "server": {
+        "gets": 1,
+        "posts": 1,
+        "wireValid": true
+      },
+      "diagnostics": [],
+      "firstFailure": null
+    },
+    {
+      "cell": "win64-il2cpp-minimal-httpclient-stj",
+      "verdict": "pass",
+      "buildSeconds": 84,
+      "runSeconds": 2,
+      "checks": "21/21 passed",
+      "server": {
+        "gets": 1,
+        "posts": 1,
+        "wireValid": true
+      },
+      "diagnostics": [],
+      "firstFailure": null
+    },
+    {
+      "cell": "win64-il2cpp-minimal-uwr-newtonsoft",
+      "verdict": "pass",
+      "buildSeconds": 87,
+      "runSeconds": 2,
+      "checks": "21/21 passed",
+      "server": {
+        "gets": 1,
+        "posts": 1,
+        "wireValid": true
+      },
+      "diagnostics": [],
+      "firstFailure": null
+    },
+    {
+      "cell": "win64-il2cpp-minimal-uwr-stj",
+      "verdict": "pass",
+      "buildSeconds": 71,
+      "runSeconds": 2,
+      "checks": "21/21 passed",
+      "server": {
+        "gets": 1,
+        "posts": 1,
+        "wireValid": true
+      },
+      "diagnostics": [],
+      "firstFailure": null
+    },
+    {
+      "cell": "win64-mono-minimal-httpclient-newtonsoft",
+      "verdict": "pass",
+      "buildSeconds": 35,
+      "runSeconds": 6,
+      "checks": "21/21 passed",
+      "server": {
+        "gets": 1,
+        "posts": 1,
+        "wireValid": true
+      },
+      "diagnostics": [],
+      "firstFailure": null
+    },
+    {
+      "cell": "win64-mono-minimal-uwr-newtonsoft",
+      "verdict": "pass",
+      "buildSeconds": 26,
+      "runSeconds": 5,
+      "checks": "21/21 passed",
+      "server": {
+        "gets": 1,
+        "posts": 1,
+        "wireValid": true
+      },
+      "diagnostics": [],
+      "firstFailure": null
+    }
+  ],
+  "beforeGeneratorFix": {
+    "note": "The same matrix before the generator emitted PreserveAttribute on DTOs, enum wire converters and properties (only the failed cells are listed; the other cells passed).",
+    "results": [
+      {
+        "cell": "webgl-il2cpp-high-uwr-newtonsoft",
+        "verdict": "fail",
+        "buildSeconds": 165,
+        "runSeconds": 6,
+        "checks": "0/1 passed",
+        "server": {
+          "gets": 1,
+          "posts": 0,
+          "wireValid": true
+        },
+        "diagnostics": [],
+        "firstFailure": "unhandled-exception: Newtonsoft.Json.JsonException: Error creating 'PlayerVerification.UwrNewtonsoft.ColorWireConverter'. ---> Newtonsoft.Json.JsonException: No parameterless constructor defined for 'PlayerVerification.UwrNewtonsoft.ColorWireConverter'."
+      },
+      {
+        "cell": "webgl-il2cpp-high-uwr-stj",
+        "verdict": "fail",
+        "buildSeconds": 117,
+        "runSeconds": 6,
+        "checks": "0/1 passed",
+        "server": {
+          "gets": 1,
+          "posts": 0,
+          "wireValid": true
+        },
+        "diagnostics": [],
+        "firstFailure": "unhandled-exception: System.ArgumentNullException: Value cannot be null."
+      },
+      {
+        "cell": "win64-il2cpp-high-httpclient-newtonsoft",
+        "verdict": "fail",
+        "buildSeconds": 102,
+        "runSeconds": 2,
+        "checks": "0/1 passed",
+        "server": {
+          "gets": 1,
+          "posts": 0,
+          "wireValid": true
+        },
+        "diagnostics": [],
+        "firstFailure": "unhandled-exception: Newtonsoft.Json.JsonException: Error creating 'PlayerVerification.HttpNewtonsoft.ColorWireConverter'. ---> Newtonsoft.Json.JsonException: No parameterless constructor defined for 'PlayerVerification.HttpNewtonsoft.ColorWireConverter'."
+      },
+      {
+        "cell": "win64-il2cpp-high-httpclient-stj",
+        "verdict": "fail",
+        "buildSeconds": 84,
+        "runSeconds": 2,
+        "checks": "0/1 passed",
+        "server": {
+          "gets": 1,
+          "posts": 0,
+          "wireValid": true
+        },
+        "diagnostics": [],
+        "firstFailure": "unhandled-exception: System.InvalidOperationException: JsonPropertyInfo 'radius' defined in type 'PlayerVerification.HttpStj.Circle' is marked required but does not specify a setter."
+      },
+      {
+        "cell": "win64-il2cpp-high-uwr-newtonsoft",
+        "verdict": "fail",
+        "buildSeconds": 86,
+        "runSeconds": 2,
+        "checks": "0/1 passed",
+        "server": {
+          "gets": 1,
+          "posts": 0,
+          "wireValid": true
+        },
+        "diagnostics": [],
+        "firstFailure": "unhandled-exception: Newtonsoft.Json.JsonException: Error creating 'PlayerVerification.UwrNewtonsoft.ColorWireConverter'. ---> Newtonsoft.Json.JsonException: No parameterless constructor defined for 'PlayerVerification.UwrNewtonsoft.ColorWireConverter'."
+      },
+      {
+        "cell": "win64-il2cpp-high-uwr-stj",
+        "verdict": "fail",
+        "buildSeconds": 74,
+        "runSeconds": 2,
+        "checks": "0/1 passed",
+        "server": {
+          "gets": 1,
+          "posts": 0,
+          "wireValid": true
+        },
+        "diagnostics": [],
+        "firstFailure": "unhandled-exception: System.InvalidOperationException: JsonPropertyInfo 'radius' defined in type 'PlayerVerification.UwrStj.Circle' is marked required but does not specify a setter."
+      }
+    ]
+  },
+  "classLevelPreserveOnly": {
+    "note": "High stripping cells with PreserveAttribute on the DTO and converter classes but not on the properties.",
+    "results": [
+      {
+        "cell": "win64-il2cpp-high-httpclient-newtonsoft",
+        "verdict": "fail",
+        "buildSeconds": 99,
+        "runSeconds": 2,
+        "checks": "20/21 passed",
+        "server": {
+          "gets": 1,
+          "posts": 1,
+          "wireValid": true
+        },
+        "diagnostics": [],
+        "firstFailure": "get.union: discriminator=circle"
+      },
+      {
+        "cell": "win64-il2cpp-high-httpclient-stj",
+        "verdict": "fail",
+        "buildSeconds": 83,
+        "runSeconds": 2,
+        "checks": "0/1 passed",
+        "server": {
+          "gets": 1,
+          "posts": 0,
+          "wireValid": true
+        },
+        "diagnostics": [],
+        "firstFailure": "unhandled-exception: System.InvalidOperationException: JsonPropertyInfo 'radius' defined in type 'PlayerVerification.HttpStj.Circle' is marked required but does not specify a setter."
+      },
+      {
+        "cell": "win64-il2cpp-high-uwr-newtonsoft",
+        "verdict": "fail",
+        "buildSeconds": 87,
+        "runSeconds": 2,
+        "checks": "20/21 passed",
+        "server": {
+          "gets": 1,
+          "posts": 1,
+          "wireValid": true
+        },
+        "diagnostics": [],
+        "firstFailure": "get.union: discriminator=circle"
+      },
+      {
+        "cell": "win64-il2cpp-high-uwr-stj",
+        "verdict": "fail",
+        "buildSeconds": 78,
+        "runSeconds": 2,
+        "checks": "0/1 passed",
+        "server": {
+          "gets": 1,
+          "posts": 0,
+          "wireValid": true
+        },
+        "diagnostics": [],
+        "firstFailure": "unhandled-exception: System.InvalidOperationException: JsonPropertyInfo 'radius' defined in type 'PlayerVerification.UwrStj.Circle' is marked required but does not specify a setter."
+      }
+    ]
+  }
+}

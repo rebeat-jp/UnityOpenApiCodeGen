@@ -72,7 +72,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (preserveAttribute is not null)
             {
                 // Json.NET creates the converter by reflection; keep it under Unity managed stripping.
-                source.AppendLine("    [global::" + model.GeneratedNamespace + "." + preserveAttribute + "]");
+                source.AppendLine("    [" + preserveAttribute + "]");
             }
 
             source.Append("    internal sealed class ").Append(converterName)

@@ -1,0 +1,19 @@
+{
+  "name": "Unity.OpenApiCodeGen.PlayerVerification.Client.HttpNewtonsoft",
+  "rootNamespace": "PlayerVerification.HttpNewtonsoft",
+  "references": [
+    "Unity.OpenApiCodeGen.SourceGenerator",
+    "Unity.OpenApiCodeGen.PlayerVerification.Common"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "PV_HTTP_NEWTONSOFT"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

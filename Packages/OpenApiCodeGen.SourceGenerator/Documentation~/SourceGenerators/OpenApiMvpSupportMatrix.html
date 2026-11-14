@@ -1528,6 +1528,199 @@ prevents Json.NET from mistaking a schema boolean for a presence flag.</p>
 <td>要素を意図して無視した場合。wire contractは変わりません。ドキュメント専用の要素（<code>description</code>・<code>example</code>など）は黙って受理するので報告しません。主な場面: <code>Accept</code>／<code>Content-Type</code>／<code>Authorization</code>のheader parameter、webhooks・callbacks・links（とcomponentsの<code>links</code>・<code>callbacks</code>）、生成できる他のmedia typeがあるときのobject・arrayのxml、処理できない別media typeや生成できないerror schema、評価できない<code>not</code>・<code>const</code>・<code>x-enum-*</code>・<code>discriminator</code>、.NET構文を要する<code>pattern</code>、binaryに付いた制約キーワード、Encoding Objectの無視した項目、3.2の<code>itemSchema</code>（逐次media type）・<code>prefixEncoding</code>／<code>itemEncoding</code>・他documentを参照する<code>$self</code>、Swagger 2.0でhostがないときのoperationの<code>schemes</code></td>
 </tr>
 </tbody></table>
+<h2 id="player互換性il2cppwebgl">Player互換性（IL2CPP・WebGL）</h2>
+<p><a href="https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/57">#57</a>の検証結果です。検証は<code>SourceGenerators/scripts/verify-player.js</code>
+（<code>verify-player.sh</code>から実行）で行い、<code>SourceGenerators/BuildTools/UnityPlayerVerificationFixture/</code>のfixtureを使います。
+fixtureはSource Generatorの本来の経路（Editor Writerの定義ファイル、normalized spec bundle、Analyzer）で4つのclient
+（HttpClientまたはUnityWebRequest × Newtonsoft.JsonまたはSystem.Text.Json）を生成し、Player内でJSON往復（DTO、string／integer enum、
+<code>date-time</code>、<code>date</code>、map、配列、discriminator付き<code>oneOf</code>）、GET 1回、POST 1回、constraint違反の事前拒否を実行します。
+結果は各セルの<code>result.json</code>（ビルド・Playerログ付き）として<code>artifacts/player-gate/&lt;Unity版&gt;/&lt;セルID&gt;/</code>へ保存され、
+要約を<a href="BuildTools/UnityPlayerVerificationFixture/Evidence/6000.3.2f1.json"><code>Evidence/6000.3.2f1.json</code></a>に残しています。</p>
+<p>検証条件: Unity <code>6000.3.2f1</code>、Windows 11 x64ホスト、2026-11-14実行。Standalone Win64はIL2CPPで、WebGLはIL2CPP（WebGLに別のbackendはありません）。
+ビルドは非Development、IL2CPPコード生成・WebGLの例外サポートなどのPlayer設定は既定のままです（WebGLは圧縮なし）。
+WebGLはヘッドレスChrome（157）で、Playerと同一originのローカルHTTPサーバー（<code>127.0.0.1</code>）に対して実行しました。
+System.Text.Jsonは<code>org.nuget.system.text.json</code> 8.0.5（UnityNuGet、netstandard2.0版）、Newtonsoft.Jsonは<code>com.unity.nuget.newtonsoft-json</code> 3.2.2です。</p>
+<table>
+<thead>
+<tr>
+<th>Target</th>
+<th>Backend</th>
+<th>Managed Stripping</th>
+<th>HTTP</th>
+<th>JSON</th>
+<th>結果</th>
+<th align="right">ビルド（秒）</th>
+<th>チェック</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Standalone Win64</td>
+<td>IL2CPP</td>
+<td>Minimal</td>
+<td>HttpClient</td>
+<td>Newtonsoft.Json</td>
+<td>Pass</td>
+<td align="right">157</td>
+<td>21/21 passed</td>
+</tr>
+<tr>
+<td>Standalone Win64</td>
+<td>IL2CPP</td>
+<td>Minimal</td>
+<td>HttpClient</td>
+<td>System.Text.Json</td>
+<td>Pass</td>
+<td align="right">84</td>
+<td>21/21 passed</td>
+</tr>
+<tr>
+<td>Standalone Win64</td>
+<td>IL2CPP</td>
+<td>Minimal</td>
+<td>UnityWebRequest</td>
+<td>Newtonsoft.Json</td>
+<td>Pass</td>
+<td align="right">87</td>
+<td>21/21 passed</td>
+</tr>
+<tr>
+<td>Standalone Win64</td>
+<td>IL2CPP</td>
+<td>Minimal</td>
+<td>UnityWebRequest</td>
+<td>System.Text.Json</td>
+<td>Pass</td>
+<td align="right">71</td>
+<td>21/21 passed</td>
+</tr>
+<tr>
+<td>Standalone Win64</td>
+<td>IL2CPP</td>
+<td>High</td>
+<td>HttpClient</td>
+<td>Newtonsoft.Json</td>
+<td>Pass</td>
+<td align="right">99</td>
+<td>21/21 passed</td>
+</tr>
+<tr>
+<td>Standalone Win64</td>
+<td>IL2CPP</td>
+<td>High</td>
+<td>HttpClient</td>
+<td>System.Text.Json</td>
+<td>Pass</td>
+<td align="right">83</td>
+<td>21/21 passed</td>
+</tr>
+<tr>
+<td>Standalone Win64</td>
+<td>IL2CPP</td>
+<td>High</td>
+<td>UnityWebRequest</td>
+<td>Newtonsoft.Json</td>
+<td>Pass</td>
+<td align="right">87</td>
+<td>21/21 passed</td>
+</tr>
+<tr>
+<td>Standalone Win64</td>
+<td>IL2CPP</td>
+<td>High</td>
+<td>UnityWebRequest</td>
+<td>System.Text.Json</td>
+<td>Pass</td>
+<td align="right">74</td>
+<td>21/21 passed</td>
+</tr>
+<tr>
+<td>Standalone Win64</td>
+<td>Mono（比較）</td>
+<td>Minimal</td>
+<td>HttpClient</td>
+<td>Newtonsoft.Json</td>
+<td>Pass</td>
+<td align="right">35</td>
+<td>21/21 passed</td>
+</tr>
+<tr>
+<td>Standalone Win64</td>
+<td>Mono（比較）</td>
+<td>Minimal</td>
+<td>UnityWebRequest</td>
+<td>Newtonsoft.Json</td>
+<td>Pass</td>
+<td align="right">26</td>
+<td>21/21 passed</td>
+</tr>
+<tr>
+<td>WebGL</td>
+<td>IL2CPP</td>
+<td>Minimal</td>
+<td>UnityWebRequest</td>
+<td>Newtonsoft.Json</td>
+<td>Pass</td>
+<td align="right">181</td>
+<td>21/21 passed</td>
+</tr>
+<tr>
+<td>WebGL</td>
+<td>IL2CPP</td>
+<td>Minimal</td>
+<td>UnityWebRequest</td>
+<td>System.Text.Json</td>
+<td>Pass</td>
+<td align="right">120</td>
+<td>21/21 passed</td>
+</tr>
+<tr>
+<td>WebGL</td>
+<td>IL2CPP</td>
+<td>High</td>
+<td>UnityWebRequest</td>
+<td>Newtonsoft.Json</td>
+<td>Pass</td>
+<td align="right">166</td>
+<td>21/21 passed</td>
+</tr>
+<tr>
+<td>WebGL</td>
+<td>IL2CPP</td>
+<td>High</td>
+<td>UnityWebRequest</td>
+<td>System.Text.Json</td>
+<td>Pass</td>
+<td align="right">117</td>
+<td>21/21 passed</td>
+</tr>
+<tr>
+<td>WebGL</td>
+<td>IL2CPP</td>
+<td>Minimal</td>
+<td>HttpClient</td>
+<td>Newtonsoft.Json</td>
+<td>非対応（<code>OACG014</code>。Playerは90秒で無応答）</td>
+<td align="right">175</td>
+<td>0/1 passed</td>
+</tr>
+</tbody></table>
+<ul>
+<li><strong>Pass</strong>: 21チェックがすべて成功し、サーバーがGET 1件・POST 1件を受信して、POST本文のwire形式（enumのwire値、日付、map、discriminatorとメンバー）も正しいことを確認しました。</li>
+<li><strong>WebGL × HttpClientは非対応</strong>です。<code>UNITY_WEBGL</code>定義下でHttpClient transportを選ぶとAnalyzerが<code>OACG014</code>（Warning）を報告し、生成とビルドは成功しますが、
+Playerのprobeは完了せず、サーバーはrequestを1件も受信しません（90秒のwatchdogで失敗を記録）。WebGLでは<code>UnityWebRequest</code>を選んでください。実測したのはNewtonsoft.Jsonの1セルだけです。原因はtransport（<code>System.Net.Http.HttpClient</code>のソケットがWebGLのブラウザー環境に無いこと）でserializerとは無関係なので、System.Text.Jsonも同様と判断しており、個別には実測していません。</li>
+<li><strong>Managed Stripping Level High</strong>: 生成物に何も加えない初回の実行は、Standalone IL2CPP 4セルとWebGL 2セルで失敗しました。
+Newtonsoft.Jsonは列挙型のwire converterを生成できず（<code>No parameterless constructor defined for &#39;...ColorWireConverter&#39;</code>）、
+System.Text.Jsonはsetterを持たないpropertyとして<code>JsonRequired</code>のpropertyを拒否しました（<code>JsonPropertyInfo &#39;radius&#39; ... is marked required but does not specify a setter</code>）。
+どちらも、リフレクションだけで使うメンバー（converterのコンストラクター、コードから設定しないDTO propertyのaccessor）がHighで削除されるためです。
+型への<code>PreserveAttribute</code>だけではproperty accessorが残らないことも確認しました（型単位だけの再実行は、System.Text.Jsonで同じ失敗、Newtonsoft.Jsonでunionメンバーの検査失敗でした）。
+そのため生成器は、DTO型・enumのwire converter・各DTO propertyと<code>&lt;Name&gt;Specified</code>・<code>OnSerializing</code>コールバックに、internalな<code>PreserveAttribute</code>を付けます
+（Unityのlinkerは名前で認識します。<code>link.xml</code>は生成assembly名を持てないため使いません）。attributeはclientごとの専用namespace（<code>&lt;生成namespace&gt;.&lt;ApiName&gt;_Preserve</code>）に宣言するので、同じnamespaceに複数のclientを生成しても重複しません（型名が衝突する場合は連番を付けます）。
+DTO・enum・unionを持たないspecでは、attributeもそのファイルも生成しません。この変更後に全セルがPassしました。</li>
+<li>対象外（未検証）: Unity <code>6000.0.23f1</code>と<code>2021.3</code>、Linux・macOS・Android・iOSのPlayer、Development Player、Managed Stripping Level Low／Medium／Disabled、
+IL2CPPのコード生成設定とWebGLの例外サポートの既定以外、別origin（CORS）への通信、WebGLの圧縮形式、Safari／Firefox。
+Linux Standalone IL2CPPとWebGLの手動CI（<code>.github/workflows/source-generator-player.yml</code>）は用意しましたが、まだ実行していません。</li>
+<li>WebGLでUnityWebRequestを使う場合、server URLが相対（<code>/api</code>など）なら、<code>new Uri(Application.absoluteURL)</code>のような絶対URIをbase addressに渡す必要があります。</li>
+</ul>
 <h2 id="検証済み環境">検証済み環境</h2>
 <p>GitHub ActionsのUnity検証とCD dry-runは実装済みです。レビュー対応前のclean commit
 <code>adefab2c5bf367c3ecf5971fa555f1cbb68afa24</code>では、
@@ -1586,7 +1779,6 @@ Docker専用項目は無効になります。実UXMLテストに加え、Unity E
 <p>このローカル候補は<code>--allow-dirty</code>で作成した開発用証拠です。公開に使うclean commitと
 最新のCI結果・成果物は<a href="https://github.com/rebeat-jp/UnityOpenApiCodeGen/pull/56">PR #56</a>
 で確認し、<a href="../RELEASE.html">RELEASE.md</a>の承認・検証手順に従ってください。
-IL2CPP/WebGLのPlayer互換性は未検証で、<a href="https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/57">#57</a>
-で追跡します。正式タグ・公開・OpenUPM初回登録は
+IL2CPP/WebGLのPlayer互換性は、上の「Player互換性（IL2CPP・WebGL）」にUnity <code>6000.3.2f1</code>での検証結果を記録しています（<a href="https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/57">#57</a>）。正式タグ・公開・OpenUPM初回登録は
 <a href="https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/62">#62</a>の別作業です。</p>
 </main></body></html>
