@@ -167,6 +167,43 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             AssertBaseline(name, apiName, File.ReadAllText(SpecPath(specFile)), systemTextJson: true);
         }
 
+        /// <summary>
+        /// The UnityWebRequest clients (ApiSurfaceBaselines/*.uwr.txt with Newtonsoft.Json and *.uwr.stj.txt with
+        /// System.Text.Json): the constructors take an absolute base address instead of an HttpClient, and the client
+        /// has the RequestTimeout and ConfigureUnityWebRequest settings. Everything else is the HttpClient surface.
+        /// </summary>
+        [Theory]
+        [InlineData("representative", "BaselineRepresentativeApi", "representative.json", false)]
+        [InlineData("coverage", "BaselineCoverageApi", "coverage.json", false)]
+        [InlineData("operations", "BaselineOperationsApi", "operations.json", false)]
+        [InlineData("bodies", "BaselineBodiesApi", "bodies.json", false)]
+        [InlineData("security", "BaselineSecurityApi", "security.json", false)]
+        [InlineData("composition", "BaselineCompositionApi", "composition.json", false)]
+        [InlineData("openapi32", "BaselineOpenApi32Api", "openapi32.json", false)]
+        [InlineData("swagger2", "BaselineSwagger2Api", "swagger2.json", false)]
+        [InlineData("representative", "BaselineRepresentativeApi", "representative.json", true)]
+        [InlineData("coverage", "BaselineCoverageApi", "coverage.json", true)]
+        [InlineData("operations", "BaselineOperationsApi", "operations.json", true)]
+        [InlineData("bodies", "BaselineBodiesApi", "bodies.json", true)]
+        [InlineData("security", "BaselineSecurityApi", "security.json", true)]
+        [InlineData("serializer-core", "BaselineSerializerCoreApi", "serializer-core.json", true)]
+        [InlineData("composition", "BaselineCompositionApi", "composition.json", true)]
+        [InlineData("openapi32", "BaselineOpenApi32Api", "openapi32.json", true)]
+        [InlineData("swagger2", "BaselineSwagger2Api", "swagger2.json", true)]
+        public void UnityWebRequestSpecsKeepPublicSurface(
+            string name,
+            string apiName,
+            string specFile,
+            bool systemTextJson)
+        {
+            AssertBaseline(
+                name,
+                apiName,
+                File.ReadAllText(SpecPath(specFile)),
+                systemTextJson,
+                unityWebRequest: true);
+        }
+
         [Fact]
         public void BaselineCheckAllowsAdditionsButNotRemovalsOrChanges()
         {
@@ -242,17 +279,25 @@ namespace Probe
             string name,
             string apiName,
             string specJson,
-            bool systemTextJson = false)
+            bool systemTextJson = false,
+            bool unityWebRequest = false)
         {
             string ns = "Generated.Baseline." + apiName;
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
                 specJson,
                 apiName: apiName,
                 generatedNamespace: ns,
-                options: systemTextJson
+                options: systemTextJson && !unityWebRequest
                     ? new Phase4CompilationOptions { JsonSerializer = "SystemTextJson" }
-                    : null);
-            string baselineName = systemTextJson ? name + ".stj" : name;
+                    : unityWebRequest
+                        ? new Phase4CompilationOptions
+                        {
+                            UnityWebRequestStub = true,
+                            HttpTransport = "UnityWebRequest",
+                            JsonSerializer = systemTextJson ? "SystemTextJson" : null
+                        }
+                        : null);
+            string baselineName = name + (unityWebRequest ? ".uwr" : string.Empty) + (systemTextJson ? ".stj" : string.Empty);
             Assert.Empty(execution.RunResult.Diagnostics);
             Assert.Empty(execution.CompilationErrors);
 

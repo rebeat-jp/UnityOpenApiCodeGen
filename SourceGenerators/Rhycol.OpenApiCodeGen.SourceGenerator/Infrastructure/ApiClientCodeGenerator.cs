@@ -37,6 +37,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             "OperationNames", "GetOperationServers", "BuildOperationServerUrl"
         };
 
+        // Members that only the UnityWebRequest client has; checked once the transport is known so that the
+        // client names accepted for HttpClient stay the same.
+        private static readonly HashSet<string> UnityWebRequestReservedApiNames = new(StringComparer.Ordinal)
+        {
+            "_baseAddress", "RequestTimeout", "ConfigureUnityWebRequest", "SendUnityWebRequestAsync",
+            "SetUnityRequestHeader", "AddUnityResponseHeader"
+        };
+
         private static readonly DiagnosticDescriptor MalformedBundle = new(
             "OACG001",
             "Malformed normalized spec bundle",
@@ -433,6 +441,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     documentFormat,
                     targetDisplayName,
                     libraryOptionDetail,
+                    diagnosticLocation);
+            }
+
+            if (httpTransport == HttpTransportKind.UnityWebRequest &&
+                UnityWebRequestReservedApiNames.Contains(apiName))
+            {
+                return OpenApiClientDefinitionInput.CreateInvalid(
+                    targetDisplayName,
+                    "apiName '" + apiName + "' conflicts with a generated client member",
                     diagnosticLocation);
             }
 

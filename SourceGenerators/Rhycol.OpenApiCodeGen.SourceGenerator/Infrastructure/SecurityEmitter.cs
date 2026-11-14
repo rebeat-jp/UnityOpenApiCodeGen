@@ -29,6 +29,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private readonly OpenApiGenerationModel _model;
         private readonly string _headerValidatorName;
+        private readonly bool _unityWebRequest;
         private readonly string _prefix;
         private readonly Dictionary<string, GeneratedSecuritySchemeModel> _schemesByKey;
         private readonly Dictionary<string, int> _schemeIndexByKey;
@@ -40,10 +41,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             new Dictionary<GeneratedOperationModel, int>();
         private readonly HashSet<string> _usedSchemeKeys = new HashSet<string>(StringComparer.Ordinal);
 
-        internal SecurityEmitter(OpenApiGenerationModel model, string headerValidatorName)
+        internal SecurityEmitter(OpenApiGenerationModel model, string headerValidatorName, bool unityWebRequest = false)
         {
             _model = model;
             _headerValidatorName = headerValidatorName;
+            _unityWebRequest = unityWebRequest;
             _schemesByKey = new Dictionary<string, GeneratedSecuritySchemeModel>(StringComparer.Ordinal);
             _schemeIndexByKey = new Dictionary<string, int>(StringComparer.Ordinal);
             for (int index = 0; index < model.SecuritySchemes.Count; index++)
@@ -64,6 +66,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             _prefix = prefix;
             PlanOperations();
         }
+
+        /// <summary>
+        /// The pre-send awaits stay on the caller context for UnityWebRequest (it must be created and sent on the
+        /// Unity main thread); HttpClient does not need the context.
+        /// </summary>
+        private string ConfigureAwaitCall => _unityWebRequest ? "ConfigureAwait(true)" : "ConfigureAwait(false)";
 
         private string ResultType => _prefix + "Result";
 
@@ -158,7 +166,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             source.Append("            var ").Append(LocalName).Append(" = await ")
                 .Append(_prefix).Append("Resolve").Append(index)
-                .AppendLine("(cancellationToken).ConfigureAwait(false);");
+                .AppendLine(_unityWebRequest
+                    ? "(cancellationToken).ConfigureAwait(true);"
+                    : "(cancellationToken).ConfigureAwait(false);");
         }
 
         internal void AppendQuery(StringBuilder source, GeneratedOperationModel operation)
@@ -436,7 +446,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     source.Append("            var oacgProvider = ").Append(scheme.ProviderPropertyName).AppendLine(";");
                     source.AppendLine("            if (oacgProvider != null)");
                     source.AppendLine("            {");
-                    source.AppendLine("                oacgValue = await oacgProvider(cancellationToken).ConfigureAwait(false);");
+                    source.AppendLine("                oacgValue = await oacgProvider(cancellationToken)." + ConfigureAwaitCall + ";");
                     source.AppendLine("            }");
                     source.AppendLine();
                     source.AppendLine("            if (string.IsNullOrEmpty(oacgValue))");
@@ -508,7 +518,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 foreach (GeneratedSecuritySchemeModel scheme in requirement)
                 {
                     conditions.Add(IsAsync(scheme)
-                        ? "await " + SchemeMethodName(scheme) + "(oacgResult, cancellationToken).ConfigureAwait(false)"
+                        ? "await " + SchemeMethodName(scheme) + "(oacgResult, cancellationToken)." + ConfigureAwaitCall
                         : SchemeMethodName(scheme) + "(oacgResult)");
                 }
 

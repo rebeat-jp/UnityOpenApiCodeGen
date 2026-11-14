@@ -1,0 +1,65 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Unity Source Generator UnityWebRequest Verification",
+    "version": "1.0.0"
+  },
+  "servers": [ { "url": "/api" } ],
+  "paths": {
+    "/items": {
+      "get": {
+        "operationId": "listItems",
+        "summary": "List items",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Item" } }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createItem",
+        "summary": "Create an item",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Item" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Item" } } }
+          },
+          "400": {
+            "description": "Rejected",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Item": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [ "id" ],
+        "properties": {
+          "id": { "type": "integer" },
+          "label": { "type": "string" }
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [ "title" ],
+        "properties": {
+          "title": { "type": "string" }
+        }
+      }
+    }
+  }
+}

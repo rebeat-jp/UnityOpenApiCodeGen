@@ -28,6 +28,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private readonly Dictionary<string, TypeNameAllocation> _typeNameAllocations =
             new Dictionary<string, TypeNameAllocation>(StringComparer.Ordinal);
 
+        private static readonly string[] CommonClientMemberNames =
+        {
+            "Servers", "BuildServerUrl", "ExpandServerUrl",
+            "OperationServerUrls", "ResolveOperationServerUrl", "OperationNames", "GetOperationServers", "BuildOperationServerUrl"
+        };
+
+        // Members that only the UnityWebRequest client has. They are reserved only for that transport so the
+        // HttpClient output does not change.
+        private static readonly string[] UnityWebRequestClientMemberNames =
+        {
+            "RequestTimeout", "ConfigureUnityWebRequest", "SendUnityWebRequestAsync",
+            "SetUnityRequestHeader", "AddUnityResponseHeader"
+        };
+
+        private static string[] ClientMemberTypeNames(HttpTransportKind transport)
+        {
+            return transport == HttpTransportKind.UnityWebRequest
+                ? CommonClientMemberNames.Concat(UnityWebRequestClientMemberNames).ToArray()
+                : CommonClientMemberNames;
+        }
+
         private OpenApiGenerationModelBuilder(OpenApiSemanticDocument document, GeneratorOptions options)
         {
             _document = document;
@@ -40,11 +61,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 ReserveTypeName(_fileParameterTypeName, document.Location, emitsDeclaration: false);
             }
 
-            foreach (string memberName in new[]
-                     {
-                         "Servers", "BuildServerUrl", "ExpandServerUrl",
-                         "OperationServerUrls", "ResolveOperationServerUrl", "OperationNames", "GetOperationServers", "BuildOperationServerUrl"
-                     })
+            foreach (string memberName in ClientMemberTypeNames(options.HttpTransport))
             {
                 // Generated client members; a schema type with the same name would be shadowed by them.
                 if (!_typeNameAllocations.ContainsKey(memberName))
@@ -145,6 +162,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 "GetOperationServers",
                 "BuildOperationServerUrl"
             };
+            if (_options.HttpTransport == HttpTransportKind.UnityWebRequest)
+            {
+                usedMethodNames.UnionWith(UnityWebRequestClientMemberNames);
+                usedMethodNames.Add("_baseAddress");
+            }
+
             _clientMemberNames = usedMethodNames;
             var result = new List<GeneratedOperationModel>();
             foreach (OpenApiSemanticOperation operation in _document.Operations

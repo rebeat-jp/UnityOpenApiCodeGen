@@ -176,6 +176,10 @@ for required_file in \
   "${verification_fixture}/Specs/VerificationItem.yaml" \
   "${verification_fixture}/Target/GeneratedClientProbe.cs" \
   "${verification_fixture}/Editor/SourceGeneratorVerticalGeneration.cs" \
+  "${verification_fixture}/Tests/Editor/UnityWebRequestTransportUnityTests.cs" \
+  "${verification_fixture}/UnityWebRequestClient/Unity.OpenApiCodeGen.SourceGenerator.Verification.UnityWebRequest.asmdef" \
+  "${verification_fixture}/UnityWebRequestClient/Specs/openapi.json" \
+  "${verification_fixture}/UnityWebRequestClient/Generated/UwrApi.g.cs" \
   "${package_removal_fixture}/Editor/SourceGeneratorPackageRemovalVerification.cs"; do
   if [[ ! -f "${required_file}" ]]; then
     fail_not_run "required Unity gate input is missing: ${required_file}"
@@ -284,10 +288,13 @@ for test_assembly in Unity.OpenApiCodeGen.Test.dll Unity.OpenApiCodeGen.SourceGe
   fi
 done
 
+# The verification fixture includes a UnityWebRequest client, which needs the
+# built-in UnityWebRequest module that a bare manifest does not enable.
 printf '%s\n' \
   '{' \
   '  "dependencies": {' \
   "    \"com.unity.test-framework\": \"${test_framework_version}\"," \
+  '    "com.unity.modules.unitywebrequest": "1.0.0",' \
   "    \"jp.rhycol.openapicodegen\": \"file:../../LocalPackages/${base_archive_name}\"," \
   "    \"jp.rhycol.openapicodegen.source-generator\": \"file:../../LocalPackages/${source_generator_archive_name}\"" \
   '  },' \
@@ -604,6 +611,7 @@ assert_test_passed \
   'Rhycol.OpenApiCodeGen.Test.Core.SettingMenuProviderFieldsTests.ProjectSettingsPersistenceUsesUnityAssetsDirectoryFromExternalWorkingDirectory'
 assert_test_class_ran "${results}" 'RawJsonNormalizerTests'
 assert_test_class_ran "${results}" 'NormalizedSpecCacheServiceTests'
+assert_test_class_ran "${results}" 'UnityWebRequestTransportUnityTests'
 
 # A second Generate with unchanged input must reuse the same specId and leave
 # both the compiler mirror and owned partial byte-identical.

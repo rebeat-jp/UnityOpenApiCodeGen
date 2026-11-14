@@ -8,6 +8,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
     internal sealed partial class HttpClientSourceEmitter
     {
         private readonly JsonSerializerProfile _json;
+        private readonly HttpTransportKind _transport;
 
         internal HttpClientSourceEmitter()
             : this(JsonSerializerProfile.Newtonsoft)
@@ -15,9 +16,34 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         }
 
         internal HttpClientSourceEmitter(JsonSerializerProfile json)
+            : this(json, HttpTransportKind.HttpClient)
+        {
+        }
+
+        internal HttpClientSourceEmitter(JsonSerializerProfile json, HttpTransportKind transport)
         {
             _json = json ?? throw new ArgumentNullException(nameof(json));
+            if (!LibrarySelection.IsDefined(transport))
+            {
+                throw new ArgumentOutOfRangeException(nameof(transport));
+            }
+
+            _transport = transport;
         }
+
+        private bool IsUnityWebRequest => _transport == HttpTransportKind.UnityWebRequest;
+
+        /// <summary>
+        /// 相対 server URL の解決先になる base address の式。
+        /// The expression of the base address that a relative server URL resolves against.
+        /// </summary>
+        private string BaseAddressExpression => IsUnityWebRequest ? "_baseAddress" : "_httpClient.BaseAddress";
+
+        /// <summary>
+        /// エラーメッセージでの base address の呼び名。
+        /// How the base address is named in error messages.
+        /// </summary>
+        private string BaseAddressName => IsUnityWebRequest ? "A base address" : "A HttpClient.BaseAddress";
 
         internal GeneratedFile Emit(OpenApiGenerationModel model)
         {
@@ -37,7 +63,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("{");
             source.Append("    public partial class ").Append(model.ApiName).AppendLine();
             source.AppendLine("    {");
-            source.AppendLine("        private readonly global::System.Net.Http.HttpClient _httpClient;");
+            if (IsUnityWebRequest)
+            {
+                source.AppendLine("        private readonly global::System.Uri? _baseAddress;");
+            }
+            else
+            {
+                source.AppendLine("        private readonly global::System.Net.Http.HttpClient _httpClient;");
+            }
+
             source.AppendLine("        private readonly string _baseUrl;");
             source.AppendLine();
             AppendConstructors(source, model);
@@ -51,7 +85,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 responseValidators.RequestJsonSerializerName,
                 responseValidators.HeaderValueValidatorName,
                 constraints,
-                _json);
+                _json,
+                IsUnityWebRequest);
 
             parameterSerializer.Security.AppendProperties(source);
             foreach (GeneratedOperationModel operation in model.Operations)
@@ -63,6 +98,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             source.AppendLine();
             AppendHelpers(source, model, responseValidators, bodyHelpers);
+            if (IsUnityWebRequest)
+            {
+                AppendUnityWebRequestTransport(source);
+            }
+
             parameterSerializer.AppendHelpers(source);
             parameterSerializer.Security.AppendHelpers(source);
             AppendBodyHelpers(source, model, bodyHelpers, responseJsonContracts);
@@ -79,6 +119,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private void AppendConstructors(StringBuilder source, OpenApiGenerationModel model)
         {
+            if (IsUnityWebRequest)
+            {
+                AppendUnityWebRequestConstructors(source, model);
+                return;
+            }
+
             source.Append("        public ").Append(model.ApiName)
                 .Append("(global::System.Net.Http.HttpClient httpClient) : this(httpClient, ")
                 .Append(GeneratedSourceEmitter.StringLiteral(model.BaseUrl))
@@ -271,21 +317,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("            string baseUrl = baseFragment < 0 ? serverUrl : serverUrl.Substring(0, baseFragment);");
             source.AppendLine("            if (baseUrl.StartsWith(\"//\", global::System.StringComparison.Ordinal))");
             source.AppendLine("            {");
-            source.AppendLine("                if (_httpClient.BaseAddress is null)");
+            source.AppendLine("                if (" + BaseAddressExpression + " is null)");
             source.AppendLine("                {");
-            source.AppendLine("                    throw new global::System.InvalidOperationException(\"A HttpClient.BaseAddress is required for a network-path server URL.\");");
+            source.AppendLine("                    throw new global::System.InvalidOperationException(\"" + BaseAddressName + " is required for a network-path server URL.\");");
             source.AppendLine("                }");
-            source.AppendLine("                var networkBaseUri = new global::System.Uri(_httpClient.BaseAddress, baseUrl);");
+            source.AppendLine("                var networkBaseUri = new global::System.Uri(" + BaseAddressExpression + ", baseUrl);");
             source.AppendLine("                return CombineAbsoluteUri(networkBaseUri, operationPath, operationQuery);");
             source.AppendLine("            }");
             source.AppendLine();
             source.AppendLine("            if (baseUrl.StartsWith(\"/\", global::System.StringComparison.Ordinal))");
             source.AppendLine("            {");
-            source.AppendLine("                if (_httpClient.BaseAddress is null)");
+            source.AppendLine("                if (" + BaseAddressExpression + " is null)");
             source.AppendLine("                {");
-            source.AppendLine("                    throw new global::System.InvalidOperationException(\"A HttpClient.BaseAddress is required for a root-relative server URL.\");");
+            source.AppendLine("                    throw new global::System.InvalidOperationException(\"" + BaseAddressName + " is required for a root-relative server URL.\");");
             source.AppendLine("                }");
-            source.AppendLine("                var rootBaseUri = new global::System.Uri(_httpClient.BaseAddress, baseUrl);");
+            source.AppendLine("                var rootBaseUri = new global::System.Uri(" + BaseAddressExpression + ", baseUrl);");
             source.AppendLine("                return CombineAbsoluteUri(rootBaseUri, operationPath, operationQuery);");
             source.AppendLine("            }");
             source.AppendLine();
@@ -299,10 +345,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("            SplitPathAndQuery(baseUrl, out string basePath, out string baseQuery);");
             source.AppendLine("            string combinedPath = CombinePaths(basePath, operationPath);");
             source.AppendLine("            string combinedQuery = CombineQueries(baseQuery, operationQuery);");
-            source.AppendLine("            if (_httpClient.BaseAddress != null)");
+            source.AppendLine("            if (" + BaseAddressExpression + " != null)");
             source.AppendLine("            {");
-            source.AppendLine("                var resolvedUri = new global::System.Uri(_httpClient.BaseAddress, combinedPath.TrimStart('/')); ");
-            source.AppendLine("                string resolvedQuery = CombineQueries(_httpClient.BaseAddress.Query.TrimStart('?'), combinedQuery);");
+            source.AppendLine("                var resolvedUri = new global::System.Uri(" + BaseAddressExpression + ", combinedPath.TrimStart('/')); ");
+            source.AppendLine("                string resolvedQuery = CombineQueries(" + BaseAddressExpression + ".Query.TrimStart('?'), combinedQuery);");
             source.AppendLine("                var resolvedBuilder = new global::System.UriBuilder(resolvedUri) { Query = resolvedQuery };");
             source.AppendLine("                return resolvedBuilder.Uri;");
             source.AppendLine("            }");
