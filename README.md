@@ -17,7 +17,7 @@ both packages include the matrix and its relative reference documents for offlin
 | Package | Minimum Unity | Additional requirement |
 | --- | --- | --- |
 | `jp.rhycol.openapicodegen` | 2021.3 | Docker only when the Docker provider is selected |
-| `jp.rhycol.openapicodegen.source-generator` | 6000.0 | The base package and Unity's Newtonsoft Json package |
+| `jp.rhycol.openapicodegen.source-generator` | 6000.0 | The base package and the libraries of the selected combination (see [Choose the HTTP and JSON libraries](#choose-the-http-and-json-libraries)); by default Newtonsoft.Json 13.0 or later, which you install yourself |
 
 ## Install from Git
 
@@ -33,9 +33,13 @@ the Source Generator provider. Unity resolves these as separate Git packages.
 }
 ```
 
-The Source Generator package depends on
-`com.unity.nuget.newtonsoft-json` `3.2.2`. It does not bundle Newtonsoft.Json,
-Roslyn, or YamlDotNet DLLs.
+Since 0.6.0 the Source Generator package no longer depends on
+`com.unity.nuget.newtonsoft-json`: installing it does not install Newtonsoft.Json.
+It does not bundle Newtonsoft.Json, System.Text.Json, Roslyn, or YamlDotNet
+DLLs. Install the libraries of the combination you select (next section).
+Upgrading from 0.5.x with the default combination requires installing
+`com.unity.nuget.newtonsoft-json` `3.2.2` yourself; until then existing
+definitions report `OACG011`.
 
 These examples use the `0.5.1` release tag. To try an unreleased commit,
 replace `0.5.1` with the same reviewed commit SHA in both Git URLs.
@@ -79,6 +83,55 @@ The Generator window reports progress, warnings, and cancellation. Cancel
 stops Source Generator work before publication; once publication begins, it
 finishes as one protected operation. Docker settings retain their existing
 URL behavior.
+
+## Choose the HTTP and JSON libraries
+
+A Source Generator client is generated for one HTTP implementation and one JSON
+serializer. The default is **HttpClient + Newtonsoft.Json**; all four
+combinations of the two options below are implemented.
+
+| Choice | What the project needs | Minimum |
+| --- | --- | --- |
+| HTTP: `HttpClient` (default) | `System.Net.Http` (normally available without installing anything) | - |
+| HTTP: `UnityWebRequest` | The Unity Web Request module (`com.unity.modules.unitywebrequest`) and `System.Net.Http`, because the adapter still builds `HttpRequestMessage` / `HttpContent` | - |
+| JSON: `Newtonsoft.Json` (default) | `com.unity.nuget.newtonsoft-json` `3.2.2`, or any other Newtonsoft.Json reference | 13.0 |
+| JSON: `System.Text.Json` | UnityNuGet `org.nuget.system.text.json` (which brings `System.Text.Encodings.Web`), or the DLLs through NuGetForUnity or by hand | 8.0 |
+
+- **Select** the combination in `Window/OpenAPI Code Generator/Settings`,
+  **Source Generator Libraries**. The section shows the state of each choice,
+  disables choices that are not ready, and offers to install Newtonsoft.Json or
+  enable the Unity Web Request module. System.Text.Json is shown as manual
+  steps (UnityNuGet scoped registry plus `org.nuget.system.text.json` 8.0 or
+  later); the Editor never edits `Packages/manifest.json` for it. The libraries
+  are detected from what the output assembly references, so NuGetForUnity or
+  manually placed DLLs work too.
+- The Generator window shows the combination and its state, and disables
+  `Generate` with the reason and a link to Settings while a library is missing.
+- The choice is stored in the definition file as the named properties
+  `HttpTransport` / `JsonSerializer` of `OpenApiClientDefinitionAttribute`
+  (for example `HttpTransport = OpenApiHttpTransport.UnityWebRequest`). The
+  defaults are not written, so definition files created before 0.6.0 stay
+  unchanged and keep using HttpClient + Newtonsoft.Json.
+- **WebGL**: choose `UnityWebRequest`. `System.Net.Http.HttpClient` does not
+  work in WebGL players; the Settings window warns, and the analyzer reports
+  warning `OACG014`.
+
+The analyzer makes the final decision when it compiles the project and reports
+these diagnostics for a client definition:
+
+| ID | Severity | Reported when |
+| --- | --- | --- |
+| `OACG010` | Error | The definition names an unknown `HttpTransport` / `JsonSerializer` value, or a combination without an implementation |
+| `OACG011` | Error | The selected JSON library is not referenced |
+| `OACG012` | Error | The selected HTTP implementation is not referenced (`UnityWebRequest` also needs `System.Net.Http`) |
+| `OACG013` | Error | The referenced library is older than the minimum (Newtonsoft.Json 13.0, System.Text.Json 8.0) |
+| `OACG014` | Warning | `HttpClient` is selected while `UNITY_WEBGL` is defined |
+
+While one of the errors applies, the client is not generated. The
+[support matrix](SourceGenerators/OpenApiMvpSupportMatrix.md) lists the
+differences between System.Text.Json and Newtonsoft.Json, the UnityWebRequest
+limitations, and the IL2CPP / WebGL Player verification results (Unity
+`6000.3.2f1`).
 
 ## Support and release documents
 
