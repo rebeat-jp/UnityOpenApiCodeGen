@@ -69,6 +69,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string type = RequireString(typeNode, "The security scheme type must be a string.");
             string description = GetOptionalString(node, "description") ?? string.Empty;
             OpenApiSourceLocation location = CreateLocation(node);
+            if (IsOpenApi32 && GetProperty(node, "deprecated") is SpecNode deprecatedNode)
+            {
+                RequireBoolean(deprecatedNode, "The security scheme deprecated field must be a boolean.");
+            }
+
             switch (type)
             {
                 case "apiKey":
@@ -124,9 +129,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
 
                 case "oauth2":
+                {
+                    string oauth2MetadataUrl = string.Empty;
+                    if (IsOpenApi32)
+                    {
+                        // OpenAPI 3.2: the RFC 8414 metadata URL is documentation only (never contacted).
+                        SpecNode? metadataNode = GetProperty(node, "oauth2MetadataUrl");
+                        if (metadataNode is not null)
+                        {
+                            oauth2MetadataUrl = RequireString(metadataNode, "The oauth2MetadataUrl must be a string.");
+                        }
+                    }
+
                     return new OpenApiSemanticSecurityScheme(
                         key, OpenApiSemanticSecuritySchemeType.OAuth2, description, location,
-                        flows: ParseOAuthFlows(RequireProperty(node, "flows")));
+                        flows: ParseOAuthFlows(RequireProperty(node, "flows")),
+                        oauth2MetadataUrl: oauth2MetadataUrl);
+                }
 
                 case "openIdConnect":
                 {
@@ -165,8 +184,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
                 bool needsAuthorization;
                 bool needsToken;
+                bool needsDevice = false;
                 switch (flow.Name)
                 {
+                    case "deviceAuthorization" when IsOpenApi32:
+                        needsAuthorization = false;
+                        needsToken = true;
+                        needsDevice = true;
+                        break;
                     case "implicit":
                         needsAuthorization = true;
                         needsToken = false;
@@ -184,7 +209,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         throw Invalid(
                             flow.Value,
                             "Unknown oauth2 flow '" + flow.Name +
-                            "'; expected implicit, password, clientCredentials or authorizationCode.");
+                            (IsOpenApi32
+                                ? "'; expected implicit, password, clientCredentials, authorizationCode or deviceAuthorization."
+                                : "'; expected implicit, password, clientCredentials or authorizationCode."));
                 }
 
                 RequireKind(flow.Value, SpecValueKind.Object, "Each oauth2 flow must be an object.");
@@ -198,6 +225,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         RequireProperty(flow.Value, "tokenUrl"),
                         "The oauth2 tokenUrl must be a string.")
                     : string.Empty;
+                string deviceAuthorizationUrl = needsDevice
+                    ? RequireString(
+                        RequireProperty(flow.Value, "deviceAuthorizationUrl"),
+                        "The oauth2 deviceAuthorizationUrl must be a string.")
+                    : string.Empty;
                 SpecNode scopesNode = RequireProperty(flow.Value, "scopes");
                 RequireKind(scopesNode, SpecValueKind.Object, "The oauth2 scopes field must be an object.");
                 var scopes = new List<KeyValuePair<string, string>>();
@@ -208,7 +240,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         RequireString(scope.Value, "An oauth2 scope description must be a string.")));
                 }
 
-                result.Add(new OpenApiSemanticOAuthFlow(flow.Name, authorizationUrl, tokenUrl, scopes));
+                result.Add(new OpenApiSemanticOAuthFlow(flow.Name, authorizationUrl, tokenUrl, scopes, deviceAuthorizationUrl));
             }
 
             return result;

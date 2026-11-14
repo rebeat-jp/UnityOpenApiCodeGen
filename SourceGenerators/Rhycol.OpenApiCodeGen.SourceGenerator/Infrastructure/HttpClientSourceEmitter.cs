@@ -1405,10 +1405,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     source.AppendLine("            if (!(token is global::Newtonsoft.Json.Linq.JObject unionObject))");
                     source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Expected a response object at \" + path + \".\");");
                     source.Append("            var unionDiscriminator = unionObject[").Append(propertyLiteral).AppendLine("];");
-                    source.AppendLine("            if (unionDiscriminator == null || unionDiscriminator.Type != global::Newtonsoft.Json.Linq.JTokenType.String)");
-                    source.Append("                throw new global::Newtonsoft.Json.JsonSerializationException(\"The discriminator property is missing or is not a string at \" + path + \".\" + ")
-                        .Append(propertyLiteral).AppendLine(" + \".\");");
-                    source.AppendLine("            switch ((string)unionDiscriminator!)");
+                    if (union.DefaultMemberIndex >= 0)
+                    {
+                        source.AppendLine("            switch (unionDiscriminator != null && unionDiscriminator.Type == global::Newtonsoft.Json.Linq.JTokenType.String ? (string?)unionDiscriminator : null)");
+                    }
+                    else
+                    {
+                        source.AppendLine("            if (unionDiscriminator == null || unionDiscriminator.Type != global::Newtonsoft.Json.Linq.JTokenType.String)");
+                        source.Append("                throw new global::Newtonsoft.Json.JsonSerializationException(\"The discriminator property is missing or is not a string at \" + path + \".\" + ")
+                            .Append(propertyLiteral).AppendLine(" + \".\");");
+                        source.AppendLine("            switch ((string)unionDiscriminator!)");
+                    }
+
                     source.AppendLine("            {");
                     foreach (GeneratedUnionMemberModel member in union.Members)
                     {
@@ -1425,8 +1433,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     }
 
                     source.AppendLine("                default:");
-                    source.Append("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"The discriminator value '\" + (string)unionDiscriminator! + \"' does not select a schema at \" + path + \".\" + ")
-                        .Append(propertyLiteral).AppendLine(" + \".\");");
+                    if (union.DefaultMemberIndex >= 0)
+                    {
+                        // OpenAPI 3.2 defaultMapping: any other discriminator value is checked as the default member.
+                        GeneratedUnionMemberModel defaultMember = union.Members[union.DefaultMemberIndex];
+                        source.Append("                    ").Append(MethodName(defaultMember.Type))
+                            .Append("(token, path, ").Append(defaultMember.Type.Nullable ? "true" : "false")
+                            .AppendLine(", json, lineStarts, replacements);");
+                        source.AppendLine("                    break;");
+                    }
+                    else
+                    {
+                        source.Append("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"The discriminator value '\" + (string)unionDiscriminator! + \"' does not select a schema at \" + path + \".\" + ")
+                            .Append(propertyLiteral).AppendLine(" + \".\");");
+                    }
                     source.AppendLine("            }");
                     return;
                 }

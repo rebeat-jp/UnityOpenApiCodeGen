@@ -287,9 +287,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             EnsureUniqueDiscriminatorValues(discriminatorNode, values);
+            int defaultMemberIndex = ResolveDefaultMapping(discriminatorNode, memberNodes, members, keyword);
             return new OpenApiSemanticDiscriminator(
                 propertyName,
-                values.Select(static list => (IReadOnlyList<string>)list.ToArray()).ToArray());
+                values.Select(static list => (IReadOnlyList<string>)list.ToArray()).ToArray(),
+                defaultMemberIndex);
         }
 
         private static string ReadDiscriminatorPropertyName(SpecNode discriminatorNode)
@@ -489,6 +491,31 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
             }
 
+            NormalizedSpecNodeIdentity? defaultIdentity = null;
+            SpecNode? defaultMappingNode = IsOpenApi32 ? GetProperty(discriminatorNode, "defaultMapping") : null;
+            if (defaultMappingNode is not null)
+            {
+                string defaultTarget = RequireString(
+                    defaultMappingNode, "The discriminator defaultMapping must be a string.");
+                ResolvedSpecReference defaultResolved = ResolveMappingTarget(
+                    defaultTarget, defaultMappingNode, out string defaultName);
+                if (defaultResolved.Identity.Equals(ownIdentity))
+                {
+                    AddIgnoredWarning(
+                        defaultMappingNode,
+                        "A discriminator defaultMapping to the schema that declares the discriminator is not a subtype and was ignored.");
+                }
+                else
+                {
+                    if (!candidates.Any(candidate => candidate.Resolved.Identity.Equals(defaultResolved.Identity)))
+                    {
+                        candidates.Add((defaultResolved, defaultName, defaultMappingNode));
+                    }
+
+                    defaultIdentity = defaultResolved.Identity;
+                }
+            }
+
             if (candidates.Count == 0)
             {
                 AddIgnoredWarning(
@@ -532,7 +559,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 unionMembers: members,
                 discriminator: new OpenApiSemanticDiscriminator(
                     propertyName,
-                    values.Select(static list => (IReadOnlyList<string>)list.ToArray()).ToArray()),
+                    values.Select(static list => (IReadOnlyList<string>)list.ToArray()).ToArray(),
+                    defaultIdentity is null
+                        ? -1
+                        : candidates.FindIndex(candidate => candidate.Resolved.Identity.Equals(defaultIdentity.Value))),
                 unionIsOneOf: true);
             _discriminatedUnions.Add(union);
             return union;

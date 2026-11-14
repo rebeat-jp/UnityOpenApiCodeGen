@@ -34,9 +34,9 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 | 項目 | Status | 条件・制約 |
 | --- | --- | --- |
 | 入力document | Supported | localの`.json`、`.yaml`、`.yml` file、またはHTTP(S) URL。local extensionはcase-insensitive。 |
-| OpenAPI version | Partial | `3.0.*`と`3.1.*`のみ。 |
-| OpenAPI 3.1 schema dialect | Partial | 既定または明示的な`https://spec.openapis.org/oas/3.1/dialect/base`のみ。入口・外部完全OpenAPI文書の`jsonSchemaDialect`とschemaの`$schema`で別dialectを指定すると`OACG101`、不正なURIは`OACG100`です。 |
-| OpenAPI 3.2 / Swagger 2 | Unsupported | document versionは受け付けません。 |
+| OpenAPI version | Partial | `3.0.*`、`3.1.*`、`3.2.*`のみ。`3.2.*`は3.1と同じJSON Schema 2020-12 dialectとschema規則で扱い、3.2で加わった項目は下の「OpenAPI 3.2」にまとめています。 |
+| OpenAPI 3.1 schema dialect | Partial | 既定または明示的な`https://spec.openapis.org/oas/3.1/dialect/base`のみ（3.2は`https://spec.openapis.org/oas/3.2/dialect/`配下のOAS dialectも同様）。入口・外部完全OpenAPI文書の`jsonSchemaDialect`とschemaの`$schema`で別dialectを指定すると`OACG101`、不正なURIは`OACG100`です。 |
+| Swagger 2 | Unsupported | document versionは受け付けません。 |
 | URL入力 | Supported | public/private/loopback、cross-host redirectを許可。userinfo、空白、非HTTP(S)、HTTPS-to-HTTP direct/redirectは拒否。Generateが明示的なfetch/refresh操作で、Docker fallbackはありません。 |
 | private GitHub repository | Supported | `https://raw.githubusercontent.com`のURLのみ。Settingsの**GitHub Token**を、originが完全一致するリクエストとリダイレクト先にだけ`Authorization: Bearer`で送信。相対外部参照にも送信。トークンはプロジェクト外のユーザー設定に平文保存し、Bundle/manifest/診断には書き込みません。`github.com`、REST contents API、GitHub Enterprise Serverは対象外。 |
 | JSON/YAML semantic parity | Supported | 各normalizerがshared `SpecNode`へ正規化し、同じsemantic/generation pipelineを通ります。 |
@@ -134,13 +134,13 @@ YAML diagnostic IDs are stable within Phase 5:
 
 | 項目 | Status | 条件・制約 |
 | --- | --- | --- |
-| HTTP method | Supported | `GET`、`POST`、`PUT`、`DELETE`、`PATCH`、`HEAD`、`OPTIONS`、`TRACE`。 |
+| HTTP method | Supported | `GET`、`POST`、`PUT`、`DELETE`、`PATCH`、`HEAD`、`OPTIONS`、`TRACE`。OpenAPI 3.2では`QUERY`と`additionalOperations`の任意のmethodも扱います（下の「OpenAPI 3.2」）。 |
 | `servers` | Partial | root `servers`は複数指定でき、各`variables`（`default`必須、`enum`は任意）も使えます。既定のコンストラクターはservers[0]の各variableを`default`で置換したURLを使います（省略・空配列は`/`）。生成クライアントは`public static IReadOnlyList<string> Servers`（`url`テンプレートの一覧）と`public static string BuildServerUrl(int index, IReadOnlyDictionary<string, string>? variables = null)`を持ち、展開したURLは`baseUrl`引数として渡せます。`BuildServerUrl`は渡されたvariablesを`enum`で検証し、宣言のない名前・`enum`外の値は`ArgumentException`、範囲外の`index`は`ArgumentOutOfRangeException`です。`url`の未宣言`{x}`は`OACG101`、`default`が`enum`外・空の`enum`は`OACG100`です。絶対URLはHTTP(S)のみで、FTPなどは`OACG101`です。`//host/path`は`HttpClient.BaseAddress`のschemeで解決します。`/path`と既定の`/`は同じoriginのrootから解決し、`BaseAddress`のpathとqueryを引き継ぎません。`BaseAddress`が必要な場合に未設定なら送信前に`InvalidOperationException`です。明示的な空文字`baseUrl` overrideは相対URLとして扱います。相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。 |
 | path / operationの`servers` | Partial | operation、Path Item、documentの順に優先してserverを選びます。operationまたはPath Itemに`servers`があるoperationは、その先頭serverの各variableを`default`で置換したURLを使います。**コンストラクターの`baseUrl`はdocument levelのserversだけを置き換え**、path / operationのserversは置き換えません。実行時に差し替えるには、`public IDictionary<string, string> OperationServerUrls`（キーは生成メソッド名、値は展開済みのserver URL）へ設定します。このプロパティは、path / operationのserversを持つoperationがあるクライアントにだけ生成します。候補が複数あっても使うのは先頭だけです。候補の一覧と展開は`public static IReadOnlyList<string> GetOperationServers(string operationName)`と`public static string BuildOperationServerUrl(string operationName, int index, IReadOnlyDictionary<string, string>? variables = null)`（`BuildServerUrl`と同じ`enum`検証）で行い、operation名には生成メソッド名の定数を持つ`public static class OperationNames`を使います。`OperationServerUrls`のキーは生成メソッド名です（他のメンバーとの衝突回避で連番が付くことがあるため、`OperationNames`の定数を使ってください。未知のキーは無視されます）。`OperationServerUrls`は最初の送信より前（構成時）に設定してください。スレッド安全ではありません。 |
 | server URL validation | Partial | Malformed absolute-looking or relative URL references receive positioned `OACG100`; a `{...}` placeholder without a matching `variables` entry receives `OACG101`. Invalid absolute URLs no longer fall back to relative resolution. Valid HTTP(S), network-path, root-relative, and path-relative forms remain supported. A raw fragment is omitted before joining the operation path, while encoded `%23` remains path data. |
-| parameter location | Supported | path、query、header、cookieのparameterを扱います。 |
+| parameter location | Supported | path、query、header、cookieのparameterを扱います。OpenAPI 3.2では`in: querystring`も扱います（下の「OpenAPI 3.2」）。3.0／3.1の`in: querystring`は従来どおり`OACG101`です。 |
 | cookie parameter | Partial | `Cookie`ヘッダーを1本にまとめて送信します（複数のcookie parameterは`; `で連結し、parameterの識別子順）。`form`styleで、`explode`の既定は`true`です。名前はRFC 6265のcookie-name（token）でなければ`OACG100`、値はRFC 3986のunreserved以外をpercent-encodeします（cookie-octetの部分集合）。配列・objectは`explode: true`なら`name=a; name=b`／`k=v; k=w`、`false`なら`name=a,b`／`name=k,v,k,w`です（区切りの`,`はOpenAPIの`form`どおりで、RFC 6265の厳密なcookie-octetには含まれません）。`HttpClientHandler.UseCookies=true`（既定）では`CookieContainer`の値が手動の`Cookie`ヘッダーと併用・上書きされることがあるため、cookie parameterを使う場合は`UseCookies=false`にするか、`CookieContainer`に値を入れてください（Unity / Monoでの上書き挙動は実機確認が必要です）。`Cookie`という名前のheader parameterとcookie parameterの併用は`OACG101`です。 |
-| Parameter Object fields | Partial | Standard OpenAPI 3.0/3.1 fields and `x-*` extensions are recognized. Unknown fields such as `requird` receive positioned `OACG101`, including path/operation parameters and reference targets. `schema`と`content`の併記は`OACG100`です。`example`／`examples`／`allowEmptyValue`は受理するだけで、送信値には影響しません。 |
+| Parameter Object fields | Partial | Standard OpenAPI 3.0/3.1/3.2 fields and `x-*` extensions are recognized. Unknown fields such as `requird` receive positioned `OACG101`, including path/operation parameters and reference targets. `schema`と`content`の併記は`OACG100`です。`example`／`examples`／`allowEmptyValue`は受理するだけで、送信値には影響しません。 |
 | parameter serialization | Partial | `style`／`explode`は次の組み合わせを対応します。path: `simple`（既定）・`label`・`matrix`、query: `form`（既定）・`spaceDelimited`・`pipeDelimited`・`deepObject`、header: `simple`、cookie: `form`。`explode`の既定は`form`だけ`true`、`deepObject`は省略時`true`（`false`の明示は仕様未定義で`OACG101`）です。locationに無効な`style`は`OACG100`、プリミティブへの`spaceDelimited`／`pipeDelimited`／`deepObject`、配列への`deepObject`、`spaceDelimited`／`pipeDelimited`の`explode: true`は仕様未定義のため`OACG101`です。任意parameterの`null`は省略し、明示的な空文字列は`name=`（query）として送信します。`allowEmptyValue`は省略される値の代替を表し、明示的な空文字列には適用しません。 |
 | array / object parameter | Partial | OpenAPI 3.xの「Style Examples」表（`color = blue,black,brown` / `R=100,G=200,B=150`／空値／単一値）どおりに送信します（テストが表の全セルを検証します）。対象はプリミティブの配列（`List<T>`）と、プリミティブpropertyだけのobject（DTOまたは`Dictionary<string, T>`）です。DTOは宣言したpropertyを名前の序数順にシリアライズします（`null`のpropertyは省略）。`additionalProperties`がプリミティブのschemaなら、追加memberを宣言propertyの後にキーの序数順で続けます（値が`null`のものは省略、プリミティブでない値は`ArgumentException`）。`additionalProperties`が省略・`true`の型なしopen DTOの追加memberは送りません。順序を指定したい場合は`Dictionary`を使ってください。配列要素の`null`は`ArgumentException`です。空の配列・objectは何も送りません（pathは空文字列）。値の区切りと`deepObject`の`[` `]`は表のとおりそのまま出力します（`\|`は`System.Uri`が`%7C`にします）。header値はpercent-encodeしません。入れ子の配列・object、`{}`・`JObject`・union・複数型のparameterは`style`では表せないため`OACG101`です（`content`を使います）。 |
 | `allowReserved` | Partial | `allowReserved: true`（queryのみ）は、予約文字`:/?[]@!$&'()*+,;=`と既存の`%XX`（RFC 6570の予約展開）を値でエンコードしません。`#`は区切りとしてURLのfragmentになりHTTP層で落ちるため、常に`%23`にします。名前と、`allowReserved`でないparameterは従来どおりエンコードします。 |
@@ -198,6 +198,24 @@ YAML diagnostic IDs are stable within Phase 5:
 
 status codeはASCII数字で検証します。属性付きのジェネリックclassは`OACG005`で拒否します。
 
+## OpenAPI 3.2
+
+OpenAPI 3.2のdocument（`openapi: 3.2.*`）は、3.1と同じJSON Schema 2020-12 dialectとschema規則で処理します。3.2だけの項目は3.0／3.1では従来どおり診断になります（`query`は`OACG101`など）。
+
+| 項目 | 対応状況 | 条件・制約 |
+| --- | --- | --- |
+| Path Itemの`query` | Supported | 安全なmethodで本文を持ちます。`new HttpMethod("QUERY")`で送り、requestBody・parameter・responseは他のoperationと同じです。`operationId`の省略時は`GET`などと同じ規則で命名します（`QueryPetsSearch`）。3.0／3.1の`query`は位置付き`OACG101`です。 |
+| Path Itemの`additionalOperations` | Supported | method名（HTTP token）からOperationへのmapで、各entryにクライアントメソッドを生成し、methodは**書かれたとおりの表記**（大小文字を含む）で送ります。tokenがHTTP tokenでない場合、`GET`・`PUT`・`POST`・`DELETE`・`OPTIONS`・`HEAD`・`PATCH`・`TRACE`・`QUERY`（大小文字を区別せず比較）と重複する場合は、そのentryの位置で`OACG100`です。`operationId`がなければ、method token（英数字だけを残し、先頭だけ大文字）とpathから決定的に命名し（`PURGE /pets`は`PurgePets`）、entryはtokenの序数順に処理します。名前の衝突は既存の`operationId`の一意化（連番）に従い、明示した`operationId`の重複は`OACG106`です。 |
+| `in: querystring` parameter | Partial | `content`が**クエリ文字列全体**を表します（`schema`との併記は`OACG100`、`content`は1つのmedia type）。`application/x-www-form-urlencoded`はobject schemaで、各propertyをform-urlencoded本文と同じ規則（`encoding`の`style`／`explode`／`allowReserved`）で直列化し`?`の後ろに付けます。具体的なJSON media typeは、JSON textをpercent-encodeしたものがクエリ文字列です。それ以外のmedia typeは`OACG101`です。1つのoperationに複数の`in: querystring`、または`in: query`との併記は、`OACG105`です。media typeは`components.mediaTypes`への`$ref`でも宣言できます。 |
+| tagsの`parent`／`kind`／`summary` | Supported | ドキュメント専用で、生成コードは変わりません。形式（文字列）と、`parent`が宣言済みのtagを指し循環しないことだけを検証します（違反は`OACG100`）。tag名の重複も`OACG100`ですが、これは3.2だけの検査で、3.0／3.1では検査しません。 |
+| root `$self` | Partial | 受理します。形式は文字列で、fragmentを持てません（違反は`OACG100`）。内部の`$ref`は基準URIに依存しません。他のdocumentへの相対`$ref`は、`$self`ではなくdocumentファイルの位置を基準に解決するため、参照先のdocumentがある場合（Bundleが複数documentのとき）だけ`$self`の位置で`OACG108`を報告します。 |
+| media typeの`itemSchema` | Partial | streaming（SSEと逐次処理）は対象外です。`text/event-stream`に`itemSchema`があれば`OACG101`、順次media type以外（`application/json`など）の`itemSchema`も`OACG101`です。`application/jsonl`・`application/x-ndjson`・`application/ndjson`・`application/json-seq`・`application/geo+json-seq`の`itemSchema`は解釈せず`OACG108`で通知し、本文は従来どおり`byte[]`（binary）です（itemごとの読み取りは行いません）。`itemSchema`は解析しないため、その中の`$ref`はEditorも収集せず、DTOも生成しません。Media Type Objectで`encoding`と`prefixEncoding`／`itemEncoding`を併記すると`OACG100`です（仕様上の禁止）。単独の`prefixEncoding`／`itemEncoding`（Media Type Object）と、Encoding Objectの入れ子の`encoding`／`prefixEncoding`／`itemEncoding`は`OACG108`で無視します。`itemSchema`は3.0／3.1では従来どおり未知の項目として無視します。 |
+| discriminatorの`defaultMapping` | Supported | discriminatorの値がmappingのどれにも一致しない、またはdiscriminatorの項目がない・文字列でないときに使うメンバーです。値はスキーマ名または参照で、`oneOf`／`anyOf`のメンバー（継承形のbaseでは子または参照先のschema）でなければ`OACG101`です。変換器は該当するJSON objectをそのメンバー型へ読みます（応答の契約検査も同じ。メンバー自身のschemaに合わない本文は従来どおり拒否します）。指定がなければ、従来どおり未知の値は`JsonSerializationException`です。書き出す値はそのメンバーの最初のdiscriminator値で、読んだ未知の値は保持しません。3.0／3.1では従来どおり無視します。 |
+| `components.mediaTypes` | Partial | `content`の各media typeを`$ref: '#/components/mediaTypes/<name>'`で参照できます（requestBody・成功／エラーresponse・`in: querystring`のcontent。他のdocumentの`<file>#/components/mediaTypes/<name>`も可）。componentはobjectと、あればそのschemaを検証し、参照元の`content`のキーがmedia typeを決めます。通常のparameterの`content`からの`$ref`は`OACG101`です。3.0／3.1の`components.mediaTypes`は`OACG101`です。 |
+| `oauth2`の`deviceAuthorization` flowと`oauth2MetadataUrl` | Partial | 受理し、URL・scopesをXML docに出すだけです（`deviceAuthorizationUrl`と`tokenUrl`が必須、なければ`OACG100`）。tokenの取得・更新とmetadataの取得は行わず、外から渡されたtokenをBearerで送ります。security schemeの`deprecated`は形式だけ検証します。3.0／3.1の`deviceAuthorization`は未知のflowとして`OACG100`です。 |
+| Responseの`summary`と省略可能な`description` | Supported | 3.2ではResponseの`summary`を受理し（ドキュメント専用）、`description`を省略できます。3.0／3.1の`summary`は`OACG101`、`description`の省略は`OACG100`です。 |
+| その他の3.2の項目 | Supported | Serverの`name`、Exampleの`dataValue`／`serializedValue`、XML Objectの`nodeType`、Tag Objectの`summary`は、ドキュメント専用として黙って受理します。 |
+
 ## Security
 
 | 項目 | Status | 条件・制約 |
@@ -208,7 +226,7 @@ status codeはASCII数字で検証します。属性付きのジェネリックc
 | requirementの適用 | Supported | 各operationの有効なrequirementを文書順に調べ、含まれるすべてのschemeに資格情報が設定済みの最初のrequirementを適用します（送信ごとに評価します）。どのrequirementも満たせないとき、および`{}`だけのときは認証なしで送ります（例外にはしません）。`apiKey`／`bearer`／`basic`／その他のhttp schemeは、nullまたは空の資格情報を未設定として扱います（`basic`は`Username`が`null`のときだけ未設定で、`Password`が`null`なら空のpasswordです）。 |
 | `apiKey` の送信 | Supported | header: `name`のheaderとして送信します。query: 既存のquery parameterの後ろに`name=value`（名前と値をpercent-encode）を足します。cookie: parameterのcookieと合わせて**1本の`Cookie`ヘッダー**にします（値はpercent-encode）。同名のheader parameterがあっても、そのschemeに資格情報が設定されているときはsecurityの値が優先します（設定されていないときはparameterの値を送ります）。cookieも同様で、cookie apiKeyに資格情報が設定されているときは同名のcookie parameterの部分を除き、その名前は`Cookie`ヘッダー内で1回だけ送ります。 |
 | `http` の送信 | Supported | `bearer`: `Authorization: Bearer <token>`。`basic`: `Authorization: Basic <base64(username:password)>`（UTF-8でバイト列にしてからBase64。`Username`に`:`を含むと`InvalidOperationException`です）。その他のscheme: `Authorization: <scheme> <credentials>`（`scheme`は仕様に書かれた表記のまま）。Authorizationが複数のschemeから出るANDでは最後のschemeが勝ちます。送信するheader値は既存のheader parameterと同じ規則（ASCII）で検査し、違反は`ArgumentException`です。 |
-| `oauth2` / `openIdConnect` | Partial | 外から渡されたtokenをBearerとして送るだけです。flowによるtoken取得、更新、OpenID Connect discoveryは行いません（URLやscopesはXML docのみ）。tokenは`<Scheme>AccessToken`に設定するか、`<Scheme>AccessTokenProvider`で供給します。providerは設定されていればプロパティより優先し、送信ごとにそのリクエストの`CancellationToken`付きで呼びます。providerが`null`または空を返したときはプロパティを使います。 |
+| `oauth2` / `openIdConnect` | Partial | 外から渡されたtokenをBearerとして送るだけです（OpenAPI 3.2の`deviceAuthorization` flowと`oauth2MetadataUrl`も同じ扱いで、下の「OpenAPI 3.2」を参照）。flowによるtoken取得、更新、OpenID Connect discoveryは行いません（URLやscopesはXML docのみ）。tokenは`<Scheme>AccessToken`に設定するか、`<Scheme>AccessTokenProvider`で供給します。providerは設定されていればプロパティより優先し、送信ごとにそのリクエストの`CancellationToken`付きで呼びます。providerが`null`または空を返したときはプロパティを使います。 |
 | `mutualTLS` | Partial | 受理しますが、クライアント証明書の設定はclientではなく`HttpClientHandler`で行います（XML doc・生成コードでは何も送りません）。送るものがないため、`mutualTLS`だけのrequirementは匿名と同じ扱いで、他のrequirementを妨げません。このためOACG108のWarningは出しません。 |
 | 資格情報の取り扱い | Supported | 資格情報プロパティはスレッドセーフではありません（XML docに明記）。リクエストごとに1回だけ読みます。生成コードはログを出さず、例外メッセージに資格情報を含めません（header名とscheme名だけを使います）。 |
 
@@ -303,7 +321,7 @@ prevents Json.NET from mistaking a schema boolean for a presence flag.
 | `OACG102` | Unresolved document or JSON Pointer target |
 | `OACG103` | Cyclic reference |
 | `OACG104` | ExternalReference（Bundle v1 compatibility） |
-| `OACG105` | InconsistentResponse（1つのresponse・requestBody内で、schemaが異なる複数のJSON media typeを宣言した場合だけ。status間でcontractが異なる成功responseはstatus別の結果型になります） |
+| `OACG105` | InconsistentResponse（1つのresponse・requestBody内で、schemaが異なる複数のJSON media typeを宣言した場合と、OpenAPI 3.2で1つのoperationに複数の`in: querystring` parameter、または`in: querystring`と`in: query`を併記した場合。status間でcontractが異なる成功responseはstatus別の結果型になります） |
 | `OACG106` | InvalidIdentifier |
 | `OACG107` | Warning: deterministic type-name collision resolution |
 | `OACG108` | Warning: ignored OpenAPI element, reported with its logical path (never changes the wire contract) |

@@ -314,6 +314,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 .AppendLine(";");
             parameters.AppendPathParameters(source, operation);
             parameters.AppendQueryParameters(source, operation);
+            parameters.AppendQuerystringParameter(source, operation);
             parameters.Security.AppendQuery(source, operation);
             source.AppendLine("            ValidatePathSegments(relativePath);");
             if (operation.Servers.Count > 0)

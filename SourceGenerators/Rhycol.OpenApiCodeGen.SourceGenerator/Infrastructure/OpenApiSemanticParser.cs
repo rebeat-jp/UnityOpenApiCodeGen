@@ -68,6 +68,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private readonly SpecNode _root;
         private readonly JsonPointerResolver _resolver;
         private readonly int _minorVersion;
+        // The minor version as written in the document: 2 for OpenAPI 3.2. _minorVersion is the schema
+        // dialect generation (3.2 uses the 3.1 dialect and schema rules, so it is 1 there).
+        private readonly int _declaredMinorVersion;
         private readonly NormalizedSpecBundle? _bundle;
         private readonly Dictionary<string, NormalizedSpecDocument> _documents =
             new Dictionary<string, NormalizedSpecDocument>(StringComparer.Ordinal);
@@ -94,7 +97,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             _resolver = bundle is null
                 ? new JsonPointerResolver(root)
                 : new JsonPointerResolver(bundle);
-            _minorVersion = minorVersion;
+            _declaredMinorVersion = minorVersion;
+            _minorVersion = Math.Min(minorVersion, 1);
             if (bundle is not null)
             {
                 foreach (NormalizedSpecDocument document in bundle.Documents)
@@ -181,7 +185,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 ValidateNoBinaryInJson(operations);
 
                 return new OpenApiSemanticDocument(
-                    _minorVersion,
+                    _declaredMinorVersion,
                     baseUrl,
                     schemas,
                     operations,
@@ -199,7 +203,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private void ValidateRootFeatures()
         {
-            ValidateDocumentDialect(_root, _minorVersion);
+            ValidateDocumentDialect(_root, _declaredMinorVersion);
+            ValidateOpenApi32Root();
 
             ThrowIfPresent(_root, "swagger", "Swagger 2.0 documents are not supported by the Phase 4 Source Generator.");
             WarnIgnoredWebhooks();
@@ -220,6 +225,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     property.Name == "headers" ||
                     property.Name == "securitySchemes" ||
                     (_minorVersion >= 1 && property.Name == "pathItems") ||
+                    (IsOpenApi32 && property.Name == "mediaTypes") ||
                     property.Name.StartsWith("x-", StringComparison.Ordinal) ||
                     TryAcceptIgnoredComponentSection(property))
                 {
@@ -238,7 +244,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (dialectNode is not null)
             {
                 string dialect = RequireAbsoluteDialectUri(dialectNode, "jsonSchemaDialect");
-                if (minorVersion != 1 || !string.Equals(dialect, OpenApi31BaseDialect, StringComparison.Ordinal))
+                if (!IsSupportedDialect(minorVersion, dialect))
                 {
                     throw Unsupported(dialectNode, "The jsonSchemaDialect '" + dialect + "' is not supported by the Phase 4 MVP.");
                 }
@@ -369,6 +375,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             ValidateComponentMap(
                 GetProperty(components, "headers"),
                 (node, name) => ParseHeaderObject(node, name, new HashSet<NormalizedSpecNodeIdentity>()));
+            ValidateMediaTypeComponents();
         }
 
         private static void ValidateComponentMap(
@@ -444,11 +451,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 .ToArray();
         }
 
-        private static void ValidatePathItemProperties(SpecNode pathItem)
+        private void ValidatePathItemProperties(SpecNode pathItem)
         {
             foreach (SpecProperty property in pathItem.EnumerateObject())
             {
                 if (HttpMethodSet.Contains(property.Name) ||
+                    (IsOpenApi32 && (property.Name == "query" || property.Name == "additionalOperations")) ||
                     property.Name == "parameters" ||
                     property.Name == "summary" ||
                     property.Name == "description" ||
@@ -471,7 +479,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string method,
             SpecNode operationNode,
             IReadOnlyList<OpenApiSemanticParameter> pathParameters,
-            IReadOnlyList<OpenApiSemanticServer> pathServers)
+            IReadOnlyList<OpenApiSemanticServer> pathServers,
+            string? wireMethod = null)
         {
             RequireKind(operationNode, SpecValueKind.Object, "Each OpenAPI operation must be an object.");
             WarnIgnoredCallbacks(operationNode);
@@ -498,6 +507,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 pathParameters,
                 operationParameters);
             ValidatePathParameters(path, mergedParameters, operationNode);
+            ValidateQuerystringParameters(mergedParameters);
             SpecNode? securityNode = GetProperty(operationNode, "security");
             IReadOnlyList<OpenApiSemanticSecurityRequirement> securityRequirements =
                 securityNode is null ? _rootSecurity : ParseSecurityRequirements(securityNode);
@@ -526,7 +536,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return new OpenApiSemanticOperation(
                 operationId,
                 summary,
-                method.ToUpperInvariant(),
+                wireMethod ?? method.ToUpperInvariant(),
                 path,
                 mergedParameters,
                 requestBody,
@@ -774,11 +784,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private static void ValidateResponseProperties(SpecNode node)
+        private void ValidateResponseProperties(SpecNode node)
         {
             foreach (SpecProperty property in node.EnumerateObject())
             {
                 if (property.Name == "description" ||
+                    (IsOpenApi32 && property.Name == "summary") ||
                     property.Name == "headers" ||
                     property.Name == "content" ||
                     property.Name == "links" ||
@@ -1085,7 +1096,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (dialectNode is not null)
             {
                 string dialect = RequireAbsoluteDialectUri(dialectNode, "$schema");
-                if (_minorVersion != 1 || !string.Equals(dialect, OpenApi31BaseDialect, StringComparison.Ordinal))
+                if (!IsSupportedDialect(_declaredMinorVersion, dialect))
                 {
                     throw Unsupported(dialectNode, "Schema $schema dialect '" + dialect + "' is not supported by the Phase 4 MVP.");
                 }
@@ -1205,11 +1216,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 throw Invalid(node, "The openapi field must use a numeric major.minor.patch version.");
             }
 
-            if (major != 3 || (minor != 0 && minor != 1))
+            if (major != 3 || minor < 0 || minor > 2)
             {
                 throw Unsupported(
                     node,
-                    "The Phase 4 MVP supports OpenAPI 3.0.* and 3.1.*. Found '" + version + "'.");
+                    "The Source Generator supports OpenAPI 3.0.*, 3.1.* and 3.2.*. Found '" + version + "'.");
             }
 
             return minor;
@@ -1604,7 +1615,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 string version = RequireString(versionNode, "The 'openapi' field must be a string.");
                 int minorVersion = ParseSupportedVersion(version, versionNode);
-                if (minorVersion != _minorVersion)
+                if (minorVersion != _declaredMinorVersion)
                 {
                     throw Unsupported(
                         versionNode,

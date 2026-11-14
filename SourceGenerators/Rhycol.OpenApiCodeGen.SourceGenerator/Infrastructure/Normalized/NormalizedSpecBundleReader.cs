@@ -471,6 +471,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                    context == ReferenceContext.Parameter ||
                    context == ReferenceContext.Response ||
                    context == ReferenceContext.RequestBody ||
+                   context == ReferenceContext.MediaType ||
                    context == ReferenceContext.ReferenceOnly;
         }
 
@@ -512,6 +513,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     if (propertyName == "securitySchemes") return ReferenceContext.ReferenceMap;
                     if (propertyName == "requestBodies") return ReferenceContext.RequestBodiesMap;
                     if (propertyName == "pathItems") return ReferenceContext.PathItemsMap;
+                    if (propertyName == "mediaTypes") return ReferenceContext.MediaTypesMap;
                     return ReferenceContext.Opaque;
 
                 case ReferenceContext.PathsMap:
@@ -520,6 +522,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         : ReferenceContext.PathItem;
                 case ReferenceContext.PathItemsMap:
                     return ReferenceContext.PathItem;
+                case ReferenceContext.MediaTypesMap:
+                    return propertyName.StartsWith("x-", StringComparison.Ordinal)
+                        ? ReferenceContext.Opaque
+                        : ReferenceContext.MediaType;
+                case ReferenceContext.AdditionalOperationsMap:
+                    return ReferenceContext.Operation;
                 case ReferenceContext.ParametersMap:
                     return ReferenceContext.Parameter;
                 case ReferenceContext.ResponsesMap:
@@ -543,7 +551,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     if (propertyName == "parameters") return ReferenceContext.ParametersArray;
                     if (propertyName == "delete" || propertyName == "get" || propertyName == "head" ||
                         propertyName == "options" || propertyName == "patch" || propertyName == "post" ||
-                        propertyName == "put" || propertyName == "trace") return ReferenceContext.Operation;
+                        propertyName == "put" || propertyName == "trace" || propertyName == "query") return ReferenceContext.Operation;
+                    if (propertyName == "additionalOperations") return ReferenceContext.AdditionalOperationsMap;
                     return ReferenceContext.Opaque;
 
                 case ReferenceContext.Operation:
@@ -601,6 +610,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             Components,
             PathsMap,
             PathItemsMap,
+            MediaTypesMap,
+            AdditionalOperationsMap,
             PathItem,
             Operation,
             ParametersMap,

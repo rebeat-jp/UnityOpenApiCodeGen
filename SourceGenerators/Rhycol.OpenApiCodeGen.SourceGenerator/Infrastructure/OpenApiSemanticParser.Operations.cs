@@ -177,7 +177,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal static string SynthesizeOperationId(string method, string path)
         {
             var builder = new StringBuilder();
-            builder.Append(char.ToUpperInvariant(method[0])).Append(method.Substring(1).ToLowerInvariant());
+            builder.Append(FormatMethodWord(method));
             bool anySegment = false;
             foreach (string segment in path.Split('/'))
             {
@@ -284,7 +284,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     return;
                 }
 
-                foreach (string method in HttpMethods)
+                CollectAdditionalOperationIds(pathItem);
+                foreach (string method in PathItemMethods)
                 {
                     SpecNode? operationNode = GetProperty(pathItem, method);
                     if (operationNode is not null &&
@@ -334,7 +335,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 ParseServers(GetProperty(pathItem, "servers"), documentLevel: false);
             IReadOnlyList<OpenApiSemanticParameter> pathParameters =
                 ParseParameters(GetProperty(pathItem, "parameters"), new HashSet<NormalizedSpecNodeIdentity>());
-            foreach (string method in HttpMethods)
+            foreach (string method in PathItemMethods)
             {
                 SpecNode? operationNode = GetProperty(pathItem, method);
                 if (operationNode is null)
@@ -358,6 +359,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
                 operationIds.Add(operation.OperationId, operationNode);
                 operations.Add(operation);
+            }
+
+            if (IsOpenApi32)
+            {
+                ParseAdditionalOperations(path, pathItem, pathParameters, pathServers, operationIds, operations);
             }
         }
 
@@ -554,10 +560,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             SpecNode nameNode = RequireProperty(node, "name");
             string name = RequireString(nameNode, "The parameter name must be a string.");
             string locationName = RequireString(RequireProperty(node, "in"), "The parameter 'in' value must be a string.");
+            bool isQuerystring = IsOpenApi32 && locationName == "querystring";
             if (locationName != "path" && locationName != "query" &&
-                locationName != "header" && locationName != "cookie")
+                locationName != "header" && locationName != "cookie" && !isQuerystring)
             {
-                throw Unsupported(node, "Only path, query, header, and cookie parameters are supported.");
+                throw Unsupported(
+                    node,
+                    "Only path, query, header, and cookie parameters are supported" +
+                    (IsOpenApi32 ? " (and querystring)." : "."));
             }
 
             if (locationName == "header" && !IsHttpFieldName(name))
@@ -602,6 +612,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             string contentMediaType = string.Empty;
+            OpenApiSemanticSchema? querystringSchema = null;
+            IReadOnlyDictionary<string, OpenApiSemanticEncoding>? querystringEncodings = null;
+            if (isQuerystring && contentNode is null)
+            {
+                throw Invalid(node, "A querystring parameter must define 'content' (its media type gives the whole query string).");
+            }
+
             if (contentNode is not null)
             {
                 foreach (string field in new[] { "style", "explode", "allowReserved" })
@@ -613,15 +630,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     }
                 }
 
-                schemaNode = ParseParameterContent(contentNode, out contentMediaType);
+                if (isQuerystring)
+                {
+                    QuerystringContent querystring = ParseQuerystringContent(contentNode, name);
+                    querystringSchema = querystring.Schema;
+                    contentMediaType = querystring.MediaType;
+                    querystringEncodings = querystring.Encodings;
+                }
+                else
+                {
+                    schemaNode = ParseParameterContent(contentNode, out contentMediaType);
+                }
             }
             else if (schemaNode is null)
             {
                 throw Invalid(node, "Required field 'schema' is missing.");
             }
 
-            OpenApiSemanticSchema schema = ParseSchema(
-                schemaNode,
+            OpenApiSemanticSchema schema = querystringSchema ?? ParseSchema(
+                schemaNode!,
                 name + "Parameter",
                 new HashSet<NormalizedSpecNodeIdentity>());
             OpenApiSemanticSchema effectiveSchema = GetEffectiveSchema(schema);
@@ -643,7 +670,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (required && IsSchemaNullable(schema))
             {
                 throw Unsupported(
-                    schemaNode,
+                    schemaNode ?? node,
                     "Required " + locationName + " parameter '" + name +
                     "' cannot use a nullable schema in the Phase 4 MVP.");
             }
@@ -659,7 +686,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 serialization.AllowReserved,
                 contentMediaType,
                 description,
-                deprecated);
+                deprecated,
+                querystringEncodings);
         }
 
         private SpecNode ParseParameterContent(SpecNode contentNode, out string mediaTypeText)
@@ -672,6 +700,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             SpecProperty entry = entries[0];
+            if (IsOpenApi32 && entry.Value.ValueKind == SpecValueKind.Object && entry.Value.TryGetProperty("$ref", out _))
+            {
+                throw Unsupported(
+                    entry.Value,
+                    "A $ref to components.mediaTypes is supported only for in: querystring parameter content; inline the media type.");
+            }
+
             ParsedOpenApiMediaType mediaType = ParseMediaType(entry);
             if (!mediaType.IsJson || mediaType.Subtype.IndexOf('*') >= 0)
             {

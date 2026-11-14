@@ -197,7 +197,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         parameter.AllowReserved,
                         parameter.ContentMediaType,
                         parameter.Description,
-                        parameter.Deprecated));
+                        parameter.Deprecated,
+                        BuildQuerystringFormFields(parameter, resolvedType, parameterName)));
                 }
 
                 GeneratedRequestBodyModel? requestBody = operation.RequestBody is null
@@ -255,6 +256,28 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             return result;
+        }
+
+        // An in: querystring application/x-www-form-urlencoded parameter is serialized field by field, like a
+        // form-urlencoded request body of the same schema; other parameters have no form fields.
+        private IReadOnlyList<GeneratedFormFieldModel>? BuildQuerystringFormFields(
+            OpenApiSemanticParameter parameter,
+            GeneratedTypeModel resolvedType,
+            string parameterName)
+        {
+            if (parameter.LocationName != "querystring" || parameter.Encodings is null)
+            {
+                return null;
+            }
+
+            var content = new OpenApiSemanticMediaContent(
+                parameter.ContentMediaType,
+                OpenApiSemanticContentKind.FormUrlEncoded,
+                parameter.Schema,
+                parameter.Encodings,
+                false,
+                parameter.Location);
+            return BuildFormFields(content, resolvedType, GeneratedBodyKind.FormUrlEncoded, parameterName);
         }
 
         private GeneratedTypeModel ResolveType(OpenApiSemanticSchema schema)

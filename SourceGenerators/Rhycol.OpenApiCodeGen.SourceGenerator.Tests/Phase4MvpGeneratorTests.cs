@@ -31,16 +31,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void OpenApi32IsRejectedAtVersionNode()
+        public void OpenApi33IsRejectedAtVersionNode()
         {
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
-                CreateMinimalDocument("3.2.0"));
+                CreateMinimalDocument("3.3.0"));
             Diagnostic diagnostic = Assert.Single(execution.RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
             Assert.Equal(TestBundleFactory.SourcePath, diagnostic.Location.GetLineSpan().Path);
             Assert.Contains("logical path '/openapi'", diagnostic.GetMessage());
-            Assert.Contains("supports OpenAPI 3.0.* and 3.1.*", diagnostic.GetMessage());
+            Assert.Contains("supports OpenAPI 3.0.*, 3.1.* and 3.2.*", diagnostic.GetMessage());
             Assert.Empty(execution.RunResult.GeneratedTrees);
         }
 

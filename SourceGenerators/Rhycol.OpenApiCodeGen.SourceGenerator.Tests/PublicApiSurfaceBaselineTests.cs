@@ -96,6 +96,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         /// <summary>
+        /// P8 surface (OpenAPI 3.2): the QUERY method, additionalOperations (explicit and synthesized
+        /// names), an in: querystring form parameter, a media type component, a discriminator with
+        /// defaultMapping and the device authorization flow.
+        /// </summary>
+        [Fact]
+        public void OpenApi32SpecKeepsPublicSurface()
+        {
+            AssertBaseline(
+                "openapi32",
+                "BaselineOpenApi32Api",
+                File.ReadAllText(SpecPath("openapi32.json")));
+        }
+
+        /// <summary>
         /// NOT the Unity fixture document itself: the external YAML reference
         /// ("VerificationItem.yaml") is rewritten to an internal component reference and the
         /// component is added, because this test uses a single-document bundle.

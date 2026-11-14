@@ -315,9 +315,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 yield return "OpenID Connect discovery URL: " + scheme.OpenIdConnectUrl + " (not contacted by the client).";
             }
 
+            if (scheme.OAuth2MetadataUrl.Length > 0)
+            {
+                yield return "OAuth 2.0 authorization server metadata URL: " + scheme.OAuth2MetadataUrl + " (not contacted by the client).";
+            }
+
             foreach (OpenApiSemanticOAuthFlow flow in scheme.Flows)
             {
                 string urls = flow.AuthorizationUrl.Length > 0 ? " authorizationUrl " + flow.AuthorizationUrl : string.Empty;
+                urls += flow.DeviceAuthorizationUrl.Length > 0 ? " deviceAuthorizationUrl " + flow.DeviceAuthorizationUrl : string.Empty;
                 urls += flow.TokenUrl.Length > 0 ? " tokenUrl " + flow.TokenUrl : string.Empty;
                 yield return "OAuth2 flow " + flow.Name + ":" + urls + " (the client does not run flows).";
                 foreach (KeyValuePair<string, string> scope in flow.Scopes)

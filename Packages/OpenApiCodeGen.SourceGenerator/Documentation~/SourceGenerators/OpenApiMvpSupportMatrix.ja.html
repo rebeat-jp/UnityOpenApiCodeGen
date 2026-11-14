@@ -60,15 +60,15 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 <tr>
 <td>OpenAPI version</td>
 <td>一部対応</td>
-<td><code>3.0.*</code>と<code>3.1.*</code>のみ。</td>
+<td><code>3.0.*</code>、<code>3.1.*</code>、<code>3.2.*</code>のみ。<code>3.2.*</code>は3.1と同じJSON Schema 2020-12 dialectとschema規則で扱い、3.2で加わった項目は下の「OpenAPI 3.2」にまとめています。</td>
 </tr>
 <tr>
 <td>OpenAPI 3.1 schema dialect</td>
 <td>一部対応</td>
-<td>既定または明示的な<code>https://spec.openapis.org/oas/3.1/dialect/base</code>のみ。入口・外部完全OpenAPI文書の<code>jsonSchemaDialect</code>とschemaの<code>$schema</code>で別dialectを指定すると<code>OACG101</code>、不正なURIは<code>OACG100</code>です。</td>
+<td>既定または明示的な<code>https://spec.openapis.org/oas/3.1/dialect/base</code>のみ（3.2は<code>https://spec.openapis.org/oas/3.2/dialect/</code>配下のOAS dialectも同様）。入口・外部完全OpenAPI文書の<code>jsonSchemaDialect</code>とschemaの<code>$schema</code>で別dialectを指定すると<code>OACG101</code>、不正なURIは<code>OACG100</code>です。</td>
 </tr>
 <tr>
-<td>OpenAPI 3.2 / Swagger 2</td>
+<td>Swagger 2</td>
 <td>非対応</td>
 <td>document versionは受け付けません。</td>
 </tr>
@@ -358,7 +358,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tbody><tr>
 <td>HTTP method</td>
 <td>対応</td>
-<td><code>GET</code>、<code>POST</code>、<code>PUT</code>、<code>DELETE</code>、<code>PATCH</code>、<code>HEAD</code>、<code>OPTIONS</code>、<code>TRACE</code>。</td>
+<td><code>GET</code>、<code>POST</code>、<code>PUT</code>、<code>DELETE</code>、<code>PATCH</code>、<code>HEAD</code>、<code>OPTIONS</code>、<code>TRACE</code>。OpenAPI 3.2では<code>QUERY</code>と<code>additionalOperations</code>の任意のmethodも扱います（下の「OpenAPI 3.2」）。</td>
 </tr>
 <tr>
 <td><code>servers</code></td>
@@ -378,7 +378,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>parameter location</td>
 <td>対応</td>
-<td>path、query、header、cookieのparameterを扱います。</td>
+<td>path、query、header、cookieのparameterを扱います。OpenAPI 3.2では<code>in: querystring</code>も扱います（下の「OpenAPI 3.2」）。3.0／3.1の<code>in: querystring</code>は従来どおり<code>OACG101</code>です。</td>
 </tr>
 <tr>
 <td>cookie parameter</td>
@@ -388,7 +388,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>Parameter Objectの項目</td>
 <td>一部対応</td>
-<td>OpenAPI 3.0／3.1の標準項目と<code>x-*</code>拡張を認識します。<code>requird</code>などの未知項目は、path／operationのparameterや参照先でも位置付き<code>OACG101</code>です。<code>schema</code>と<code>content</code>の併記は<code>OACG100</code>です。<code>example</code>／<code>examples</code>／<code>allowEmptyValue</code>は受理するだけで、送信値には影響しません。</td>
+<td>OpenAPI 3.0／3.1／3.2の標準項目と<code>x-*</code>拡張を認識します。<code>requird</code>などの未知項目は、path／operationのparameterや参照先でも位置付き<code>OACG101</code>です。<code>schema</code>と<code>content</code>の併記は<code>OACG100</code>です。<code>example</code>／<code>examples</code>／<code>allowEmptyValue</code>は受理するだけで、送信値には影響しません。</td>
 </tr>
 <tr>
 <td>parameter serialization</td>
@@ -643,7 +643,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>Response Objectの項目</td>
 <td>一部対応</td>
-<td><code>description</code>・<code>headers</code>・<code>content</code>・<code>links</code>・<code>x-*</code>拡張だけを認識します。<code>contents</code>などの未知項目は、成功・エラー・参照先の応答でも位置付き<code>OACG101</code>です。</td>
+<td><code>description</code>・<code>headers</code>・<code>content</code>・<code>links</code>・<code>x-*</code>拡張（3.2では<code>summary</code>も）だけを認識します。<code>contents</code>などの未知項目は、成功・エラー・参照先の応答でも位置付き<code>OACG101</code>です。</td>
 </tr>
 <tr>
 <td>webhooks / callbacks / links</td>
@@ -662,6 +662,72 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 </tr>
 </tbody></table>
 <p>status codeはASCII数字で検証します。属性付きのジェネリックclassは<code>OACG005</code>で拒否します。</p>
+<h2 id="openapi-32">OpenAPI 3.2</h2>
+<p>OpenAPI 3.2のdocument（<code>openapi: 3.2.*</code>）は、3.1と同じJSON Schema 2020-12 dialectとschema規則で処理します。3.2だけの項目は3.0／3.1では従来どおり診断になります（<code>query</code>は<code>OACG101</code>など）。</p>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>対応状況</th>
+<th>条件・制約</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Path Itemの<code>query</code></td>
+<td>対応</td>
+<td>安全なmethodで本文を持ちます。<code>new HttpMethod(&quot;QUERY&quot;)</code>で送り、requestBody・parameter・responseは他のoperationと同じです。<code>operationId</code>の省略時は<code>GET</code>などと同じ規則で命名します（<code>QueryPetsSearch</code>）。3.0／3.1の<code>query</code>は位置付き<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td>Path Itemの<code>additionalOperations</code></td>
+<td>対応</td>
+<td>method名（HTTP token）からOperationへのmapで、各entryにクライアントメソッドを生成し、methodは<strong>書かれたとおりの表記</strong>（大小文字を含む）で送ります。tokenがHTTP tokenでない場合、<code>GET</code>・<code>PUT</code>・<code>POST</code>・<code>DELETE</code>・<code>OPTIONS</code>・<code>HEAD</code>・<code>PATCH</code>・<code>TRACE</code>・<code>QUERY</code>（大小文字を区別せず比較）と重複する場合は、そのentryの位置で<code>OACG100</code>です。<code>operationId</code>がなければ、method token（英数字だけを残し、先頭だけ大文字）とpathから決定的に命名し（<code>PURGE /pets</code>は<code>PurgePets</code>）、entryはtokenの序数順に処理します。名前の衝突は既存の<code>operationId</code>の一意化（連番）に従い、明示した<code>operationId</code>の重複は<code>OACG106</code>です。</td>
+</tr>
+<tr>
+<td><code>in: querystring</code> parameter</td>
+<td>一部対応</td>
+<td><code>content</code>が<strong>クエリ文字列全体</strong>を表します（<code>schema</code>との併記は<code>OACG100</code>、<code>content</code>は1つのmedia type）。<code>application/x-www-form-urlencoded</code>はobject schemaで、各propertyをform-urlencoded本文と同じ規則（<code>encoding</code>の<code>style</code>／<code>explode</code>／<code>allowReserved</code>）で直列化し<code>?</code>の後ろに付けます。具体的なJSON media typeは、JSON textをpercent-encodeしたものがクエリ文字列です。それ以外のmedia typeは<code>OACG101</code>です。1つのoperationに複数の<code>in: querystring</code>、または<code>in: query</code>との併記は、<code>OACG105</code>です。media typeは<code>components.mediaTypes</code>への<code>$ref</code>でも宣言できます。</td>
+</tr>
+<tr>
+<td>tagsの<code>parent</code>／<code>kind</code>／<code>summary</code></td>
+<td>対応</td>
+<td>ドキュメント専用で、生成コードは変わりません。形式（文字列）と、<code>parent</code>が宣言済みのtagを指し循環しないことだけを検証します（違反は<code>OACG100</code>）。tag名の重複も<code>OACG100</code>ですが、これは3.2だけの検査で、3.0／3.1では検査しません。</td>
+</tr>
+<tr>
+<td>root <code>$self</code></td>
+<td>一部対応</td>
+<td>受理します。形式は文字列で、fragmentを持てません（違反は<code>OACG100</code>）。内部の<code>$ref</code>は基準URIに依存しません。他のdocumentへの相対<code>$ref</code>は、<code>$self</code>ではなくdocumentファイルの位置を基準に解決するため、参照先のdocumentがある場合（Bundleが複数documentのとき）だけ<code>$self</code>の位置で<code>OACG108</code>を報告します。</td>
+</tr>
+<tr>
+<td>media typeの<code>itemSchema</code></td>
+<td>一部対応</td>
+<td>streaming（SSEと逐次処理）は対象外です。<code>text/event-stream</code>に<code>itemSchema</code>があれば<code>OACG101</code>、順次media type以外（<code>application/json</code>など）の<code>itemSchema</code>も<code>OACG101</code>です。<code>application/jsonl</code>・<code>application/x-ndjson</code>・<code>application/ndjson</code>・<code>application/json-seq</code>・<code>application/geo+json-seq</code>の<code>itemSchema</code>は解釈せず<code>OACG108</code>で通知し、本文は従来どおり<code>byte[]</code>（binary）です（itemごとの読み取りは行いません）。<code>itemSchema</code>は解析しないため、その中の<code>$ref</code>はEditorも収集せず、DTOも生成しません。Media Type Objectで<code>encoding</code>と<code>prefixEncoding</code>／<code>itemEncoding</code>を併記すると<code>OACG100</code>です（仕様上の禁止）。単独の<code>prefixEncoding</code>／<code>itemEncoding</code>（Media Type Object）と、Encoding Objectの入れ子の<code>encoding</code>／<code>prefixEncoding</code>／<code>itemEncoding</code>は<code>OACG108</code>で無視します。<code>itemSchema</code>は3.0／3.1では従来どおり未知の項目として無視します。</td>
+</tr>
+<tr>
+<td>discriminatorの<code>defaultMapping</code></td>
+<td>対応</td>
+<td>discriminatorの値がmappingのどれにも一致しない、またはdiscriminatorの項目がない・文字列でないときに使うメンバーです。値はスキーマ名または参照で、<code>oneOf</code>／<code>anyOf</code>のメンバー（継承形のbaseでは子または参照先のschema）でなければ<code>OACG101</code>です。変換器は該当するJSON objectをそのメンバー型へ読みます（応答の契約検査も同じ。メンバー自身のschemaに合わない本文は従来どおり拒否します）。指定がなければ、従来どおり未知の値は<code>JsonSerializationException</code>です。書き出す値はそのメンバーの最初のdiscriminator値で、読んだ未知の値は保持しません。3.0／3.1では従来どおり無視します。</td>
+</tr>
+<tr>
+<td><code>components.mediaTypes</code></td>
+<td>一部対応</td>
+<td><code>content</code>の各media typeを<code>$ref: &#39;#/components/mediaTypes/&lt;name&gt;&#39;</code>で参照できます（requestBody・成功／エラーresponse・<code>in: querystring</code>のcontent。他のdocumentの<code>&lt;file&gt;#/components/mediaTypes/&lt;name&gt;</code>も可）。componentはobjectと、あればそのschemaを検証し、参照元の<code>content</code>のキーがmedia typeを決めます。通常のparameterの<code>content</code>からの<code>$ref</code>は<code>OACG101</code>です。3.0／3.1の<code>components.mediaTypes</code>は<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td><code>oauth2</code>の<code>deviceAuthorization</code> flowと<code>oauth2MetadataUrl</code></td>
+<td>一部対応</td>
+<td>受理し、URL・scopesをXML docに出すだけです（<code>deviceAuthorizationUrl</code>と<code>tokenUrl</code>が必須、なければ<code>OACG100</code>）。tokenの取得・更新とmetadataの取得は行わず、外から渡されたtokenをBearerで送ります。security schemeの<code>deprecated</code>は形式だけ検証します。3.0／3.1の<code>deviceAuthorization</code>は未知のflowとして<code>OACG100</code>です。</td>
+</tr>
+<tr>
+<td>Responseの<code>summary</code>と省略可能な<code>description</code></td>
+<td>対応</td>
+<td>3.2ではResponseの<code>summary</code>を受理し（ドキュメント専用）、<code>description</code>を省略できます。3.0／3.1の<code>summary</code>は<code>OACG101</code>、<code>description</code>の省略は<code>OACG100</code>です。</td>
+</tr>
+<tr>
+<td>その他の3.2の項目</td>
+<td>対応</td>
+<td>Serverの<code>name</code>、Exampleの<code>dataValue</code>／<code>serializedValue</code>、XML Objectの<code>nodeType</code>、Tag Objectの<code>summary</code>は、ドキュメント専用として黙って受理します。</td>
+</tr>
+</tbody></table>
 <h2 id="security">Security</h2>
 <table>
 <thead>
@@ -704,7 +770,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td><code>oauth2</code> / <code>openIdConnect</code></td>
 <td>一部対応</td>
-<td>外から渡されたtokenをBearerとして送るだけです。flowによるtoken取得、更新、OpenID Connect discoveryは行いません（URLやscopesはXML docのみ）。tokenは<code>&lt;Scheme&gt;AccessToken</code>に設定するか、<code>&lt;Scheme&gt;AccessTokenProvider</code>で供給します。providerは設定されていればプロパティより優先し、送信ごとにそのリクエストの<code>CancellationToken</code>付きで呼びます。providerが<code>null</code>または空を返したときはプロパティを使います。</td>
+<td>外から渡されたtokenをBearerとして送るだけです（OpenAPI 3.2の<code>deviceAuthorization</code> flowと<code>oauth2MetadataUrl</code>も同じ扱いで、下の「OpenAPI 3.2」を参照）。flowによるtoken取得、更新、OpenID Connect discoveryは行いません（URLやscopesはXML docのみ）。tokenは<code>&lt;Scheme&gt;AccessToken</code>に設定するか、<code>&lt;Scheme&gt;AccessTokenProvider</code>で供給します。providerは設定されていればプロパティより優先し、送信ごとにそのリクエストの<code>CancellationToken</code>付きで呼びます。providerが<code>null</code>または空を返したときはプロパティを使います。</td>
 </tr>
 <tr>
 <td><code>mutualTLS</code></td>
@@ -961,7 +1027,7 @@ CLR名に番号を付けます。Json.NETがschemaのboolean値を存在フラ�
 </tr>
 <tr>
 <td><code>OACG105</code></td>
-<td>InconsistentResponse（1つのresponse・requestBody内で、schemaが異なる複数のJSON media typeを宣言した場合だけ。status間でcontractが異なる成功responseはstatus別の結果型になります）</td>
+<td>InconsistentResponse（1つのresponse・requestBody内で、schemaが異なる複数のJSON media typeを宣言した場合と、OpenAPI 3.2で1つのoperationに複数の<code>in: querystring</code> parameter、または<code>in: querystring</code>と<code>in: query</code>を併記した場合。status間でcontractが異なる成功responseはstatus別の結果型になります）</td>
 </tr>
 <tr>
 <td><code>OACG106</code></td>

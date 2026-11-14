@@ -112,7 +112,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         private sealed class GraphBuilder
         {
             private static readonly string[] HttpMethods =
-                { "delete", "get", "head", "options", "patch", "post", "put", "trace" };
+                { "delete", "get", "head", "options", "patch", "post", "put", "query", "trace" };
             private static readonly string[] ReferenceObjectComponentMaps =
                 { "securitySchemes" };
             private static readonly string[] SchemaMapProperties =
@@ -131,6 +131,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             private static readonly ReferenceCollector ParameterCollector = CollectParameter;
             private static readonly ReferenceCollector ReferenceObjectCollector = CollectReferenceObject;
             private static readonly ReferenceCollector RequestBodyCollector = CollectRequestBody;
+            private static readonly ReferenceCollector MediaTypeCollector = CollectMediaType;
+            private static readonly ReferenceCollector OperationCollector = CollectOperation;
 
             private readonly ExternalSpecGraphLoader owner;
             private readonly string specId;
@@ -1073,7 +1075,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
 
             private static readonly string[] PathItemOnlyKeys =
-                { "$ref", "parameters", "servers", "summary", "description" };
+                { "$ref", "parameters", "servers", "summary", "description", "additionalOperations" };
             private static readonly string[] SchemaOnlyKeys =
             {
                 "$schema", "$id", "$defs", "definitions", "type", "properties", "patternProperties",
@@ -1133,6 +1135,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 }
 
                 CollectObjectMapProperty(components, path, "pathItems", PathItemCollector, references);
+                // OpenAPI 3.2 components.mediaTypes: reusable Media Type Objects.
+                CollectObjectMapProperty(components, path, "mediaTypes", MediaTypeCollector, references);
                 path.Pop();
             }
 
@@ -1164,6 +1168,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     CollectOperation(operation!, path, references);
                     path.Pop();
                 }
+
+                // OpenAPI 3.2 additionalOperations: a map from a custom method name to an Operation.
+                CollectObjectMapProperty(pathItem, path, "additionalOperations", OperationCollector, references);
             }
 
             private static void CollectOperation(
@@ -1231,35 +1238,45 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 path.Push("content");
                 foreach (SpecProperty mediaType in content.Properties)
                 {
-                    SpecObjectNode? media = mediaType.Value as SpecObjectNode;
-                    if (media == null) continue;
                     path.Push(mediaType.Name);
-                    CollectProperty(media, path, "schema", SchemaCollector, references);
-                    if (TryGetObjectProperty(media, "encoding", out SpecObjectNode? encodings))
-                    {
-                        path.Push("encoding");
-                        foreach (SpecProperty encoding in encodings.Properties)
-                        {
-                            if (encoding.Value is SpecObjectNode encodingObject)
-                            {
-                                path.Push(encoding.Name);
-                                CollectObjectMapProperty(
-                                    encodingObject,
-                                    path,
-                                    "headers",
-                                    ParameterCollector,
-                                    references);
-                                path.Pop();
-                            }
-                        }
-
-                        path.Pop();
-                    }
-
+                    CollectMediaType(mediaType.Value, path, references);
                     path.Pop();
                 }
 
                 path.Pop();
+            }
+
+            // A Media Type Object. In OpenAPI 3.2 it can also be a Reference Object (to components.mediaTypes).
+            // itemSchema is never parsed by the analyzer (not interpreted), so its $refs are not collected.
+            private static void CollectMediaType(
+                SpecNode node,
+                ReferencePath path,
+                List<ReferenceValue> references)
+            {
+                CollectDirectReference(node, path, references);
+                SpecObjectNode? media = node as SpecObjectNode;
+                if (media == null) return;
+                CollectProperty(media, path, "schema", SchemaCollector, references);
+                if (TryGetObjectProperty(media, "encoding", out SpecObjectNode? encodings))
+                {
+                    path.Push("encoding");
+                    foreach (SpecProperty encoding in encodings.Properties)
+                    {
+                        if (encoding.Value is SpecObjectNode encodingObject)
+                        {
+                            path.Push(encoding.Name);
+                            CollectObjectMapProperty(
+                                encodingObject,
+                                path,
+                                "headers",
+                                ParameterCollector,
+                                references);
+                            path.Pop();
+                        }
+                    }
+
+                    path.Pop();
+                }
             }
 
             private static void CollectSchema(
