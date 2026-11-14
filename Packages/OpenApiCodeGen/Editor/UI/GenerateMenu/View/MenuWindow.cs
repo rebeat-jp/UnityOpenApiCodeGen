@@ -32,6 +32,13 @@ namespace Rhycol.OpenApiCodeGen.UI
         TextField? _generationWarningLog;
         Button? _generateButton;
         Button? _cancelButton;
+        VisualElement? _libraryReadiness;
+        Label? _librarySummaryLabel;
+        Label? _libraryProblemsLabel;
+        Label? _libraryWarningsLabel;
+        Button? _openSettingsButton;
+        bool _inputEnabled = true;
+        bool _libraryBlocked;
         GenerateProvider _generateProvider = GenerateProvider.OpenApi;
 
         readonly IGenerationPresenter _presenter;
@@ -73,6 +80,16 @@ namespace Rhycol.OpenApiCodeGen.UI
             _progressBar = root.Q<ProgressBar>("Progress");
             _generationFailureLog = root.Q<TextField>("GenerationFailureLog");
             _generationWarningLog = root.Q<TextField>("GenerationWarningLog");
+
+            _libraryReadiness = root.Q<VisualElement>("LibraryReadiness");
+            _librarySummaryLabel = root.Q<Label>("LibrarySummaryLabel");
+            _libraryProblemsLabel = root.Q<Label>("LibraryProblemsLabel");
+            _libraryWarningsLabel = root.Q<Label>("LibraryWarningsLabel");
+            _openSettingsButton = root.Q<Button>("OpenSettingsButton");
+            if (_openSettingsButton != null)
+            {
+                _openSettingsButton.clicked += OnOpenSettings;
+            }
 
             _generateButton = root.Q<Button>("GenerateButton");
             if (_generateButton != null)
@@ -141,6 +158,52 @@ namespace Rhycol.OpenApiCodeGen.UI
         void OnCancel()
         {
             CancelRequested?.Invoke();
+        }
+
+        void OnOpenSettings()
+        {
+            SettingMenu.ShowExample();
+        }
+
+        public void SetLibraryReadiness(GenerationLibraryReadinessDto readiness)
+        {
+            _libraryBlocked = readiness.IsApplicable && readiness.IsBlocking;
+            if (_libraryReadiness != null)
+            {
+                _libraryReadiness.EnableInClassList("library-readiness-hidden", !readiness.IsApplicable);
+            }
+
+            if (_librarySummaryLabel != null)
+            {
+                _librarySummaryLabel.text = readiness.Summary;
+                _librarySummaryLabel.EnableInClassList("library-readiness-summary--blocked", _libraryBlocked);
+                _librarySummaryLabel.EnableInClassList(
+                    "library-readiness-summary--ready",
+                    readiness.IsApplicable && !_libraryBlocked);
+            }
+
+            SetMultilineText(_libraryProblemsLabel, readiness.Problems);
+            SetMultilineText(_libraryWarningsLabel, readiness.Warnings);
+            if (_openSettingsButton != null)
+            {
+                _openSettingsButton.style.display = _libraryBlocked || readiness.Warnings.Count != 0
+                    ? DisplayStyle.Flex
+                    : DisplayStyle.None;
+            }
+
+            UpdateGenerateButton();
+        }
+
+        static void SetMultilineText(Label? label, System.Collections.Generic.IReadOnlyList<string> lines)
+        {
+            if (label == null) return;
+            label.text = string.Join("\n", lines);
+            label.style.display = lines.Count == 0 ? DisplayStyle.None : DisplayStyle.Flex;
+        }
+
+        void UpdateGenerateButton()
+        {
+            _generateButton?.SetEnabled(_inputEnabled && !_libraryBlocked);
         }
 
         public void SetGenerateStatus(IProgressStatus generateStatus)
@@ -227,7 +290,8 @@ namespace Rhycol.OpenApiCodeGen.UI
         {
             _documentFilePath?.SetEnabled(isEnabled);
             _outputFolderPath?.SetEnabled(isEnabled);
-            _generateButton?.SetEnabled(isEnabled);
+            _inputEnabled = isEnabled;
+            UpdateGenerateButton();
         }
 
         void SetGenerationWarningLog(string log)

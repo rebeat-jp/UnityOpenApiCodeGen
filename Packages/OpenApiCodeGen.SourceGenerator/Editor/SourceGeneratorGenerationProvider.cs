@@ -4,13 +4,14 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text;
 using Rhycol.OpenApiCodeGen.SourceGenerator;
 using Rhycol.OpenApiCodeGen.Editor.Generation;
 using UnityEditor.Compilation;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 {
-    internal sealed class SourceGeneratorGenerationProvider : IGenerationProvider
+    internal sealed class SourceGeneratorGenerationProvider : IGenerationProvider, IGenerationLibraryInspector
     {
         internal const string GenerationSucceededMessage =
             "Source Generator cache and definition were published; script compilation was requested.";
@@ -20,6 +21,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         private readonly NormalizedSpecCacheService cacheService;
         private readonly OpenApiClientDefinitionWriter definitionWriter;
         private readonly Action requestScriptCompilation;
+        private readonly SourceGeneratorLibraryProbe libraryProbe;
 
         public GenerationProviderDescriptor Descriptor { get; }
 
@@ -38,7 +40,24 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             NormalizedSpecCacheService cacheService,
             OpenApiClientDefinitionWriter definitionWriter,
             Action requestScriptCompilation)
+            : this(
+                availability,
+                cacheService,
+                definitionWriter,
+                requestScriptCompilation,
+                SourceGeneratorLibraryProbe.CreateForCurrentProject())
         {
+        }
+
+        internal SourceGeneratorGenerationProvider(
+            GenerationProviderAvailability availability,
+            NormalizedSpecCacheService cacheService,
+            OpenApiClientDefinitionWriter definitionWriter,
+            Action requestScriptCompilation,
+            SourceGeneratorLibraryProbe libraryProbe)
+        {
+            this.libraryProbe = libraryProbe
+                ?? throw new ArgumentNullException(nameof(libraryProbe));
             Descriptor = new GenerationProviderDescriptor(
                 GenerateProvider.SourceGenerator,
                 "Source Generator (Beta)",
@@ -60,6 +79,83 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
 
             return GenerateSyncCore(request);
+        }
+
+        /// <summary>
+        /// Reports the library states of the assembly that would contain the definition for the folder.
+        /// Kept apart from <see cref="GenerationProviderAvailability"/>: marking the provider unavailable
+        /// would remove OPENAPI_CODEGEN_SOURCE_GENERATOR and break every existing definition.
+        /// </summary>
+        public GenerationLibraryReport Inspect(string outputFolderPath)
+        {
+            try
+            {
+                OutputTargetAssembly target = definitionWriter.ResolveOutputTarget(outputFolderPath);
+                return libraryProbe.Inspect(target.Name, target.NoEngineReferences);
+            }
+            catch (Exception exception)
+            {
+                return GenerationLibraryReport.Unresolved(
+                    exception is InvalidOperationException || exception is ArgumentException
+                        ? exception.Message
+                        : "The output folder could not be evaluated.");
+            }
+        }
+
+        /// <summary>
+        /// Returns a failure with the way to resolve it when a library the request needs is missing, or null.
+        /// An output folder that cannot be evaluated is left to the normal definition checks, and the
+        /// analyzer re-checks the libraries when it runs.
+        /// </summary>
+        private GenerationResult? CheckLibraries(GenerationRequest request)
+        {
+            if (!Enum.IsDefined(typeof(GenerationHttpTransport), request.HttpTransport) ||
+                !Enum.IsDefined(typeof(GenerationJsonSerializer), request.JsonSerializer))
+            {
+                return GenerationResult.Failure(
+                    "The requested HTTP transport or JSON serializer is not supported by the Source Generator provider.");
+            }
+
+            GenerationLibraryReport report = Inspect(request.OutputFolderPath);
+            if (report.ResolutionFailure.Length != 0)
+            {
+                return null;
+            }
+
+            System.Collections.Generic.IReadOnlyList<string> problems =
+                report.GetProblems(request.HttpTransport, request.JsonSerializer);
+            if (problems.Count == 0)
+            {
+                return null;
+            }
+
+            var message = new StringBuilder();
+            message.Append("The libraries required by HttpTransport=")
+                .Append(request.HttpTransport)
+                .Append(", JsonSerializer=")
+                .Append(request.JsonSerializer)
+                .AppendLine(" are not ready. Nothing was generated.");
+            foreach (string problem in problems)
+            {
+                message.Append("- ").AppendLine(problem);
+            }
+
+            message.Append("Install the missing libraries, or choose another combination in Project Settings.");
+            return GenerationResult.Failure(message.ToString());
+        }
+
+        private static OpenApiHttpTransport ToRuntimeTransport(GenerationHttpTransport transport)
+        {
+            return transport == GenerationHttpTransport.UnityWebRequest
+                ? OpenApiHttpTransport.UnityWebRequest
+                : OpenApiHttpTransport.HttpClient;
+        }
+
+        private static OpenApiJsonSerializer ToRuntimeSerializer(GenerationJsonSerializer serializer)
+        {
+            return serializer == GenerationJsonSerializer.SystemTextJson
+                ? OpenApiJsonSerializer.SystemTextJson
+                : OpenApiJsonSerializer.NewtonsoftJson;
         }
 
         public Task<GenerationResult> GenerateAsync(
@@ -84,6 +180,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         {
             try
             {
+                GenerationResult? libraryFailure = CheckLibraries(request);
+                if (libraryFailure != null)
+                {
+                    return libraryFailure;
+                }
+
                 using (cacheService.AcquireGenerationLock())
                 {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -94,7 +196,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     request.OutputFolderPath,
                     request.ApiName,
                     request.GeneratedNamespace,
-                    requestedDocumentFormat);
+                    requestedDocumentFormat,
+                    ToRuntimeTransport(request.HttpTransport),
+                    ToRuntimeSerializer(request.JsonSerializer));
                 cacheService.RepairPendingPublicationForSpec(
                     definitionPlan.SpecId,
                     definitionPlan.DefinitionPath,
@@ -105,7 +209,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     request.OutputFolderPath,
                     request.ApiName,
                     request.GeneratedNamespace,
-                    requestedDocumentFormat);
+                    requestedDocumentFormat,
+                    ToRuntimeTransport(request.HttpTransport),
+                    ToRuntimeSerializer(request.JsonSerializer));
                 NormalizedSpecGraph graph = await cacheService.LoadGraphAsync(
                     request.ApiDocumentFilePathOrUrl,
                     definitionPlan.SpecId,
@@ -143,6 +249,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         {
             try
             {
+                GenerationResult? libraryFailure = CheckLibraries(request);
+                if (libraryFailure != null)
+                {
+                    return libraryFailure;
+                }
+
                 using (cacheService.AcquireGenerationLock())
                 {
                 OpenApiDocumentFormat requestedDocumentFormat = DetectLocalDocumentFormat(
@@ -151,7 +263,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     request.OutputFolderPath,
                     request.ApiName,
                     request.GeneratedNamespace,
-                    requestedDocumentFormat);
+                    requestedDocumentFormat,
+                    ToRuntimeTransport(request.HttpTransport),
+                    ToRuntimeSerializer(request.JsonSerializer));
                 cacheService.RepairPendingPublicationForSpec(
                     definitionPlan.SpecId,
                     definitionPlan.DefinitionPath,
@@ -160,7 +274,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     request.OutputFolderPath,
                     request.ApiName,
                     request.GeneratedNamespace,
-                    requestedDocumentFormat);
+                    requestedDocumentFormat,
+                    ToRuntimeTransport(request.HttpTransport),
+                    ToRuntimeSerializer(request.JsonSerializer));
                 // Match the Docker provider's synchronous boundary for fetch/parse, then publish
                 // Unity assets on this caller thread after the worker has returned.
                 NormalizedSpecGraph graph = Task.Run(

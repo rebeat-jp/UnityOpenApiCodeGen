@@ -15,6 +15,9 @@ namespace Rhycol.OpenApiCodeGen.UI
         void SetUserSettingValue(UserSettingDisplayDto userSetting);
         void SetGenerationCSharpSettingValue(GenerationCSharpSettingDisplayDto generationCSharpSetting);
         void SetInputEnabled(bool isEnabled);
+
+        /// <summary>Shows the library states of the Source Generator. Views without the section ignore it.</summary>
+        void SetSourceGeneratorLibraries(SourceGeneratorLibrariesDto libraries) { }
     }
 
 

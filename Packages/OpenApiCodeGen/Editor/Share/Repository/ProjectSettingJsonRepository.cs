@@ -50,6 +50,9 @@ namespace Rhycol.OpenApiCodeGen.Lib
             public GenerateProvider GenerateProvider = GenerateProvider.OpenApi;
             public string ApiDocumentFilePathOrUrl = "";
             public string ApiClientOutputFolderPath = "";
+            // Added in 0.6.0. Older files lack these fields, which keep the defaults (HttpClient / Newtonsoft.Json).
+            public GenerationHttpTransport HttpTransport = GenerationHttpTransport.HttpClient;
+            public GenerationJsonSerializer JsonSerializer = GenerationJsonSerializer.NewtonsoftJson;
 
             public static ProjectSettingJson FromDomain(ProjectSetting value)
             {
@@ -60,6 +63,8 @@ namespace Rhycol.OpenApiCodeGen.Lib
                         value.GenerateProvider,
                         value.ApiDocumentFilePathOrUrl),
                     ApiClientOutputFolderPath = value.ApiClientOutputFolderPath,
+                    HttpTransport = value.HttpTransport,
+                    JsonSerializer = value.JsonSerializer,
                 };
             }
 
@@ -70,7 +75,9 @@ namespace Rhycol.OpenApiCodeGen.Lib
                     apiDocumentFilePathOrUrl: SanitizeSourceGeneratorUrl(
                         GenerateProvider,
                         ApiDocumentFilePathOrUrl),
-                    apiClientOutputFolderPath: ApiClientOutputFolderPath
+                    apiClientOutputFolderPath: ApiClientOutputFolderPath,
+                    httpTransport: HttpTransport,
+                    jsonSerializer: JsonSerializer
                 );
             }
 
