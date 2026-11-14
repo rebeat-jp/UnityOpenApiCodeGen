@@ -96,7 +96,7 @@
     },
     "com.unity.nuget.newtonsoft-json": {
       "version": "3.2.2",
-      "depth": 1,
+      "depth": 0,
       "source": "registry",
       "dependencies": {},
       "url": "https://packages.unity.com"
@@ -211,8 +211,7 @@
       "depth": 0,
       "source": "embedded",
       "dependencies": {
-        "jp.rhycol.openapicodegen": "0.5.1",
-        "com.unity.nuget.newtonsoft-json": "3.2.2"
+        "jp.rhycol.openapicodegen": "0.6.0"
       }
     },
     "jp.rhycol.openapicodegen.source-generator.phase0": {

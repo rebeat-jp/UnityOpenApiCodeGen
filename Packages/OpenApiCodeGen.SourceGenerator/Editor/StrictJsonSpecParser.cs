@@ -1,21 +1,18 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Text;
-using Newtonsoft.Json;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 {
     /// <summary>
     /// Parses one strict RFC 8259 value while retaining the original number lexemes and token locations.
-    /// Json.NET performs a streaming validation pass and decodes each JSON string; the small source cursor
-    /// supplies information that JsonTextReader intentionally does not retain.
+    /// The parser validates the grammar itself and decodes each JSON string, so the Editor assembly does not
+    /// depend on a JSON library.
     /// </summary>
     internal sealed class StrictJsonSpecParser
     {
         private readonly string source;
         private readonly string sourcePath;
-        private readonly List<NumberRange> numberRanges = new List<NumberRange>();
         private int index;
         private int line = 1;
         private int column = 1;
@@ -36,7 +33,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 throw parser.CreateException("Only one root JSON value is allowed.", string.Empty);
             }
 
-            ValidateWithJsonNet(parser.CreateJsonNetValidationSource(), sourcePath);
             return root;
         }
 
@@ -184,8 +180,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         private string ParseString(string logicalPath)
         {
             int startIndex = index;
-            int tokenLine = line;
-            int tokenColumn = column;
             ConsumeExpected('"', logicalPath);
 
             while (!IsAtEnd)
@@ -194,8 +188,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 if (character == '"')
                 {
                     ConsumeCharacter();
-                    string lexeme = source.Substring(startIndex, index - startIndex);
-                    return DecodeStringWithJsonNet(lexeme, sourcePath, tokenLine, tokenColumn, logicalPath);
+                    return DecodeString(startIndex + 1, index - 1);
                 }
 
                 if (character < 0x20)
@@ -243,6 +236,62 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
 
             throw CreateException("The JSON string is not terminated.", logicalPath);
+        }
+
+        /// <summary>
+        /// Decodes the already validated string body between the quotes. Unicode escapes are copied as UTF-16 code
+        /// units, so a surrogate pair written as two escapes decodes to the same string as the raw characters.
+        /// </summary>
+        private string DecodeString(int bodyStart, int bodyEnd)
+        {
+            if (source.IndexOf('\\', bodyStart, bodyEnd - bodyStart) < 0)
+            {
+                return source.Substring(bodyStart, bodyEnd - bodyStart);
+            }
+
+            var builder = new StringBuilder(bodyEnd - bodyStart);
+            int position = bodyStart;
+            while (position < bodyEnd)
+            {
+                char character = source[position++];
+                if (character != '\\')
+                {
+                    builder.Append(character);
+                    continue;
+                }
+
+                char escape = source[position++];
+                switch (escape)
+                {
+                    case 'b':
+                        builder.Append('\b');
+                        break;
+                    case 'f':
+                        builder.Append('\f');
+                        break;
+                    case 'n':
+                        builder.Append('\n');
+                        break;
+                    case 'r':
+                        builder.Append('\r');
+                        break;
+                    case 't':
+                        builder.Append('\t');
+                        break;
+                    case 'u':
+                        builder.Append((char)Convert.ToInt32(
+                            source.Substring(position, 4),
+                            16));
+                        position += 4;
+                        break;
+                    default:
+                        // '"', '\\' and '/' decode to themselves.
+                        builder.Append(escape);
+                        break;
+                }
+            }
+
+            return builder.ToString();
         }
 
         private SpecNumberNode ParseNumber(string logicalPath, int valueLine, int valueColumn)
@@ -302,7 +351,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
 
             string lexeme = source.Substring(startIndex, index - startIndex);
-            numberRanges.Add(new NumberRange(startIndex, index - startIndex));
             return new SpecNumberNode(valueLine, valueColumn, isInteger, lexeme);
         }
 
@@ -402,26 +450,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             return new NormalizedSpecException(message, sourcePath, line, column, logicalPath);
         }
 
-        private string CreateJsonNetValidationSource()
-        {
-            if (numberRanges.Count == 0)
-            {
-                return source;
-            }
-
-            char[] masked = source.ToCharArray();
-            foreach (NumberRange range in numberRanges)
-            {
-                masked[range.Start] = '0';
-                for (int offset = 1; offset < range.Length; offset++)
-                {
-                    masked[range.Start + offset] = ' ';
-                }
-            }
-
-            return new string(masked);
-        }
-
         private static string AppendPointer(string parent, string segment)
         {
             return parent + "/" + segment.Replace("~", "~0").Replace("/", "~1");
@@ -437,95 +465,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             return (character >= '0' && character <= '9') ||
                    (character >= 'a' && character <= 'f') ||
                    (character >= 'A' && character <= 'F');
-        }
-
-        private static string DecodeStringWithJsonNet(
-            string lexeme,
-            string sourcePath,
-            int line,
-            int column,
-            string logicalPath)
-        {
-            try
-            {
-                using (var stringReader = new StringReader(lexeme))
-                using (var jsonReader = CreateJsonReader(stringReader))
-                {
-                    if (!jsonReader.Read() || jsonReader.TokenType != JsonToken.String)
-                    {
-                        throw new JsonReaderException("A JSON string token was expected.");
-                    }
-
-                    string value = (string)jsonReader.Value;
-                    if (jsonReader.Read())
-                    {
-                        throw new JsonReaderException("Additional content followed the JSON string.");
-                    }
-
-                    return value;
-                }
-            }
-            catch (JsonException exception)
-            {
-                throw new NormalizedSpecException(
-                    "Json.NET could not decode the JSON string.",
-                    sourcePath,
-                    line,
-                    column,
-                    logicalPath,
-                    exception);
-            }
-        }
-
-        private static void ValidateWithJsonNet(string source, string sourcePath)
-        {
-            try
-            {
-                using (var stringReader = new StringReader(source))
-                using (var jsonReader = CreateJsonReader(stringReader))
-                {
-                    while (jsonReader.Read())
-                    {
-                        if (jsonReader.TokenType == JsonToken.Comment)
-                        {
-                            throw new JsonReaderException("JSON comments are not allowed.");
-                        }
-                    }
-                }
-            }
-            catch (JsonException exception)
-            {
-                throw new NormalizedSpecException(
-                    "Json.NET rejected the raw JSON.",
-                    sourcePath,
-                    1,
-                    1,
-                    string.Empty,
-                    exception);
-            }
-        }
-
-        private static JsonTextReader CreateJsonReader(TextReader textReader)
-        {
-            return new JsonTextReader(textReader)
-            {
-                DateParseHandling = DateParseHandling.None,
-                MaxDepth = NormalizedSpecBundleConstants.MaximumDepth,
-                SupportMultipleContent = false,
-            };
-        }
-
-        private struct NumberRange
-        {
-            internal NumberRange(int start, int length)
-            {
-                Start = start;
-                Length = length;
-            }
-
-            internal int Start { get; }
-
-            internal int Length { get; }
         }
     }
 }

@@ -18,6 +18,16 @@
             <ui:TextField picking-mode="Ignore" label="Default API Document File URL" name="DefaultApiDocumentFilePathOrUrlField" />
             <ui:TextField picking-mode="Ignore" label="Default Output Folder Path" name="DefaultOutputFolderPathField" />
         </ui:Foldout>
+        <ui:Foldout text="Source Generator Libraries" name="SourceGeneratorLibrariesFoldout" class="setting-section source-generator-libraries-hidden" style="font-size: 14px;">
+            <ui:Label name="LibrariesMessageLabel" class="source-generator-libraries-message" />
+            <ui:VisualElement name="LibrariesWebGlMessages" />
+            <ui:Label text="HTTP implementation" class="source-generator-libraries-heading" />
+            <ui:RadioButtonGroup name="HttpTransportGroup" />
+            <ui:VisualElement name="HttpTransportDetails" class="source-generator-libraries-details" />
+            <ui:Label text="JSON serializer" class="source-generator-libraries-heading" />
+            <ui:RadioButtonGroup name="JsonSerializerGroup" />
+            <ui:VisualElement name="JsonSerializerDetails" class="source-generator-libraries-details" />
+        </ui:Foldout>
         <ui:Foldout text="C# Generation Settings" name="CSharpGenerationSettingsFoldout" class="setting-section" style="font-size: 14px;">
             <ui:Toggle label="Allow Unicode Identifiers" name="AllowUnicodeIdentifiersField" />
             <ui:TextField picking-mode="Ignore" label="ApiName" name="ApiNameField" />

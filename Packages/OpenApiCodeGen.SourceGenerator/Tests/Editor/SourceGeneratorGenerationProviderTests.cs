@@ -816,7 +816,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 GenerationProviderAvailability.Available(),
                 cacheService,
                 definitionWriter,
-                requestCompilation ?? (() => compilationRequestCount++));
+                requestCompilation ?? (() => compilationRequestCount++),
+                LibraryProbeTestSupport.AllInstalledProbe());
         }
 
         void WriteInterruptedDefinitionPublication(
