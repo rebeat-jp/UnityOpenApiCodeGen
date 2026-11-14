@@ -202,7 +202,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             ValidateDocumentDialect(_root, _minorVersion);
 
             ThrowIfPresent(_root, "swagger", "Swagger 2.0 documents are not supported by the Phase 4 Source Generator.");
-            ThrowIfPresent(_root, "webhooks", "OpenAPI webhooks are not supported by the Phase 4 MVP.");
+            WarnIgnoredWebhooks();
 
             SpecNode? components = GetProperty(_root, "components");
             if (components is null)
@@ -220,7 +220,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     property.Name == "headers" ||
                     property.Name == "securitySchemes" ||
                     (_minorVersion >= 1 && property.Name == "pathItems") ||
-                    property.Name.StartsWith("x-", StringComparison.Ordinal))
+                    property.Name.StartsWith("x-", StringComparison.Ordinal) ||
+                    TryAcceptIgnoredComponentSection(property))
                 {
                     continue;
                 }
@@ -473,7 +474,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<OpenApiSemanticServer> pathServers)
         {
             RequireKind(operationNode, SpecValueKind.Object, "Each OpenAPI operation must be an object.");
-            ThrowIfPresent(operationNode, "callbacks", "OpenAPI callbacks are not supported by the Phase 4 MVP.");
+            WarnIgnoredCallbacks(operationNode);
             ValidateOperationProperties(operationNode);
 
             string? explicitOperationId = GetOptionalString(operationNode, "operationId");

@@ -797,7 +797,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             ValidateResponseProperties(node);
             RequireString(RequireProperty(node, "description"), "The response description must be a string.");
             IReadOnlyList<OpenApiSemanticHeader> headers = ParseResponseHeaders(GetProperty(node, "headers"));
-            ThrowIfPresent(node, "links", "OpenAPI response links are not supported by the Phase 4 MVP.");
+            WarnIgnoredLinks(node);
             SpecNode? contentNode = GetProperty(node, "content");
             if (contentNode is null)
             {
