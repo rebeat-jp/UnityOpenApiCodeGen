@@ -23,10 +23,30 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     /// wire JSON and the deserialized result are both asserted. JSON in this file uses single quotes
     /// for readability (see <see cref="J"/>).
     /// </summary>
-    public sealed class Phase4CompositionRuntimeTests
+    public class Phase4CompositionRuntimeTests
     {
+        public Phase4CompositionRuntimeTests()
+            : this(SerializerMatrixHarness.NewtonsoftJson)
+        {
+        }
+
+        protected Phase4CompositionRuntimeTests(string serializer)
+        {
+            MatrixMode.Current = serializer;
+        }
+
         private const string Ns = "Generated.Phase4.";
         private const string Components = "#/components/schemas/";
+
+        [Fact]
+        public void TheRunUsesTheSerializerItIsNamedFor()
+        {
+            Phase4GeneratorExecution execution = Generate(EchoDocument("'Body':{'type':'string'}"));
+
+            MatrixMode.AssertGeneratedFor(execution.GeneratedSource, ExpectsSystemTextJson);
+        }
+
+        protected virtual bool ExpectsSystemTextJson => false;
 
         // Cat / Dog that do not declare the discriminator property: the generator adds it.
         private const string CatDogUndeclared = @"
@@ -75,7 +95,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             AssertJsonEqual(J("{'petType':'Dog','bark':'x'}"), exchange.RequestJson);
             Assert.True(TryGet(exchange.Result!, "TryGetCat", out _));
             // The lower-case name is not the schema name.
-            JsonSerializationException unknown = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception unknown = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, J("{'petType':'Dog','bark':'x'}"), J("{'petType':'cat','meow':true}")));
             Assert.Contains("'cat'", unknown.Message);
         }
@@ -86,21 +106,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Phase4GeneratorExecution execution = Generate(EchoDocument(PetUnionExplicit + CatDogUndeclared));
             string request = J("{'petType':'cat','meow':true}");
 
-            JsonSerializationException unknown = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception unknown = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, request, J("{'petType':'lizard','scales':1}")));
             Assert.Contains("'lizard'", unknown.Message);
             Assert.Contains("$.petType", unknown.Message);
 
-            JsonSerializationException missing = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception missing = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, request, J("{'meow':true}")));
             Assert.Contains("discriminator", missing.Message);
 
-            JsonSerializationException notAString = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception notAString = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, request, J("{'petType':5,'meow':true}")));
             Assert.Contains("not a string", notAString.Message);
 
             // The selected member is still validated (here: closed, so an undeclared property fails).
-            JsonSerializationException undeclared = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception undeclared = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, request, J("{'petType':'cat','meow':true,'extra':1}")));
             Assert.Contains("$.extra", undeclared.Message);
         }
@@ -121,7 +141,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             // The discriminator is a default of the member itself ...
             Assert.Equal("dog", dog.GetType().GetProperty("PetType")!.GetValue(dog));
             // ... and a plain member serializes without the union converter.
-            AssertJsonEqual(J("{'bark':'woof','petType':'dog'}"), JsonConvert.SerializeObject(dog));
+            AssertJsonEqual(J("{'bark':'woof','petType':'dog'}"), MatrixMode.Serialize(dog));
 
             object viaFactory = body.GetMethod("FromDog")!.Invoke(null, new[] { dog })!;
             Exchange factory = await Echo(execution, viaFactory, J("{'petType':'dog','bark':'x'}"));
@@ -157,7 +177,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             var items = ((System.Collections.IEnumerable)exchange.Result!).Cast<object>().ToArray();
             Assert.Equal(3, items.Length);
             Assert.Equal(new[] { "cat", "dog", "cat" }, items.Select(item => (string)ReadPath(item, "DiscriminatorValue")!));
-            JsonSerializationException bad = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception bad = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, J(Json), J("[{'petType':'cat','meow':true},{'petType':'bird'}]")));
             Assert.Contains("$[1].petType", bad.Message);
         }
@@ -217,7 +237,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Equal("rex", ReadPath(dog!, "Name"));
             Assert.Equal("woof", ReadPath(dog!, "Bark"));
             Assert.Equal(dogValue, ReadPath(dog!, "PetType"));
-            await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, J("{'petType':'" + catValue + "','meow':true}"), J("{'petType':'Pet','name':'x'}")));
         }
 
@@ -235,7 +255,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                               {'type':'object','properties':{'meow':{'type':'boolean'}}}]},
               'Dog':{'allOf':[{'$ref':'#/components/schemas/Pet'},
                               {'type':'object','properties':{'bark':{'type':'string'}}}]}";
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(EchoDocument(Schemas));
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas));
 
             // oneOf next to properties is not supported on the same schema.
             Diagnostic diagnostic = Assert.Single(execution.RunResult.Diagnostics);
@@ -291,11 +311,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             string request = J("{'id':1,'extra':'e'}");
 
             // required from the first part
-            JsonSerializationException noId = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception noId = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, request, J("{'extra':'x'}")));
             Assert.Contains("$.id", noId.Message);
             // required from the second part
-            JsonSerializationException noExtra = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception noExtra = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, request, J("{'id':1}")));
             Assert.Contains("$.extra", noExtra.Message);
         }
@@ -310,7 +330,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Null(body.GetProperty("AdditionalProperties"));
             string request = J("{'id':1,'extra':'e'}");
 
-            JsonSerializationException undeclared = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception undeclared = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, request, J("{'id':1,'extra':'x','zzz':true}")));
 
             Assert.Contains("$.zzz", undeclared.Message);
@@ -326,8 +346,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
             Exchange exchange = await Echo(execution, J("{'id':1,'x':1}"), J("{'id':3,'extra':'e','unknown':[1]}"));
 
-            var extra = (IDictionary<string, JToken>)ReadPath(exchange.Result!, "AdditionalProperties")!;
-            Assert.Equal(1, extra["unknown"]![0]!.Value<int>());
+            IReadOnlyDictionary<string, string> extra = MatrixMode.ExtensionJson(ReadPath(exchange.Result!, "AdditionalProperties"));
+            AssertJsonEqual("[1]", extra["unknown"]);
             AssertJsonEqual(J("{'id':1,'x':1}"), exchange.RequestJson);
         }
 
@@ -340,7 +360,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas));
 
             await Echo(execution, J("{'id':1,'a':1}"), J("{'id':1,'a':2}"));
-            JsonSerializationException bad = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception bad = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, J("{'id':1}"), J("{'id':1,'a':'x'}")));
             Assert.Contains("$.a", bad.Message);
         }
@@ -384,7 +404,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                                {'type':'object','properties':{'name':{'type':'integer'}}}]},
               'Base':{'type':'object','properties':{'name':{'type':'string'}}}";
 
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
                 EchoDocument(Schemas)).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
@@ -413,7 +433,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
               'Body':{'allOf':[{'$ref':'#/components/schemas/Other'},{'properties':{'x':{'type':'string'}}}]},
               'Other':{'allOf':[{'$ref':'#/components/schemas/Body'},{'properties':{'y':{'type':'string'}}}]}";
 
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
                 EchoDocument(Schemas)).RunResult.Diagnostics);
 
             Assert.Equal("OACG103", diagnostic.Id);
@@ -426,7 +446,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             const string Schemas = @"
               'Body':{'allOf':[{'type':'string'},{'properties':{'x':{'type':'string'}}}]}";
 
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
                 EchoDocument(Schemas)).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
@@ -439,7 +459,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             const string Schemas = @"
               'Body':{'allOf':[{'properties':{'x':{'type':'string'}}},{'required':['ghost']}]}";
 
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
                 EchoDocument(Schemas)).RunResult.Diagnostics);
 
             Assert.Equal("OACG100", diagnostic.Id);
@@ -506,7 +526,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         {
             Phase4GeneratorExecution execution = Generate(EchoDocument(ObjectUnion));
 
-            JsonSerializationException exception = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception exception = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, J("{'a':1}"), J(response)));
 
             Assert.Contains("exactly one oneOf", exception.Message);
@@ -523,7 +543,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas));
 
             // {} satisfies both closed objects, {'x':..} only A.
-            JsonSerializationException both = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception both = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, J("{}"), J("{}")));
             Assert.Contains("matched 2", both.Message);
             Exchange one = await Echo(execution, J("{'x':'s'}"), J("{'x':'s'}"));
@@ -543,7 +563,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Exchange both = await Echo(execution, J("{}"), J("{}"));
             Assert.True(TryGet(both.Result!, "TryGetA", out _));
             Assert.True(TryGet(both.Result!, "TryGetB", out _));
-            JsonSerializationException none = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception none = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, J("{}"), J("{'z':1}")));
             Assert.Contains("at least one anyOf", none.Message);
         }
@@ -562,10 +582,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.True(TryGet(number.Result!, "TryGetInt32", out object? numberValue));
             Assert.Equal(42, numberValue);
             Assert.Equal("7", number.RequestJson);
-            JsonSerializationException none = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception none = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, J("'x'"), "true"));
             Assert.Contains("matched 0", none.Message);
-            await Assert.ThrowsAsync<JsonSerializationException>(() => Echo(execution, J("'x'"), "1.5"));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, J("'x'"), "1.5"));
         }
 
         [Fact]
@@ -575,7 +595,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             const string AnyOf = @"'Body':{'anyOf':[{'type':'integer'},{'type':'number'}]}";
 
             Phase4GeneratorExecution oneOf = Generate(EchoDocument(OneOf));
-            JsonSerializationException both = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception both = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(oneOf, "1", "5"));
             Assert.Contains("matched 2", both.Message);
             Exchange fraction = await Echo(oneOf, "1", "5.5");
@@ -608,7 +628,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             object fromList = body.GetMethod("FromInt32List")!.Invoke(null, new object[] { new List<int> { 1, 2 } })!;
             AssertJsonEqual("[1,2]", (await Echo(execution, fromList, "[3]")).RequestJson);
 
-            object raw = body.GetMethod("FromJToken")!.Invoke(null, new object[] { JToken.Parse("{\"a\":4}") })!;
+            object raw = MatrixMode.RawUnion(body, "{\"a\":4}");
             AssertJsonEqual("{\"a\":4}", (await Echo(execution, raw, J("{'a':1}"))).RequestJson);
             Assert.True(TryGet(raw, "TryGetAlpha", out object? parsed));
             Assert.Equal(4, ReadPath(parsed!, "A"));
@@ -617,8 +637,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.False(TryGet(fromString, "TryGetAlpha", out _));
             Assert.Throws<TargetInvocationException>(() => fromString.GetType().GetMethod("AsAlpha")!.Invoke(fromString, null));
             // a union round-trips as JSON
-            JToken token = (JToken)fromList.GetType().GetMethod("ToJToken")!.Invoke(fromList, null)!;
-            Assert.True(JToken.DeepEquals(JToken.Parse("[1,2]"), token));
+            AssertJsonEqual("[1,2]", MatrixMode.RawJson(fromList));
         }
 
         [Fact]
@@ -638,7 +657,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             AssertJsonEqual(J(Tree), exchange.RequestJson);
             Assert.True(TryGet(exchange.Result!, "TryGetBranch", out object? branch));
             Assert.Equal(2, ((System.Collections.IList)ReadPath(branch!, "Children")!).Count);
-            JsonSerializationException deep = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception deep = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, J(Tree), J("{'children':[{'children':[{'value':'x'}]}]}")));
             Assert.Contains("matched 0", deep.Message);
         }
@@ -657,7 +676,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             AssertJsonEqual("[1,[2,[3]]]", exchange.RequestJson);
             Assert.True(TryGet(exchange.Result!, "TryGetNodeList", out object? list));
             Assert.Equal(2, ((System.Collections.IList)list!).Count);
-            await Assert.ThrowsAsync<JsonSerializationException>(() => Echo(execution, "1", "[1,\"x\"]"));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, "1", "[1,\"x\"]"));
         }
 
         [Fact]
@@ -708,7 +727,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Array.Empty<TestBundleFactory.V2DocumentSpec>(),
                 InternalReferenceEdges(root));
 
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(root, bundle: bundle);
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(root, bundle: bundle);
 
             Assert.Empty(execution.RunResult.Diagnostics);
             Assert.Empty(execution.CompilationErrors);
@@ -728,7 +747,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
             Assert.Equal(3, ((System.Collections.IList)ReadPath(exchange.Result!, "Values")!).Count);
             AssertJsonEqual(J("{'values':['a',1]}"), exchange.RequestJson);
-            JsonSerializationException bad = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception bad = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, J("{}"), J("{'values':['a',true]}")));
             Assert.Contains("$.values[1]", bad.Message);
         }
@@ -749,11 +768,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Exchange exchange = await Echo(execution, J("{'id':1,'extra':'e'}"), J("{'id':2,'extra':'x'}"));
 
             Assert.Equal("x", ReadPath(exchange.Result!, "Extra"));
-            JsonSerializationException missing = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception missing = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, J("{'id':1,'extra':'e'}"), J("{'id':2}")));
             Assert.Contains("$.extra", missing.Message);
             // Base is closed, so the composed object is closed
-            await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, J("{'id':1,'extra':'e'}"), J("{'id':2,'extra':'x','zzz':1}")));
         }
 
@@ -783,7 +802,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
             Exchange ok = await Echo(execution, "\"x\"", "\"fine\"");
             Assert.Equal("fine", ok.Result);
-            JsonSerializationException rejected = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception rejected = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, "\"x\"", "\"worse\""));
             Assert.Contains("must not match", rejected.Message);
             // The generated type is not affected: still a plain string.
@@ -799,8 +818,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas));
 
             Exchange number = await Echo(execution, "5", "5");
-            Assert.Equal(5, ((JToken)number.Result!).Value<int>());
-            await Assert.ThrowsAsync<JsonSerializationException>(() => Echo(execution, "5", "\"text\""));
+            AssertJsonEqual("5", MatrixMode.AnyJson(number.Result));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, "5", "\"text\""));
         }
 
         [Fact]
@@ -816,11 +835,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             string request = J("{'a':1}");
 
             await Echo(execution, request, J("{'a':1,'b':{'n':1,'kind':'y'}}"));
-            JsonSerializationException zero = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception zero = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, request, J("{'a':0}")));
             Assert.Contains("$.a", zero.Message);
             // matches Forbidden (kind is the declared enum value) -> rejected; kind 'y' does not match it
-            JsonSerializationException forbidden = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception forbidden = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, request, J("{'a':1,'b':{'kind':'x'}}")));
             Assert.Contains("$.b", forbidden.Message);
         }
@@ -831,7 +850,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             // required alone has no shape: as a schema it matches every value, so it must not reject all.
             const string Schemas = @"'Body':{'type':'object','properties':{'x':{'type':'string'}},'not':{'required':['x']}}";
 
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(EchoDocument(Schemas));
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas));
 
             Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
             Assert.Equal("OACG108", warning.Id);
@@ -846,7 +865,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             const string Schemas = @"'Body':{'type':'object','properties':{'x':{'type':'string'}},
               'not':{'$ref':'#/components/schemas/Body'}}";
 
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(EchoDocument(Schemas));
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas));
 
             Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
             Assert.Equal("OACG108", warning.Id);
@@ -864,7 +883,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
               'Body':{'oneOf':[{'$ref':'#/components/schemas/Cat'},{'$ref':'#/components/schemas/Dog'}],
                       'discriminator':{'propertyName':'petType','mapping':{'cat':'other.yaml#/Cat'}}}," + CatDogUndeclared;
 
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
                 EchoDocument(Schemas)).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
@@ -880,7 +899,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                       'discriminator':{'propertyName':'petType','mapping':{'bird':'#/components/schemas/Bird'}}},
               'Bird':{'type':'object','properties':{'wings':{'type':'integer'}}}," + CatDogUndeclared;
 
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
                 EchoDocument(Schemas)).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
@@ -896,7 +915,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                       'discriminator':{'propertyName':'petType'}},
               'Name':{'type':'string'}," + CatDogUndeclared;
 
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
                 EchoDocument(Schemas)).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
@@ -911,7 +930,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
               'Body':{'oneOf':[{'type':'object','properties':{'a':{'type':'string'}}},{'$ref':'#/components/schemas/Dog'}],
                       'discriminator':{'propertyName':'petType'}}," + CatDogUndeclared;
 
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
                 EchoDocument(Schemas)).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
@@ -931,7 +950,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             const string Clash = @"
               'Body':{'oneOf':[{'$ref':'#/components/schemas/Cat'},{'$ref':'#/components/schemas/Dog'}],
                       'discriminator':{'propertyName':'petType','mapping':{'Dog':'Cat'}}}," + CatDogUndeclared;
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
                 EchoDocument(Clash)).RunResult.Diagnostics);
 
             Assert.Equal("OACG100", diagnostic.Id);
@@ -942,25 +961,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Fact]
         public void UnionKeywordsThatCannotBeCombinedReportTheirPosition()
         {
-            Diagnostic properties = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(EchoDocument(
+            Diagnostic properties = Assert.Single(MatrixMode.GenerateAndCompile(EchoDocument(
                 "'Body':{'oneOf':[{'type':'string'},{'type':'integer'}],'properties':{'x':{'type':'string'}}}"))
                 .RunResult.Diagnostics);
             Assert.Equal("OACG101", properties.Id);
             Assert.Contains("logical path '/components/schemas/Body/properties'", properties.GetMessage());
 
-            Diagnostic allOf = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(EchoDocument(
+            Diagnostic allOf = Assert.Single(MatrixMode.GenerateAndCompile(EchoDocument(
                 "'Body':{'oneOf':[{'type':'string'},{'type':'integer'}],'allOf':[{'type':'object'}]}"))
                 .RunResult.Diagnostics);
             Assert.Equal("OACG101", allOf.Id);
             Assert.Contains("logical path '/components/schemas/Body/allOf'", allOf.GetMessage());
 
-            Diagnostic both = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(EchoDocument(
+            Diagnostic both = Assert.Single(MatrixMode.GenerateAndCompile(EchoDocument(
                 "'Body':{'oneOf':[{'type':'string'},{'type':'integer'}],'anyOf':[{'type':'string'}]}"))
                 .RunResult.Diagnostics);
             Assert.Equal("OACG101", both.Id);
             Assert.Contains("logical path '/components/schemas/Body/anyOf'", both.GetMessage());
 
-            Diagnostic inAllOf = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(EchoDocument(
+            Diagnostic inAllOf = Assert.Single(MatrixMode.GenerateAndCompile(EchoDocument(
                 "'Body':{'allOf':[{'oneOf':[{'type':'string'},{'type':'integer'}]},{'properties':{'x':{'type':'string'}}}]}"))
                 .RunResult.Diagnostics);
             Assert.Equal("OACG101", inAllOf.Id);
@@ -974,7 +993,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("'Body':{'oneOf':{}}", "OACG100", "/components/schemas/Body/oneOf")]
         public void InvalidCompositionListsReportTheirPosition(string schemas, string id, string logicalPath)
         {
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
                 EchoDocument(J(schemas))).RunResult.Diagnostics);
 
             Assert.Equal(id, diagnostic.Id);
@@ -990,7 +1009,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 'responses':{'204':{'description':'none'}}}}}}");
 
             Diagnostic diagnostic = Assert.Single(
-                Phase4GeneratorTestHarness.GenerateAndCompile(document).RunResult.Diagnostics);
+                MatrixMode.GenerateAndCompile(document).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
             Assert.Contains("logical path '/paths/~1p/get/parameters/0'", diagnostic.GetMessage());
@@ -1013,7 +1032,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             const string Schemas = @"
               'Body':{'type':'object','properties':{'kind':{'type':'string'}},'discriminator':{'propertyName':'kind'}}";
 
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(EchoDocument(Schemas));
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas));
 
             Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
             Assert.Equal("OACG108", warning.Id);
@@ -1038,7 +1057,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "{'oneOf':[{'type':'string'},{'type':'boolean'}]}"
             })
             {
-                Phase4GeneratorExecution wrapped = Phase4GeneratorTestHarness.GenerateAndCompile(Document(created));
+                Phase4GeneratorExecution wrapped = MatrixMode.GenerateAndCompile(Document(created));
                 Assert.Empty(wrapped.RunResult.Diagnostics);
                 Assert.Empty(wrapped.CompilationErrors);
                 Assert.Contains("Status201", wrapped.GeneratedSource);
@@ -1061,8 +1080,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             // P4 (G23): contracts that differ get a result wrapper (was OACG105).
             foreach (Phase4GeneratorExecution wrapped in new[]
             {
-                Phase4GeneratorTestHarness.GenerateAndCompile(Document("{}", "{'type':'object'}")),
-                Phase4GeneratorTestHarness.GenerateAndCompile(Document(
+                MatrixMode.GenerateAndCompile(Document("{}", "{'type':'object'}")),
+                MatrixMode.GenerateAndCompile(Document(
                     "{'type':'object','additionalProperties':{'type':'integer'}}",
                     "{'type':'object','additionalProperties':{'type':'string'}}"))
             })
@@ -1119,7 +1138,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         {
             Phase4GeneratorExecution execution = Generate(EchoDocument(OpenOverlap));
 
-            JsonSerializationException exception = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception exception = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, J("{'x':'s'}"), J(response)));
 
             Assert.Contains("matched 2", exception.Message);
@@ -1146,7 +1165,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
               'Body':{'oneOf':[{'$ref':'#/components/schemas/Cat'},{'$ref':'#/components/schemas/Dog'}],
                       'discriminator':{'propertyName':'petType','mapping':{'cat':'" + target + @"'}}}," + CatDogUndeclared;
 
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
                 EchoDocument(schemas)).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
@@ -1161,7 +1180,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
               'Body':{'$ref':'#/components/schemas/Base','required':['name']},
               'Base':{'type':'object','properties':{'id':{'type':'integer'}}}";
 
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
                 EchoDocument(Schemas)).RunResult.Diagnostics);
 
             Assert.Equal("OACG100", diagnostic.Id);
@@ -1178,7 +1197,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             var dictionary = (System.Collections.IDictionary)map.Result!;
             Assert.True(TryGet(dictionary["b"]!, "TryGetInt32", out object? two));
             Assert.Equal(2, two);
-            JsonSerializationException bad = await Assert.ThrowsAsync<JsonSerializationException>(() =>
+            Exception bad = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(mapExecution, J("{}"), J("{'a':true}")));
             Assert.Contains("$.a", bad.Message);
 
@@ -1200,7 +1219,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             AssertJsonEqual("null", none.RequestJson);
             Exchange text = await Echo(execution, J("'t'"), J("'u'"));
             Assert.True(TryGet(text.Result!, "TryGetString", out _));
-            await Assert.ThrowsAsync<JsonSerializationException>(() => Echo(execution, J("'t'"), "true"));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, J("'t'"), "true"));
         }
 
         [Fact]
@@ -1293,7 +1312,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
         private static Phase4GeneratorExecution Generate(string document)
         {
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(document);
             Assert.Empty(execution.RunResult.Diagnostics);
             Assert.Empty(execution.CompilationErrors);
             return execution;
@@ -1303,7 +1322,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         {
             return Echo(
                 execution,
-                (Type type) => JsonConvert.DeserializeObject(requestJson, type),
+                (Type type) => MatrixMode.Deserialize(requestJson, type),
                 responseJson);
         }
 
@@ -1395,5 +1414,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 };
             }
         }
+    }
+
+    /// <summary>The System.Text.Json run of every test of <see cref="Phase4CompositionRuntimeTests"/>.</summary>
+    public sealed class Phase4CompositionRuntimeTestsSystemTextJson : Phase4CompositionRuntimeTests
+    {
+        public Phase4CompositionRuntimeTestsSystemTextJson()
+            : base(SerializerMatrixHarness.SystemTextJson)
+        {
+        }
+
+        protected override bool ExpectsSystemTextJson => true;
     }
 }

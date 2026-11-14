@@ -1,0 +1,92 @@
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api ctor public (System.Net.Http.HttpClient httpClient)
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api ctor public (System.Net.Http.HttpClient httpClient, string baseUrl)
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api method public System.Threading.Tasks.Task deletePet(long petId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api method public System.Threading.Tasks.Task updatePet(long petId, Generated.Baseline.BaselineSwagger2Api.UpdatePetRequest body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api method public System.Threading.Tasks.Task<Generated.Baseline.BaselineSwagger2Api.ListPetsHttpInfo> listPetsWithHttpInfo(string? XRequestId, System.Collections.Generic.List<string>? cols, System.Collections.Generic.List<long>? ids, System.Collections.Generic.List<string>? kinds, int? limit, System.Collections.Generic.List<string>? tags, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api method public System.Threading.Tasks.Task<Generated.Baseline.BaselineSwagger2Api.Pet> addPet(Generated.Baseline.BaselineSwagger2Api.Pet body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api method public System.Threading.Tasks.Task<Generated.Baseline.BaselineSwagger2Api.Pet> getPet(long petId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api method public System.Threading.Tasks.Task<Generated.Baseline.BaselineSwagger2Api.Tag> uploadPhoto(long petId, Generated.Baseline.BaselineSwagger2Api.UploadPhotoRequest body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api method public System.Threading.Tasks.Task<System.Collections.Generic.List<Generated.Baseline.BaselineSwagger2Api.Pet>> listPets(string? XRequestId, System.Collections.Generic.List<string>? cols, System.Collections.Generic.List<long>? ids, System.Collections.Generic.List<string>? kinds, int? limit, System.Collections.Generic.List<string>? tags, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api method public System.Threading.Tasks.Task<byte[]> downloadPhoto(long petId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api method public System.Threading.Tasks.Task<string> login(Generated.Baseline.BaselineSwagger2Api.LoginRequest body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api method public static string BuildServerUrl(int index, System.Collections.Generic.IReadOnlyDictionary<string, string>? variables = null)
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api property public System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<string?>>? PetstoreAuthAccessTokenProvider { get; set; }
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api property public static System.Collections.Generic.IReadOnlyList<string> Servers { get; }
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api property public string? ApiKeyAuthApiKey { get; set; }
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api property public string? BasicAuthPassword { get; set; }
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api property public string? BasicAuthUsername { get; set; }
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api property public string? PetstoreAuthAccessToken { get; set; }
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody)
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody, object? error, System.Exception? errorDeserializationException)
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiException method public bool TryGetError<T>(out T value)
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiException property public System.Exception? ErrorDeserializationException { get; }
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiException property public System.Net.HttpStatusCode StatusCode { get; }
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiException property public object? Error { get; }
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiException property public string ResponseBody { get; }
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiFileParameter ctor public (System.IO.Stream stream, string? fileName = null, string? contentType = null)
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiFileParameter ctor public (byte[] data, string? fileName = null, string? contentType = null)
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiFileParameter property public System.IO.Stream? DataStream { get; }
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiFileParameter property public byte[]? Data { get; }
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiFileParameter property public string? ContentType { get; }
+Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiFileParameter property public string? FileName { get; }
+Generated.Baseline.BaselineSwagger2Api.Cat ctor public ()
+Generated.Baseline.BaselineSwagger2Api.Dog ctor public ()
+Generated.Baseline.BaselineSwagger2Api.Error ctor public ()
+Generated.Baseline.BaselineSwagger2Api.ListPetsHttpInfo ctor public ()
+Generated.Baseline.BaselineSwagger2Api.ListPetsHttpInfo property public System.Collections.Generic.IReadOnlyDictionary<string, string[]> Headers { get; }
+Generated.Baseline.BaselineSwagger2Api.ListPetsHttpInfo property public System.Collections.Generic.List<Generated.Baseline.BaselineSwagger2Api.Pet> Data { get; }
+Generated.Baseline.BaselineSwagger2Api.ListPetsHttpInfo property public System.Net.HttpStatusCode StatusCode { get; }
+Generated.Baseline.BaselineSwagger2Api.ListPetsHttpInfo property public int? XTotalCount { get; }
+Generated.Baseline.BaselineSwagger2Api.LoginRequest ctor public ()
+Generated.Baseline.BaselineSwagger2Api.Pet field public const string DiscriminatorPropertyName = "petType"
+Generated.Baseline.BaselineSwagger2Api.Pet method public Generated.Baseline.BaselineSwagger2Api.Cat AsCat()
+Generated.Baseline.BaselineSwagger2Api.Pet method public Generated.Baseline.BaselineSwagger2Api.Dog AsDog()
+Generated.Baseline.BaselineSwagger2Api.Pet method public bool TryGetCat(out Generated.Baseline.BaselineSwagger2Api.Cat value)
+Generated.Baseline.BaselineSwagger2Api.Pet method public bool TryGetDog(out Generated.Baseline.BaselineSwagger2Api.Dog value)
+Generated.Baseline.BaselineSwagger2Api.Pet method public static Generated.Baseline.BaselineSwagger2Api.Pet FromCat(Generated.Baseline.BaselineSwagger2Api.Cat value)
+Generated.Baseline.BaselineSwagger2Api.Pet method public static Generated.Baseline.BaselineSwagger2Api.Pet FromDog(Generated.Baseline.BaselineSwagger2Api.Dog value)
+Generated.Baseline.BaselineSwagger2Api.Pet method public static Generated.Baseline.BaselineSwagger2Api.Pet op_Implicit(Generated.Baseline.BaselineSwagger2Api.Cat value)
+Generated.Baseline.BaselineSwagger2Api.Pet method public static Generated.Baseline.BaselineSwagger2Api.Pet op_Implicit(Generated.Baseline.BaselineSwagger2Api.Dog value)
+Generated.Baseline.BaselineSwagger2Api.Pet property public object Value { get; }
+Generated.Baseline.BaselineSwagger2Api.Pet property public string DiscriminatorValue { get; }
+Generated.Baseline.BaselineSwagger2Api.Tag ctor public ()
+Generated.Baseline.BaselineSwagger2Api.UpdatePetRequest ctor public ()
+Generated.Baseline.BaselineSwagger2Api.UploadPhotoRequest ctor public ()
+[Generated.Baseline.BaselineSwagger2Api.PreserveAttribute] [System.Text.Json.Serialization.JsonExtensionDataAttribute] Generated.Baseline.BaselineSwagger2Api.Cat property public System.Collections.Generic.IDictionary<string, System.Text.Json.JsonElement> AdditionalProperties { get; set; }
+[Generated.Baseline.BaselineSwagger2Api.PreserveAttribute] [System.Text.Json.Serialization.JsonExtensionDataAttribute] Generated.Baseline.BaselineSwagger2Api.Dog property public System.Collections.Generic.IDictionary<string, System.Text.Json.JsonElement> AdditionalProperties { get; set; }
+[Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiClientDefinitionAttribute("0123456789abcdef0123456789abcdef", "BaselineSwagger2Api", "Generated.Baseline.BaselineSwagger2Api", Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.Json, JsonSerializer = Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiJsonSerializer.SystemTextJson)] type public class Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2Api
+[System.Text.Json.Serialization.JsonConverterAttribute(typeof(Generated.Baseline.BaselineSwagger2Api.PetJsonConverter))] type public sealed class Generated.Baseline.BaselineSwagger2Api.Pet
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("huntingSkill")] Generated.Baseline.BaselineSwagger2Api.Cat property public string? HuntingSkill { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("id")] Generated.Baseline.BaselineSwagger2Api.Cat property public long? Id { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("id")] Generated.Baseline.BaselineSwagger2Api.Dog property public long? Id { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("id")] Generated.Baseline.BaselineSwagger2Api.Tag property public int? Id { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("label")] Generated.Baseline.BaselineSwagger2Api.Tag property public string? Label { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("packSize")] Generated.Baseline.BaselineSwagger2Api.Dog property public int? PackSize { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("scopes")] Generated.Baseline.BaselineSwagger2Api.LoginRequest property public System.Collections.Generic.List<string>? Scopes { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute] Generated.Baseline.BaselineSwagger2Api.Cat property public bool NicknameSpecified { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute] Generated.Baseline.BaselineSwagger2Api.Dog property public bool NicknameSpecified { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute] Generated.Baseline.BaselineSwagger2Api.UpdatePetRequest property public bool TagSpecified { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("caption")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineSwagger2Api.UploadPhotoRequest property public string Caption { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("code")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineSwagger2Api.Error property public int Code { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("message")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineSwagger2Api.Error property public string Message { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("name")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineSwagger2Api.Cat property public string Name { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("name")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineSwagger2Api.Dog property public string Name { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("name")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineSwagger2Api.UpdatePetRequest property public string Name { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("nickname")] Generated.Baseline.BaselineSwagger2Api.Cat property public string? Nickname { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("nickname")] Generated.Baseline.BaselineSwagger2Api.Dog property public string? Nickname { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("password")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineSwagger2Api.LoginRequest property public string Password { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("petType")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineSwagger2Api.Cat property public string PetType { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("petType")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineSwagger2Api.Dog property public string PetType { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("photo")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineSwagger2Api.UploadPhotoRequest property public Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiFileParameter Photo { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("tag")] Generated.Baseline.BaselineSwagger2Api.UpdatePetRequest property public Generated.Baseline.BaselineSwagger2Api.Tag? Tag { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("username")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineSwagger2Api.LoginRequest property public string Username { get; set; }
+type public sealed class Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiException : System.Exception
+type public sealed class Generated.Baseline.BaselineSwagger2Api.BaselineSwagger2ApiFileParameter
+type public sealed class Generated.Baseline.BaselineSwagger2Api.Cat : System.Text.Json.Serialization.IJsonOnSerializing
+type public sealed class Generated.Baseline.BaselineSwagger2Api.Dog : System.Text.Json.Serialization.IJsonOnSerializing
+type public sealed class Generated.Baseline.BaselineSwagger2Api.Error : System.Text.Json.Serialization.IJsonOnSerializing
+type public sealed class Generated.Baseline.BaselineSwagger2Api.ListPetsHttpInfo
+type public sealed class Generated.Baseline.BaselineSwagger2Api.LoginRequest : System.Text.Json.Serialization.IJsonOnSerializing
+type public sealed class Generated.Baseline.BaselineSwagger2Api.Tag
+type public sealed class Generated.Baseline.BaselineSwagger2Api.UpdatePetRequest : System.Text.Json.Serialization.IJsonOnSerializing
+type public sealed class Generated.Baseline.BaselineSwagger2Api.UploadPhotoRequest : System.Text.Json.Serialization.IJsonOnSerializing

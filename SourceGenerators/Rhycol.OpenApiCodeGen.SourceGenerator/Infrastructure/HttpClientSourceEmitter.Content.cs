@@ -27,6 +27,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 Constraints = constraints;
                 Model = model;
                 Prefix = HttpClientParameterSerializationEmitter.CreatePrefix(model, "__OacgBody_");
+                constraints.JsonOptionsName = JsonOptions;
                 UsesErrors = model.Operations.Any(static operation => operation.ErrorResponses.Count > 0);
                 UsesPlans = model.Operations.Any(static operation => operation.ResponsePlan is not null);
                 UsesHeaders = model.Operations.Any(static operation => operation.ResponsePlan?.HttpInfo is not null);

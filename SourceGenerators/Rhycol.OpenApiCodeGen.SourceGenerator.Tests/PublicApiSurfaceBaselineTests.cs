@@ -150,8 +150,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
         /// <summary>
         /// The System.Text.Json clients (HttpClient + SystemTextJson) have their own baselines
-        /// (ApiSurfaceBaselines/*.stj.txt). Specs that need composition or constraint validation are
-        /// rejected with OACG010 for System.Text.Json, so only the specs without them are listed.
+        /// (ApiSurfaceBaselines/*.stj.txt), composition / openapi32 / swagger2 included.
         /// </summary>
         [Theory]
         [InlineData("representative", "BaselineRepresentativeApi", "representative.json")]
@@ -160,6 +159,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("bodies", "BaselineBodiesApi", "bodies.json")]
         [InlineData("security", "BaselineSecurityApi", "security.json")]
         [InlineData("serializer-core", "BaselineSerializerCoreApi", "serializer-core.json")]
+        [InlineData("composition", "BaselineCompositionApi", "composition.json")]
+        [InlineData("openapi32", "BaselineOpenApi32Api", "openapi32.json")]
+        [InlineData("swagger2", "BaselineSwagger2Api", "swagger2.json")]
         public void SystemTextJsonSpecsKeepPublicSurface(string name, string apiName, string specFile)
         {
             AssertBaseline(name, apiName, File.ReadAllText(SpecPath(specFile)), systemTextJson: true);

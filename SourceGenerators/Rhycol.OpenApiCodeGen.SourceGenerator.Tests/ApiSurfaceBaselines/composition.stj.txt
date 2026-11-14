@@ -1,0 +1,66 @@
+Generated.Baseline.BaselineCompositionApi.Base ctor public ()
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi ctor public (System.Net.Http.HttpClient httpClient)
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi ctor public (System.Net.Http.HttpClient httpClient, string baseUrl)
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineCompositionApi.Extended> getExtended(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineCompositionApi.Holder> getNullableName(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineCompositionApi.Pet> createPet(Generated.Baseline.BaselineCompositionApi.Pet body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineCompositionApi.Value> getValue(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi method public static string BuildServerUrl(int index, System.Collections.Generic.IReadOnlyDictionary<string, string>? variables = null)
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi property public static System.Collections.Generic.IReadOnlyList<string> Servers { get; }
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody)
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody, object? error, System.Exception? errorDeserializationException)
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException method public bool TryGetError<T>(out T value)
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException property public System.Exception? ErrorDeserializationException { get; }
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException property public System.Net.HttpStatusCode StatusCode { get; }
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException property public object? Error { get; }
+Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException property public string ResponseBody { get; }
+Generated.Baseline.BaselineCompositionApi.Cat ctor public ()
+Generated.Baseline.BaselineCompositionApi.Dog ctor public ()
+Generated.Baseline.BaselineCompositionApi.Extended ctor public ()
+Generated.Baseline.BaselineCompositionApi.Holder ctor public ()
+Generated.Baseline.BaselineCompositionApi.Pet field public const string DiscriminatorPropertyName = "petType"
+Generated.Baseline.BaselineCompositionApi.Pet method public Generated.Baseline.BaselineCompositionApi.Cat AsCat()
+Generated.Baseline.BaselineCompositionApi.Pet method public Generated.Baseline.BaselineCompositionApi.Dog AsDog()
+Generated.Baseline.BaselineCompositionApi.Pet method public bool TryGetCat(out Generated.Baseline.BaselineCompositionApi.Cat value)
+Generated.Baseline.BaselineCompositionApi.Pet method public bool TryGetDog(out Generated.Baseline.BaselineCompositionApi.Dog value)
+Generated.Baseline.BaselineCompositionApi.Pet method public static Generated.Baseline.BaselineCompositionApi.Pet FromCat(Generated.Baseline.BaselineCompositionApi.Cat value)
+Generated.Baseline.BaselineCompositionApi.Pet method public static Generated.Baseline.BaselineCompositionApi.Pet FromDog(Generated.Baseline.BaselineCompositionApi.Dog value)
+Generated.Baseline.BaselineCompositionApi.Pet method public static Generated.Baseline.BaselineCompositionApi.Pet op_Implicit(Generated.Baseline.BaselineCompositionApi.Cat value)
+Generated.Baseline.BaselineCompositionApi.Pet method public static Generated.Baseline.BaselineCompositionApi.Pet op_Implicit(Generated.Baseline.BaselineCompositionApi.Dog value)
+Generated.Baseline.BaselineCompositionApi.Pet property public object Value { get; }
+Generated.Baseline.BaselineCompositionApi.Pet property public string DiscriminatorValue { get; }
+Generated.Baseline.BaselineCompositionApi.Value method public Generated.Baseline.BaselineCompositionApi.Cat AsCat()
+Generated.Baseline.BaselineCompositionApi.Value method public System.Text.Json.JsonElement ToJsonElement()
+Generated.Baseline.BaselineCompositionApi.Value method public System.Text.Json.JsonElement ToJsonElement(System.Text.Json.JsonSerializerOptions? options)
+Generated.Baseline.BaselineCompositionApi.Value method public bool TryGetCat(out Generated.Baseline.BaselineCompositionApi.Cat value)
+Generated.Baseline.BaselineCompositionApi.Value method public bool TryGetInt32(out int value)
+Generated.Baseline.BaselineCompositionApi.Value method public bool TryGetString(out string value)
+Generated.Baseline.BaselineCompositionApi.Value method public int AsInt32()
+Generated.Baseline.BaselineCompositionApi.Value method public static Generated.Baseline.BaselineCompositionApi.Value FromCat(Generated.Baseline.BaselineCompositionApi.Cat value)
+Generated.Baseline.BaselineCompositionApi.Value method public static Generated.Baseline.BaselineCompositionApi.Value FromInt32(int value)
+Generated.Baseline.BaselineCompositionApi.Value method public static Generated.Baseline.BaselineCompositionApi.Value FromJsonElement(System.Text.Json.JsonElement element)
+Generated.Baseline.BaselineCompositionApi.Value method public static Generated.Baseline.BaselineCompositionApi.Value FromString(string value)
+Generated.Baseline.BaselineCompositionApi.Value method public static Generated.Baseline.BaselineCompositionApi.Value op_Implicit(Generated.Baseline.BaselineCompositionApi.Cat value)
+Generated.Baseline.BaselineCompositionApi.Value method public static Generated.Baseline.BaselineCompositionApi.Value op_Implicit(int value)
+Generated.Baseline.BaselineCompositionApi.Value method public static Generated.Baseline.BaselineCompositionApi.Value op_Implicit(string value)
+Generated.Baseline.BaselineCompositionApi.Value method public string AsString()
+[Generated.Baseline.BaselineCompositionApi.PreserveAttribute] [System.Text.Json.Serialization.JsonExtensionDataAttribute] Generated.Baseline.BaselineCompositionApi.Base property public System.Collections.Generic.IDictionary<string, System.Text.Json.JsonElement> AdditionalProperties { get; set; }
+[Generated.Baseline.BaselineCompositionApi.PreserveAttribute] [System.Text.Json.Serialization.JsonExtensionDataAttribute] Generated.Baseline.BaselineCompositionApi.Extended property public System.Collections.Generic.IDictionary<string, System.Text.Json.JsonElement> AdditionalProperties { get; set; }
+[Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiClientDefinitionAttribute("0123456789abcdef0123456789abcdef", "BaselineCompositionApi", "Generated.Baseline.BaselineCompositionApi", Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.Json, JsonSerializer = Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiJsonSerializer.SystemTextJson)] type public class Generated.Baseline.BaselineCompositionApi.BaselineCompositionApi
+[System.Text.Json.Serialization.JsonConverterAttribute(typeof(Generated.Baseline.BaselineCompositionApi.PetJsonConverter))] type public sealed class Generated.Baseline.BaselineCompositionApi.Pet
+[System.Text.Json.Serialization.JsonConverterAttribute(typeof(Generated.Baseline.BaselineCompositionApi.ValueJsonConverter))] type public sealed class Generated.Baseline.BaselineCompositionApi.Value
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("bark")] Generated.Baseline.BaselineCompositionApi.Dog property public string? Bark { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("petType")] Generated.Baseline.BaselineCompositionApi.Cat property public string? PetType { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("petType")] Generated.Baseline.BaselineCompositionApi.Dog property public string? PetType { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute] Generated.Baseline.BaselineCompositionApi.Holder property public bool NameSpecified { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("id")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineCompositionApi.Base property public int Id { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("id")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineCompositionApi.Extended property public int Id { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("label")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineCompositionApi.Extended property public string Label { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("meow")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineCompositionApi.Cat property public bool Meow { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("name")] Generated.Baseline.BaselineCompositionApi.Holder property public string? Name { get; set; }
+type public sealed class Generated.Baseline.BaselineCompositionApi.Base
+type public sealed class Generated.Baseline.BaselineCompositionApi.BaselineCompositionApiException : System.Exception
+type public sealed class Generated.Baseline.BaselineCompositionApi.Cat
+type public sealed class Generated.Baseline.BaselineCompositionApi.Dog
+type public sealed class Generated.Baseline.BaselineCompositionApi.Extended : System.Text.Json.Serialization.IJsonOnSerializing
+type public sealed class Generated.Baseline.BaselineCompositionApi.Holder
