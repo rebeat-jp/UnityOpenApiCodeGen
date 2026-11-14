@@ -19,13 +19,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         internal const string GeneratedNamespace = "Generated.Phase4";
         internal const string ApiName = "Phase4Api";
 
-        private const string AttributeContract = @"
+        internal const string AttributeContract = @"
 namespace Rhycol.OpenApiCodeGen.SourceGenerator
 {
     public enum OpenApiDocumentFormat
     {
         Json = 0,
         Yaml = 1
+    }
+
+    public enum OpenApiHttpTransport
+    {
+        HttpClient = 0,
+        UnityWebRequest = 1
+    }
+
+    public enum OpenApiJsonSerializer
+    {
+        NewtonsoftJson = 0,
+        SystemTextJson = 1
     }
 
     [System.AttributeUsage(System.AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
@@ -38,6 +50,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiDocumentFormat documentFormat)
         {
         }
+
+        public OpenApiHttpTransport HttpTransport { get; set; }
+
+        public OpenApiJsonSerializer JsonSerializer { get; set; }
     }
 }
 ";
@@ -48,9 +64,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string generatedNamespace = GeneratedNamespace,
             string specId = TestBundleFactory.SpecId,
             string? bundle = null,
-            ApiClientCodeGenerator? generator = null)
+            ApiClientCodeGenerator? generator = null,
+            Phase4CompilationOptions? options = null)
         {
-            CSharpCompilation compilation = CreateCompilation(apiName, generatedNamespace, specId);
+            CSharpCompilation compilation = CreateCompilation(
+                apiName,
+                generatedNamespace,
+                specId,
+                options: options);
             GeneratorDriver driver = CreateDriver(
                 compilation,
                 ImmutableArray.Create<AdditionalText>(CreateBundleText(
@@ -73,15 +94,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string apiName = ApiName,
             string generatedNamespace = GeneratedNamespace,
             string specId = TestBundleFactory.SpecId,
-            string? assemblyName = null)
+            string? assemblyName = null,
+            Phase4CompilationOptions? options = null)
         {
+            options ??= new Phase4CompilationOptions();
             string definition = "\nnamespace " + generatedNamespace + @"
 {
     [global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiClientDefinitionAttribute(" +
                 ToLiteral(specId) + ", " +
                 ToLiteral(apiName) + ", " +
                 ToLiteral(generatedNamespace) + @",
-        global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.Json)]
+        global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.Json" +
+                options.NamedArguments + @")]
     public partial class " + apiName + @" { }
 }
 ";
@@ -91,9 +115,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 {
                     CSharpSyntaxTree.ParseText(
                         AttributeContract + definition,
-                        new CSharpParseOptions(LanguageVersion.CSharp9))
+                        new CSharpParseOptions(
+                            LanguageVersion.CSharp9,
+                            preprocessorSymbols: options.PreprocessorSymbols))
                 },
-                GetMetadataReferences(),
+                GetMetadataReferences(options),
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         }
 
@@ -128,7 +154,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 .ToArray();
         }
 
-        private static IEnumerable<MetadataReference> GetMetadataReferences()
+        private static IEnumerable<MetadataReference> GetMetadataReferences(
+            Phase4CompilationOptions options)
         {
             string trustedAssemblies =
                 (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? string.Empty;
@@ -136,13 +163,150 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 trustedAssemblies.Split(Path.PathSeparator),
                 StringComparer.OrdinalIgnoreCase);
             paths.Add(typeof(JsonConvert).Assembly.Location);
-            return paths.Where(static path => !string.IsNullOrWhiteSpace(path))
-                .Select(static path => MetadataReference.CreateFromFile(path));
+
+            var excludedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!options.Newtonsoft || options.NewtonsoftStubVersion is not null)
+            {
+                excludedFileNames.Add("Newtonsoft.Json.dll");
+            }
+
+            if (!options.SystemTextJson || options.SystemTextJsonStubVersion is not null)
+            {
+                excludedFileNames.Add("System.Text.Json.dll");
+            }
+
+            if (!options.HttpClient)
+            {
+                excludedFileNames.Add("System.Net.Http.dll");
+            }
+
+            var references = new List<MetadataReference>(
+                paths.Where(path => !string.IsNullOrWhiteSpace(path) &&
+                                    !excludedFileNames.Contains(Path.GetFileName(path)))
+                    .Select(static path => (MetadataReference)MetadataReference.CreateFromFile(path)));
+            if (options.NewtonsoftStubVersion is not null)
+            {
+                references.Add(CreateStubReference(
+                    "Newtonsoft.Json",
+                    options.NewtonsoftStubVersion,
+                    "namespace Newtonsoft.Json { public static class JsonConvert { } }"));
+            }
+
+            if (options.DuplicateNewtonsoftStubVersion is not null)
+            {
+                references.Add(CreateStubReference(
+                    "Newtonsoft.Json.Duplicate",
+                    options.DuplicateNewtonsoftStubVersion,
+                    "namespace Newtonsoft.Json { public static class JsonConvert { } }"));
+            }
+
+            if (options.SystemTextJsonStubVersion is not null)
+            {
+                references.Add(CreateStubReference(
+                    "System.Text.Json",
+                    options.SystemTextJsonStubVersion,
+                    "namespace System.Text.Json { public static class JsonSerializer { } }"));
+            }
+
+            if (options.UnityWebRequestStub)
+            {
+                references.Add(CreateStubReference(
+                    "UnityEngine.UnityWebRequestModule",
+                    new Version(0, 0, 0, 0),
+                    "namespace UnityEngine.Networking { public class UnityWebRequest { } }"));
+            }
+
+            return references;
+        }
+
+        // Compiles a tiny assembly with the given name and version. It stands in for a library
+        // that is not downloadable in tests and lets a test control the referenced version.
+        private static MetadataReference CreateStubReference(
+            string assemblyName,
+            Version version,
+            string source)
+        {
+            string versionedSource =
+                "[assembly: System.Reflection.AssemblyVersion(\"" + version + "\")]\n" + source;
+            CSharpCompilation stub = CSharpCompilation.Create(
+                assemblyName,
+                new[] { CSharpSyntaxTree.ParseText(versionedSource) },
+                GetMetadataReferences(new Phase4CompilationOptions()),
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            using var stream = new MemoryStream();
+            EmitResult result = stub.Emit(stream);
+            if (!result.Success)
+            {
+                throw new InvalidOperationException(string.Join(
+                    Environment.NewLine,
+                    result.Diagnostics.Select(static diagnostic => diagnostic.ToString())));
+            }
+
+            return MetadataReference.CreateFromImage(stream.ToArray());
         }
 
         private static string ToLiteral(string value)
         {
             return SymbolDisplay.FormatLiteral(value, quote: true);
+        }
+    }
+
+    /// <summary>
+    /// Controls the reference set, preprocessor symbols and named attribute arguments of a test
+    /// compilation. Defaults reproduce the historical harness: the runtime BCL plus Newtonsoft.Json.
+    /// </summary>
+    internal sealed class Phase4CompilationOptions
+    {
+        internal bool Newtonsoft { get; init; } = true;
+
+        internal bool SystemTextJson { get; init; } = true;
+
+        internal bool HttpClient { get; init; } = true;
+
+        internal bool UnityWebRequestStub { get; init; }
+
+        /// <summary>When set, replaces the real Newtonsoft.Json reference with a stub of this version.</summary>
+        internal Version? NewtonsoftStubVersion { get; init; }
+
+        /// <summary>When set, replaces the real System.Text.Json reference with a stub of this version.</summary>
+        internal Version? SystemTextJsonStubVersion { get; init; }
+
+        /// <summary>When set, adds a second assembly (different name) that also defines Newtonsoft.Json.JsonConvert.</summary>
+        internal Version? DuplicateNewtonsoftStubVersion { get; init; }
+
+        internal IReadOnlyList<string> PreprocessorSymbols { get; init; } = Array.Empty<string>();
+
+        /// <summary>Enum member name or integer literal for the HttpTransport named argument.</summary>
+        internal string? HttpTransport { get; init; }
+
+        /// <summary>Enum member name or integer literal for the JsonSerializer named argument.</summary>
+        internal string? JsonSerializer { get; init; }
+
+        internal string NamedArguments
+        {
+            get
+            {
+                string text = string.Empty;
+                if (HttpTransport is not null)
+                {
+                    text += ", HttpTransport = " + Qualify(HttpTransport, "OpenApiHttpTransport");
+                }
+
+                if (JsonSerializer is not null)
+                {
+                    text += ", JsonSerializer = " + Qualify(JsonSerializer, "OpenApiJsonSerializer");
+                }
+
+                return text;
+            }
+        }
+
+        private static string Qualify(string expression, string enumName)
+        {
+            string prefix = "global::Rhycol.OpenApiCodeGen.SourceGenerator." + enumName;
+            return char.IsDigit(expression[0]) || expression[0] == '-'
+                ? "(" + prefix + ")" + expression
+                : prefix + "." + expression;
         }
     }
 

@@ -64,7 +64,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             OpenApiGenerationModel model = BuildMvpModelFromOpenApiNode(root, options);
-            return EmitMvpModel(model);
+            return EmitMvpModel(model, options.HttpTransport, options.JsonSerializer);
         }
 
         internal IReadOnlyList<GeneratedFile> GenerateMvpFromOpenApiBundle(
@@ -77,7 +77,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             OpenApiGenerationModel model = BuildMvpModelFromOpenApiBundle(bundle, options);
-            return EmitMvpModel(model);
+            return EmitMvpModel(model, options.HttpTransport, options.JsonSerializer);
         }
 
         internal OpenApiGenerationModel BuildMvpModelFromOpenApiNode(
@@ -98,9 +98,33 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         internal IReadOnlyList<GeneratedFile> EmitMvpModel(OpenApiGenerationModel model)
         {
+            return EmitMvpModel(
+                model,
+                HttpTransportKind.HttpClient,
+                JsonSerializerKind.NewtonsoftJson);
+        }
+
+        /// <summary>
+        /// transport / serializer の組み合わせ別に emitter を選ぶ切替点。
+        /// 後続フェーズで STJ / UnityWebRequest の emitter をここへ追加する。
+        /// Selection point that picks the emitters for a transport / serializer combination.
+        /// Later phases add the STJ / UnityWebRequest emitters here.
+        /// </summary>
+        internal IReadOnlyList<GeneratedFile> EmitMvpModel(
+            OpenApiGenerationModel model,
+            HttpTransportKind httpTransport,
+            JsonSerializerKind jsonSerializer)
+        {
             if (model is null)
             {
                 throw new ArgumentNullException(nameof(model));
+            }
+
+            if (!LibrarySelection.IsImplemented(httpTransport, jsonSerializer))
+            {
+                throw new NotSupportedException(
+                    "No emitter exists for HttpTransport=" + httpTransport +
+                    ", JsonSerializer=" + jsonSerializer + ".");
             }
 
             var files = new List<GeneratedFile>();

@@ -27,5 +27,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         public string GeneratedNamespace { get; }
 
         public OpenApiDocumentFormat DocumentFormat { get; }
+
+        /// <summary>
+        /// 生成クライアントが使用する HTTP 実装。既定は HttpClient。
+        /// The HTTP implementation used by the generated client. Defaults to HttpClient.
+        /// </summary>
+        public OpenApiHttpTransport HttpTransport { get; set; }
+
+        /// <summary>
+        /// 生成クライアントが使用する JSON シリアライザ。既定は NewtonsoftJson。
+        /// The JSON serializer used by the generated client. Defaults to NewtonsoftJson.
+        /// </summary>
+        public OpenApiJsonSerializer JsonSerializer { get; set; }
     }
 }
