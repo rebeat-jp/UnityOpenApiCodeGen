@@ -83,6 +83,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             {
                 "oneOf with a discriminator",
                 Spec("{ \"oneOf\": [ { \"$ref\": \"#/components/schemas/Cat\" }, { \"$ref\": \"#/components/schemas/Dog\" } ], \"discriminator\": { \"propertyName\": \"kind\" } }")
+                    .Replace("\r\n", "\n")
                     .Replace(
                         "\n  }\n}",
                         "\n  },\n  \"components\": { \"schemas\": {" +

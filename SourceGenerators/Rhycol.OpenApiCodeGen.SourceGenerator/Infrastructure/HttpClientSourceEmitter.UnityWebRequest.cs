@@ -73,7 +73,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// whole seconds, so the value is rounded up. A request that runs out of time throws a TaskCanceledException
         /// whose InnerException is a TimeoutException (the exception HttpClient throws for HttpClient.Timeout).
         /// A failed request counts as timed out when the UnityWebRequest error text mentions a timeout or when the time since
-        /// the send reached the rounded timeout.
+        /// the send reached 90% of the rounded timeout (timers may fire slightly before the stopwatch reaches the limit).
         /// </summary>
         public global::System.TimeSpan? RequestTimeout { get; set; }
 
@@ -194,7 +194,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     string unityError = unityRequest.error ?? unityResult.ToString();
                     if (timeoutSeconds > 0 &&
                         (unityError.IndexOf(""timeout"", global::System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         elapsed.Elapsed.TotalSeconds >= timeoutSeconds))
+                         elapsed.Elapsed.TotalSeconds >= timeoutSeconds * 0.9))
                     {
                         throw new global::System.Threading.Tasks.TaskCanceledException(
                             ""The request was canceled due to the configured RequestTimeout of "" + timeoutSeconds + "" seconds elapsing."",
