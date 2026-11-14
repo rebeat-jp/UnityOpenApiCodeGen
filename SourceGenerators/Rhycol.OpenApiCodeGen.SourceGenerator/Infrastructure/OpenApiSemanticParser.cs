@@ -118,11 +118,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             RequireKind(root, SpecValueKind.Object, "The OpenAPI document root must be an object.");
+            // A Swagger 2.0 document is normalized into an equivalent OpenAPI 3.0 tree first (P9).
+            var swaggerWarnings = new List<(SpecNode Node, string Message)>();
+            root = Swagger2Normalizer.Normalize(root, swaggerWarnings);
             SpecNode versionNode = RequireProperty(root, "openapi");
             string version = RequireString(versionNode, "The 'openapi' field must be a string.");
             int minorVersion = ParseSupportedVersion(version, versionNode);
             var parser = new OpenApiSemanticParser(root, minorVersion);
             parser._injectWarnings = injectWarnings;
+            foreach ((SpecNode node, string message) in swaggerWarnings)
+            {
+                parser.AddIgnoredWarning(node, message);
+            }
             return parser.ParseDocument();
         }
 
@@ -134,6 +141,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 throw new ArgumentNullException(nameof(bundle));
             }
+
+            // Swagger 2.0 documents of the bundle are normalized into OpenAPI 3.0 trees first (P9). The
+            // normalizer reports its own errors with the document's source path.
+            var swaggerWarnings = new List<(SpecNode Node, string Message)>();
+            bundle = Swagger2Normalizer.NormalizeBundle(bundle, swaggerWarnings);
 
             int minorVersion;
             try
@@ -160,6 +172,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             var parser = new OpenApiSemanticParser(bundle.Root, minorVersion, bundle);
             parser._injectWarnings = injectWarnings;
+            foreach ((SpecNode node, string message) in swaggerWarnings)
+            {
+                parser.AddIgnoredWarning(node, message);
+            }
             return parser.ParseDocument();
         }
 
@@ -206,7 +222,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             ValidateDocumentDialect(_root, _declaredMinorVersion);
             ValidateOpenApi32Root();
 
-            ThrowIfPresent(_root, "swagger", "Swagger 2.0 documents are not supported by the Phase 4 Source Generator.");
+            ThrowIfPresent(_root, "swagger", "A document that declares both 'openapi' and 'swagger' is ambiguous; a Swagger 2.0 document must declare only 'swagger'.");
             WarnIgnoredWebhooks();
 
             SpecNode? components = GetProperty(_root, "components");

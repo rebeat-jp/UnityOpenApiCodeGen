@@ -695,7 +695,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private static NormalizedSpecNodeIdentity GetSchemaKey(OpenApiSemanticSchema schema)
         {
             return schema.Identity.IsEmpty
-                ? new NormalizedSpecNodeIdentity(schema.Location.DocumentId, schema.Location.LogicalPath)
+                ? new NormalizedSpecNodeIdentity(schema.Location.DocumentId, schema.Location.IdentityLogicalPath)
                 : schema.Identity;
         }
 
