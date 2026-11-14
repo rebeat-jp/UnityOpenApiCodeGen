@@ -75,7 +75,14 @@ path／query／headerのenum値も専用のJson.NET serializerで変換し、ホ
 `additionalProperties`を省略した、または`true`やschemaを指定したobjectは、宣言外のメンバーを
 `[JsonExtensionData]`の`IDictionary<string, JToken>`（`AdditionalProperties`）に保持するopen DTOになります。
 未知のresponse propertyを拒否するclosed DTOにするには`additionalProperties: false`を指定します。
-`pattern`・`minimum`・`minItems`などの未対応assertionは`OACG101`になります。
+検証キーワード（`minLength`・`maxLength`・`pattern`・`minimum`・`maximum`・`exclusiveMinimum`・
+`exclusiveMaximum`・`multipleOf`・`minItems`・`maxItems`・`uniqueItems`・`minProperties`・
+`maxProperties`と、OpenAPI 3.1の`patternProperties`・`propertyNames`・`contains`・`minContains`・
+`maxContains`・`prefixItems`・`dependentRequired`）は実行時に検証し、生成する型は変えません。
+違反するrequestは送信前に`ArgumentException`で、違反するresponse・response headerは
+`JsonSerializationException`で拒否します。長さはUnicodeコードポイントで数え、`pattern`は
+アンカーなしの.NET `Regex`です（.NET構文が必要なpatternを除きECMAScriptモードで、必要な場合は`OACG108`。対応表を参照）。
+`if`／`then`／`else`・`dependentSchemas`・`unevaluated*`は引き続き`OACG101`です。
 `allOf`は1つのDTOへ平坦化し、`oneOf`／`anyOf`はラッパークラス（`FromX`／`TryGetX`／`AsX`）になります。
 `discriminator`があればその値で、なければ成功応答のJSONの構造検査で候補を決めます。`[X, null]`はnullableな`X`です。`oneOf`で複数の候補が一致したときは、応答のすべてのpropertyを宣言している候補を選び、区別できない候補は失敗します。
 `not`は成功応答の検査だけで評価します。詳細は対応表を参照してください。

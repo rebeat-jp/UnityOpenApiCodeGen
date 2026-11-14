@@ -201,6 +201,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                             .Where(static line => line.Length > 0))));
                 }
 
+                foreach (string sentence in GeneratedConstraintDocumentation.Describe(parameter.Type.ConstraintSets))
+                {
+                    source.Append(' ').Append(EscapeXml(sentence));
+                }
+
                 source.AppendLine("</param>");
             }
 
@@ -302,6 +307,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 mode == MethodMode.HttpInfo ? " (with status code and headers)" : string.Empty);
             AppendNumericParameterValidation(source, operation);
             AppendRequestBodyValidation(source, body, variant);
+            parameters.Constraints.AppendParameterChecks(source, operation);
             parameters.Security.AppendResolve(source, operation);
             source.Append("            string relativePath = ")
                 .Append(GeneratedSourceEmitter.StringLiteral(operation.Path))

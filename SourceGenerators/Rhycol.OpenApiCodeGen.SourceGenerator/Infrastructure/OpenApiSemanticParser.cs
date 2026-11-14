@@ -49,14 +49,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 "description", "enum", "example", "examples", "externalDocs", "format", "items",
                 "nullable", "properties", "required", "summary", "title", "type", "xml",
                 "contentEncoding", "contentMediaType", "readOnly", "writeOnly",
-                "allOf", "anyOf", "oneOf", "not", "discriminator"
+                "allOf", "anyOf", "oneOf", "not", "discriminator",
+                // Validation keywords (P6), checked at run time.
+                "minLength", "maxLength", "pattern", "minimum", "maximum", "exclusiveMinimum",
+                "exclusiveMaximum", "multipleOf", "minItems", "maxItems", "uniqueItems",
+                "minProperties", "maxProperties"
             };
 
         // Keywords that exist only in the OpenAPI 3.1 (JSON Schema 2020-12) dialect.
         private static readonly HashSet<string> OpenApi31SchemaKeywords =
             new HashSet<string>(StringComparer.Ordinal)
             {
-                "const", "$defs"
+                "const", "$defs",
+                "patternProperties", "propertyNames", "contains", "minContains", "maxContains",
+                "prefixItems", "dependentRequired"
             };
 
         private readonly SpecNode _root;
@@ -1103,6 +1109,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 if (property.Name == "$ref" ||
                     property.Name.StartsWith("x-", StringComparison.Ordinal) ||
                     AllowedReferenceSchemaSiblings.Contains(property.Name) ||
+                    (_minorVersion == 1 && IsConstraintKeyword(property.Name)) ||
                     (_minorVersion == 0 && property.Name == "nullable") ||
                     (_minorVersion == 1 && (property.Name == "not" || property.Name == "type")))
                 {
@@ -1308,6 +1315,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 return "void";
             }
 
+            string shape = GetSchemaShapeSignature(schema, active);
+            string constraints = GetConstraintChainSignature(schema, active);
+            return constraints.Length == 0 ? shape : shape + "#" + constraints;
+        }
+
+        private string GetSchemaShapeSignature(
+            OpenApiSemanticSchema schema,
+            HashSet<NormalizedSpecNodeIdentity> active)
+        {
             bool nullable = schema.Nullable;
             NormalizedSpecNodeIdentity terminalIdentity = default;
             var visited = new HashSet<NormalizedSpecNodeIdentity>();

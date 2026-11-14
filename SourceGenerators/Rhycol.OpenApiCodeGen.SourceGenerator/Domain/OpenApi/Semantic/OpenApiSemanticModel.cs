@@ -352,8 +352,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiSemanticDiscriminator? discriminator = null,
             bool unionIsOneOf = true,
             IReadOnlyList<OpenApiSemanticSchema>? notSchemas = null,
-            string contentMediaType = "")
+            string contentMediaType = "",
+            IReadOnlyList<OpenApiSemanticConstraints>? constraintSets = null)
         {
+            ConstraintSets = constraintSets ?? Array.Empty<OpenApiSemanticConstraints>();
             ContentMediaType = contentMediaType ?? string.Empty;
             Discriminator = discriminator;
             UnionIsOneOf = unionIsOneOf;
@@ -464,25 +466,40 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// <summary>contentMediaType of a string schema without contentEncoding (a file part in multipart); empty otherwise.</summary>
         internal string ContentMediaType { get; }
 
+        /// <summary>
+        /// Validation keyword sets (minLength, pattern, minimum, ...), all of which must hold. They are
+        /// checked at run time (requests before sending, responses when received) and never change the
+        /// generated type.
+        /// </summary>
+        internal IReadOnlyList<OpenApiSemanticConstraints> ConstraintSets { get; }
+
         internal OpenApiSemanticSchema WithNullable(bool nullable)
         {
-            return nullable == Nullable ? this : Clone(nullable, Annotations, NotSchemas);
+            return nullable == Nullable ? this : Clone(nullable, Annotations, NotSchemas, ConstraintSets);
         }
 
         internal OpenApiSemanticSchema WithAnnotations(OpenApiSemanticAnnotations annotations)
         {
-            return Clone(Nullable, annotations, NotSchemas);
+            return Clone(Nullable, annotations, NotSchemas, ConstraintSets);
         }
 
         internal OpenApiSemanticSchema WithNot(OpenApiSemanticSchema notSchema)
         {
-            return Clone(Nullable, Annotations, NotSchemas.Concat(new[] { notSchema }).ToArray());
+            return Clone(Nullable, Annotations, NotSchemas.Concat(new[] { notSchema }).ToArray(), ConstraintSets);
+        }
+
+        internal OpenApiSemanticSchema WithConstraintSets(IReadOnlyList<OpenApiSemanticConstraints> sets)
+        {
+            return sets.Count == 0
+                ? this
+                : Clone(Nullable, Annotations, NotSchemas, ConstraintSets.Concat(sets).ToArray());
         }
 
         private OpenApiSemanticSchema Clone(
             bool nullable,
             OpenApiSemanticAnnotations annotations,
-            IReadOnlyList<OpenApiSemanticSchema> notSchemas)
+            IReadOnlyList<OpenApiSemanticSchema> notSchemas,
+            IReadOnlyList<OpenApiSemanticConstraints> constraintSets)
         {
             return new OpenApiSemanticSchema(
                 Kind,
@@ -506,7 +523,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 Discriminator,
                 UnionIsOneOf,
                 notSchemas,
-                ContentMediaType);
+                ContentMediaType,
+                constraintSets);
         }
 
         internal OpenApiSourceLocation Location { get; }

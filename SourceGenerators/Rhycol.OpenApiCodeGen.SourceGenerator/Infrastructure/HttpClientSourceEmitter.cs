@@ -31,14 +31,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             AppendConstructors(source, model);
             AppendServers(source, model);
             var responseValidators = new ResponseValidatorPlan(model);
-            var responseJsonContracts = new ResponseJsonContractPlan(model);
+            var constraints = new ConstraintValidationEmitter(model);
+            var responseJsonContracts = new ResponseJsonContractPlan(model, constraints);
             var parameterSerializer = new HttpClientParameterSerializationEmitter(
                 model,
                 responseValidators.RequestJsonSerializerName,
-                responseValidators.HeaderValueValidatorName);
+                responseValidators.HeaderValueValidatorName,
+                constraints);
 
             parameterSerializer.Security.AppendProperties(source);
-            var bodyHelpers = new BodyHelperNames(model);
+            var bodyHelpers = new BodyHelperNames(model, constraints);
             foreach (GeneratedOperationModel operation in model.Operations)
             {
                 source.AppendLine();
@@ -53,6 +55,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             AppendBodyHelpers(source, model, bodyHelpers);
             responseValidators.AppendMethods(source);
             responseJsonContracts.AppendMethods(source);
+            constraints.AppendMethods(source);
+            constraints.AppendHelpers(source);
             source.AppendLine("    }");
             source.AppendLine();
             AppendException(source, model.ApiName);
@@ -746,9 +750,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             private readonly Dictionary<GeneratedTypeModel, int> _indices =
                 new Dictionary<GeneratedTypeModel, int>();
             private readonly string _prefix;
+            private readonly ConstraintValidationEmitter _constraints;
 
-            internal ResponseJsonContractPlan(OpenApiGenerationModel model)
+            internal ResponseJsonContractPlan(OpenApiGenerationModel model, ConstraintValidationEmitter constraints)
             {
+                _constraints = constraints;
+                _constraints.ContractMethodName = MethodName;
                 _dtos = model.Dtos.ToDictionary(static dto => dto.Name, StringComparer.Ordinal);
                 _enums = model.Enums.ToDictionary(static value => value.Name, StringComparer.Ordinal);
                 _unions = model.Unions.ToDictionary(static value => value.Name, StringComparer.Ordinal);
@@ -787,6 +794,58 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     {
                         Register(responseType);
                     }
+
+                    // The sub-schemas of validation keywords (contains, patternProperties, ...) of the typed
+                    // values that are not JSON response bodies (requests, parameters, headers) are
+                    // evaluated by the contract methods of their types as well.
+                    foreach (GeneratedTypeModel typedValue in EnumerateTypedValues(operation))
+                    {
+                        _constraints.CollectSubTypes(typedValue, Register);
+                    }
+                }
+            }
+
+            private static IEnumerable<GeneratedTypeModel> EnumerateTypedValues(GeneratedOperationModel operation)
+            {
+                foreach (GeneratedParameterModel parameter in operation.Parameters)
+                {
+                    yield return parameter.Type;
+                }
+
+                if (operation.RequestBody is GeneratedRequestBodyModel body)
+                {
+                    foreach (GeneratedBodyVariantModel variant in body.Variants)
+                    {
+                        if (variant.Kind == GeneratedBodyKind.Json || variant.Kind == GeneratedBodyKind.Text)
+                        {
+                            yield return variant.Type;
+                        }
+
+                        foreach (GeneratedFormFieldModel field in variant.Fields)
+                        {
+                            if (field.Role == GeneratedFormFieldRole.Text || field.Role == GeneratedFormFieldRole.Json)
+                            {
+                                yield return field.Type;
+                            }
+                        }
+                    }
+                }
+
+                if (operation.ResponsePlan is GeneratedResponsePlanModel plan)
+                {
+                    foreach (GeneratedSuccessResponseModel success in plan.Successes)
+                    {
+                        foreach (GeneratedResponseHeaderModel header in success.Headers)
+                        {
+                            yield return header.Type;
+                        }
+
+                        if (success.Type is not null &&
+                            success.Contents.Any(static content => content.Kind == GeneratedResponseBodyKind.Text))
+                        {
+                            yield return success.Type;
+                        }
+                    }
                 }
             }
 
@@ -812,6 +871,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     Register(notType);
                 }
 
+                RegisterConstraintTypes(type.ConstraintSets);
                 if (type.Kind == GeneratedTypeKind.Array)
                 {
                     Register(type.ItemType!);
@@ -831,6 +891,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 else if (type.Kind == GeneratedTypeKind.Named &&
                          _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
                 {
+                    RegisterConstraintTypes(dto.ConstraintSets);
                     foreach (GeneratedDtoPropertyModel property in dto.Properties)
                     {
                         Register(property.Type);
@@ -839,6 +900,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     if (dto.ExtensionDataValueType is not null)
                     {
                         Register(dto.ExtensionDataValueType);
+                    }
+                }
+            }
+
+            // contains / propertyNames / patternProperties / prefixItems schemas are evaluated by the
+            // contract method of their type.
+            private void RegisterConstraintTypes(IReadOnlyList<GeneratedConstraints> sets)
+            {
+                foreach (GeneratedConstraints set in sets)
+                {
+                    foreach (GeneratedTypeModel subType in set.SubTypes())
+                    {
+                        Register(subType);
                     }
                 }
             }
@@ -1284,6 +1358,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     AppendConstCheck(source, type);
                 }
 
+                // Validation keywords (minLength, pattern, ...). A DTO keeps its sets in its model.
+                IReadOnlyList<GeneratedConstraints> constraintSets = type.ConstraintSets;
+                if (type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? constrainedDto))
+                {
+                    constraintSets = type.ConstraintSets.Concat(constrainedDto.ConstraintSets).ToArray();
+                }
+
+                _constraints.AppendOwnChecks(
+                    source, "            ", constraintSets, "token", "path", "\"response\"", contractScope: true);
                 AppendNotChecks(source, type);
                 source.AppendLine("        }");
             }

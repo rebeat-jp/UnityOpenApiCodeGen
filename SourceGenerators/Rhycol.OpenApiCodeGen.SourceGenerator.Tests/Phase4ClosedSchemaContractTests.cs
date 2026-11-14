@@ -44,46 +44,53 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                                         "\"properties\":{\"name\":{\"type\":\"string\"}}}}}";
             AssertGenerates(DocumentWithComponent(NestedObject));
 
+            // P6: the validation keywords (minLength, ...) are checked at run time, so they are accepted
+            // at every nesting level; a keyword that stays out of scope is still reported at its own location.
             const string NestedObjectWithConstraint = "{\"type\":\"object\",\"additionalProperties\":false," +
                                         "\"properties\":{\"child\":{\"type\":\"object\"," +
                                         "\"properties\":{\"name\":{\"type\":\"string\",\"maxLength\":3}}}}}";
-            Diagnostic constrainedChild = GetOnlyDiagnostic(DocumentWithComponent(NestedObjectWithConstraint));
-            Assert.Equal("OACG101", constrainedChild.Id);
-            Assert.Contains(
-                "/components/schemas/Payload/properties/child/properties/name/maxLength'",
-                constrainedChild.GetMessage());
+            AssertGenerates(DocumentWithComponent(NestedObjectWithConstraint));
 
             const string ArrayItem = "{\"type\":\"array\",\"items\":{\"type\":\"string\"," +
                                      "\"minLength\":2}}";
-            Diagnostic constrainedItem = GetOnlyDiagnostic(DocumentWithComponent(ArrayItem));
-            Assert.Equal("OACG101", constrainedItem.Id);
-            Assert.Contains("/components/schemas/Payload/items/minLength'", constrainedItem.GetMessage());
+            AssertGenerates(DocumentWithComponent(ArrayItem));
+
+            const string NestedUnsupported = "{\"type\":\"object\",\"additionalProperties\":false," +
+                                        "\"properties\":{\"child\":{\"type\":\"object\"," +
+                                        "\"properties\":{\"name\":{\"type\":\"string\",\"if\":{}}}}}}";
+            Diagnostic unsupportedChild = GetOnlyDiagnostic(DocumentWithComponent(NestedUnsupported));
+            Assert.Equal("OACG101", unsupportedChild.Id);
+            Assert.Contains(
+                "/components/schemas/Payload/properties/child/properties/name/if'",
+                unsupportedChild.GetMessage());
+
+            const string UnsupportedArrayItem = "{\"type\":\"array\",\"items\":{\"type\":\"string\"," +
+                                                "\"then\":{}}}";
+            Diagnostic unsupportedItem = GetOnlyDiagnostic(DocumentWithComponent(UnsupportedArrayItem));
+            Assert.Equal("OACG101", unsupportedItem.Id);
+            Assert.Contains("/components/schemas/Payload/items/then'", unsupportedItem.GetMessage());
         }
 
         [Theory]
-        [InlineData("3.0.3", "multipleOf", "2")]
-        [InlineData("3.0.3", "maximum", "10")]
-        [InlineData("3.0.3", "minimum", "1")]
-        [InlineData("3.0.3", "exclusiveMaximum", "true")]
-        [InlineData("3.0.3", "exclusiveMinimum", "true")]
-        [InlineData("3.0.3", "maxLength", "8")]
-        [InlineData("3.0.3", "minLength", "2")]
-        [InlineData("3.0.3", "pattern", "\"^[a-z]+$\"")]
-        [InlineData("3.0.3", "maxItems", "4")]
-        [InlineData("3.0.3", "minItems", "1")]
-        [InlineData("3.0.3", "uniqueItems", "true")]
-        [InlineData("3.0.3", "maxProperties", "3")]
-        [InlineData("3.0.3", "minProperties", "1")]
+        // The 3.1 validation keywords do not exist in OpenAPI 3.0.
+        [InlineData("3.0.3", "patternProperties", "{\"^a\":{\"type\":\"string\"}}")]
+        [InlineData("3.0.3", "propertyNames", "{\"pattern\":\"^[a-z]+$\"}")]
+        [InlineData("3.0.3", "contains", "{\"type\":\"string\"}")]
+        [InlineData("3.0.3", "minContains", "1")]
+        [InlineData("3.0.3", "maxContains", "2")]
+        [InlineData("3.0.3", "prefixItems", "[{\"type\":\"string\"}]")]
+        [InlineData("3.0.3", "dependentRequired", "{\"a\":[\"b\"]}")]
         // const and $defs are OpenAPI 3.1 keywords (supported there since P1); 3.0 still rejects them.
         [InlineData("3.0.3", "const", "\"fixed\"")]
         [InlineData("3.0.3", "$defs", "{\"Part\":{\"type\":\"string\"}}")]
-        [InlineData("3.1.0", "exclusiveMaximum", "10")]
-        [InlineData("3.1.0", "minContains", "1")]
-        [InlineData("3.1.0", "maxContains", "2")]
-        [InlineData("3.1.0", "propertyNames", "{\"pattern\":\"^[a-z]+$\"}")]
+        // Out of scope in every version.
+        [InlineData("3.1.0", "if", "{}")]
+        [InlineData("3.1.0", "then", "{}")]
+        [InlineData("3.1.0", "else", "{}")]
         [InlineData("3.1.0", "contentSchema", "{\"type\":\"string\"}")]
         [InlineData("3.1.0", "dependentSchemas", "{\"name\":{\"type\":\"string\"}}")]
         [InlineData("3.1.0", "unevaluatedProperties", "false")]
+        [InlineData("3.1.0", "unevaluatedItems", "false")]
         [InlineData("3.1.0", "customAssertion", "true")]
         public void UnmodeledAssertionsAreRejectedAtTheirKeyword(
             string version,

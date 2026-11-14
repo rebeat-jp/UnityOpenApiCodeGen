@@ -18,8 +18,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// </summary>
         private sealed class BodyHelperNames
         {
-            internal BodyHelperNames(OpenApiGenerationModel model)
+            internal BodyHelperNames(OpenApiGenerationModel model, ConstraintValidationEmitter constraints)
             {
+                Constraints = constraints;
                 Model = model;
                 Prefix = HttpClientParameterSerializationEmitter.CreatePrefix(model, "__OacgBody_");
                 UsesErrors = model.Operations.Any(static operation => operation.ErrorResponses.Count > 0);
@@ -39,6 +40,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             internal string Disposition => Prefix + "Disposition";
 
             internal OpenApiGenerationModel Model { get; }
+
+            internal ConstraintValidationEmitter Constraints { get; }
 
             internal string Prefix { get; }
 
@@ -93,9 +96,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             switch (variant.Kind)
             {
                 case GeneratedBodyKind.Json:
-                    AppendJsonRequestBody(source, body, variant, validators, indent);
+                    AppendJsonRequestBody(source, body, variant, validators, parameters, indent);
                     break;
                 case GeneratedBodyKind.Text:
+                    parameters.Constraints.AppendTypedCheck(
+                        source, indent, variant.Type, body.ParameterName, "\"$\"", "\"request\"",
+                        "nameof(" + body.ParameterName + ")");
                     source.Append(indent).Append("request.Content = CreateJsonContent(ConvertToString(")
                         .Append(body.ParameterName).Append("), ")
                         .Append(GeneratedSourceEmitter.StringLiteral(variant.MediaType)).AppendLine(");");
@@ -107,7 +113,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     AppendFormRequestBody(source, body, variant, parameters, indent);
                     break;
                 default:
-                    AppendMultipartRequestBody(source, body, variant, validators, helpers, indent);
+                    AppendMultipartRequestBody(source, body, variant, validators, parameters, helpers, indent);
                     break;
             }
 
@@ -122,8 +128,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             GeneratedRequestBodyModel body,
             GeneratedBodyVariantModel variant,
             ResponseValidatorPlan validators,
+            HttpClientParameterSerializationEmitter parameters,
             string indent)
         {
+            // Validation keywords (minLength, pattern, ...) are checked before anything is serialized.
+            parameters.Constraints.AppendTypedCheck(
+                source, indent, variant.Type, body.ParameterName, "\"$\"", "\"request\"",
+                "nameof(" + body.ParameterName + ")");
             if (validators.TryGetMethodName(variant.Type, out string? validatorName))
             {
                 source.Append(indent).Append(validatorName).Append('(')
@@ -173,6 +184,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append(indent).AppendLine("    var oacgItems = new global::System.Collections.Generic.List<string>();");
             foreach (GeneratedFormFieldModel field in variant.Fields)
             {
+                if (field.Role == GeneratedFormFieldRole.Text || field.Role == GeneratedFormFieldRole.Json)
+                {
+                    parameters.Constraints.AppendTypedCheck(
+                        source, indent + "    ", field.Type, body.ParameterName + "." + field.MemberName,
+                        GeneratedSourceEmitter.StringLiteral("$." + field.WireName), "\"request\"",
+                        "nameof(" + body.ParameterName + ")");
+                }
+
                 if (field.Role == GeneratedFormFieldRole.Text && field.StyleParameter is not null)
                 {
                     parameters.AppendFormField(source, field.StyleParameter, indent.Length + 4, "oacgItems");
@@ -200,6 +219,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             GeneratedRequestBodyModel body,
             GeneratedBodyVariantModel variant,
             ResponseValidatorPlan validators,
+            HttpClientParameterSerializationEmitter parameters,
             BodyHelperNames helpers,
             string indent)
         {
@@ -207,7 +227,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append(indent).AppendLine("    var oacgMultipart = new global::System.Net.Http.MultipartFormDataContent();");
             foreach (GeneratedFormFieldModel field in variant.Fields)
             {
-                AppendMultipartField(source, body, field, validators, helpers, indent + "    ");
+                AppendMultipartField(source, body, field, validators, parameters, helpers, indent + "    ");
             }
 
             source.Append(indent).AppendLine("    request.Content = oacgMultipart;");
@@ -219,6 +239,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             GeneratedRequestBodyModel body,
             GeneratedFormFieldModel field,
             ResponseValidatorPlan validators,
+            HttpClientParameterSerializationEmitter parameters,
             BodyHelperNames helpers,
             string indent)
         {
@@ -244,6 +265,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     .Append(GeneratedSourceEmitter.StringLiteral("The required part '" + field.WireName + "' must not be null."))
                     .Append(", nameof(").Append(body.ParameterName).AppendLine("));");
                 source.Append(inner).AppendLine("}");
+            }
+
+            if (field.Role == GeneratedFormFieldRole.Text || field.Role == GeneratedFormFieldRole.Json)
+            {
+                parameters.Constraints.AppendTypedCheck(
+                    source, inner, field.Type, member,
+                    GeneratedSourceEmitter.StringLiteral("$." + field.WireName), "\"request\"",
+                    "nameof(" + body.ParameterName + ")");
             }
 
             switch (field.Role)

@@ -223,6 +223,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     source.Append(indent).Append("oacgData = ")
                         .Append(CreateParseExpression(model, type.WithNullable(false), "oacgBody", "response body", helpers))
                         .AppendLine(";");
+                    helpers.Constraints.AppendTypedCheck(
+                        source, indent, type, "oacgData", "\"$\"", "\"response\"", "null");
                     break;
                 default:
                     source.Append(indent).AppendLine("oacgData = response.Content == null");
@@ -272,6 +274,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 source.Append(indent).Append("        ").Append(local).Append(" = ")
                     .Append(CreateParseExpression(model, type, "oacgValues[0]", description, helpers)).AppendLine(";");
             }
+
+            // Validation keywords of the header schema (only when the header is present).
+            helpers.Constraints.AppendTypedCheck(
+                source, indent + "        ", header.Type, local,
+                GeneratedSourceEmitter.StringLiteral("header:" + header.WireName), "\"response\"", "null");
 
             source.Append(indent).AppendLine("    }");
             if (header.Required)

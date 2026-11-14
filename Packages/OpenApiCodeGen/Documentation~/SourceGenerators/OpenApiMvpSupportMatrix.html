@@ -788,9 +788,44 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td><code>{}</code>、OpenAPI 3.1のboolean schema <code>true</code>、<code>type: &quot;null&quot;</code>、およびnull以外の型を複数持つ3.1の型配列（例: <code>[&quot;string&quot;,&quot;integer&quot;]</code>）は<code>JToken</code>です（JSON <code>null</code>を受け付けるため常にnullable）。<code>type</code>を省略した場合は、<code>properties</code>／<code>additionalProperties</code>があればobject、<code>items</code>があればarray、<code>enum</code>の値からstring／integer、<code>const</code>の値からその型を推論します。boolean schema <code>false</code>は<code>OACG101</code>です。parameterの<code>{}</code>や複数型は<code>OACG101</code>のままです。</td>
 </tr>
 <tr>
-<td>schema assertions</td>
-<td>Unsupported</td>
-<td>生成モデルが保持しない<code>pattern</code>、<code>minLength</code>、<code>minimum</code>、<code>minItems</code>などのassertionは、そのkeywordの位置で<code>OACG101</code>です。説明用annotation、<code>default</code>、<code>x-*</code>は許可します。<code>const</code>と<code>$defs</code>はOpenAPI 3.1のkeywordで、3.0では<code>OACG101</code>です。</td>
+<td>schema assertions（検証キーワード）</td>
+<td>Partial</td>
+<td>下の各行のキーワードを実行時に検証します。生成する型は変わりません。<code>if</code>／<code>then</code>／<code>else</code>、<code>dependentSchemas</code>、<code>unevaluatedProperties</code>／<code>unevaluatedItems</code>、<code>contentSchema</code>、未知のキーワードは、そのkeywordの位置で<code>OACG101</code>です。<code>oneOf</code>／<code>anyOf</code>と同じschemaに併記した検証キーワードも<code>OACG101</code>です（unionのメンバーへ移してください）。3.1のみのキーワード（<code>patternProperties</code>・<code>propertyNames</code>・<code>contains</code>・<code>minContains</code>・<code>maxContains</code>・<code>prefixItems</code>・<code>dependentRequired</code>）は3.0では<code>OACG101</code>です。型に当てはまらないキーワード（integerの<code>minLength</code>など）はJSON Schemaどおり無視します。値が不正（負の<code>minLength</code>、0以下の<code>multipleOf</code>、3.0で数値の<code>exclusiveMinimum</code>、3.1でbooleanの<code>exclusiveMinimum</code>、不正な正規表現など）なら位置付き<code>OACG100</code>です。<code>format</code>は従来どおり受理するだけで検証しません（<code>date</code>・<code>date-time</code>・<code>uuid</code>の既存の解析は変わりません）。<code>enum</code>に併記したキーワードはwire値（stringまたはintegerの値）に対して評価します。ファイルpart（<code>format: binary</code>）に併記したキーワードは評価できないため、そのkeywordの位置で<code>OACG108</code>です。3.1の<code>$ref</code>に併記したキーワードは、<code>$ref</code>先の型を変えずにその参照位置の制約として追加します（<code>allOf: [{ $ref }]</code>との併記も同様）。3.0は従来どおり<code>$ref</code>のsiblingを許可せず<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td>string: <code>minLength</code> / <code>maxLength</code> / <code>pattern</code></td>
+<td>Supported</td>
+<td>長さはUTF-16のchar数ではなくUnicodeコードポイント数で数えます（サロゲートペアは1文字）。<code>pattern</code>は部分一致（アンカーなし。固定するなら<code>^</code>・<code>$</code>）です。.NETの<code>Regex</code>を生成時に決めたモードで評価します。ECMA-262にない構文（原子グループ<code>(?&gt;</code>・インラインオプション<code>(?i)</code>・<code>\A</code> <code>\z</code> <code>\Z</code> <code>\G</code>・文字クラス減算など）を含むpattern、またはECMAScriptモードで作れないpatternは、既定の.NET意味論（<code>CultureInvariant</code>。<code>\d</code>・<code>\w</code>・<code>\s</code>がUnicode対応）で評価し、そのpatternの位置で<code>OACG108</code>を報告します。それ以外は<code>RegexOptions.ECMAScript</code>（<code>\d</code>・<code>\w</code>・<code>\s</code>・<code>\b</code>がASCII基準でECMA-262に近い）です（両オプションは併用できないためモードは1つです）。差異: <code>$</code>は.NETでは末尾の改行の前にも一致します（ECMA-262は文字列末尾だけ）。ECMAScriptモードの<code>\s</code>はASCII空白だけで、NBSPなどのUnicode空白を含むECMA-262の<code>\s</code>より狭くなります。どちらのモードでも作れないpatternは生成時に位置付き<code>OACG100</code>です。<code>Regex</code>は生成クラスの<code>static readonly</code>フィールドとして1回だけ作ります（pattern単位で共有）。<code>RegexOptions.Compiled</code>はIL2CPPなどAOT環境でILを出力できないため使いません。照合timeoutは1秒で、超えると<code>RegexMatchTimeoutException</code>を内部例外に持つ通常の検証エラー（requestは<code>ArgumentException</code>、responseは<code>JsonSerializationException</code>）です。length／patternの対象は<code>string</code>、<code>format: byte</code>（base64文字列）、<code>uuid</code>です。<code>date</code>・<code>date-time</code>のstringはrequestでは日付型として直列化されるため長さとpatternを検査しません（応答は文字列として検査します）。XML docに<code>Must be 3..50 characters.</code>のような制約文を出力します。</td>
+</tr>
+<tr>
+<td>number: <code>minimum</code> / <code>maximum</code> / <code>exclusiveMinimum</code> / <code>exclusiveMaximum</code> / <code>multipleOf</code></td>
+<td>Supported</td>
+<td>OpenAPI 3.0はboolean形式（<code>minimum</code>と<code>exclusiveMinimum: true</code>で排他的な下限）、3.1は数値形式（<code>exclusiveMinimum: 0</code>。<code>minimum</code>と併用可）です。値はdecimalに収まれば<code>decimal</code>で、収まらなければ<code>double</code>で比較します。<code>double</code>の値はまず有効15桁に丸めるため、<code>0.1 + 0.2</code>は<code>0.3</code>として<code>multipleOf: 0.1</code>を満たし、<code>multipleOf: 0.01</code>の<code>19.99</code>も誤差なく判定します。decimalに収まらない値（絶対値が約7.9e28超・1e-27未満）の<code>multipleOf</code>は、商が整数から相対1e-9以内なら倍数とみなす許容誤差を使います。対象は<code>integer</code>／<code>number</code>のJSON値です（<code>int</code>・<code>long</code>・<code>float</code>・<code>double</code>・<code>decimal</code>）。</td>
+</tr>
+<tr>
+<td>array: <code>minItems</code> / <code>maxItems</code> / <code>uniqueItems</code></td>
+<td>Supported</td>
+<td>要素数と一意性を検査します。<code>uniqueItems</code>はJSONの値として比較します（<code>1</code>と<code>1.0</code>は同じ、objectはメンバーの順序によらず同じ、arrayは位置ごと）。同じ値はハッシュで絞り込むため、要素が多くても二乗の比較にはなりません。</td>
+</tr>
+<tr>
+<td>object: <code>minProperties</code> / <code>maxProperties</code></td>
+<td>Supported</td>
+<td>JSONのmember数を検査します。open DTO（<code>[JsonExtensionData]</code>）は宣言propertyと追加memberの合計、<code>Dictionary&lt;string, T&gt;</code>とfree-form object（<code>JObject</code>）はその要素数です。requestではシリアライズ後のJSONを数えるため、readOnly propertyと未設定のoptional propertyは含みません。</td>
+</tr>
+<tr>
+<td><code>patternProperties</code> / <code>propertyNames</code> / <code>dependentRequired</code>（3.1）</td>
+<td>Partial</td>
+<td><code>patternProperties</code>は、名前が<code>pattern</code>（部分一致）に一致するmemberの値をそのschemaで検査します（宣言propertyにも適用。mapとopen objectの追加memberの型は変わりません）。<code>propertyNames</code>は各memberの名前を、<code>dependentRequired</code>は「指定propertyがあれば列挙したpropertyも必要」を検査します。メッセージに含めるkeyは32文字に切り詰めます。subschemaが自分自身を（DTOを介さずに）参照する循環は<code>OACG103</code>です（DTOを介する再帰は可）。allOfの各partが持つobject用のキーワード（<code>minProperties</code>・<code>maxProperties</code>・<code>patternProperties</code>・<code>propertyNames</code>・<code>dependentRequired</code>）は部品ごとに保持し、すべて満たす必要があります。</td>
+</tr>
+<tr>
+<td><code>contains</code> / <code>minContains</code> / <code>maxContains</code> / <code>prefixItems</code>（3.1）</td>
+<td>Partial</td>
+<td><code>contains</code>はschemaに一致する要素数を数え、<code>minContains</code>（既定1。0可）以上、<code>maxContains</code>以下を要求します。<code>prefixItems</code>は位置ごとのschemaで検査し、<code>items</code>は<code>prefixItems</code>より後の要素に適用します（<code>items: false</code>は<code>maxItems</code>を<code>prefixItems</code>の個数にします）。<code>prefixItems</code>を持つarrayの型は<code>items</code>の型ではなく<code>List&lt;JToken&gt;</code>です（要素の型が位置ごとに異なり、<code>items</code>の型では読めないため）。</td>
+</tr>
+<tr>
+<td>検証の範囲と例外</td>
+<td>Partial</td>
+<td>requestは送信前に検証し、違反は<code>ArgumentException</code>（<code>ParamName</code>はparameter名またはbody引数名）でHTTPは送信しません（fake handlerは呼ばれません）。対象はJSON body（入れ子のDTO・配列要素・map値を含む）、form-urlencodedとmultipartのfield（ファイル以外）、text body、parameter（path・query・header・cookie・<code>content</code>）です。responseは受信時に検証し、違反は<code>JsonSerializationException</code>です。対象はJSON本文、response header、text本文で、<code>oneOf</code>／<code>anyOf</code>の候補判定と<code>not</code>の判定にも制約が効きます（制約で候補が決まります）。メッセージにはパス（<code>$.items[2].name</code>）とkeywordを含め、値そのものは含めません。readOnly propertyはrequestで検証せず、writeOnly propertyが応答に欠落しても許可します（存在すれば検証します）。securityの資格情報は対象外です。メッセージのパスにはmember名（データ由来）が入りますが、値や<code>propertyNames</code>違反のkeyは含めません。検証が行わない・制限される箇所のまとめ: requestでは<code>not</code>とunion（<code>oneOf</code>／<code>anyOf</code>）の候補値の制約を評価しません（応答だけ）。<code>oneOf</code>／<code>anyOf</code>と同じschemaに併記した検証キーワードは<code>OACG101</code>です（メンバー側へ移す）。<code>uniqueItems</code>は<code>1</code>と<code>1.0</code>を同じ値とみなします。</td>
 </tr>
 <tr>
 <td><code>const</code></td>

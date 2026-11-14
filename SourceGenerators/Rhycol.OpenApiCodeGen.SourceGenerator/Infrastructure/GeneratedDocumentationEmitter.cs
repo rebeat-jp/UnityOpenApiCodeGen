@@ -42,7 +42,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             StringBuilder source,
             string indent,
             OpenApiSemanticAnnotations annotations,
-            bool includeDefaultAndDirection)
+            bool includeDefaultAndDirection,
+            IReadOnlyList<GeneratedConstraints>? constraintSets = null)
         {
             var lines = new List<string>();
             foreach (string line in annotations.Description
@@ -72,6 +73,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 if (annotations.WriteOnly)
                 {
                     lines.Add("Write-only: it may be absent from responses.");
+                }
+            }
+
+            if (constraintSets is not null)
+            {
+                foreach (string sentence in GeneratedConstraintDocumentation.Describe(constraintSets))
+                {
+                    lines.Add(Escape(sentence));
                 }
             }
 

@@ -55,6 +55,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     property.Name.StartsWith("x-", StringComparison.Ordinal) ||
                     AllowedReferenceSchemaSiblings.Contains(property.Name) ||
                     property.Name == "not" ||
+                    (_minorVersion == 1 && IsConstraintKeyword(property.Name)) ||
                     property.Name == "type")
                 {
                     continue;
@@ -741,7 +742,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 mode = OpenApiSemanticAdditionalProperties.Open;
             }
 
-            return CreateObjectShape(node, suggestedName, string.Empty, nullable, annotations, properties, mode, valueSchema);
+            OpenApiSemanticSchema composed = CreateObjectShape(
+                node, suggestedName, string.Empty, nullable, annotations, properties, mode, valueSchema);
+            _constraintsComposed = true;
+            return composed.WithConstraintSets(composition.ConstraintSets);
         }
 
         private void CollectObjectParts(
@@ -822,6 +826,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             CollectOwnObjectKeywords(node, rootName, composition);
+
+            // Object level validation keywords (minProperties, patternProperties, ...) of every part
+            // are kept as separate sets: each one must hold for the composed object.
+            OpenApiSemanticConstraints? partConstraints = ParseObjectConstraintSet(node, rootName);
+            if (partConstraints is not null)
+            {
+                composition.ConstraintSets.Add(partConstraints);
+            }
         }
 
         private void ValidateObjectPartKeywords(SpecNode node)
@@ -976,6 +988,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             internal Dictionary<string, SpecNode> Required { get; } =
                 new Dictionary<string, SpecNode>(StringComparer.Ordinal);
+
+            internal List<OpenApiSemanticConstraints> ConstraintSets { get; } =
+                new List<OpenApiSemanticConstraints>();
 
             internal bool Closed { get; set; }
 
