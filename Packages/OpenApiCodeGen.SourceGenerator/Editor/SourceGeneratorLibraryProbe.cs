@@ -338,7 +338,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             foreach (string path in paths)
             {
                 if (string.Equals(
-                        Path.GetFileName(path),
+                        GetFileName(path),
                         assemblyFileName,
                         StringComparison.OrdinalIgnoreCase))
                 {
@@ -347,6 +347,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
 
             return matches;
+        }
+
+        /// <summary>
+        /// '/' と '\' の両方を区切りとして扱う。Path.GetFileName は macOS や Linux の Editor で '\' を区切りとみなさない。
+        /// Treats both '/' and '\' as separators; Path.GetFileName ignores '\' in macOS and Linux Editors.
+        /// </summary>
+        static string GetFileName(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                return string.Empty;
+            }
+
+            int separator = path.LastIndexOfAny(new[] { '/', '\\' });
+            return separator < 0 ? path : path.Substring(separator + 1);
         }
 
         static string FormatVersion(Version version)
