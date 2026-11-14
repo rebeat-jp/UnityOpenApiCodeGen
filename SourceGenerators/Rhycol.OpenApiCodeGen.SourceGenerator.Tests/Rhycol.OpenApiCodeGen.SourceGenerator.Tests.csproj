@@ -73,6 +73,12 @@
              Link="LinkedProduction/Parsing/%(Filename)%(Extension)" />
     <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Runtime/OpenApiDocumentFormat.cs"
              Link="LinkedProduction/OpenApiDocumentFormat.cs" />
+    <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Runtime/OpenApiHttpTransport.cs"
+             Link="LinkedProduction/OpenApiHttpTransport.cs" />
+    <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Runtime/OpenApiJsonSerializer.cs"
+             Link="LinkedProduction/OpenApiJsonSerializer.cs" />
+    <Compile Include="../../Packages/OpenApiCodeGen.SourceGenerator/Runtime/OpenApiClientDefinitionAttribute.cs"
+             Link="LinkedProduction/OpenApiClientDefinitionAttribute.cs" />
     <Compile Include="../../Packages/OpenApiCodeGen/Editor/Contracts/GenerationProviderContracts.cs"
              Link="LinkedProduction/GenerationProviderContracts.cs" />
     <Compile Include="../../Packages/OpenApiCodeGen/Editor/Contracts/GitHubAuthorizationPolicy.cs"

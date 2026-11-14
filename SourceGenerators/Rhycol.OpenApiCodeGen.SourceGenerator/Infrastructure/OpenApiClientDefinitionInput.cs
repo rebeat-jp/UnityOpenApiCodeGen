@@ -26,7 +26,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             Valid,
             Invalid,
-            UnsupportedDocumentFormat
+            UnsupportedDocumentFormat,
+            UnsupportedLibraryOption
         }
 
         internal DefinitionStatus Status { get; }
@@ -49,12 +50,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string generatedNamespace,
             int documentFormat,
             string targetDisplayName,
-            DiagnosticLocation location)
+            DiagnosticLocation location,
+            HttpTransportKind httpTransport = HttpTransportKind.HttpClient,
+            JsonSerializerKind jsonSerializer = JsonSerializerKind.NewtonsoftJson)
         {
             return new OpenApiClientDefinitionInput(
                 DefinitionStatus.Valid,
                 specId,
-                new GeneratorOptions(apiName, generatedNamespace),
+                new GeneratorOptions(apiName, generatedNamespace, httpTransport, jsonSerializer),
                 documentFormat,
                 targetDisplayName,
                 string.Empty,
@@ -91,6 +94,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 documentFormat,
                 targetDisplayName,
                 string.Empty,
+                location);
+        }
+
+        internal static OpenApiClientDefinitionInput CreateUnsupportedLibraryOption(
+            string specId,
+            string apiName,
+            string generatedNamespace,
+            int documentFormat,
+            string targetDisplayName,
+            string detail,
+            DiagnosticLocation location)
+        {
+            return new OpenApiClientDefinitionInput(
+                DefinitionStatus.UnsupportedLibraryOption,
+                specId,
+                new GeneratorOptions(apiName, generatedNamespace),
+                documentFormat,
+                targetDisplayName,
+                detail,
                 location);
         }
 

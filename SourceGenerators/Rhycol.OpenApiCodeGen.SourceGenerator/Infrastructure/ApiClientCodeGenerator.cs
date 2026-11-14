@@ -110,6 +110,50 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
 
+        private static readonly DiagnosticDescriptor UnsupportedLibrarySelection = new(
+            "OACG010",
+            "Unsupported library selection",
+            "OpenAPI client definition for Spec ID '{0}' uses an unknown or unsupported library selection: {1}.",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor JsonLibraryNotReferenced = new(
+            "OACG011",
+            "JSON library is not referenced",
+            "OpenAPI client definition for Spec ID '{0}' selects JSON serializer '{1}', but the compilation does not reference {2} " +
+            "(public type '{3}' was not found). Add the package that provides it.",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor HttpImplementationNotReferenced = new(
+            "OACG012",
+            "HTTP implementation is not referenced",
+            "OpenAPI client definition for Spec ID '{0}' selects HTTP transport '{1}', but the compilation does not reference " +
+            "the required public type '{2}'.",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor LibraryVersionTooLow = new(
+            "OACG013",
+            "Referenced library version is too low",
+            "OpenAPI client definition for Spec ID '{0}' selects JSON serializer '{1}', which requires {2} version {3} or later, " +
+            "but the compilation references version {4}.",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor HttpClientOnWebGl = new(
+            "OACG014",
+            "HttpClient is not supported on WebGL",
+            "OpenAPI client definition for Spec ID '{0}' uses the HttpClient transport while UNITY_WEBGL is defined. " +
+            "HttpClient does not work in WebGL player builds; select the UnityWebRequest transport instead.",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
         private static readonly DiagnosticDescriptor InvalidOpenApiDocument = new(
             "OACG100",
             "Invalid OpenAPI document",
@@ -219,6 +263,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 static (productionContext, bundle) =>
                     ReportBundleDiagnostic(productionContext, bundle));
 
+            IncrementalValueProvider<LibraryAvailability> libraries =
+                context.CompilationProvider
+                    .Combine(context.ParseOptionsProvider)
+                    .Select(static (input, _) => LibraryAvailability.Create(input.Left, input.Right))
+                    .WithTrackingName("OpenApiLibraryAvailability");
+
+            context.RegisterSourceOutput(
+                definitions
+                    .Where(static definition =>
+                        definition.Status == OpenApiClientDefinitionInput.DefinitionStatus.Valid)
+                    .Combine(libraries),
+                static (productionContext, input) =>
+                    ReportLibrarySelectionDiagnostics(productionContext, input.Left, input.Right));
+
             IncrementalValuesProvider<OpenApiGenerationWorkItem> workItems =
                 definitions
                     .Where(static definition =>
@@ -229,9 +287,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     .WithTrackingName("OpenApiMatchDefinitionToBundle");
 
             context.RegisterSourceOutput(
-                workItems,
-                (productionContext, workItem) =>
-                    ExecuteWorkItem(productionContext, workItem, _testWarningInjector));
+                workItems.Combine(libraries),
+                (productionContext, input) =>
+                    ExecuteWorkItem(productionContext, input.Left, input.Right, _testWarningInjector));
         }
 
         private static OpenApiClientDefinitionInput CreateDefinitionInput(
@@ -362,13 +420,84 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     diagnosticLocation);
             }
 
+            if (!TryReadLibraryOptions(
+                    context.Attributes[0],
+                    out HttpTransportKind httpTransport,
+                    out JsonSerializerKind jsonSerializer,
+                    out string libraryOptionDetail))
+            {
+                return OpenApiClientDefinitionInput.CreateUnsupportedLibraryOption(
+                    specId,
+                    apiName,
+                    generatedNamespace,
+                    documentFormat,
+                    targetDisplayName,
+                    libraryOptionDetail,
+                    diagnosticLocation);
+            }
+
             return OpenApiClientDefinitionInput.CreateValid(
                 specId,
                 apiName,
                 generatedNamespace,
                 documentFormat,
                 targetDisplayName,
-                diagnosticLocation);
+                diagnosticLocation,
+                httpTransport,
+                jsonSerializer);
+        }
+
+        /// <summary>
+        /// 名前付き引数 HttpTransport / JsonSerializer を読む。未指定は既定値（0）。
+        /// Reads the named arguments HttpTransport / JsonSerializer. Unspecified means the default (0).
+        /// </summary>
+        private static bool TryReadLibraryOptions(
+            AttributeData attribute,
+            out HttpTransportKind httpTransport,
+            out JsonSerializerKind jsonSerializer,
+            out string detail)
+        {
+            httpTransport = HttpTransportKind.HttpClient;
+            jsonSerializer = JsonSerializerKind.NewtonsoftJson;
+            detail = string.Empty;
+            foreach (KeyValuePair<string, TypedConstant> argument in attribute.NamedArguments)
+            {
+                if (string.Equals(argument.Key, "HttpTransport", StringComparison.Ordinal))
+                {
+                    if (argument.Value.Kind == TypedConstantKind.Error ||
+                        argument.Value.Value is not int transportValue ||
+                        !LibrarySelection.IsDefined((HttpTransportKind)transportValue))
+                    {
+                        detail = "HttpTransport value '" + DescribeConstant(argument.Value) +
+                                 "' is unknown; supported values are HttpClient (0) and UnityWebRequest (1)";
+                        return false;
+                    }
+
+                    httpTransport = (HttpTransportKind)transportValue;
+                }
+                else if (string.Equals(argument.Key, "JsonSerializer", StringComparison.Ordinal))
+                {
+                    if (argument.Value.Kind == TypedConstantKind.Error ||
+                        argument.Value.Value is not int serializerValue ||
+                        !LibrarySelection.IsDefined((JsonSerializerKind)serializerValue))
+                    {
+                        detail = "JsonSerializer value '" + DescribeConstant(argument.Value) +
+                                 "' is unknown; supported values are NewtonsoftJson (0) and SystemTextJson (1)";
+                        return false;
+                    }
+
+                    jsonSerializer = (JsonSerializerKind)serializerValue;
+                }
+            }
+
+            return true;
+        }
+
+        private static string DescribeConstant(TypedConstant constant)
+        {
+            return constant.Kind == TypedConstantKind.Error
+                ? "<error>"
+                : constant.Value?.ToString() ?? "null";
         }
 
         private static bool TryReadString(TypedConstant argument, out string value)
@@ -603,6 +732,73 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     definition.Location.ToLocation(),
                     definition.SpecId,
                     definition.DocumentFormat));
+                return;
+            }
+
+            if (definition.Status ==
+                OpenApiClientDefinitionInput.DefinitionStatus.UnsupportedLibraryOption)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    UnsupportedLibrarySelection,
+                    definition.Location.ToLocation(),
+                    definition.SpecId,
+                    definition.ValidationMessage));
+            }
+        }
+
+        private static void ReportLibrarySelectionDiagnostics(
+            SourceProductionContext context,
+            OpenApiClientDefinitionInput definition,
+            LibraryAvailability availability)
+        {
+            foreach (LibrarySelectionIssue issue in LibrarySelection.Evaluate(
+                         definition.Options.HttpTransport,
+                         definition.Options.JsonSerializer,
+                         availability))
+            {
+                context.ReportDiagnostic(CreateLibrarySelectionDiagnostic(definition, issue));
+            }
+        }
+
+        private static Diagnostic CreateLibrarySelectionDiagnostic(
+            OpenApiClientDefinitionInput definition,
+            LibrarySelectionIssue issue)
+        {
+            Location location = definition.Location.ToLocation();
+            string[] arguments = issue.Arguments;
+            switch (issue.Kind)
+            {
+                case LibrarySelectionIssueKind.NotImplemented:
+                    return Diagnostic.Create(
+                        UnsupportedLibrarySelection, location, definition.SpecId, arguments[0]);
+                case LibrarySelectionIssueKind.JsonLibraryMissing:
+                    return Diagnostic.Create(
+                        JsonLibraryNotReferenced,
+                        location,
+                        definition.SpecId,
+                        arguments[0],
+                        arguments[1],
+                        arguments[2]);
+                case LibrarySelectionIssueKind.HttpImplementationMissing:
+                    return Diagnostic.Create(
+                        HttpImplementationNotReferenced,
+                        location,
+                        definition.SpecId,
+                        arguments[0],
+                        arguments[1]);
+                case LibrarySelectionIssueKind.VersionTooLow:
+                    return Diagnostic.Create(
+                        LibraryVersionTooLow,
+                        location,
+                        definition.SpecId,
+                        arguments[0],
+                        arguments[1],
+                        arguments[2],
+                        arguments[3]);
+                case LibrarySelectionIssueKind.WebGlHttpClient:
+                    return Diagnostic.Create(HttpClientOnWebGl, location, definition.SpecId);
+                default:
+                    throw new InvalidOperationException("Unknown library selection issue.");
             }
         }
 
@@ -644,6 +840,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private static void ExecuteWorkItem(
             SourceProductionContext context,
             OpenApiGenerationWorkItem workItem,
+            LibraryAvailability availability,
             Action<OpenApiSemanticParser, SpecNode>? injectWarnings)
         {
             switch (workItem.Kind)
@@ -668,6 +865,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         workItem.SpecId));
                     return;
                 case OpenApiGenerationWorkItem.WorkItemKind.Generate:
+                    // The selection diagnostics (OACG010-014) are reported by their own output.
+                    // Here a blocking issue only suppresses AddSource.
+                    if (LibrarySelection.HasBlockingIssue(LibrarySelection.Evaluate(
+                            workItem.Definition.Options.HttpTransport,
+                            workItem.Definition.Options.JsonSerializer,
+                            availability)))
+                    {
+                        return;
+                    }
+
                     Generate(context, workItem, injectWarnings);
                     return;
                 default:
@@ -712,7 +919,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     context.ReportDiagnostic(warning);
                 }
 
-                IReadOnlyList<GeneratedFile> files = service.EmitMvpModel(model);
+                IReadOnlyList<GeneratedFile> files = service.EmitMvpModel(
+                    model,
+                    workItem.Definition.Options.HttpTransport,
+                    workItem.Definition.Options.JsonSerializer);
                 for (int index = 0; index < files.Count; index++)
                 {
                     GeneratedFile file = files[index];
