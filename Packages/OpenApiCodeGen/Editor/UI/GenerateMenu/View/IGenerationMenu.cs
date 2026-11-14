@@ -22,6 +22,9 @@ namespace Rhycol.OpenApiCodeGen.UI
         void SetOutputPathComment(string comment);
         void SetInputEnabled(bool isEnabled);
         void SetCancelEnabled(bool isEnabled) { }
+
+        /// <summary>Shows the library line and disables Generate when the libraries are not ready.</summary>
+        void SetLibraryReadiness(GenerationLibraryReadinessDto readiness) { }
     }
 
 }

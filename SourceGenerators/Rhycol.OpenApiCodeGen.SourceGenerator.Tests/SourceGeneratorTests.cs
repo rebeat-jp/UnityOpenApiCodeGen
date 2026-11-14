@@ -17,13 +17,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     public class SourceGeneratorTests
     {
         private const string SecondSpecId = "fedcba9876543210fedcba9876543210";
-        private const string AttributeContract = @"
+        internal const string AttributeContract = @"
 namespace Rhycol.OpenApiCodeGen.SourceGenerator
 {
     public enum OpenApiDocumentFormat
     {
         Json = 0,
         Yaml = 1
+    }
+
+    public enum OpenApiHttpTransport
+    {
+        HttpClient = 0,
+        UnityWebRequest = 1
+    }
+
+    public enum OpenApiJsonSerializer
+    {
+        NewtonsoftJson = 0,
+        SystemTextJson = 1
     }
 
     [System.AttributeUsage(System.AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
@@ -36,6 +48,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiDocumentFormat documentFormat)
         {
         }
+
+        public OpenApiHttpTransport HttpTransport { get; set; }
+
+        public OpenApiJsonSerializer JsonSerializer { get; set; }
     }
 }
 ";
@@ -852,7 +868,13 @@ components:
             return CSharpCompilation.Create(
                 assemblyName,
                 new[] { CSharpSyntaxTree.ParseText(AttributeContract + definitions) },
-                new[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) },
+                // The generator refuses to emit unless Newtonsoft.Json and HttpClient are referenced.
+                new[]
+                {
+                    MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                    MetadataReference.CreateFromFile(typeof(System.Net.Http.HttpClient).Assembly.Location),
+                    MetadataReference.CreateFromFile(typeof(Newtonsoft.Json.JsonConvert).Assembly.Location)
+                },
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         }
 

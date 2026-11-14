@@ -26,13 +26,40 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     /// (wire format and deserialization), diagnostics that keep the original Swagger location, the
     /// equivalence with a hand-written OpenAPI 3.0 document and the Editor bundling of Swagger documents.
     /// </summary>
-    public sealed class Phase9Swagger2Tests
+    public class Phase9Swagger2Tests
     {
+        public Phase9Swagger2Tests()
+            : this(SerializerMatrixHarness.NewtonsoftJson)
+        {
+        }
+
+        protected Phase9Swagger2Tests(string serializer)
+        {
+            MatrixMode.Current = serializer;
+        }
+
         private const string SpecId = "0123456789abcdef0123456789abcdef";
 
-        private static readonly Lazy<Assembly> PetstoreAssembly = new Lazy<Assembly>(() =>
+        [Fact]
+        public void TheRunUsesTheSerializerItIsNamedFor()
         {
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(ReadSpec("swagger2.json"));
+            Phase4GeneratorExecution execution = Generate(ReadSpec("swagger2.json"));
+
+            MatrixMode.AssertGeneratedFor(execution.GeneratedSource, ExpectsSystemTextJson);
+        }
+
+        protected virtual bool ExpectsSystemTextJson => false;
+
+        // One client per serializer, compiled once.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Assembly>> PetstoreAssemblies =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Assembly>>();
+
+        private static Lazy<Assembly> PetstoreAssembly =>
+            PetstoreAssemblies.GetOrAdd(MatrixMode.Current, static _ => new Lazy<Assembly>(CompilePetstore));
+
+        private static Assembly CompilePetstore()
+        {
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(ReadSpec("swagger2.json"));
             if (execution.RunResult.Diagnostics.Length > 0 || execution.CompilationErrors.Count > 0)
             {
                 throw new InvalidOperationException(
@@ -42,7 +69,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             }
 
             return execution.EmitAssembly();
-        });
+        }
 
         private static string ReadSpec(string name)
         {
@@ -62,7 +89,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
         private static Phase4GeneratorExecution Generate(string spec)
         {
-            return Phase4GeneratorTestHarness.GenerateAndCompile(spec);
+            return MatrixMode.GenerateAndCompile(spec);
         }
 
         private static Diagnostic SingleDiagnostic(string spec, string id)
@@ -1285,7 +1312,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 WriteText(projectRoot, "Assets/Specs/root.json", text);
                 (_, string bundle) = await Bundle(projectRoot, "Assets/Specs/root.json");
 
-                Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(text, bundle: bundle);
+                Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(text, bundle: bundle);
 
                 // Components (definitions) are parsed first, so the definitions error is reported.
                 Diagnostic diagnostic = Assert.Single(execution.RunResult.Diagnostics);
@@ -1300,7 +1327,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                     string.Empty);
                 WriteText(projectRoot, "Assets/Specs/root2.json", withoutDefinitions);
                 (_, string bundle2) = await Bundle(projectRoot, "Assets/Specs/root2.json");
-                Diagnostic formDiagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
+                Diagnostic formDiagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
                     withoutDefinitions,
                     bundle: bundle2).RunResult.Diagnostics);
                 AssertLogicalPath(formDiagnostic, "/paths/~1p/post/parameters/1");
@@ -1321,9 +1348,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         public void ASwagger20DocumentAndItsOpenApi30EquivalentProduceTheSameClient()
         {
             const string Namespace = "Generated.Equivalence";
-            Phase4GeneratorExecution swagger = Phase4GeneratorTestHarness.GenerateAndCompile(
+            Phase4GeneratorExecution swagger = MatrixMode.GenerateAndCompile(
                 ReadSpec("swagger2.json"), apiName: "EquivalenceApi", generatedNamespace: Namespace);
-            Phase4GeneratorExecution openApi = Phase4GeneratorTestHarness.GenerateAndCompile(
+            Phase4GeneratorExecution openApi = MatrixMode.GenerateAndCompile(
                 ReadSpec("swagger2-as-openapi30.json"), apiName: "EquivalenceApi", generatedNamespace: Namespace);
             AssertClean(swagger);
             AssertClean(openApi);
@@ -1385,7 +1412,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         private static async Task<Phase4GeneratorExecution> GenerateBundled(string projectRoot, string rootPath)
         {
             (_, string bundle) = await Bundle(projectRoot, rootPath);
-            return Phase4GeneratorTestHarness.GenerateAndCompile(
+            return MatrixMode.GenerateAndCompile(
                 File.ReadAllText(Path.Combine(projectRoot, rootPath.Replace('/', Path.DirectorySeparatorChar))),
                 bundle: bundle);
         }
@@ -1620,5 +1647,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Directory.Delete(projectRoot, true);
             }
         }
+    }
+
+    /// <summary>The System.Text.Json run of every test of <see cref="Phase9Swagger2Tests"/>.</summary>
+    public sealed class Phase9Swagger2TestsSystemTextJson : Phase9Swagger2Tests
+    {
+        public Phase9Swagger2TestsSystemTextJson()
+            : base(SerializerMatrixHarness.SystemTextJson)
+        {
+        }
+
+        protected override bool ExpectsSystemTextJson => true;
     }
 }

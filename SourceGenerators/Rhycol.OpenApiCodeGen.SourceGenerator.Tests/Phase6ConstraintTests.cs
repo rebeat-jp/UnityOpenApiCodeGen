@@ -20,8 +20,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     /// that violates one raises a JsonSerializationException. The clients are compiled from two inline
     /// specs (OpenAPI 3.1 and 3.0) and driven through reflection against a fake HttpMessageHandler.
     /// </summary>
-    public sealed class Phase6ConstraintTests
+    public class Phase6ConstraintTests
     {
+        public Phase6ConstraintTests()
+            : this(SerializerMatrixHarness.NewtonsoftJson)
+        {
+        }
+
+        protected Phase6ConstraintTests(string serializer)
+        {
+            MatrixMode.Current = serializer;
+        }
+
         private static readonly string[] BodySchemas =
         {
             "Name", "Code", "Partial", "Digits", "Letters", "Count", "Price", "Step", "Tags", "AnyList", "Bag",
@@ -30,20 +40,44 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
         private static readonly string[] ReadOnlySchemas = { "Pick", "NotShort" };
 
-        private static readonly Lazy<Phase4GeneratorExecution> Execution31 =
-            new Lazy<Phase4GeneratorExecution>(() => Phase4GeneratorTestHarness.GenerateAndCompile(Spec31()));
-
-        private static readonly Lazy<Assembly> Assembly31 = new Lazy<Assembly>(() => Execution31.Value.EmitAssembly());
-
-        private static readonly Lazy<Assembly> Assembly30 = new Lazy<Assembly>(() =>
+        [Fact]
+        public void TheRunUsesTheSerializerItIsNamedFor()
         {
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(Spec30());
-            Assert.Empty(execution.RunResult.Diagnostics);
-            Assert.Empty(execution.CompilationErrors);
-            return execution.EmitAssembly();
-        });
+            MatrixMode.AssertGeneratedFor(Execution31.Value.GeneratedSource, ExpectsSystemTextJson);
+        }
 
-        private static string Spec31()
+        protected virtual bool ExpectsSystemTextJson => false;
+
+        // The clients are compiled once per serializer (the class runs once with each).
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Phase4GeneratorExecution>> Executions31 =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Phase4GeneratorExecution>>();
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Assembly>> Assemblies31 =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Assembly>>();
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Assembly>> Assemblies30 =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Assembly>>();
+
+        private static Lazy<Phase4GeneratorExecution> Execution31 =>
+            Executions31.GetOrAdd(
+                MatrixMode.Current,
+                static _ => new Lazy<Phase4GeneratorExecution>(() => MatrixMode.GenerateAndCompile(Spec31())));
+
+        private static Lazy<Assembly> Assembly31 =>
+            Assemblies31.GetOrAdd(MatrixMode.Current, static _ => new Lazy<Assembly>(() => Execution31.Value.EmitAssembly()));
+
+        private static Lazy<Assembly> Assembly30 =>
+            Assemblies30.GetOrAdd(
+                MatrixMode.Current,
+                static _ => new Lazy<Assembly>(() =>
+                {
+                    Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(Spec30());
+                    Assert.Empty(execution.RunResult.Diagnostics);
+                    Assert.Empty(execution.CompilationErrors);
+                    return execution.EmitAssembly();
+                }));
+
+        internal static string Spec31()
         {
             var paths = new List<string>();
             foreach (string name in BodySchemas)
@@ -147,6 +181,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             string? body,
             params object?[] arguments)
         {
+            arguments = MatrixMode.ConvertArguments(Phase4WireHarness.ClientType(assembly).GetMethod(method)!, arguments);
             var outcome = new Outcome();
             try
             {
@@ -211,7 +246,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assembly? assembly = null)
         {
             Outcome outcome = await Invoke(assembly ?? Assembly31.Value, method, HttpStatusCode.OK, json);
-            JsonSerializationException error = Assert.IsType<JsonSerializationException>(outcome.Error);
+            Exception error = MatrixMode.AssertSerialization(outcome.Error);
             Assert.Contains(keyword, error.Message);
             Assert.Contains("response", error.Message);
             return error;
@@ -230,14 +265,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         // Rec needs two members (minProperties 2): the declared title plus one extra member.
-        private static Dictionary<string, JToken> Extra()
+        private static object Extra()
         {
-            return new Dictionary<string, JToken> { ["k"] = 1 };
+            return MatrixMode.ExtensionDictionary(("k", "1"));
         }
 
-        private static List<JToken> Tokens(params object[] values)
+        private static MatrixMode.JsonList Tokens(params object[] values)
         {
-            return values.Select(static value => (JToken)new JValue(value)).ToList();
+            return new MatrixMode.JsonList(values.Select(static value => JsonConvert.SerializeObject(value)).ToArray());
         }
 
         // ---- the generated code --------------------------------------------------------------------
@@ -545,11 +580,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             await AssertSent("sendAnyList", Tokens(1, 2, "1"));
 
             // Objects are equal regardless of the order of their members.
-            var objects = new List<JToken> { JObject.Parse("{\"a\":1,\"b\":2}"), JObject.Parse("{\"b\":2,\"a\":1}") };
+            var objects = new MatrixMode.JsonList("{\"a\":1,\"b\":2}", "{\"b\":2,\"a\":1}");
             await AssertRejected("sendAnyList", "uniqueItems", objects);
             await AssertReadRejected("readAnyList", "[{\"a\":1,\"b\":2},{\"b\":2,\"a\":1}]", "uniqueItems");
 
-            var different = new List<JToken> { JObject.Parse("{\"a\":1}"), JObject.Parse("{\"a\":2}") };
+            var different = new MatrixMode.JsonList("{\"a\":1}", "{\"a\":2}");
             await AssertSent("sendAnyList", different);
             await AssertReadOk("readAnyList", "[{\"a\":1},{\"a\":2},[1],[1,2],null,true,false]");
             await AssertReadRejected("readAnyList", "[[1,2],[1,2]]", "uniqueItems");
@@ -564,13 +599,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         {
             if (valid)
             {
-                await AssertSent("sendBag", JObject.Parse(json));
+                await AssertSent("sendBag", MatrixMode.FreeObject(json));
                 await AssertReadOk("readBag", json);
             }
             else
             {
                 string keyword = json == "{}" ? "minProperties" : "maxProperties";
-                await AssertRejected("sendBag", keyword, JObject.Parse(json));
+                await AssertRejected("sendBag", keyword, MatrixMode.FreeObject(json));
                 await AssertReadRejected("readBag", json, keyword);
             }
         }
@@ -584,15 +619,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
             await AssertSent(
                 "sendRec",
-                Dto("Rec", ("Title", "abc"), ("AdditionalProperties", new Dictionary<string, JToken> { ["k"] = 1 })));
+                Dto("Rec", ("Title", "abc"), ("AdditionalProperties", Extra())));
             await AssertReadOk("readRec", "{\"title\":\"abc\",\"k\":1}");
         }
 
         [Fact]
         public async Task PatternPropertiesValidateMatchingValues()
         {
-            await AssertSent("sendPat", JObject.Parse("{\"x-a\":1,\"other\":\"free\"}"));
-            await AssertRejected("sendPat", "patternProperties", JObject.Parse("{\"x-a\":\"text\"}"));
+            await AssertSent("sendPat", MatrixMode.FreeObject("{\"x-a\":1,\"other\":\"free\"}"));
+            await AssertRejected("sendPat", "patternProperties", MatrixMode.FreeObject("{\"x-a\":\"text\"}"));
             await AssertReadOk("readPat", "{\"x-a\":1,\"other\":\"free\"}");
             await AssertReadRejected("readPat", "{\"x-a\":\"text\"}", "patternProperties");
         }
@@ -600,8 +635,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Fact]
         public async Task PropertyNamesValidateTheKeys()
         {
-            await AssertSent("sendKeyNames", JObject.Parse("{\"abc\":1}"));
-            await AssertRejected("sendKeyNames", "propertyNames", JObject.Parse("{\"ABC\":1}"));
+            await AssertSent("sendKeyNames", MatrixMode.FreeObject("{\"abc\":1}"));
+            await AssertRejected("sendKeyNames", "propertyNames", MatrixMode.FreeObject("{\"ABC\":1}"));
             await AssertReadOk("readKeyNames", "{\"abc\":1,\"def\":2}");
             await AssertReadRejected("readKeyNames", "{\"abc\":1,\"Bad\":2}", "propertyNames");
         }
@@ -609,9 +644,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Fact]
         public async Task DependentRequiredNeedsTheListedPropertiesWhenTheTriggerIsPresent()
         {
-            await AssertSent("sendDep", JObject.Parse("{\"b\":1}"));
-            await AssertSent("sendDep", JObject.Parse("{\"a\":1,\"b\":2}"));
-            await AssertRejected("sendDep", "dependentRequired", JObject.Parse("{\"a\":1}"));
+            await AssertSent("sendDep", MatrixMode.FreeObject("{\"b\":1}"));
+            await AssertSent("sendDep", MatrixMode.FreeObject("{\"a\":1,\"b\":2}"));
+            await AssertRejected("sendDep", "dependentRequired", MatrixMode.FreeObject("{\"a\":1}"));
             await AssertReadOk("readDep", "{\"a\":1,\"b\":2}");
             await AssertReadRejected("readDep", "{\"a\":1}", "dependentRequired");
         }
@@ -665,7 +700,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             }
             else
             {
-                JsonSerializationException error = Assert.IsType<JsonSerializationException>(
+                Exception error = MatrixMode.AssertSerialization(
                     (await Invoke(Assembly31.Value, "readPick", HttpStatusCode.OK, json)).Error);
                 Assert.Contains("oneOf", error.Message);
             }
@@ -723,7 +758,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Null(ok.Error);
 
             Outcome bad = await InvokeWithHeader("0");
-            JsonSerializationException error = Assert.IsType<JsonSerializationException>(bad.Error);
+            Exception error = MatrixMode.AssertSerialization(bad.Error);
             Assert.Contains("minimum", error.Message);
             Assert.Contains("X-Count", error.Message);
         }
@@ -806,7 +841,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Outcome ok = await InvokeText("abc");
             Assert.Null(ok.Error);
             Outcome bad = await InvokeText("ab");
-            JsonSerializationException error = Assert.IsType<JsonSerializationException>(bad.Error);
+            Exception error = MatrixMode.AssertSerialization(bad.Error);
             Assert.Contains("minLength", error.Message);
         }
 
@@ -872,7 +907,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Fact]
         public void APatternThatNeedsDotNetSyntaxIsReportedAndEvaluatedInTheDotNetMode()
         {
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(
                 DocumentWithComponent("{\"type\":\"string\",\"pattern\":\"(?i)^ab$\"}"));
 
             Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
@@ -886,7 +921,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Fact]
         public void ValidationKeywordsOnAFilePartAreReportedAsIgnored()
         {
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(
                 DocumentWithComponent(
                     "{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\",\"format\":\"binary\",\"minLength\":3}}}"));
 
@@ -909,7 +944,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Fact]
         public void NoValidationCodeIsGeneratedWithoutConstraints()
         {
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(
                 "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"x\",\"version\":\"1\"},\"paths\":{\"/a\":{\"post\":{\"operationId\":\"sendA\"," +
                 "\"parameters\":[{\"name\":\"q\",\"in\":\"query\",\"schema\":{\"type\":\"string\"}}]," +
                 "\"requestBody\":{\"required\":true,\"content\":{\"application/json\":{\"schema\":{\"$ref\":\"#/components/schemas/A\"}}}}," +
@@ -930,7 +965,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
         private static Diagnostic GetOnlyDiagnostic(string document)
         {
-            return Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(document).RunResult.Diagnostics);
+            return Assert.Single(MatrixMode.GenerateAndCompile(document).RunResult.Diagnostics);
         }
 
         [Theory]
@@ -974,7 +1009,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("3.1.0", "{\"type\":\"array\",\"items\":{},\"contains\":true,\"propertyNames\":{\"pattern\":\"^a\"},\"minContains\":0}")]
         public void KeywordsThatDoNotApplyToTheTypeAreIgnored(string version, string schema)
         {
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(
                 DocumentWithComponent(schema, version));
 
             Assert.Empty(execution.RunResult.Diagnostics);
@@ -993,12 +1028,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Fact]
         public void ADtoMayReferToItselfInAValidationKeyword()
         {
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(DocumentWithComponent(
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(DocumentWithComponent(
                 "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}}," +
                 "\"patternProperties\":{\"^child-\":{\"$ref\":\"#/components/schemas/Payload\"}}}"));
 
             Assert.Empty(execution.RunResult.Diagnostics);
             Assert.Empty(execution.CompilationErrors);
         }
+    }
+
+    /// <summary>The System.Text.Json run of every test of <see cref="Phase6ConstraintTests"/>.</summary>
+    public sealed class Phase6ConstraintTestsSystemTextJson : Phase6ConstraintTests
+    {
+        public Phase6ConstraintTestsSystemTextJson()
+            : base(SerializerMatrixHarness.SystemTextJson)
+        {
+        }
+
+        protected override bool ExpectsSystemTextJson => true;
     }
 }

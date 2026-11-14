@@ -15,18 +15,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
     /// ResponseJsonContractPlan), so a oneOf / anyOf candidate and a not schema are decided by the
     /// constraints as well.
     /// Requests, parameters, form fields, response headers and text bodies: the typed value is turned
-    /// into a JToken and walked by a generated validator per type (Validate*), which checks the
-    /// constraints of the type and descends into array items, map values and DTO members.
+    /// into a JToken (Newtonsoft.Json) or a JsonElement (System.Text.Json, see
+    /// ConstraintValidationEmitter.SystemTextJson.cs) and walked by a generated validator per type
+    /// (Validate*), which checks the constraints of the type and descends into array items, map values
+    /// and DTO members.
     ///
     /// All numbers are compared as decimal when they fit and as double otherwise; a double is first
     /// rounded to 15 significant digits, which is what makes 0.1 + 0.2 a multiple of 0.1. Regular
     /// expressions are static readonly fields created once (not RegexOptions.Compiled: IL2CPP and other AOT
     /// targets cannot emit IL) with a match timeout.
     /// </summary>
-    internal sealed class ConstraintValidationEmitter
+    internal sealed partial class ConstraintValidationEmitter
     {
-        private const string TokenType = "global::Newtonsoft.Json.Linq.JToken";
-        private const string ActionType = "global::System.Action<global::Newtonsoft.Json.Linq.JToken, string>";
+        private const string NewtonsoftActionType = "global::System.Action<global::Newtonsoft.Json.Linq.JToken, string>";
+        private const string SystemTextJsonActionType = "global::System.Action<global::System.Text.Json.JsonElement, string>";
 
         private readonly IReadOnlyDictionary<string, GeneratedDtoModel> _dtos;
         private readonly string _prefix;
@@ -39,11 +41,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly List<(string Field, string Pattern, bool EcmaScript)> _regexes =
             new List<(string Field, string Pattern, bool EcmaScript)>();
+        private readonly JsonSerializerProfile _json;
         private bool _helpersNeeded;
 
         internal ConstraintValidationEmitter(OpenApiGenerationModel model)
+            : this(model, JsonSerializerProfile.Newtonsoft)
+        {
+        }
+
+        internal ConstraintValidationEmitter(OpenApiGenerationModel model, JsonSerializerProfile json)
         {
             _dtos = model.Dtos.ToDictionary(static dto => dto.Name, StringComparer.Ordinal);
+            _json = json ?? throw new ArgumentNullException(nameof(json));
             _prefix = HttpClientParameterSerializationEmitter.CreatePrefix(model, "__OacgConstraint_");
         }
 
@@ -52,6 +61,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// apply a sub-schema (contains, patternProperties, ...) run it as a trial.
         /// </summary>
         internal Func<GeneratedTypeModel, string>? ContractMethodName { get; set; }
+
+        /// <summary>
+        /// Name of the shared JsonSerializerOptions of the client (System.Text.Json only): the typed
+        /// checks serialize a value with them, like the request body is serialized.
+        /// </summary>
+        internal string? JsonOptionsName { get; set; }
+
+        private string ActionTypeName => _json.IsSystemTextJson ? SystemTextJsonActionType : NewtonsoftActionType;
 
         // ---- reachability --------------------------------------------------------------------------
 
@@ -276,6 +293,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private void AppendValidator(StringBuilder source, GeneratedTypeModel type, int index)
         {
+            if (_json.IsSystemTextJson)
+            {
+                AppendSystemTextJsonValidator(source, type, index);
+                return;
+            }
+
             source.Append("        private static void ").Append(_prefix).Append("Validate")
                 .Append(index.ToString(CultureInfo.InvariantCulture))
                 .AppendLine("(global::Newtonsoft.Json.Linq.JToken token, string path, string contract)");
@@ -393,8 +416,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         // ---- own checks (statements) -----------------------------------------------------------------
 
         /// <summary>
-        /// Writes the checks of the constraint sets against the JToken <paramref name="token"/>. Each check
-        /// ignores a token of another JSON type. <paramref name="contract"/> is a C# expression
+        /// Writes the checks of the constraint sets against the JToken / JsonElement <paramref name="token"/>
+        /// (the helpers of the serializer in use are overloaded by that type). Each check ignores a token of
+        /// another JSON type. <paramref name="contract"/> is a C# expression
         /// ("response" literal inside a contract method, the contract variable in a validator).
         /// </summary>
         internal void AppendOwnChecks(
@@ -475,7 +499,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
                 if (set.PrefixItems.Count > 0 || set.ItemsAfterPrefix is not null)
                 {
-                    source.Append(head).Append("Prefix(").Append(common).Append(", new ").Append(ActionType)
+                    source.Append(head).Append("Prefix(").Append(common).Append(", new ").Append(ActionTypeName)
                         .Append("[] { ")
                         .Append(string.Join(", ", set.PrefixItems.Select(item => Matcher(item, contractScope))))
                         .Append(" }, ")
@@ -534,6 +558,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 throw new InvalidOperationException("The JSON contract plan did not register its method names.");
             }
 
+            if (_json.IsSystemTextJson)
+            {
+                // The System.Text.Json contract methods need neither the JSON text nor line information.
+                return "(oacgToken, oacgPath) => " + ContractMethodName(type) + "(oacgToken, oacgPath, " +
+                       (type.Nullable ? "true" : "false") + ")";
+            }
+
             return "(oacgToken, oacgPath) => " + ContractMethodName(type) + "(oacgToken, oacgPath, " +
                    (type.Nullable ? "true" : "false") + ", " +
                    (contractScope ? "json" : "string.Empty") + ", " +
@@ -576,6 +607,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     .Append(", global::System.Text.RegularExpressions.RegexOptions.")
                     .Append(ecmaScript ? "ECMAScript" : "CultureInvariant")
                     .AppendLine(", global::System.TimeSpan.FromSeconds(1));");
+            }
+
+            if (_json.IsSystemTextJson)
+            {
+                source.AppendLine(SystemTextJsonHelperSource
+                    .Replace("__OPTIONS__", JsonOptionsName ?? throw new InvalidOperationException("The JSON options name was not registered."))
+                    .Replace("__P__", _prefix));
+                return;
             }
 
             source.AppendLine(HelperSource.Replace("__P__", _prefix));

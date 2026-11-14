@@ -64,7 +64,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             OpenApiGenerationModel model = BuildMvpModelFromOpenApiNode(root, options);
-            return EmitMvpModel(model);
+            return EmitMvpModel(model, options.HttpTransport, options.JsonSerializer);
         }
 
         internal IReadOnlyList<GeneratedFile> GenerateMvpFromOpenApiBundle(
@@ -77,7 +77,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             OpenApiGenerationModel model = BuildMvpModelFromOpenApiBundle(bundle, options);
-            return EmitMvpModel(model);
+            return EmitMvpModel(model, options.HttpTransport, options.JsonSerializer);
         }
 
         internal OpenApiGenerationModel BuildMvpModelFromOpenApiNode(
@@ -98,15 +98,48 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         internal IReadOnlyList<GeneratedFile> EmitMvpModel(OpenApiGenerationModel model)
         {
+            return EmitMvpModel(
+                model,
+                HttpTransportKind.HttpClient,
+                JsonSerializerKind.NewtonsoftJson);
+        }
+
+        /// <summary>
+        /// transport / serializer の組み合わせ別に emitter を選ぶ切替点。UnityWebRequest は
+        /// HttpClient と同じ emitter が送信部だけをアダプタに差し替える。
+        /// Selection point that picks the emitters for a transport / serializer combination. UnityWebRequest
+        /// uses the same client emitter with only the send step replaced by the adapter.
+        /// </summary>
+        internal IReadOnlyList<GeneratedFile> EmitMvpModel(
+            OpenApiGenerationModel model,
+            HttpTransportKind httpTransport,
+            JsonSerializerKind jsonSerializer)
+        {
             if (model is null)
             {
                 throw new ArgumentNullException(nameof(model));
             }
 
+            if (!LibrarySelection.IsImplemented(httpTransport, jsonSerializer))
+            {
+                throw new NotSupportedException(
+                    "No emitter exists for HttpTransport=" + httpTransport +
+                    ", JsonSerializer=" + jsonSerializer + ".");
+            }
+
+            JsonSerializerProfile json = JsonSerializerProfile.For(jsonSerializer);
             var files = new List<GeneratedFile>();
-            files.AddRange(new NewtonsoftDtoSourceEmitter().Emit(model));
-            files.Add(new HttpClientSourceEmitter().Emit(model));
-            files.AddRange(new HttpContentEmitter().Emit(model));
+            if (json.IsSystemTextJson)
+            {
+                files.AddRange(new SystemTextJsonDtoSourceEmitter().Emit(model));
+            }
+            else
+            {
+                files.AddRange(new NewtonsoftDtoSourceEmitter().Emit(model));
+            }
+
+            files.Add(new HttpClientSourceEmitter(json, httpTransport).Emit(model));
+            files.AddRange(new HttpContentEmitter(json).Emit(model));
             return files.OrderBy(static file => file.FileName, StringComparer.Ordinal).ToArray();
         }
 

@@ -12,7 +12,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
     /// </summary>
     internal sealed partial class HttpClientSourceEmitter
     {
-        private static void AppendPlannedResponse(
+        private void AppendPlannedResponse(
             StringBuilder source,
             OpenApiGenerationModel model,
             GeneratedOperationModel operation,
@@ -33,7 +33,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 model,
                 operation,
                 "response.Content == null ? string.Empty : await response.Content.ReadAsStringAsync().ConfigureAwait(false)",
-                helpers);
+                helpers,
+                contracts);
             source.Append(Indent).AppendLine("}");
             if (mode == MethodMode.HttpInfo)
             {
@@ -77,7 +78,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 : "oacgStatus == " + member.StatusKey;
         }
 
-        private static void AppendSuccessMember(
+        private void AppendSuccessMember(
             StringBuilder source,
             OpenApiGenerationModel model,
             GeneratedResponsePlanModel plan,
@@ -90,7 +91,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             if (member.Type is not null)
             {
-                source.Append(indent).Append(GeneratedSourceEmitter.TypeName(member.Type)).AppendLine(" oacgData = default!;");
+                source.Append(indent).Append(_json.TypeName(member.Type)).AppendLine(" oacgData = default!;");
                 AppendBodyDecode(source, model, member, validators, contracts, helpers, indent);
             }
 
@@ -144,7 +145,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         }
 
         /// <summary>Reads and decodes the body into <c>oacgData</c>, choosing the decoder by the received Content-Type.</summary>
-        private static void AppendBodyDecode(
+        private void AppendBodyDecode(
             StringBuilder source,
             OpenApiGenerationModel model,
             GeneratedSuccessResponseModel member,
@@ -167,7 +168,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 source.Append(indent).Append("if (oacgMediaType != null && !").Append(helpers.Matches).Append("(oacgMediaType, ")
                     .Append(GeneratedSourceEmitter.StringLiteral(contents[0].MediaType)).AppendLine("))");
                 source.Append(indent).AppendLine("{");
-                source.Append(indent).AppendLine("    throw new global::Newtonsoft.Json.JsonSerializationException(\"The response Content-Type '\" + oacgMediaType + \"' does not match the declared media type.\");");
+                source.Append(indent).AppendLine("    throw new " + _json.SerializationExceptionName + "(\"The response Content-Type '\" + oacgMediaType + \"' does not match the declared media type.\");");
                 source.Append(indent).AppendLine("}");
                 source.Append(indent).AppendLine("{");
                 AppendHandler(source, model, contents[0], type, validators, contracts, helpers, indent + "    ");
@@ -191,11 +192,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             source.Append(indent).AppendLine("else");
             source.Append(indent).AppendLine("{");
-            source.Append(indent).AppendLine("    throw new global::Newtonsoft.Json.JsonSerializationException(\"The response Content-Type '\" + oacgMediaType + \"' is not supported by this method.\");");
+            source.Append(indent).AppendLine("    throw new " + _json.SerializationExceptionName + "(\"The response Content-Type '\" + oacgMediaType + \"' is not supported by this method.\");");
             source.Append(indent).AppendLine("}");
         }
 
-        private static void AppendHandler(
+        private void AppendHandler(
             StringBuilder source,
             OpenApiGenerationModel model,
             GeneratedResponseContentModel content,
@@ -238,7 +239,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// Parses one header (or text body) value into <paramref name="local"/>: a scalar from its first
         /// value, an array from the comma separated values. A missing required header is an error.
         /// </summary>
-        private static void AppendHeaderParse(
+        private void AppendHeaderParse(
             StringBuilder source,
             OpenApiGenerationModel model,
             GeneratedResponseHeaderModel header,
@@ -249,7 +250,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             string wire = GeneratedSourceEmitter.StringLiteral(header.WireName);
             string description = "response header '" + header.WireName + "'";
-            source.Append(indent).Append(GeneratedSourceEmitter.TypeName(property.Type)).Append(' ').Append(local)
+            source.Append(indent).Append(_json.TypeName(property.Type)).Append(' ').Append(local)
                 .AppendLine(" = default!;");
             source.Append(indent).AppendLine("{");
             source.Append(indent).Append("    string[]? oacgValues = ").Append(helpers.GetHeader)
@@ -261,7 +262,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 GeneratedTypeModel item = type.ItemType!.WithNullable(false);
                 source.Append(indent).Append("        var oacgItems = new global::System.Collections.Generic.List<")
-                    .Append(GeneratedSourceEmitter.TypeName(item)).AppendLine(">();");
+                    .Append(_json.TypeName(item)).AppendLine(">();");
                 source.Append(indent).Append("        foreach (string oacgItem in ").Append(helpers.SplitHeader).AppendLine("(oacgValues))");
                 source.Append(indent).AppendLine("        {");
                 source.Append(indent).Append("            oacgItems.Add(")
@@ -285,7 +286,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 source.Append(indent).AppendLine("    else");
                 source.Append(indent).AppendLine("    {");
-                source.Append(indent).Append("        throw new global::Newtonsoft.Json.JsonSerializationException(")
+                source.Append(indent).Append("        throw new " + _json.SerializationExceptionName + "(")
                     .Append(GeneratedSourceEmitter.StringLiteral("The required response header '" + header.WireName + "' is missing."))
                     .AppendLine(");");
                 source.Append(indent).AppendLine("    }");
@@ -298,7 +299,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// An expression that converts the string <paramref name="raw"/> to the scalar <paramref name="type"/>
         /// (response headers and text bodies). A malformed value raises a JsonSerializationException.
         /// </summary>
-        private static string CreateParseExpression(
+        private string CreateParseExpression(
             OpenApiGenerationModel model,
             GeneratedTypeModel type,
             string raw,
@@ -336,6 +337,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 case GeneratedTypeKind.NamedEnum:
                     GeneratedEnumModel? enumModel = model.Enums.FirstOrDefault(
                         value => string.Equals(value.Name, type.Name, StringComparison.Ordinal));
+                    if (helpers.Json.IsSystemTextJson)
+                    {
+                        string textJson = enumModel is not null && enumModel.IsInteger
+                            ? "oacgValue"
+                            : "global::System.Text.Json.JsonSerializer.Serialize(oacgValue)";
+                        return wrap(
+                            type.Name,
+                            "global::System.Text.Json.JsonSerializer.Deserialize<" + type.Name + ">(" +
+                            textJson + ", " + helpers.JsonOptions + ")");
+                    }
+
                     string json = enumModel is not null && enumModel.IsInteger
                         ? "oacgValue"
                         : "global::Newtonsoft.Json.JsonConvert.ToString(oacgValue)";

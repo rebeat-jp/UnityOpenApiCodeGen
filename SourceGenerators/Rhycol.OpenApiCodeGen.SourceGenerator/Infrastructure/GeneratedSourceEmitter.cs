@@ -29,6 +29,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         internal static string TypeName(GeneratedTypeModel type)
         {
+            return TypeName(type, JsonSerializerProfile.Newtonsoft);
+        }
+
+        /// <summary>
+        /// C# type name of a generated type. Only the JSON-library-specific types (Any, FreeObject)
+        /// depend on the serializer profile.
+        /// </summary>
+        internal static string TypeName(GeneratedTypeModel type, JsonSerializerProfile json)
+        {
             string name;
             switch (type.Kind)
             {
@@ -68,20 +77,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     name = type.Name;
                     break;
                 case GeneratedTypeKind.Array:
-                    name = "global::System.Collections.Generic.List<" + TypeName(type.ItemType!) + ">";
+                    name = "global::System.Collections.Generic.List<" + TypeName(type.ItemType!, json) + ">";
                     break;
                 case GeneratedTypeKind.Any:
-                    name = "global::Newtonsoft.Json.Linq.JToken";
+                    name = json.AnyTypeName;
                     break;
                 case GeneratedTypeKind.Binary:
                     name = "byte[]";
                     break;
                 case GeneratedTypeKind.FreeObject:
-                    name = "global::Newtonsoft.Json.Linq.JObject";
+                    name = json.FreeObjectTypeName;
                     break;
                 case GeneratedTypeKind.Map:
                     name = "global::System.Collections.Generic.Dictionary<string, " +
-                           TypeName(type.ValueType!) + ">";
+                           TypeName(type.ValueType!, json) + ">";
                     break;
                 case GeneratedTypeKind.Union:
                     name = type.Name;

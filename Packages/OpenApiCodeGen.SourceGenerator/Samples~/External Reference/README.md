@@ -3,6 +3,10 @@
 `openapi.json` is the root OpenAPI 3.1 document and `models.yaml` is a bare
 whole-document Schema referenced by `./models.yaml`.
 
+This sample needs the libraries described in the
+[Local JSON sample](../Local%20JSON/README.md#required-libraries): by default
+Newtonsoft.Json (`com.unity.nuget.newtonsoft-json` `3.2.2`) must be installed.
+
 1. Install the base and Source Generator packages and select **Source
    Generator**.
 2. In the Generator window, select `openapi.json` and choose an output folder

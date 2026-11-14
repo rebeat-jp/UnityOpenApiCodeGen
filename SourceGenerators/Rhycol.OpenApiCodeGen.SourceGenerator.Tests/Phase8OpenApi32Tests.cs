@@ -21,9 +21,30 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     /// logical path), compiled, and exercised against a fake HttpMessageHandler (wire format and
     /// deserialization). Features that do not exist before 3.2 stay rejected in 3.0 / 3.1.
     /// </summary>
-    public sealed class Phase8OpenApi32Tests
+    public class Phase8OpenApi32Tests
     {
+        public Phase8OpenApi32Tests()
+            : this(SerializerMatrixHarness.NewtonsoftJson)
+        {
+        }
+
+        protected Phase8OpenApi32Tests(string serializer)
+        {
+            MatrixMode.Current = serializer;
+        }
+
         private const string SpecId = "0123456789abcdef0123456789abcdef";
+
+        [Fact]
+        public void TheRunUsesTheSerializerItIsNamedFor()
+        {
+            Phase4GeneratorExecution execution = Generate(
+                File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "ApiSurfaceSpecs", "openapi32.json")));
+
+            MatrixMode.AssertGeneratedFor(execution.GeneratedSource, ExpectsSystemTextJson);
+        }
+
+        protected virtual bool ExpectsSystemTextJson => false;
 
         private const string PetSchemas =
             "\"Pet\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"id\",\"name\"]," +
@@ -49,7 +70,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
         private static Phase4GeneratorExecution Generate(string spec)
         {
-            return Phase4GeneratorTestHarness.GenerateAndCompile(spec);
+            return MatrixMode.GenerateAndCompile(spec);
         }
 
         private static Diagnostic SingleDiagnostic(string spec, string id)
@@ -686,7 +707,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                         "/components/schemas/Pet")
                 });
 
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(root, bundle: bundle);
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(root, bundle: bundle);
 
             AssertOnlyIgnoredWarnings(execution, "/$self");
         }
@@ -988,7 +1009,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assembly assembly = execution.EmitAssembly();
 
             // Other has additionalProperties:false, so an unknown member of an unmapped value is invalid.
-            Newtonsoft.Json.JsonSerializationException exception = await Assert.ThrowsAsync<Newtonsoft.Json.JsonSerializationException>(
+            Exception exception = await MatrixMode.ThrowsSerializationAsync(
                 async () => await ReadAnimal(assembly, "{\"kind\":\"gizmo\",\"unexpected\":1}"));
             Assert.Contains("unexpected", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
@@ -1000,7 +1021,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             AssertClean(execution);
             Assembly assembly = execution.EmitAssembly();
 
-            Newtonsoft.Json.JsonSerializationException exception = await Assert.ThrowsAsync<Newtonsoft.Json.JsonSerializationException>(
+            Exception exception = await MatrixMode.ThrowsSerializationAsync(
                 async () => await ReadAnimal(assembly, "{\"kind\":\"gizmo\"}"));
             Assert.Contains("does not select a schema", exception.Message);
         }
@@ -1292,7 +1313,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 string bundleText = Encoding.UTF8.GetString(CanonicalSpecBundleWriter.Write(
                     graph.SpecId, graph.RawSha256, graph.Documents, graph.Edges));
 
-                Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(
                     File.ReadAllText(Path.Combine(projectRoot, "Assets", "Specs", "root.json")),
                     bundle: bundleText);
 
@@ -1400,7 +1421,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Equal("A", known!.GetType().GetProperty("Value")!.GetValue(known)!.GetType().Name);
 
             // The ignored default changes nothing: an unknown value is rejected, not looped on.
-            await Assert.ThrowsAsync<Newtonsoft.Json.JsonSerializationException>(async () => await Call(
+            await MatrixMode.ThrowsSerializationAsync(async () => await Call(
                 assembly, "getBase", _ => Phase4BodyWireHarness.Respond(HttpStatusCode.OK, "{\"kind\":\"zzz\"}"), NoArguments));
         }
 
@@ -1429,5 +1450,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
             Assert.Equal("https://api.example.test/v1/pets?tenant=t1&limit=2&q=k&api_key=s3cret", Wire(request));
         }
+    }
+
+    /// <summary>The System.Text.Json run of every test of <see cref="Phase8OpenApi32Tests"/>.</summary>
+    public sealed class Phase8OpenApi32TestsSystemTextJson : Phase8OpenApi32Tests
+    {
+        public Phase8OpenApi32TestsSystemTextJson()
+            : base(SerializerMatrixHarness.SystemTextJson)
+        {
+        }
+
+        protected override bool ExpectsSystemTextJson => true;
     }
 }

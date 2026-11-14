@@ -25,8 +25,11 @@ Add both packages to the Unity project's `Packages/manifest.json`:
 }
 ```
 
-The add-on requires Unity `6000.0` or later, base package `0.5.1`, and
-`com.unity.nuget.newtonsoft-json` `3.2.2`. Select **Source Generator (Beta)** in
+The add-on requires Unity `6000.0` or later, base package `0.5.1`, and the
+libraries of the selected HTTP / JSON combination (see
+[Choose the HTTP and JSON libraries](#choose-the-http-and-json-libraries)).
+Since 0.6.0 the add-on no longer installs `com.unity.nuget.newtonsoft-json`.
+Select **Source Generator (Beta)** in
 `Window/OpenAPI Code Generator/Settings`, then use
 `Window/OpenAPI Code Generator/Generator`.
 
@@ -38,7 +41,159 @@ The target assembly definition must directly reference
 `Assets`. `Generate` is the explicit fetch/refresh operation; the provider
 does not fetch in the background and never falls back to Docker.
 An API name that matches a fixed generated client member is rejected with
-`OACG005`; the reserved names are listed in the support matrix.
+`OACG005`; the reserved names are listed in the support matrix. A type named
+`<ApiName>_Preserve` that you declare in the same namespace as the client
+conflicts with the namespace that the generated `PreserveAttribute` lives in
+(see the support matrix).
+
+## Choose the HTTP and JSON libraries
+
+A client is generated for one HTTP implementation and one JSON serializer. The
+default is **HttpClient + Newtonsoft.Json**. All four combinations are
+implemented; the project must provide the libraries of the selected one.
+
+| Choice | What the project needs | Minimum |
+| --- | --- | --- |
+| HTTP: `HttpClient` (default) | `System.Net.Http` (normally available without installing anything) | - |
+| HTTP: `UnityWebRequest` | The Unity Web Request module (`com.unity.modules.unitywebrequest`) and `System.Net.Http`; the adapter still builds `HttpRequestMessage` / `HttpContent` and only the last step uses `UnityWebRequest` | - |
+| JSON: `Newtonsoft.Json` (default) | `com.unity.nuget.newtonsoft-json` `3.2.2`, or another Newtonsoft.Json reference | 13.0 |
+| JSON: `System.Text.Json` | UnityNuGet `org.nuget.system.text.json` (it brings `System.Text.Encodings.Web`, which the generated code needs at run time), or the DLLs through NuGetForUnity or by hand | 8.0 |
+
+**Select** the combination in `Window/OpenAPI Code Generator/Settings`, section
+**Source Generator Libraries**. Each choice shows its state (installed, missing,
+not referenced by the output assembly, too old) and a choice that is not ready
+cannot be selected. Newtonsoft.Json and the Unity Web Request module have an
+install button (`Client.Add`). System.Text.Json is shown as manual steps only:
+add the UnityNuGet scoped registry
+(`https://unitynuget-registry.openupm.com`, scope `org.nuget`) and the
+dependency `org.nuget.system.text.json` 8.0 or later. The Editor never edits
+`Packages/manifest.json` for it. A library is detected from what the output
+assembly's player references, so NuGetForUnity or manually placed DLLs are found
+too, while an Editor-only DLL is not counted. The Generator window shows the
+combination and its state, and disables **Generate** with the reason and a link
+to Settings while a library is missing. The provider checks again when
+Generate runs and returns the same guidance as the failure message. The state
+is separate from the provider's availability: a missing library never removes
+`OPENAPI_CODEGEN_SOURCE_GENERATOR`, so existing definitions are not switched
+off.
+
+The choice is stored in the definition file as the named properties
+`HttpTransport` and `JsonSerializer` of `OpenApiClientDefinitionAttribute`
+(enums `OpenApiHttpTransport { HttpClient, UnityWebRequest }` and
+`OpenApiJsonSerializer { NewtonsoftJson, SystemTextJson }`; the constructor is
+unchanged):
+
+```csharp
+[global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiClientDefinitionAttribute(
+    "petstore", "PetApi", "MyGame.Api",
+    global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.Json,
+    HttpTransport = global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiHttpTransport.UnityWebRequest,
+    JsonSerializer = global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiJsonSerializer.SystemTextJson)]
+public partial class PetApi { }
+```
+
+The Editor writes a property only when it differs from the default, so a
+definition created before 0.6.0 stays byte-identical and keeps using HttpClient
++ Newtonsoft.Json. Changing the selection does not change the `specId` or the
+client identity.
+
+### WebGL
+
+Select `UnityWebRequest` for WebGL. `System.Net.Http.HttpClient` does not work
+in a WebGL player: the Settings window warns when the active build target is
+WebGL and HttpClient is selected, and the analyzer reports warning `OACG014`
+when `UNITY_WEBGL` is defined. The code still compiles; the player simply never
+completes a request (observed in the player verification). Relative server URLs
+need an absolute base address with UnityWebRequest; pass
+`new Uri(Application.absoluteURL)` to resolve against the hosting page.
+
+### Diagnostics for the selection
+
+| ID | Severity | Reported when |
+| --- | --- | --- |
+| `OACG010` | Error | The definition names an unknown `HttpTransport` / `JsonSerializer` value, or a combination without an implementation |
+| `OACG011` | Error | The selected JSON library is not referenced (`Newtonsoft.Json.JsonConvert` or `System.Text.Json.JsonSerializer` is not found) |
+| `OACG012` | Error | The selected HTTP implementation is not referenced (`System.Net.Http.HttpClient`; `UnityEngine.Networking.UnityWebRequest` and `System.Net.Http.HttpClient` for `UnityWebRequest`) |
+| `OACG013` | Error | The referenced library is older than the minimum: Newtonsoft.Json 13.0, System.Text.Json 8.0 |
+| `OACG014` | Warning | `HttpClient` is selected while `UNITY_WEBGL` is defined |
+
+While an error applies, nothing is generated for that client. If several
+references define the same library, the highest assembly version counts.
+
+### System.Text.Json and Newtonsoft.Json
+
+The generated public API has the same shape with both serializers; these are
+the differences:
+
+| Aspect | Newtonsoft.Json | System.Text.Json |
+| --- | --- | --- |
+| `{}` / any value (`Any`) | `JToken` | `JsonElement` |
+| Free-form `type: object` | `JObject` | `System.Text.Json.Nodes.JsonObject` |
+| Open DTO members | `IDictionary<string, JToken>` with `[JsonExtensionData]` | `IDictionary<string, JsonElement>` with `[JsonExtensionData]` |
+| Raw value of a union without discriminator | `FromJToken` / `ToJToken` | `FromJsonElement` / `ToJsonElement` (a value made with `FromJsonElement` is read with default options, so the client's converters do not apply) |
+| Response that violates the contract | `Newtonsoft.Json.JsonSerializationException` | `System.Text.Json.JsonException` |
+| `<Property>Specified` and `readOnly` rules, date and integer converters | Attributes and `ShouldSerialize<Name>()` on the DTO | In the client's `JsonSerializerOptions` (`DefaultJsonTypeInfoResolver.Modifiers`); serializing a DTO with your own options does not apply them |
+| Host settings | Isolated serializers; a positive `JsonConvert.DefaultSettings.MaxDepth` overrides the depth limit 64 | No global settings; the depth limit is fixed at 64; `UnsafeRelaxedJsonEscaping` is meant for HTTP bodies, do not embed its output in HTML |
+| `$id` / `$ref` / `$values` reference metadata in responses | Accepted as a compatibility extension | Not supported |
+| Integral numbers such as `2.0`, `1e0` for integer properties | Accepted within the CLR range | Accepted within the CLR range (converters of the client); in the structural match of a union without discriminator a number with a fraction or exponent is not an integer |
+| Declared error body (`Error`, `TryGetError<T>`) | Deserialized as is; a failure is kept in `ErrorDeserializationException` | Checked like a success body first (repeated names, undeclared members of a closed DTO, integer spelling, enum values, required members); a failure leaves `Error` null and is kept in `ErrorDeserializationException` |
+
+Length constraints count Unicode code points (a surrogate pair is one
+character) with both serializers, and a repeated member name in a response is
+rejected by both. With System.Text.Json a response that contains an unpaired
+surrogate escape (such as `\ud83d`) is rejected with `JsonException`, because
+the text is not valid UTF-16.
+
+### UnityWebRequest limitations
+
+The client built for `UnityWebRequest` takes `new PetApi(Uri? baseAddress)` or
+`new PetApi(Uri? baseAddress, string baseUrl)` instead of an `HttpClient`.
+
+- The `UnityWebRequest` is created, sent and disposed on the
+  `SynchronizationContext` of the caller, which has to be the Unity main thread
+  (nothing before the send uses `ConfigureAwait(false)`). Call the client
+  methods from the main thread.
+- Cancelling the token calls `Abort()` on that context and throws
+  `OperationCanceledException`. `RequestTimeout` (`TimeSpan?`, `null` waits
+  without a limit) is rounded up to whole seconds; a timeout throws
+  `TaskCanceledException` whose `InnerException` is a `TimeoutException`, as
+  `HttpClient.Timeout` does. A network failure throws `HttpRequestException`;
+  an HTTP error status is returned, not thrown.
+- A relative server URL (`/v1`, `//host/v1`, `v1`) needs an absolute
+  `baseAddress` (the counterpart of `HttpClient.BaseAddress`); without it the
+  call throws `InvalidOperationException`. An absolute server URL needs none.
+- `ConfigureUnityWebRequest` receives every request right before it is sent
+  (certificate handler, redirect limit, ...). `HttpClientHandler` settings such
+  as `UseCookies` or client certificates do not apply.
+- UnityWebRequest merges the values of a repeated response header into one
+  comma-separated value, and the response reason phrase is not available.
+- The generated code sets every request header (cookie parameters and cookie API
+  keys go into one `Cookie` header) with `UnityWebRequest.SetRequestHeader`. When
+  Unity refuses a header, the call throws `InvalidOperationException` naming the
+  header (the original exception is the `InnerException`) instead of dropping it.
+  Which headers are refused is up to Unity and the platform: for example
+  `Host`, `Connection`, `Expect` and `Transfer-Encoding`, and headers that the
+  browser forbids on WebGL may not be sendable. The WebGL header restrictions
+  (including `Cookie` and `User-Agent`) are not verified.
+- Request and response bodies are held in memory (`byte[]`), including `Stream`
+  file parts.
+- The members `_baseAddress`, `RequestTimeout`, `ConfigureUnityWebRequest`,
+  `SendUnityWebRequestAsync`, `SetUnityRequestHeader` and
+  `AddUnityResponseHeader` are reserved API names for this transport only.
+
+### Player verification and IL2CPP stripping
+
+Issue #57 is covered for Unity `6000.3.2f1`: Standalone Win64 IL2CPP (Managed
+Stripping Minimal and High, both transports, both serializers) and WebGL
+IL2CPP (UnityWebRequest, both serializers, Minimal and High) pass all 21 probe
+checks; WebGL with HttpClient is not supported (only the Newtonsoft.Json cell was measured; the cause is the transport, so System.Text.Json is judged the same without a separate measurement). The results and what is not
+verified are in the
+[support matrix](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.md).
+So that High stripping keeps the reflection-only members, generated DTOs, enum
+wire converters, unions and their properties carry an internal
+`PreserveAttribute`, declared in the namespace
+`<generated namespace>.<ApiName>_Preserve`. A spec without DTOs, enums and
+unions generates no such attribute.
 
 ## Input and external references
 
@@ -229,11 +384,11 @@ try { await client.createPet(new Pet { Name = "x" }); }          // schema: minL
 catch (ArgumentException e) { /* request rejected before sending; e.ParamName names the argument */ }
 
 try { var pet = await client.getPet(1); }
-catch (Newtonsoft.Json.JsonSerializationException e) { /* the response violated a constraint (or the schema) */ }
+catch (Newtonsoft.Json.JsonSerializationException e) { /* the response violated a constraint (or the schema); System.Text.Json: System.Text.Json.JsonException */ }
 ```
 
 A request violation throws `ArgumentException` and the `HttpClient` is never called; a response violation throws
-`JsonSerializationException`. Messages contain the path (`$.items[2].name`) and the keyword, not the value.
+`JsonSerializationException` (`System.Text.Json.JsonException` with System.Text.Json). Messages contain the path (`$.items[2].name`) and the keyword, not the value.
 This is a behavior change for specifications that previously had these keywords rejected.
 
 ### File parameters and multipart
@@ -283,9 +438,11 @@ a `pattern` that needs .NET syntax. See the `OACG108` row of the support matrix 
 ## Generated contract and diagnostics
 
 For supported OpenAPI 3.0.*, 3.1.* and 3.2.* input (and Swagger 2.0 input, see below), the generator emits public
-mutable sealed Newtonsoft.Json DTOs, string enums with an exact wire-value converter,
-`List<T>` collections, an async `HttpClient` client, and
-`<ApiName>Exception`. Generated source is a regenerated public contract, not a
+mutable sealed DTOs (Newtonsoft.Json by default, or System.Text.Json), string enums with an exact wire-value converter,
+`List<T>` collections, an async client (`HttpClient` by default, or `UnityWebRequest`), and
+`<ApiName>Exception`. The text below describes the default Newtonsoft.Json + HttpClient output; see
+[Choose the HTTP and JSON libraries](#choose-the-http-and-json-libraries) for what differs with the other choices.
+Generated source is a regenerated public contract, not a
 hand-edited file. The full operation, parameter, schema, and response surface
 is documented in the [support matrix](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.md).
 
@@ -488,6 +645,11 @@ Bundle and semantic failures use stable diagnostics including:
 | `OACG007` | Duplicate OpenAPI client definition ID | Several client definitions use the same Spec ID |
 | `OACG008` | Unsupported OpenAPI document format | Document format other than Json (0) / Yaml (1) |
 | `OACG009` | Normalized spec bundle ID mismatch | Bundle Spec ID differs from the AdditionalFile name |
+| `OACG010` | Unsupported library selection | Unknown `HttpTransport` / `JsonSerializer` value or a combination without an implementation |
+| `OACG011` | JSON library is not referenced | The selected Newtonsoft.Json or System.Text.Json is not referenced |
+| `OACG012` | HTTP implementation is not referenced | `System.Net.Http`, or the Unity Web Request module (plus `System.Net.Http`) is missing |
+| `OACG013` | Referenced library version is too low | Newtonsoft.Json below 13.0 or System.Text.Json below 8.0 |
+| `OACG014` | HttpClient is not supported on WebGL | Warning: `HttpClient` is selected while `UNITY_WEBGL` is defined |
 | `OACG100` | Invalid OpenAPI document | Including response DTO metadata name conflicts |
 | `OACG101` | Unsupported OpenAPI element | Including identity keywords |
 | `OACG102` | Unresolved OpenAPI reference | Document or JSON Pointer target |
@@ -505,11 +667,14 @@ schema and reader rules are in
 
 ## Dependencies and provider transitions
 
-The package has one packaged analyzer DLL. Newtonsoft.Json `3.2.2`, Roslyn
-`4.3.1`, and YamlDotNet are not embedded in that DLL or in the UPM archive;
-see [Third Party Notices](Third%20Party%20Notices.md). YAML parsing in the
-Editor uses the repository's BCL-only lexer/parser, while JSON parsing uses the
-Unity Newtonsoft package.
+The package has one packaged analyzer DLL. Newtonsoft.Json, System.Text.Json,
+Roslyn `4.3.1`, and YamlDotNet are not embedded in that DLL or in the UPM
+archive, and the package declares no dependency on any of them except the base
+package; see [Third Party Notices](Third%20Party%20Notices.md). The Editor
+assembly does not reference Newtonsoft.Json either: YAML and JSON parsing in the
+Editor use the repository's BCL-only lexer/parser. The generated client needs
+the libraries of the selected combination in the project (see
+[Choose the HTTP and JSON libraries](#choose-the-http-and-json-libraries)).
 
 When Source Generator is selected and available, the base package synchronizes
 `OPENAPI_CODEGEN_SOURCE_GENERATOR` for the active `NamedBuildTarget`. Removing

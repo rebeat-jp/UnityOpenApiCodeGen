@@ -7,12 +7,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
     /// <summary>Union wrappers (oneOf / anyOf) and discriminator values of their member DTOs.</summary>
     internal sealed partial class OpenApiGenerationModelBuilder
     {
-        // Taken by the wrapper's static factory for the raw JSON form (FromJToken).
-        private static readonly string[] ReservedUnionAccessorNames = { "JToken" };
+        // Taken by the static factory of the wrapper for the raw JSON form: FromJToken (Newtonsoft.Json) or
+        // FromJsonElement (System.Text.Json).
+        private static readonly string[] ReservedNewtonsoftUnionAccessorNames = { "JToken" };
+
+        private static readonly string[] ReservedSystemTextJsonUnionAccessorNames = { "JsonElement" };
 
         private GeneratedUnionModel BuildUnion(OpenApiSemanticSchema schema, string typeName)
         {
-            var usedAccessors = new HashSet<string>(ReservedUnionAccessorNames, StringComparer.Ordinal);
+            var usedAccessors = new HashSet<string>(
+                _options.JsonSerializer == JsonSerializerKind.SystemTextJson
+                    ? ReservedSystemTextJsonUnionAccessorNames
+                    : ReservedNewtonsoftUnionAccessorNames,
+                StringComparer.Ordinal);
             var members = new List<GeneratedUnionMemberModel>(schema.UnionMembers.Count);
             for (int index = 0; index < schema.UnionMembers.Count; index++)
             {
