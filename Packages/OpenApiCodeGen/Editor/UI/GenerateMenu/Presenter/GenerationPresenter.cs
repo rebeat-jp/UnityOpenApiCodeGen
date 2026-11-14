@@ -20,6 +20,8 @@ namespace Rhycol.OpenApiCodeGen.Presenter
         int _viewGeneration;
         int _settingsRevision;
         int _providerRevision;
+        GenerationHttpTransport _httpTransport = GenerationHttpTransport.HttpClient;
+        GenerationJsonSerializer _jsonSerializer = GenerationJsonSerializer.NewtonsoftJson;
 
         public MenuPresenter()
         {
@@ -83,6 +85,7 @@ namespace Rhycol.OpenApiCodeGen.Presenter
                 GenerateApiClientDto settings = await _generateService.GetDefaultGenerateApiClientDtoAsync();
                 if (IsCurrentView(view, generation) && revision == _settingsRevision)
                 {
+                    UpdateLibrarySelection(settings);
                     // A newer provider refresh owns the selection, but must not discard
                     // the initial form values while the user has not edited them.
                     if (providerRevision != _providerRevision)
@@ -90,6 +93,7 @@ namespace Rhycol.OpenApiCodeGen.Presenter
                             settings.ApiDocumentFilePathOrUrl, settings.ApiClientOutputFolderPath);
                     _generateApiClientDto = settings;
                     view?.SetFormValue(settings);
+                    RefreshLibraryReadiness();
                 }
             }
             catch (ApplicationServiceException e)
@@ -113,6 +117,26 @@ namespace Rhycol.OpenApiCodeGen.Presenter
         {
             _settingsRevision++;
             _generateApiClientDto = generateApiClientDto;
+            RefreshLibraryReadiness();
+        }
+
+        void UpdateLibrarySelection(GenerateApiClientDto saved)
+        {
+            _httpTransport = saved.HttpTransport;
+            _jsonSerializer = saved.JsonSerializer;
+        }
+
+        /// <summary>
+        /// Shows the library line for the current provider, output folder and saved selection. The check is
+        /// synchronous and reads no settings, so it can run after any form or setting change.
+        /// </summary>
+        void RefreshLibraryReadiness()
+        {
+            _generationView?.SetLibraryReadiness(_generateService.GetLibraryReadiness(
+                _generateApiClientDto.GenerateProvider,
+                _generateApiClientDto.ApiClientOutputFolderPath,
+                _httpTransport,
+                _jsonSerializer));
         }
 
         void OnGenerateRequested(GenerateApiClientDto generateApiClientDto)
@@ -142,9 +166,11 @@ namespace Rhycol.OpenApiCodeGen.Presenter
                 GenerateApiClientDto savedSetting = await _generateService.GetDefaultGenerateApiClientDtoAsync();
                 if (IsCurrentView(view, generation) && revision == _providerRevision)
                 {
+                    UpdateLibrarySelection(savedSetting);
                     _generateApiClientDto = new GenerateApiClientDto(savedSetting.GenerateProvider,
                         _generateApiClientDto.ApiDocumentFilePathOrUrl, _generateApiClientDto.ApiClientOutputFolderPath);
                     view?.SetGenerateProvider(savedSetting.GenerateProvider);
+                    RefreshLibraryReadiness();
                 }
             }
             catch (ApplicationServiceException e)
@@ -187,6 +213,7 @@ namespace Rhycol.OpenApiCodeGen.Presenter
                     input.ApiDocumentFilePathOrUrl, input.ApiClientOutputFolderPath);
                 if (providerRevision == _providerRevision)
                 {
+                    UpdateLibrarySelection(savedSetting);
                     _generateApiClientDto = new GenerateApiClientDto(savedSetting.GenerateProvider,
                         _generateApiClientDto.ApiDocumentFilePathOrUrl, _generateApiClientDto.ApiClientOutputFolderPath);
                     operationView?.SetGenerateProvider(savedSetting.GenerateProvider);
@@ -211,6 +238,20 @@ namespace Rhycol.OpenApiCodeGen.Presenter
 
                 if (!canGenerate)
                 {
+                    return;
+                }
+
+                // Generate is disabled while the libraries are missing; this covers a request that raced the
+                // refresh. The provider checks again before it writes anything.
+                GenerationLibraryReadinessDto readiness = _generateService.GetLibraryReadiness(
+                    requestDto.GenerateProvider,
+                    requestDto.ApiClientOutputFolderPath,
+                    savedSetting.HttpTransport,
+                    savedSetting.JsonSerializer);
+                if (IsCurrentOperation()) operationView?.SetLibraryReadiness(readiness);
+                if (readiness.IsBlocking)
+                {
+                    SetOperationStatus(new FailedProgressStatus(readiness.BuildBlockingMessage()));
                     return;
                 }
 

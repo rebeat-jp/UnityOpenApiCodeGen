@@ -1,6 +1,6 @@
 {
   "name": "jp.rhycol.openapicodegen",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "displayName": "OpenApiCodeGen",
   "description": "Generate strongly typed C# REST clients from OpenAPI 3.1 JSON or YAML documents in Unity.",
   "author": "Re:Beat",
@@ -13,10 +13,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/tree/0.5.1/Packages/OpenApiCodeGen"
+    "url": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/tree/0.6.0/Packages/OpenApiCodeGen"
   },
-  "documentationUrl": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/blob/0.5.1/Packages/OpenApiCodeGen/README.md",
-  "changelogUrl": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/blob/0.5.1/Packages/OpenApiCodeGen/CHANGELOG.md",
-  "licensesUrl": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/blob/0.5.1/Packages/OpenApiCodeGen/LICENSE.md",
+  "documentationUrl": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/blob/0.6.0/Packages/OpenApiCodeGen/README.md",
+  "changelogUrl": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/blob/0.6.0/Packages/OpenApiCodeGen/CHANGELOG.md",
+  "licensesUrl": "https://github.com/rebeat-jp/UnityOpenApiCodeGen/blob/0.6.0/Packages/OpenApiCodeGen/LICENSE.md",
   "dependencies": {}
 }

@@ -1,0 +1,195 @@
+name: Source Generator Player gate
+
+# Manual IL2CPP (Linux Standalone) and WebGL Player verification (Issue #57). It is separate from the Editor gate in
+# source-generator-verify.yml, which it does not change, and it is never a release or pull request requirement.
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Exact 40-character commit SHA (empty uses the selected ref); it must be an ancestor of origin/main
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Validate trusted workflow ref and target commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      commit: ${{ steps.target.outputs.commit }}
+    steps:
+      - name: Validate target SHA before checkout
+        id: target
+        env:
+          TARGET_COMMIT: ${{ inputs.commit || github.sha }}
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo 'The Player gate must run from main.' >&2; exit 1; }
+          [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'Exact commit SHA required.' >&2; exit 1; }
+          printf 'commit=%s\n' "$TARGET_COMMIT" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enforce main ancestry before Unity credentials are used
+        env:
+          TARGET_COMMIT: ${{ steps.target.outputs.commit }}
+        run: |
+          [[ "$(git rev-parse HEAD)" == "$TARGET_COMMIT" ]] || { echo 'Checkout differs from selected commit.' >&2; exit 1; }
+          if ! git merge-base --is-ancestor "$TARGET_COMMIT" origin/main; then
+            echo 'The Player gate target must be an ancestor of origin/main.' >&2
+            exit 1
+          fi
+
+  standalone:
+    name: Linux Standalone IL2CPP (Unity 6000.3.2f1)
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    environment:
+      name: UNITY_LICENSE
+      url: https://github.com/${{ github.repository }}/commit/${{ needs.preflight.outputs.commit }}
+    concurrency:
+      group: unity-license-${{ github.repository }}
+      cancel-in-progress: false
+    env:
+      PLAYER_GATE_COMMIT: ${{ needs.preflight.outputs.commit }}
+      PLAYER_GATE_OUTPUT: ${{ github.workspace }}/artifacts/player-gate
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Build the Unity image from the pinned digest
+        run: |
+          digest="$(node -p "require('./SourceGenerators/BuildTools/CI/unity-images.json')['6000.3.2f1-linux-il2cpp']")"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Unity image digest is invalid.' >&2; exit 1; }
+          docker build \
+            --build-arg UNITY_VERSION=6000.3.2f1 --build-arg UNITY_IMAGE_VARIANT=linux-il2cpp \
+            --build-arg "UNITY_IMAGE_DIGEST=$digest" --build-arg "NODE_VERSION=$(cat .node-version)" \
+            --file SourceGenerators/BuildTools/CI/Dockerfile.player \
+            --tag openapi-player-gate:standalone SourceGenerators/BuildTools/CI
+      - name: Build and run the Standalone IL2CPP matrix
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          mkdir -p "$PLAYER_GATE_OUTPUT"
+          docker run --rm --shm-size=2g \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --env UNITY_LICENSE --env UNITY_EMAIL --env UNITY_PASSWORD \
+            --env PLAYER_GATE_OUTPUT=/workspace/artifacts/player-gate \
+            openapi-player-gate:standalone 6000.3.2f1 standalone all
+      - name: Recover artifact ownership
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" "$PLAYER_GATE_OUTPUT" || true
+      - name: Upload Standalone evidence, including failed cells
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: player-gate-standalone-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.PLAYER_GATE_OUTPUT }}
+          if-no-files-found: error
+
+  webgl-build:
+    name: WebGL build (Unity 6000.3.2f1)
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    environment:
+      name: UNITY_LICENSE
+      url: https://github.com/${{ github.repository }}/commit/${{ needs.preflight.outputs.commit }}
+    concurrency:
+      group: unity-license-${{ github.repository }}
+      cancel-in-progress: false
+    env:
+      PLAYER_GATE_OUTPUT: ${{ github.workspace }}/artifacts/player-gate
+      PLAYER_GATE_WORK: ${{ github.workspace }}/artifacts/player-gate-work
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Build the Unity image from the pinned digest
+        run: |
+          digest="$(node -p "require('./SourceGenerators/BuildTools/CI/unity-images.json')['6000.3.2f1-webgl']")"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Unity image digest is invalid.' >&2; exit 1; }
+          docker build \
+            --build-arg UNITY_VERSION=6000.3.2f1 --build-arg UNITY_IMAGE_VARIANT=webgl \
+            --build-arg "UNITY_IMAGE_DIGEST=$digest" --build-arg "NODE_VERSION=$(cat .node-version)" \
+            --file SourceGenerators/BuildTools/CI/Dockerfile.player \
+            --tag openapi-player-gate:webgl SourceGenerators/BuildTools/CI
+      - name: Build the WebGL matrix
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          mkdir -p "$PLAYER_GATE_OUTPUT" "$PLAYER_GATE_WORK"
+          docker run --rm --shm-size=2g \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --env UNITY_LICENSE --env UNITY_EMAIL --env UNITY_PASSWORD \
+            --env PLAYER_GATE_OUTPUT=/workspace/artifacts/player-gate \
+            --env PLAYER_GATE_WORK=/workspace/artifacts/player-gate-work \
+            openapi-player-gate:webgl 6000.3.2f1 webgl build
+      - name: Recover artifact ownership
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" "$PLAYER_GATE_OUTPUT" "$PLAYER_GATE_WORK" || true
+      - name: Keep only the WebGL builds that the browser job needs
+        if: always()
+        run: |
+          rm -rf "$PLAYER_GATE_WORK/project" "$PLAYER_GATE_WORK/browser-profile"
+      - name: Upload WebGL results and builds
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: player-gate-webgl-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.PLAYER_GATE_OUTPUT }}
+            ${{ env.PLAYER_GATE_WORK }}
+          if-no-files-found: error
+
+  webgl-run:
+    name: WebGL run in a headless browser
+    needs: [preflight, webgl-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PLAYER_GATE_OUTPUT: ${{ github.workspace }}/artifacts/player-gate
+      PLAYER_GATE_WORK: ${{ github.workspace }}/artifacts/player-gate-work
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v4
+        with:
+          name: player-gate-webgl-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ github.workspace }}/artifacts
+      - name: Run the WebGL builds in the runner's Chrome
+        env:
+          PV_BROWSER: /usr/bin/google-chrome
+        run: |
+          node SourceGenerators/scripts/verify-player.js \
+            --unity 6000.3.2f1 --cells webgl --phase run \
+            --work-dir "$PLAYER_GATE_WORK" --output "$PLAYER_GATE_OUTPUT"
+      - name: Upload WebGL evidence, including failed cells
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: player-gate-webgl-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.PLAYER_GATE_OUTPUT }}
+          if-no-files-found: error

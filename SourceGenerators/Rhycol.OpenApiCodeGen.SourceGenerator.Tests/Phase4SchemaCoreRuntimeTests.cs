@@ -785,7 +785,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         {
             Phase4GeneratorExecution execution = Generate(EchoDocument(DirectionalSchemas));
             Assembly assembly = Load(execution);
-            Type preserve = assembly.GetType(Ns + "PreserveAttribute", true)!;
+            Type preserve = assembly.GetTypes().Single(static type => type.Name == "PreserveAttribute");
             Assert.False(preserve.IsPublic);
             MethodInfo method = assembly.GetType(Ns + "Body", true)!.GetMethod("ShouldSerializeId")!;
             Assert.Contains(method.GetCustomAttributes(), attribute => attribute.GetType() == preserve);
