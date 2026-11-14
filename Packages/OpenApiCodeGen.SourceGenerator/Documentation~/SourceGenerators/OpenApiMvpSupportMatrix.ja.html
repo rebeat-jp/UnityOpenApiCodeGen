@@ -2,10 +2,10 @@
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
-<title>OpenAPI MVP 対応表</title>
+<title>OpenAPI 対応表</title>
 <style>body{font:16px/1.7 system-ui,sans-serif;color:#20242c;background:#fff;max-width:1080px;margin:0 auto;padding:32px 24px;overflow-wrap:anywhere}a{color:#0756a5}h1,h2,h3{line-height:1.3}h2{margin-top:2em}table{display:block;overflow:auto;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #ccd2da;padding:9px 12px;text-align:left;vertical-align:top}th{background:#f1f4f8}pre{padding:16px;background:#f1f4f8;overflow:auto}code{font-family:ui-monospace,monospace}blockquote{border-left:4px solid #ccd2da;margin-left:0;padding-left:16px}img{max-width:100%}</style>
 </head><body><main>
-<h1 id="openapi-mvp-対応表">OpenAPI MVP 対応表</h1>
+<h1 id="openapi-対応表">OpenAPI 対応表</h1>
 <p><a href="OpenApiMvpSupportMatrix.html">元の対応表</a></p>
 <p><strong>Source Generator (Beta)</strong> による生成はベータです。
 利用前にこの対応表で入力仕様と生成されるAPIの制約を確認してください。</p>
@@ -14,15 +14,16 @@
 GitHub Actionsや外部仕様へのリンクを開く場合はネット接続が必要です。</p>
 <h2 id="目的と対象読者">目的と対象読者</h2>
 <p>この文書は、<code>Rhycol.OpenApiCodeGen.SourceGenerator</code>で生成できるOpenAPI documentの
-MVP範囲を、API仕様の作成者とUnity利用者が判断するためのmatrixです。
+対応範囲を、API仕様の作成者とUnity利用者が判断するためのmatrixです。
 対象はSource Generator providerで選択したlocal <code>.json</code>、<code>.yaml</code>、<code>.yml</code>
-document（extension case-insensitive）とHTTP(S) URLです。Editorは参照グラフ全体を
+document（extension case-insensitive）とHTTP(S) URLです。documentの版はSwagger 2.0（<code>swagger: &quot;2.0&quot;</code>）とOpenAPI 3.0／3.1／3.2です。Editorは参照グラフ全体を
 canonical Normalized Spec Bundle v2へ正規化し、Analyzerは1 specIdにつき1 AdditionalFile
 だけを読みます。Bundle v1はAnalyzerの後方互換入力として読み込めます。</p>
 <p>生成器は、wire formatに影響する未対応要素を黙って省略または推測しません。
 Unsupportedに分類された要素と、Partialの制約外へ出た要素は診断を報告し、生成を完了しません。
-入力・bundle・definitionの既存診断<code>OACG001</code>–<code>OACG009</code>に加え、semantic generationでは
-<code>OACG100</code>–<code>OACG106</code>を使用します。型名の重複をsuffixで解消した場合はwarning <code>OACG107</code>を、無視した要素があればwarning <code>OACG108</code>を報告します。</p>
+入力・bundle・definitionの診断<code>OACG001</code>–<code>OACG009</code>に加え、semantic generationではError <code>OACG100</code>–<code>OACG106</code>を使用します。型名の重複をsuffixで解消した場合はWarning <code>OACG107</code>を報告します。
+意図して無視する要素（webhooksなどclientの呼び出しに無関係なもの、仕様上無視すべきheader parameterなど）は、wire contractを変えないWarning <code>OACG108</code>で報告します。
+診断IDごとの報告場面は「診断」、ギャップ別の最終状況と対象外の項目は「ギャップ別の最終状況」「対象外の項目」の節にまとめています。</p>
 <table>
 <thead>
 <tr>
@@ -40,7 +41,7 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 </tr>
 <tr>
 <td>非対応</td>
-<td>MVPの対象外です。診断となります。</td>
+<td>対象外です。診断となります。</td>
 </tr>
 </tbody></table>
 <h2 id="入力と参照">入力と参照</h2>
@@ -662,168 +663,6 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 </tr>
 </tbody></table>
 <p>status codeはASCII数字で検証します。属性付きのジェネリックclassは<code>OACG005</code>で拒否します。</p>
-<h2 id="openapi-32">OpenAPI 3.2</h2>
-<p>OpenAPI 3.2のdocument（<code>openapi: 3.2.*</code>）は、3.1と同じJSON Schema 2020-12 dialectとschema規則で処理します。3.2だけの項目は3.0／3.1では従来どおり診断になります（<code>query</code>は<code>OACG101</code>など）。</p>
-<table>
-<thead>
-<tr>
-<th>項目</th>
-<th>対応状況</th>
-<th>条件・制約</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>Path Itemの<code>query</code></td>
-<td>対応</td>
-<td>安全なmethodで本文を持ちます。<code>new HttpMethod(&quot;QUERY&quot;)</code>で送り、requestBody・parameter・responseは他のoperationと同じです。<code>operationId</code>の省略時は<code>GET</code>などと同じ規則で命名します（<code>QueryPetsSearch</code>）。3.0／3.1の<code>query</code>は位置付き<code>OACG101</code>です。</td>
-</tr>
-<tr>
-<td>Path Itemの<code>additionalOperations</code></td>
-<td>対応</td>
-<td>method名（HTTP token）からOperationへのmapで、各entryにクライアントメソッドを生成し、methodは<strong>書かれたとおりの表記</strong>（大小文字を含む）で送ります。tokenがHTTP tokenでない場合、<code>GET</code>・<code>PUT</code>・<code>POST</code>・<code>DELETE</code>・<code>OPTIONS</code>・<code>HEAD</code>・<code>PATCH</code>・<code>TRACE</code>・<code>QUERY</code>（大小文字を区別せず比較）と重複する場合は、そのentryの位置で<code>OACG100</code>です。<code>operationId</code>がなければ、method token（英数字だけを残し、先頭だけ大文字）とpathから決定的に命名し（<code>PURGE /pets</code>は<code>PurgePets</code>）、entryはtokenの序数順に処理します。名前の衝突は既存の<code>operationId</code>の一意化（連番）に従い、明示した<code>operationId</code>の重複は<code>OACG106</code>です。</td>
-</tr>
-<tr>
-<td><code>in: querystring</code> parameter</td>
-<td>一部対応</td>
-<td><code>content</code>が<strong>クエリ文字列全体</strong>を表します（<code>schema</code>との併記は<code>OACG100</code>、<code>content</code>は1つのmedia type）。<code>application/x-www-form-urlencoded</code>はobject schemaで、各propertyをform-urlencoded本文と同じ規則（<code>encoding</code>の<code>style</code>／<code>explode</code>／<code>allowReserved</code>）で直列化し<code>?</code>の後ろに付けます。具体的なJSON media typeは、JSON textをpercent-encodeしたものがクエリ文字列です。それ以外のmedia typeは<code>OACG101</code>です。1つのoperationに複数の<code>in: querystring</code>、または<code>in: query</code>との併記は、<code>OACG105</code>です。media typeは<code>components.mediaTypes</code>への<code>$ref</code>でも宣言できます。</td>
-</tr>
-<tr>
-<td>tagsの<code>parent</code>／<code>kind</code>／<code>summary</code></td>
-<td>対応</td>
-<td>ドキュメント専用で、生成コードは変わりません。形式（文字列）と、<code>parent</code>が宣言済みのtagを指し循環しないことだけを検証します（違反は<code>OACG100</code>）。tag名の重複も<code>OACG100</code>ですが、これは3.2だけの検査で、3.0／3.1では検査しません。</td>
-</tr>
-<tr>
-<td>root <code>$self</code></td>
-<td>一部対応</td>
-<td>受理します。形式は文字列で、fragmentを持てません（違反は<code>OACG100</code>）。内部の<code>$ref</code>は基準URIに依存しません。他のdocumentへの相対<code>$ref</code>は、<code>$self</code>ではなくdocumentファイルの位置を基準に解決するため、参照先のdocumentがある場合（Bundleが複数documentのとき）だけ<code>$self</code>の位置で<code>OACG108</code>を報告します。</td>
-</tr>
-<tr>
-<td>media typeの<code>itemSchema</code></td>
-<td>一部対応</td>
-<td>streaming（SSEと逐次処理）は対象外です。<code>text/event-stream</code>に<code>itemSchema</code>があれば<code>OACG101</code>、順次media type以外（<code>application/json</code>など）の<code>itemSchema</code>も<code>OACG101</code>です。<code>application/jsonl</code>・<code>application/x-ndjson</code>・<code>application/ndjson</code>・<code>application/json-seq</code>・<code>application/geo+json-seq</code>の<code>itemSchema</code>は解釈せず<code>OACG108</code>で通知し、本文は従来どおり<code>byte[]</code>（binary）です（itemごとの読み取りは行いません）。<code>itemSchema</code>は解析しないため、その中の<code>$ref</code>はEditorも収集せず、DTOも生成しません。Media Type Objectで<code>encoding</code>と<code>prefixEncoding</code>／<code>itemEncoding</code>を併記すると<code>OACG100</code>です（仕様上の禁止）。単独の<code>prefixEncoding</code>／<code>itemEncoding</code>（Media Type Object）と、Encoding Objectの入れ子の<code>encoding</code>／<code>prefixEncoding</code>／<code>itemEncoding</code>は<code>OACG108</code>で無視します。<code>itemSchema</code>は3.0／3.1では従来どおり未知の項目として無視します。</td>
-</tr>
-<tr>
-<td>discriminatorの<code>defaultMapping</code></td>
-<td>対応</td>
-<td>discriminatorの値がmappingのどれにも一致しない、またはdiscriminatorの項目がない・文字列でないときに使うメンバーです。値はスキーマ名または参照で、<code>oneOf</code>／<code>anyOf</code>のメンバー（継承形のbaseでは子または参照先のschema）でなければ<code>OACG101</code>です。変換器は該当するJSON objectをそのメンバー型へ読みます（応答の契約検査も同じ。メンバー自身のschemaに合わない本文は従来どおり拒否します）。指定がなければ、従来どおり未知の値は<code>JsonSerializationException</code>です。書き出す値はそのメンバーの最初のdiscriminator値で、読んだ未知の値は保持しません。3.0／3.1では従来どおり無視します。</td>
-</tr>
-<tr>
-<td><code>components.mediaTypes</code></td>
-<td>一部対応</td>
-<td><code>content</code>の各media typeを<code>$ref: &#39;#/components/mediaTypes/&lt;name&gt;&#39;</code>で参照できます（requestBody・成功／エラーresponse・<code>in: querystring</code>のcontent。他のdocumentの<code>&lt;file&gt;#/components/mediaTypes/&lt;name&gt;</code>も可）。componentはobjectと、あればそのschemaを検証し、参照元の<code>content</code>のキーがmedia typeを決めます。通常のparameterの<code>content</code>からの<code>$ref</code>は<code>OACG101</code>です。3.0／3.1の<code>components.mediaTypes</code>は<code>OACG101</code>です。</td>
-</tr>
-<tr>
-<td><code>oauth2</code>の<code>deviceAuthorization</code> flowと<code>oauth2MetadataUrl</code></td>
-<td>一部対応</td>
-<td>受理し、URL・scopesをXML docに出すだけです（<code>deviceAuthorizationUrl</code>と<code>tokenUrl</code>が必須、なければ<code>OACG100</code>）。tokenの取得・更新とmetadataの取得は行わず、外から渡されたtokenをBearerで送ります。security schemeの<code>deprecated</code>は形式だけ検証します。3.0／3.1の<code>deviceAuthorization</code>は未知のflowとして<code>OACG100</code>です。</td>
-</tr>
-<tr>
-<td>Responseの<code>summary</code>と省略可能な<code>description</code></td>
-<td>対応</td>
-<td>3.2ではResponseの<code>summary</code>を受理し（ドキュメント専用）、<code>description</code>を省略できます。3.0／3.1の<code>summary</code>は<code>OACG101</code>、<code>description</code>の省略は<code>OACG100</code>です。</td>
-</tr>
-<tr>
-<td>その他の3.2の項目</td>
-<td>対応</td>
-<td>Serverの<code>name</code>、Exampleの<code>dataValue</code>／<code>serializedValue</code>、XML Objectの<code>nodeType</code>、Tag Objectの<code>summary</code>は、ドキュメント専用として黙って受理します。</td>
-</tr>
-</tbody></table>
-<h2 id="swagger-20">Swagger 2.0</h2>
-<p>Swagger 2.0のdocument（<code>swagger: &quot;2.0&quot;</code>）は、意味解析の前にOpenAPI 3.0（<code>3.0.3</code>）の等価なtreeへ正規化してから、3.0と同じ処理（parser、生成model、出力、診断、実行時検証）に渡します。専用の生成器はなく、生成されるクライアントは、同じ内容を手で書いたOpenAPI 3.0 documentのものと一致します。YAMLのSwagger 2.0も同じです。<code>openapi</code>と<code>swagger</code>を併記したdocument、<code>&quot;2.0&quot;</code>以外の<code>swagger</code>の値（<code>&quot;1.2&quot;</code>、数値の<code>2.0</code>など）は、<code>swagger</code>の位置で<code>OACG101</code>です。</p>
-<table>
-<thead>
-<tr>
-<th>項目</th>
-<th>対応状況</th>
-<th>条件・制約</th>
-</tr>
-</thead>
-<tbody><tr>
-<td><code>host</code>・<code>basePath</code>・<code>schemes</code></td>
-<td>一部対応</td>
-<td><code>servers</code>になります。<code>schemes</code>の各値が1つのserverで、<code>https://&lt;host&gt;&lt;basePath&gt;</code>の形です（<code>schemes</code>の順序が<code>servers</code>の順序です）。<code>schemes</code>がなければ<code>https</code>、<code>basePath</code>が<code>/</code>または省略なら末尾の<code>/</code>なし、<code>basePath</code>の末尾の<code>/</code>は除きます。<code>host</code>がなければ相対serverで、<code>basePath</code>（なければ<code>/</code>）だけです（<code>schemes</code>は使いません）。<code>host</code>も<code>basePath</code>も<code>schemes</code>もなければ<code>servers</code>は付けません。operationの<code>schemes</code>は、<code>host</code>があればそのoperationのserversになります（<code>host</code>がなければ相対serverに適用できないため、<code>schemes</code>の位置で<code>OACG108</code>を報告して無視します）。<code>ws</code>／<code>wss</code>は他の非HTTP(S) serverと同じく診断です。</td>
-</tr>
-<tr>
-<td><code>definitions</code>・<code>parameters</code>・<code>responses</code>・<code>securityDefinitions</code></td>
-<td>対応</td>
-<td>それぞれ<code>components.schemas</code>・<code>components.parameters</code>・<code>components.responses</code>・<code>components.securitySchemes</code>になります。<code>parameters</code>のうち<code>in: body</code>／<code>in: formData</code>は、使う側のoperationの<code>requestBody</code>になるため、componentにはなりません（使われないbody／formDataのparameterは検証しません）。</td>
-</tr>
-<tr>
-<td><code>$ref</code></td>
-<td>対応</td>
-<td><code>#/definitions/X</code>は<code>#/components/schemas/X</code>、<code>#/parameters/X</code>は<code>#/components/parameters/X</code>、<code>#/responses/X</code>は<code>#/components/responses/X</code>に書き換えます。外部の<code>file.json#/definitions/X</code>も同じです（Editorは3.0と同じ規則で参照先のdocumentを集めます）。<code>#/definitions/</code>以外（schema）、<code>#/parameters/</code>・<code>#/responses/</code>以外（それぞれのparameter・response）を指す<code>$ref</code>、Path Itemの<code>$ref</code>は<code>OACG101</code>です。<code>$ref</code>の兄弟項目は3.0の規則（<code>description</code>、<code>x-nullable</code>→<code>nullable</code>など）に従います。</td>
-</tr>
-<tr>
-<td>複数document（Swagger 2.0同士）</td>
-<td>一部対応</td>
-<td>Swagger 2.0のdocumentからSwagger 2.0のdocumentの<code>definitions</code>・<code>parameters</code>・<code>responses</code>を参照できます。参照先がOpenAPI 3.xのdocument、<code>openapi</code>も<code>swagger</code>も持たないbare schemaのfile、また3.xのdocumentからSwagger 2.0のdocumentへの参照は、参照の位置で<code>OACG101</code>です（版を混ぜられません）。他のdocumentのbody／formData parameterを<code>$ref</code>で使うことも<code>OACG101</code>です。</td>
-</tr>
-<tr>
-<td><code>in: body</code> parameter</td>
-<td>対応</td>
-<td><code>requestBody</code>になります。media typeはoperationの<code>consumes</code>、なければdocumentの<code>consumes</code>、なければ<code>application/json</code>で、列挙した各media typeに同じschemaを付けます。<code>description</code>・<code>required</code>は<code>requestBody</code>へ移ります。<code>consumes</code>にxmlがJSONと併記されている場合はxmlを<code>OACG108</code>で無視します（上の<code>produces</code>の行と同じ）。<code>schema</code>がない、またはbodyが複数なら<code>OACG100</code>、<code>in: formData</code>との併記も<code>OACG100</code>です。path itemのbody parameterは、operationの同名・同<code>in</code>のparameterで置き換わります。</td>
-</tr>
-<tr>
-<td><code>in: formData</code> parameter</td>
-<td>対応</td>
-<td>1つのobject schemaの<code>requestBody</code>になります（各parameterがproperty、<code>required: true</code>のものが<code>required</code>、<code>description</code>はpropertyのdescription、<code>type: file</code>は<code>type: string</code>／<code>format: binary</code>、<code>additionalProperties: false</code>）。<code>type: file</code>のparameterがあれば<code>multipart/form-data</code>、なければ<code>consumes</code>が挙げる<code>multipart/form-data</code>／<code>application/x-www-form-urlencoded</code>（両方なら両方）、どちらもなければ<code>application/x-www-form-urlencoded</code>です。url-encodedで配列のparameterは<code>collectionFormat</code>を<code>encoding</code>の<code>style</code>／<code>explode</code>に写します（下表の<code>query</code>と同じ。省略時の<code>csv</code>も含みます）。multipartの配列は要素ごとにpartを繰り返し、<code>collectionFormat</code>は使いません。parameter名の重複は<code>OACG100</code>です。</td>
-</tr>
-<tr>
-<td>非body parameter</td>
-<td>対応</td>
-<td><code>type</code>・<code>format</code>・<code>items</code>・<code>enum</code>・<code>default</code>・<code>minimum</code>／<code>maximum</code>／<code>exclusiveMinimum</code>／<code>exclusiveMaximum</code>・<code>minLength</code>／<code>maxLength</code>・<code>pattern</code>・<code>minItems</code>／<code>maxItems</code>・<code>uniqueItems</code>・<code>multipleOf</code>は<code>schema</code>へ移ります（<code>x-nullable: true</code>は<code>nullable: true</code>）。<code>name</code>・<code>in</code>・<code>description</code>・<code>required</code>・<code>allowEmptyValue</code>・<code>x-*</code>はそのままです。<code>type</code>がない、<code>type: file</code>（formData以外）、<code>in</code>が<code>query</code>／<code>header</code>／<code>path</code>／<code>formData</code>／<code>body</code>以外（<code>cookie</code>を含みます）は<code>OACG100</code>です。path itemのparameterはpath itemに残り、3.0と同じくoperationのparameterが同名・同<code>in</code>のものを置き換えます。</td>
-</tr>
-<tr>
-<td><code>collectionFormat</code></td>
-<td>一部対応</td>
-<td>配列parameterだけに効きます（省略時は<code>csv</code>）。<code>query</code>は、<code>csv</code>→<code>style: form</code>＋<code>explode: false</code>、<code>ssv</code>→<code>spaceDelimited</code>、<code>pipes</code>→<code>pipeDelimited</code>、<code>multi</code>→<code>explode: true</code>（<code>form</code>の既定）です。<code>path</code>・<code>header</code>は<code>csv</code>（<code>simple</code>、既定）だけで、他の値は<code>OACG101</code>です。<code>tsv</code>は3.0に相当する表現がなく、どこでも<code>OACG101</code>です（<code>collectionFormat</code>の位置）。<code>items</code>の入れ子の<code>collectionFormat</code>は<code>csv</code>以外が<code>OACG101</code>です。</td>
-</tr>
-<tr>
-<td><code>produces</code>と応答</td>
-<td>対応</td>
-<td>responseの<code>schema</code>は、operationの<code>produces</code>、なければdocumentの<code>produces</code>の各media typeの<code>content</code>へ付きます（なければ<code>application/json</code>、<code>type: file</code>なら<code>application/octet-stream</code>）。<code>schema</code>のないresponseは<code>content</code>を持ちません。<code>components.responses</code>はdocumentの<code>produces</code>だけを使います（operationごとの<code>produces</code>は参照元で変えられません）。<code>examples</code>（media typeごとの例）はドキュメント専用なので黙って捨てます。<code>produces</code>／<code>consumes</code>に<code>application/xml</code>とJSONが併記され、schemaがobject・arrayの場合、xmlの項目は<code>OACG108</code>で無視してJSONで生成します（位置は<code>in: body</code>ならそのparameter、応答なら<code>schema</code>です。xmlだけなら<code>OACG101</code>です）。</td>
-</tr>
-<tr>
-<td>応答の<code>type: file</code></td>
-<td>対応</td>
-<td><code>type: string</code>／<code>format: binary</code>になり、3.0と同じく<code>byte[]</code>で受け取ります。</td>
-</tr>
-<tr>
-<td>応答の<code>headers</code></td>
-<td>対応</td>
-<td>Header Objectになり、<code>type</code>・<code>format</code>・<code>items</code>・<code>enum</code>などは<code>schema</code>へ移ります。<code>description</code>は残ります。配列の<code>collectionFormat</code>は<code>csv</code>だけです。</td>
-</tr>
-<tr>
-<td><code>securityDefinitions</code></td>
-<td>対応</td>
-<td><code>basic</code>→<code>type: http</code>＋<code>scheme: basic</code>、<code>apiKey</code>→そのまま、<code>oauth2</code>→<code>flows</code>です。flowは<code>implicit</code>→<code>implicit</code>、<code>password</code>→<code>password</code>、<code>application</code>→<code>clientCredentials</code>、<code>accessCode</code>→<code>authorizationCode</code>で、<code>authorizationUrl</code>・<code>tokenUrl</code>・<code>scopes</code>（なければ空）を移します。未知のflowは<code>OACG100</code>、上記以外の<code>type</code>は<code>OACG101</code>です。<code>security</code>（document・operation）は3.0と同じで、資格情報の扱いは「Security」の節に従います。</td>
-</tr>
-<tr>
-<td>schemaの項目</td>
-<td>対応</td>
-<td><code>x-nullable: true</code>→<code>nullable: true</code>（真偽値以外は<code>OACG100</code>）、文字列の<code>discriminator</code>→<code>{ propertyName }</code>（継承形のbaseとして扱います）、<code>type: file</code>→<code>type: string</code>／<code>format: binary</code>です。<code>allOf</code>・<code>readOnly</code>・<code>example</code>・<code>xml</code>・<code>externalDocs</code>・制約キーワード・<code>x-*</code>はそのまま3.0のschemaとして処理します。</td>
-</tr>
-<tr>
-<td>document直下の<code>info</code>・<code>tags</code>・<code>externalDocs</code>・<code>x-*</code></td>
-<td>対応</td>
-<td>3.0にも同じ項目があるため、そのまま受理します（ドキュメント専用で、診断はありません）。<code>x-ms-*</code>などのベンダー拡張も他の<code>x-*</code>と同じく黙って無視します（<code>x-ms-paths</code>のようにpathを増やす拡張は解釈しません）。それ以外の未知の項目は、3.0と同じく、項目を知っているobjectで診断になります。</td>
-</tr>
-<tr>
-<td>診断の位置</td>
-<td>対応</td>
-<td>正規化したtreeの各nodeは、元のSwagger 2.0 nodeの行・桁・logical pathを持ちます。診断（<code>OACG100</code>／<code>OACG101</code>／<code>OACG102</code>／<code>OACG108</code>など）は、書いたSwagger 2.0の位置を指します。例: <code>definitions</code>のschemaの誤りは<code>/definitions/X/...</code>、formData parameterの誤りは<code>/paths/~1p/post/parameters/N</code>、body parameterのschemaは<code>/paths/~1p/post/parameters/N/schema/...</code>、応答のschemaは<code>/paths/~1p/get/responses/200/schema</code>です。複数のmedia typeへ複製したschemaは、どれも同じ元のnodeを指します。formData parameterをまとめたobject schema・<code>requestBody</code>の誤りは、最初のformData parameterの位置です。</td>
-</tr>
-<tr>
-<td><code>OACG101</code>の対象</td>
-<td>一部対応</td>
-<td>3.0に相当する表現がないものは、黙って落とさず<code>OACG101</code>です: <code>collectionFormat: tsv</code>、<code>path</code>／<code>header</code>の<code>csv</code>以外の<code>collectionFormat</code>、Path Itemの<code>$ref</code>、<code>#/definitions/</code>・<code>#/parameters/</code>・<code>#/responses/</code>以外を指す<code>$ref</code>、複数documentの版の混在、他documentのbody／formData parameterの参照、<code>oauth2</code>・<code>basic</code>・<code>apiKey</code>以外の<code>securityDefinitions</code>のtype。</td>
-</tr>
-<tr>
-<td>既存の別の生成器</td>
-<td>対応</td>
-<td><code>GenerationService.GenerateFromApiDocument</code>が使う、Phase 3以前の別のSwagger用の生成器（<code>SwaggerCSharpClientFileGenerator</code>）は、そのまま残しています。Source Generatorの入口（<code>ApiClientCodeGenerator</code>）は使わず、Swagger 2.0は常にこの節の正規化とPhase 4のpipelineを通ります。</td>
-</tr>
-</tbody></table>
 <h2 id="security">Security</h2>
 <table>
 <thead>
@@ -1060,6 +899,482 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 OpenAPI 3.0では既存互換として<code>nullable</code>も扱います。</p>
 <p>リクエストJSONの<code>format: date</code>は<code>yyyy-MM-dd</code>へ変換します。公開型の<code>DateTime</code>は維持し、
 <code>date-time</code>の<code>DateTimeOffset</code>にはdate用converterを適用しません。</p>
+<h2 id="openapi-32">OpenAPI 3.2</h2>
+<p>OpenAPI 3.2のdocument（<code>openapi: 3.2.*</code>）は、3.1と同じJSON Schema 2020-12 dialectとschema規則で処理します。3.2だけの項目は3.0／3.1では従来どおり診断になります（<code>query</code>は<code>OACG101</code>など）。</p>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>対応状況</th>
+<th>条件・制約</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Path Itemの<code>query</code></td>
+<td>対応</td>
+<td>安全なmethodで本文を持ちます。<code>new HttpMethod(&quot;QUERY&quot;)</code>で送り、requestBody・parameter・responseは他のoperationと同じです。<code>operationId</code>の省略時は<code>GET</code>などと同じ規則で命名します（<code>QueryPetsSearch</code>）。3.0／3.1の<code>query</code>は位置付き<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td>Path Itemの<code>additionalOperations</code></td>
+<td>対応</td>
+<td>method名（HTTP token）からOperationへのmapで、各entryにクライアントメソッドを生成し、methodは<strong>書かれたとおりの表記</strong>（大小文字を含む）で送ります。tokenがHTTP tokenでない場合、<code>GET</code>・<code>PUT</code>・<code>POST</code>・<code>DELETE</code>・<code>OPTIONS</code>・<code>HEAD</code>・<code>PATCH</code>・<code>TRACE</code>・<code>QUERY</code>（大小文字を区別せず比較）と重複する場合は、そのentryの位置で<code>OACG100</code>です。<code>operationId</code>がなければ、method token（英数字だけを残し、先頭だけ大文字）とpathから決定的に命名し（<code>PURGE /pets</code>は<code>PurgePets</code>）、entryはtokenの序数順に処理します。名前の衝突は既存の<code>operationId</code>の一意化（連番）に従い、明示した<code>operationId</code>の重複は<code>OACG106</code>です。</td>
+</tr>
+<tr>
+<td><code>in: querystring</code> parameter</td>
+<td>一部対応</td>
+<td><code>content</code>が<strong>クエリ文字列全体</strong>を表します（<code>schema</code>との併記は<code>OACG100</code>、<code>content</code>は1つのmedia type）。<code>application/x-www-form-urlencoded</code>はobject schemaで、各propertyをform-urlencoded本文と同じ規則（<code>encoding</code>の<code>style</code>／<code>explode</code>／<code>allowReserved</code>）で直列化し<code>?</code>の後ろに付けます。具体的なJSON media typeは、JSON textをpercent-encodeしたものがクエリ文字列です。それ以外のmedia typeは<code>OACG101</code>です。1つのoperationに複数の<code>in: querystring</code>、または<code>in: query</code>との併記は、<code>OACG105</code>です。media typeは<code>components.mediaTypes</code>への<code>$ref</code>でも宣言できます。</td>
+</tr>
+<tr>
+<td>tagsの<code>parent</code>／<code>kind</code>／<code>summary</code></td>
+<td>対応</td>
+<td>ドキュメント専用で、生成コードは変わりません。形式（文字列）と、<code>parent</code>が宣言済みのtagを指し循環しないことだけを検証します（違反は<code>OACG100</code>）。tag名の重複も<code>OACG100</code>ですが、これは3.2だけの検査で、3.0／3.1では検査しません。</td>
+</tr>
+<tr>
+<td>root <code>$self</code></td>
+<td>一部対応</td>
+<td>受理します。形式は文字列で、fragmentを持てません（違反は<code>OACG100</code>）。内部の<code>$ref</code>は基準URIに依存しません。他のdocumentへの相対<code>$ref</code>は、<code>$self</code>ではなくdocumentファイルの位置を基準に解決するため、参照先のdocumentがある場合（Bundleが複数documentのとき）だけ<code>$self</code>の位置で<code>OACG108</code>を報告します。</td>
+</tr>
+<tr>
+<td>media typeの<code>itemSchema</code></td>
+<td>一部対応</td>
+<td>streaming（SSEと逐次処理）は対象外です。<code>text/event-stream</code>に<code>itemSchema</code>があれば<code>OACG101</code>、順次media type以外（<code>application/json</code>など）の<code>itemSchema</code>も<code>OACG101</code>です。<code>application/jsonl</code>・<code>application/x-ndjson</code>・<code>application/ndjson</code>・<code>application/json-seq</code>・<code>application/geo+json-seq</code>の<code>itemSchema</code>は解釈せず<code>OACG108</code>で通知し、本文は従来どおり<code>byte[]</code>（binary）です（itemごとの読み取りは行いません）。<code>itemSchema</code>は解析しないため、その中の<code>$ref</code>はEditorも収集せず、DTOも生成しません。Media Type Objectで<code>encoding</code>と<code>prefixEncoding</code>／<code>itemEncoding</code>を併記すると<code>OACG100</code>です（仕様上の禁止）。単独の<code>prefixEncoding</code>／<code>itemEncoding</code>（Media Type Object）と、Encoding Objectの入れ子の<code>encoding</code>／<code>prefixEncoding</code>／<code>itemEncoding</code>は<code>OACG108</code>で無視します。<code>itemSchema</code>は3.0／3.1では従来どおり未知の項目として無視します。</td>
+</tr>
+<tr>
+<td>discriminatorの<code>defaultMapping</code></td>
+<td>対応</td>
+<td>discriminatorの値がmappingのどれにも一致しない、またはdiscriminatorの項目がない・文字列でないときに使うメンバーです。値はスキーマ名または参照で、<code>oneOf</code>／<code>anyOf</code>のメンバー（継承形のbaseでは子または参照先のschema）でなければ<code>OACG101</code>です。変換器は該当するJSON objectをそのメンバー型へ読みます（応答の契約検査も同じ。メンバー自身のschemaに合わない本文は従来どおり拒否します）。指定がなければ、従来どおり未知の値は<code>JsonSerializationException</code>です。書き出す値はそのメンバーの最初のdiscriminator値で、読んだ未知の値は保持しません。3.0／3.1では従来どおり無視します。</td>
+</tr>
+<tr>
+<td><code>components.mediaTypes</code></td>
+<td>一部対応</td>
+<td><code>content</code>の各media typeを<code>$ref: &#39;#/components/mediaTypes/&lt;name&gt;&#39;</code>で参照できます（requestBody・成功／エラーresponse・<code>in: querystring</code>のcontent。他のdocumentの<code>&lt;file&gt;#/components/mediaTypes/&lt;name&gt;</code>も可）。componentはobjectと、あればそのschemaを検証し、参照元の<code>content</code>のキーがmedia typeを決めます。通常のparameterの<code>content</code>からの<code>$ref</code>は<code>OACG101</code>です。3.0／3.1の<code>components.mediaTypes</code>は<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td><code>oauth2</code>の<code>deviceAuthorization</code> flowと<code>oauth2MetadataUrl</code></td>
+<td>一部対応</td>
+<td>受理し、URL・scopesをXML docに出すだけです（<code>deviceAuthorizationUrl</code>と<code>tokenUrl</code>が必須、なければ<code>OACG100</code>）。tokenの取得・更新とmetadataの取得は行わず、外から渡されたtokenをBearerで送ります。security schemeの<code>deprecated</code>は形式だけ検証します。3.0／3.1の<code>deviceAuthorization</code>は未知のflowとして<code>OACG100</code>です。</td>
+</tr>
+<tr>
+<td>Responseの<code>summary</code>と省略可能な<code>description</code></td>
+<td>対応</td>
+<td>3.2ではResponseの<code>summary</code>を受理し（ドキュメント専用）、<code>description</code>を省略できます。3.0／3.1の<code>summary</code>は<code>OACG101</code>、<code>description</code>の省略は<code>OACG100</code>です。</td>
+</tr>
+<tr>
+<td>その他の3.2の項目</td>
+<td>対応</td>
+<td>Serverの<code>name</code>、Exampleの<code>dataValue</code>／<code>serializedValue</code>、XML Objectの<code>nodeType</code>、Tag Objectの<code>summary</code>は、ドキュメント専用として黙って受理します。</td>
+</tr>
+</tbody></table>
+<h2 id="swagger-20">Swagger 2.0</h2>
+<p>Swagger 2.0のdocument（<code>swagger: &quot;2.0&quot;</code>）は、意味解析の前にOpenAPI 3.0（<code>3.0.3</code>）の等価なtreeへ正規化してから、3.0と同じ処理（parser、生成model、出力、診断、実行時検証）に渡します。専用の生成器はなく、生成されるクライアントは、同じ内容を手で書いたOpenAPI 3.0 documentのものと一致します。YAMLのSwagger 2.0も同じです。<code>openapi</code>と<code>swagger</code>を併記したdocument、<code>&quot;2.0&quot;</code>以外の<code>swagger</code>の値（<code>&quot;1.2&quot;</code>、数値の<code>2.0</code>など）は、<code>swagger</code>の位置で<code>OACG101</code>です。</p>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>対応状況</th>
+<th>条件・制約</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>host</code>・<code>basePath</code>・<code>schemes</code></td>
+<td>一部対応</td>
+<td><code>servers</code>になります。<code>schemes</code>の各値が1つのserverで、<code>https://&lt;host&gt;&lt;basePath&gt;</code>の形です（<code>schemes</code>の順序が<code>servers</code>の順序です）。<code>schemes</code>がなければ<code>https</code>、<code>basePath</code>が<code>/</code>または省略なら末尾の<code>/</code>なし、<code>basePath</code>の末尾の<code>/</code>は除きます。<code>host</code>がなければ相対serverで、<code>basePath</code>（なければ<code>/</code>）だけです（<code>schemes</code>は使いません）。<code>host</code>も<code>basePath</code>も<code>schemes</code>もなければ<code>servers</code>は付けません。operationの<code>schemes</code>は、<code>host</code>があればそのoperationのserversになります（<code>host</code>がなければ相対serverに適用できないため、<code>schemes</code>の位置で<code>OACG108</code>を報告して無視します）。<code>ws</code>／<code>wss</code>は他の非HTTP(S) serverと同じく診断です。</td>
+</tr>
+<tr>
+<td><code>definitions</code>・<code>parameters</code>・<code>responses</code>・<code>securityDefinitions</code></td>
+<td>対応</td>
+<td>それぞれ<code>components.schemas</code>・<code>components.parameters</code>・<code>components.responses</code>・<code>components.securitySchemes</code>になります。<code>parameters</code>のうち<code>in: body</code>／<code>in: formData</code>は、使う側のoperationの<code>requestBody</code>になるため、componentにはなりません（使われないbody／formDataのparameterは検証しません）。</td>
+</tr>
+<tr>
+<td><code>$ref</code></td>
+<td>対応</td>
+<td><code>#/definitions/X</code>は<code>#/components/schemas/X</code>、<code>#/parameters/X</code>は<code>#/components/parameters/X</code>、<code>#/responses/X</code>は<code>#/components/responses/X</code>に書き換えます。外部の<code>file.json#/definitions/X</code>も同じです（Editorは3.0と同じ規則で参照先のdocumentを集めます）。<code>#/definitions/</code>以外（schema）、<code>#/parameters/</code>・<code>#/responses/</code>以外（それぞれのparameter・response）を指す<code>$ref</code>、Path Itemの<code>$ref</code>は<code>OACG101</code>です。<code>$ref</code>の兄弟項目は3.0の規則（<code>description</code>、<code>x-nullable</code>→<code>nullable</code>など）に従います。</td>
+</tr>
+<tr>
+<td>複数document（Swagger 2.0同士）</td>
+<td>一部対応</td>
+<td>Swagger 2.0のdocumentからSwagger 2.0のdocumentの<code>definitions</code>・<code>parameters</code>・<code>responses</code>を参照できます。参照先がOpenAPI 3.xのdocument、<code>openapi</code>も<code>swagger</code>も持たないbare schemaのfile、また3.xのdocumentからSwagger 2.0のdocumentへの参照は、参照の位置で<code>OACG101</code>です（版を混ぜられません）。他のdocumentのbody／formData parameterを<code>$ref</code>で使うことも<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td><code>in: body</code> parameter</td>
+<td>対応</td>
+<td><code>requestBody</code>になります。media typeはoperationの<code>consumes</code>、なければdocumentの<code>consumes</code>、なければ<code>application/json</code>で、列挙した各media typeに同じschemaを付けます。<code>description</code>・<code>required</code>は<code>requestBody</code>へ移ります。<code>consumes</code>にxmlがJSONと併記されている場合はxmlを<code>OACG108</code>で無視します（上の<code>produces</code>の行と同じ）。<code>schema</code>がない、またはbodyが複数なら<code>OACG100</code>、<code>in: formData</code>との併記も<code>OACG100</code>です。path itemのbody parameterは、operationの同名・同<code>in</code>のparameterで置き換わります。</td>
+</tr>
+<tr>
+<td><code>in: formData</code> parameter</td>
+<td>対応</td>
+<td>1つのobject schemaの<code>requestBody</code>になります（各parameterがproperty、<code>required: true</code>のものが<code>required</code>、<code>description</code>はpropertyのdescription、<code>type: file</code>は<code>type: string</code>／<code>format: binary</code>、<code>additionalProperties: false</code>）。<code>type: file</code>のparameterがあれば<code>multipart/form-data</code>、なければ<code>consumes</code>が挙げる<code>multipart/form-data</code>／<code>application/x-www-form-urlencoded</code>（両方なら両方）、どちらもなければ<code>application/x-www-form-urlencoded</code>です。url-encodedで配列のparameterは<code>collectionFormat</code>を<code>encoding</code>の<code>style</code>／<code>explode</code>に写します（下表の<code>query</code>と同じ。省略時の<code>csv</code>も含みます）。multipartの配列は要素ごとにpartを繰り返し、<code>collectionFormat</code>は使いません。parameter名の重複は<code>OACG100</code>です。</td>
+</tr>
+<tr>
+<td>非body parameter</td>
+<td>対応</td>
+<td><code>type</code>・<code>format</code>・<code>items</code>・<code>enum</code>・<code>default</code>・<code>minimum</code>／<code>maximum</code>／<code>exclusiveMinimum</code>／<code>exclusiveMaximum</code>・<code>minLength</code>／<code>maxLength</code>・<code>pattern</code>・<code>minItems</code>／<code>maxItems</code>・<code>uniqueItems</code>・<code>multipleOf</code>は<code>schema</code>へ移ります（<code>x-nullable: true</code>は<code>nullable: true</code>）。<code>name</code>・<code>in</code>・<code>description</code>・<code>required</code>・<code>allowEmptyValue</code>・<code>x-*</code>はそのままです。<code>type</code>がない、<code>type: file</code>（formData以外）、<code>in</code>が<code>query</code>／<code>header</code>／<code>path</code>／<code>formData</code>／<code>body</code>以外（<code>cookie</code>を含みます）は<code>OACG100</code>です。path itemのparameterはpath itemに残り、3.0と同じくoperationのparameterが同名・同<code>in</code>のものを置き換えます。</td>
+</tr>
+<tr>
+<td><code>collectionFormat</code></td>
+<td>一部対応</td>
+<td>配列parameterだけに効きます（省略時は<code>csv</code>）。<code>query</code>は、<code>csv</code>→<code>style: form</code>＋<code>explode: false</code>、<code>ssv</code>→<code>spaceDelimited</code>、<code>pipes</code>→<code>pipeDelimited</code>、<code>multi</code>→<code>explode: true</code>（<code>form</code>の既定）です。<code>path</code>・<code>header</code>は<code>csv</code>（<code>simple</code>、既定）だけで、他の値は<code>OACG101</code>です。<code>tsv</code>は3.0に相当する表現がなく、どこでも<code>OACG101</code>です（<code>collectionFormat</code>の位置）。<code>items</code>の入れ子の<code>collectionFormat</code>は<code>csv</code>以外が<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td><code>produces</code>と応答</td>
+<td>対応</td>
+<td>responseの<code>schema</code>は、operationの<code>produces</code>、なければdocumentの<code>produces</code>の各media typeの<code>content</code>へ付きます（なければ<code>application/json</code>、<code>type: file</code>なら<code>application/octet-stream</code>）。<code>schema</code>のないresponseは<code>content</code>を持ちません。<code>components.responses</code>はdocumentの<code>produces</code>だけを使います（operationごとの<code>produces</code>は参照元で変えられません）。<code>examples</code>（media typeごとの例）はドキュメント専用なので黙って捨てます。<code>produces</code>／<code>consumes</code>に<code>application/xml</code>とJSONが併記され、schemaがobject・arrayの場合、xmlの項目は<code>OACG108</code>で無視してJSONで生成します（位置は<code>in: body</code>ならそのparameter、応答なら<code>schema</code>です。xmlだけなら<code>OACG101</code>です）。</td>
+</tr>
+<tr>
+<td>応答の<code>type: file</code></td>
+<td>対応</td>
+<td><code>type: string</code>／<code>format: binary</code>になり、3.0と同じく<code>byte[]</code>で受け取ります。</td>
+</tr>
+<tr>
+<td>応答の<code>headers</code></td>
+<td>対応</td>
+<td>Header Objectになり、<code>type</code>・<code>format</code>・<code>items</code>・<code>enum</code>などは<code>schema</code>へ移ります。<code>description</code>は残ります。配列の<code>collectionFormat</code>は<code>csv</code>だけです。</td>
+</tr>
+<tr>
+<td><code>securityDefinitions</code></td>
+<td>対応</td>
+<td><code>basic</code>→<code>type: http</code>＋<code>scheme: basic</code>、<code>apiKey</code>→そのまま、<code>oauth2</code>→<code>flows</code>です。flowは<code>implicit</code>→<code>implicit</code>、<code>password</code>→<code>password</code>、<code>application</code>→<code>clientCredentials</code>、<code>accessCode</code>→<code>authorizationCode</code>で、<code>authorizationUrl</code>・<code>tokenUrl</code>・<code>scopes</code>（なければ空）を移します。未知のflowは<code>OACG100</code>、上記以外の<code>type</code>は<code>OACG101</code>です。<code>security</code>（document・operation）は3.0と同じで、資格情報の扱いは「Security」の節に従います。</td>
+</tr>
+<tr>
+<td>schemaの項目</td>
+<td>対応</td>
+<td><code>x-nullable: true</code>→<code>nullable: true</code>（真偽値以外は<code>OACG100</code>）、文字列の<code>discriminator</code>→<code>{ propertyName }</code>（継承形のbaseとして扱います）、<code>type: file</code>→<code>type: string</code>／<code>format: binary</code>です。<code>allOf</code>・<code>readOnly</code>・<code>example</code>・<code>xml</code>・<code>externalDocs</code>・制約キーワード・<code>x-*</code>はそのまま3.0のschemaとして処理します。</td>
+</tr>
+<tr>
+<td>document直下の<code>info</code>・<code>tags</code>・<code>externalDocs</code>・<code>x-*</code></td>
+<td>対応</td>
+<td>3.0にも同じ項目があるため、そのまま受理します（ドキュメント専用で、診断はありません）。<code>x-ms-*</code>などのベンダー拡張も他の<code>x-*</code>と同じく黙って無視します（<code>x-ms-paths</code>のようにpathを増やす拡張は解釈しません）。それ以外の未知の項目は、3.0と同じく、項目を知っているobjectで診断になります。</td>
+</tr>
+<tr>
+<td>診断の位置</td>
+<td>対応</td>
+<td>正規化したtreeの各nodeは、元のSwagger 2.0 nodeの行・桁・logical pathを持ちます。診断（<code>OACG100</code>／<code>OACG101</code>／<code>OACG102</code>／<code>OACG108</code>など）は、書いたSwagger 2.0の位置を指します。例: <code>definitions</code>のschemaの誤りは<code>/definitions/X/...</code>、formData parameterの誤りは<code>/paths/~1p/post/parameters/N</code>、body parameterのschemaは<code>/paths/~1p/post/parameters/N/schema/...</code>、応答のschemaは<code>/paths/~1p/get/responses/200/schema</code>です。複数のmedia typeへ複製したschemaは、どれも同じ元のnodeを指します。formData parameterをまとめたobject schema・<code>requestBody</code>の誤りは、最初のformData parameterの位置です。</td>
+</tr>
+<tr>
+<td><code>OACG101</code>の対象</td>
+<td>一部対応</td>
+<td>3.0に相当する表現がないものは、黙って落とさず<code>OACG101</code>です: <code>collectionFormat: tsv</code>、<code>path</code>／<code>header</code>の<code>csv</code>以外の<code>collectionFormat</code>、Path Itemの<code>$ref</code>、<code>#/definitions/</code>・<code>#/parameters/</code>・<code>#/responses/</code>以外を指す<code>$ref</code>、複数documentの版の混在、他documentのbody／formData parameterの参照、<code>oauth2</code>・<code>basic</code>・<code>apiKey</code>以外の<code>securityDefinitions</code>のtype。</td>
+</tr>
+<tr>
+<td>既存の別の生成器</td>
+<td>対応</td>
+<td><code>GenerationService.GenerateFromApiDocument</code>が使う、従来の別のSwagger用の生成器（<code>SwaggerCSharpClientFileGenerator</code>）は、そのまま残しています。Source Generatorの入口（<code>ApiClientCodeGenerator</code>）は使わず、Swagger 2.0は常にこの節の正規化とSource Generatorのpipelineを通ります。</td>
+</tr>
+</tbody></table>
+<h2 id="ギャップ別の最終状況">ギャップ別の最終状況</h2>
+<p>Source Generatorの仕様対応で洗い出した33項目（G01–G33）の最終状況です。詳細な条件は、右端の列が指す本文の節・行を参照してください。<strong>対象外</strong>の項目は診断を報告し、黙って省略しません。</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>項目</th>
+<th>対応状況</th>
+<th>参照先・診断</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>G01–G04</td>
+<td>open object（<code>additionalProperties</code>の省略または<code>true</code>。<code>[JsonExtensionData]</code>の<code>IDictionary&lt;string, JToken&gt;</code>）</td>
+<td>対応</td>
+<td>Schemaの「object」。<code>additionalProperties</code>の省略は従来の<code>OACG101</code>ではなくopen objectです</td>
+</tr>
+<tr>
+<td>G01–G04</td>
+<td>map（<code>Dictionary&lt;string, T&gt;</code>）とfree-form object（<code>JObject</code>）</td>
+<td>対応</td>
+<td>Schemaの「map / free-form object」</td>
+</tr>
+<tr>
+<td>G01–G04</td>
+<td>型の推論と<code>{}</code>・boolean schema <code>true</code>（<code>JToken</code>）</td>
+<td>対応</td>
+<td>Schemaの「any / type inference」。boolean schema <code>false</code>は<code>OACG101</code></td>
+</tr>
+<tr>
+<td>G01–G04</td>
+<td>複数型の型配列（3.1）と<code>[X, null]</code></td>
+<td>対応</td>
+<td><code>JToken</code>、または<code>X</code>のnullable。「any / type inference」「<code>oneOf</code> / <code>anyOf</code>（discriminatorなし）」</td>
+</tr>
+<tr>
+<td>G01–G04</td>
+<td>再帰schema</td>
+<td>一部対応</td>
+<td>property・items・additionalPropertiesとunion経由の再帰は可。<code>$ref</code>のaliasだけ、array／mapだけの循環は<code>OACG103</code>（「unresolved / cyclic <code>$ref</code>」）</td>
+</tr>
+<tr>
+<td>G05</td>
+<td><code>operationId</code>の欠落（method + pathから決定的に命名）</td>
+<td>対応</td>
+<td>「<code>operationId</code>の省略」。重複は<code>OACG106</code></td>
+</tr>
+<tr>
+<td>G06–G09</td>
+<td><code>allOf</code>の平坦化</td>
+<td>一部対応</td>
+<td>「<code>allOf</code>」。型の衝突は<code>OACG101</code>、循環は<code>OACG103</code></td>
+</tr>
+<tr>
+<td>G06–G09</td>
+<td><code>oneOf</code>／<code>anyOf</code> + discriminator（mapping明示・暗黙、継承形のbase）</td>
+<td>一部対応</td>
+<td>「<code>oneOf</code> / <code>anyOf</code> + discriminator」「discriminator付きbase」。メンバーがinline・object以外なら<code>OACG101</code></td>
+</tr>
+<tr>
+<td>G06–G09</td>
+<td>discriminatorなしのunion、<code>[X, null]</code>イディオム</td>
+<td>一部対応</td>
+<td>「<code>oneOf</code> / <code>anyOf</code>（discriminatorなし）」</td>
+</tr>
+<tr>
+<td>G06–G09</td>
+<td>3.1の<code>$ref</code>とsibling</td>
+<td>一部対応</td>
+<td>「<code>$ref</code> sibling」。3.0で合成が必要なsiblingは<code>OACG101</code></td>
+</tr>
+<tr>
+<td>G06–G09</td>
+<td><code>not</code></td>
+<td>一部対応</td>
+<td>「<code>not</code>」。成功応答の検査だけ。評価できない<code>not</code>は<code>OACG108</code></td>
+</tr>
+<tr>
+<td>G10</td>
+<td><code>components</code>以外へのJSON Pointer、<code>$defs</code>、externalの任意fragment（schema参照）</td>
+<td>対応</td>
+<td>「schema <code>$ref</code> target」</td>
+</tr>
+<tr>
+<td>G11–G14</td>
+<td>integer enum、<code>null</code>を含むenum、<code>type</code>のないenum</td>
+<td>対応</td>
+<td>「string / integer enum」。number・boolean・混在のenumは<code>OACG101</code></td>
+</tr>
+<tr>
+<td>G11–G14</td>
+<td><code>x-enum-varnames</code>／<code>x-enumNames</code>、<code>const</code></td>
+<td>一部対応</td>
+<td>「string / integer enum」「<code>const</code>」。不正な指定は<code>OACG108</code>、object／array値のconstは<code>OACG101</code></td>
+</tr>
+<tr>
+<td>G11–G14</td>
+<td><code>readOnly</code>／<code>writeOnly</code></td>
+<td>対応</td>
+<td>「readOnly / writeOnly」</td>
+</tr>
+<tr>
+<td>G11–G14</td>
+<td><code>description</code>／<code>deprecated</code>／<code>default</code>のXML docと<code>[Obsolete]</code></td>
+<td>対応</td>
+<td>「description / title / deprecated / default」</td>
+</tr>
+<tr>
+<td>G15</td>
+<td><code>format: byte</code>（<code>byte[]</code>）</td>
+<td>対応</td>
+<td>「<code>format: byte</code>」。従来の<code>string</code>から変わります</td>
+</tr>
+<tr>
+<td>G15</td>
+<td><code>format: binary</code></td>
+<td>一部対応</td>
+<td>「<code>format: binary</code>」。JSON本文・parameter・headerでは<code>OACG101</code></td>
+</tr>
+<tr>
+<td>G16–G20</td>
+<td>cookie parameter</td>
+<td>一部対応</td>
+<td>「cookie parameter」</td>
+</tr>
+<tr>
+<td>G16–G20</td>
+<td>配列・object parameterと全<code>style</code>／<code>explode</code></td>
+<td>一部対応</td>
+<td>「parameter serialization」「array / object parameter」。入れ子・型なしは<code>OACG101</code></td>
+</tr>
+<tr>
+<td>G16–G20</td>
+<td><code>allowReserved</code>、parameterの<code>content</code></td>
+<td>一部対応</td>
+<td>「<code>allowReserved</code>」「parameter <code>content</code>」</td>
+</tr>
+<tr>
+<td>G16–G20</td>
+<td><code>Accept</code>／<code>Content-Type</code>／<code>Authorization</code>のheader parameter</td>
+<td>一部対応</td>
+<td>parameterを無視して<code>OACG108</code>（「ignored header parameters」）</td>
+</tr>
+<tr>
+<td>G16–G20</td>
+<td>Path Item <code>$ref</code>、<code>components.pathItems</code></td>
+<td>対応</td>
+<td>「Path Item <code>$ref</code> / <code>components.pathItems</code>」</td>
+</tr>
+<tr>
+<td>G16–G20</td>
+<td>path／operation単位の<code>servers</code></td>
+<td>一部対応</td>
+<td>「path / operationの<code>servers</code>」</td>
+</tr>
+<tr>
+<td>G21–G26</td>
+<td>requestBodyのmultipart、form-urlencoded、octet-stream、text、<code>encoding</code>、複数のmedia type</td>
+<td>一部対応</td>
+<td>「request body」から「Encoding Object」までの各行。object・arrayのxmlは<code>OACG101</code>（他にJSONなどがあれば<code>OACG108</code>）</td>
+</tr>
+<tr>
+<td>G21–G26</td>
+<td>text・binary応答</td>
+<td>一部対応</td>
+<td>「text / binary response」「response <code>Accept</code> header」</td>
+</tr>
+<tr>
+<td>G21–G26</td>
+<td>status別の結果型、defaultのみ・<code>responses</code>なし</td>
+<td>一部対応</td>
+<td>「status-keyed result type」「default-only / omitted responses / 3XX」</td>
+</tr>
+<tr>
+<td>G21–G26</td>
+<td>型付きエラー</td>
+<td>対応</td>
+<td>「typed error」「error/default response」</td>
+</tr>
+<tr>
+<td>G21–G26</td>
+<td>response headers（<code>WithHttpInfo</code>）</td>
+<td>一部対応</td>
+<td>「response header」</td>
+</tr>
+<tr>
+<td>G27</td>
+<td><code>servers</code>の複数指定・<code>variables</code></td>
+<td>一部対応</td>
+<td>「<code>servers</code>」。<code>Servers</code>・<code>BuildServerUrl</code>・<code>OperationServerUrls</code></td>
+</tr>
+<tr>
+<td>G28</td>
+<td>security（全<code>securitySchemes</code>とrequirement）</td>
+<td>対応</td>
+<td>「Security」の節。oauth2／OIDCは外から渡されたtokenをBearerで送るだけです（取得・更新・discoveryは対象外）</td>
+</tr>
+<tr>
+<td>G29–G30</td>
+<td>制約キーワードの実行時検証</td>
+<td>対応</td>
+<td>「schema assertions」から「検証の範囲と例外」までの各行。requestは<code>ArgumentException</code>、responseは<code>JsonSerializationException</code></td>
+</tr>
+<tr>
+<td>G29–G30</td>
+<td><code>patternProperties</code>／<code>propertyNames</code>／<code>contains</code>／<code>prefixItems</code>／<code>dependentRequired</code>（3.1）</td>
+<td>一部対応</td>
+<td>3.0では<code>OACG101</code>。<code>if</code>／<code>then</code>／<code>else</code>などは対象外</td>
+</tr>
+<tr>
+<td>G31</td>
+<td>webhooks／callbacks／links／<code>components.examples</code>など</td>
+<td>一部対応</td>
+<td><code>OACG108</code>で受理し、client memberは生成しません（「webhooks / callbacks / links」「components の各 section」）</td>
+</tr>
+<tr>
+<td>G32</td>
+<td>Swagger 2.0</td>
+<td>一部対応</td>
+<td>「Swagger 2.0」の節。OpenAPI 3.0へ正規化して同じpipelineで処理し、対応できない構成は<code>OACG101</code></td>
+</tr>
+<tr>
+<td>G33</td>
+<td>OpenAPI 3.2（<code>query</code>、<code>additionalOperations</code>、<code>in: querystring</code>、tagsの<code>parent</code>／<code>kind</code>、<code>$self</code>、<code>itemSchema</code>の非streaming部分）</td>
+<td>一部対応</td>
+<td>「OpenAPI 3.2」の節。streamingは対象外</td>
+</tr>
+</tbody></table>
+<h2 id="対象外の項目">対象外の項目</h2>
+<p>次の項目は意図して対象外にしており、診断を報告するか、何も生成せずにドキュメントとして扱います。</p>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>対応状況</th>
+<th>結果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>$id</code>／<code>$anchor</code>／<code>$dynamicAnchor</code>／<code>$dynamicRef</code></td>
+<td>非対応</td>
+<td><code>OACG101</code></td>
+</tr>
+<tr>
+<td><code>if</code>／<code>then</code>／<code>else</code>、<code>dependentSchemas</code>、<code>unevaluatedProperties</code>／<code>unevaluatedItems</code>、<code>contentSchema</code>、未知のschemaキーワード</td>
+<td>非対応</td>
+<td>そのキーワードの位置で<code>OACG101</code></td>
+</tr>
+<tr>
+<td>object・arrayのschemaの<code>application/xml</code>（<code>+xml</code>）</td>
+<td>非対応</td>
+<td><code>OACG101</code>。同じ<code>content</code>に生成できる他のmedia typeがあれば、xmlの項目だけを<code>OACG108</code>で無視します</td>
+</tr>
+<tr>
+<td>number・boolean・型が混在するenum、boolean schema <code>false</code></td>
+<td>非対応</td>
+<td><code>OACG101</code></td>
+</tr>
+<tr>
+<td><code>required: true</code>かつnullableなpath／query／header parameter</td>
+<td>非対応</td>
+<td><code>OACG101</code></td>
+</tr>
+<tr>
+<td>入れ子・型なしのparameter（<code>style</code>で表せないもの）</td>
+<td>非対応</td>
+<td><code>OACG101</code>（<code>content</code>を使います）</td>
+</tr>
+<tr>
+<td>既定以外の<code>jsonSchemaDialect</code>・<code>$schema</code></td>
+<td>非対応</td>
+<td><code>OACG101</code>（不正なURIは<code>OACG100</code>）</td>
+</tr>
+<tr>
+<td>OpenAPI 3.2のstreaming（<code>text/event-stream</code>、<code>itemSchema</code>の逐次処理）</td>
+<td>非対応</td>
+<td><code>text/event-stream</code>の<code>itemSchema</code>と、順次media type以外の<code>itemSchema</code>は<code>OACG101</code>。<code>application/jsonl</code>などの<code>itemSchema</code>は<code>OACG108</code>で通知し、本文は<code>byte[]</code>です</td>
+</tr>
+<tr>
+<td>TRACEの<code>requestBody</code>、HEAD・204・205の非空<code>content</code></td>
+<td>非対応</td>
+<td><code>OACG101</code></td>
+</tr>
+<tr>
+<td><code>Stream</code>や<code>HttpResponseMessage</code>を返すメソッド</td>
+<td>非対応</td>
+<td>生成しません（巨大な本文は<code>byte[]</code>に全読みします）</td>
+</tr>
+<tr>
+<td><code>format</code>の検証（<code>email</code>、<code>uri</code>など）</td>
+<td>非対応</td>
+<td>受理するだけで検証しません（<code>date</code>・<code>date-time</code>・<code>uuid</code>の解析は従来どおりです）</td>
+</tr>
+<tr>
+<td>YAMLの拡張（tag、directive、複数document、merge key、複雑なkey）</td>
+<td>非対応</td>
+<td><code>YAML001</code>–<code>YAML015</code>（「YAMLの対応範囲」）</td>
+</tr>
+<tr>
+<td>oauth2 flowによるtoken取得・更新、OpenID Connect discovery</td>
+<td>非対応</td>
+<td>行いません。外から渡されたtokenをBearerで送ります</td>
+</tr>
+<tr>
+<td><code>mutualTLS</code>のクライアント証明書の設定</td>
+<td>非対応</td>
+<td>client側では行いません。<code>HttpClientHandler</code>で設定します</td>
+</tr>
+<tr>
+<td>Swagger 2.0で3.0に相当する表現がないもの（<code>collectionFormat: tsv</code>など）</td>
+<td>非対応</td>
+<td><code>OACG101</code>（「Swagger 2.0」）</td>
+</tr>
+</tbody></table>
 <h2 id="生成結果と利用上の制約">生成結果と利用上の制約</h2>
 <p>生成結果は次のpublic API contractです。</p>
 <ul>
@@ -1086,56 +1401,130 @@ namespace-levelのため、同じnamespaceには共存できません。</p>
 <code>_httpClient</code>、<code>_baseUrl</code>、<code>DateOnlyJsonConverterInstance</code>、<code>CreateRequestUri</code>、
 <code>CombineAbsoluteUri</code>、<code>CombinePaths</code>、<code>CombineQueries</code>、<code>AppendQuery</code>、
 <code>SplitPathAndQuery</code>、<code>ValidatePathSegments</code>、<code>CreateJsonContent</code>、
-<code>ConvertToString</code>、<code>DateOnlyJsonConverter</code>です。
+<code>ConvertToString</code>、<code>DateOnlyJsonConverter</code>、<code>ReadJsonResponseBodyAsync</code>、<code>HasPreamble</code>、
+<code>Servers</code>、<code>BuildServerUrl</code>、<code>ExpandServerUrl</code>、<code>OperationServerUrls</code>、
+<code>ResolveOperationServerUrl</code>、<code>OperationNames</code>、<code>GetOperationServers</code>、
+<code>BuildOperationServerUrl</code>です。
 schemaの項目名が別項目のCLR名に<code>Specified</code>を付けた名前と衝突する場合、JSON上の名前を保ったまま
 CLR名に番号を付けます。Json.NETがschemaのboolean値を存在フラグと誤認することを防ぎます。</p>
 <h2 id="診断">診断</h2>
+<p>診断は位置付き（logical path）で報告します。<code>OACG001</code>–<code>OACG009</code>はBundle・入力・client定義の診断で、<code>OACG100</code>–<code>OACG108</code>はOpenAPI document（Swagger 2.0を含む）のsemantic generationの診断です。ErrorはGenerateを完了させず、Warningは生成を続けます。</p>
 <table>
 <thead>
 <tr>
 <th>ID</th>
-<th>意味</th>
+<th>重大度</th>
+<th>Title</th>
+<th>報告する場面</th>
 </tr>
 </thead>
 <tbody><tr>
+<td><code>OACG001</code></td>
+<td>Error</td>
+<td>Malformed normalized spec bundle</td>
+<td>Bundleの構造・参照edgeの不正</td>
+</tr>
+<tr>
+<td><code>OACG002</code></td>
+<td>Error</td>
+<td>Unsupported normalized spec bundle version</td>
+<td>Bundleのformat versionが未対応</td>
+</tr>
+<tr>
+<td><code>OACG003</code></td>
+<td>Error</td>
+<td>OpenAPI generation failed</td>
+<td>semantic generationが失敗した場合の通知</td>
+</tr>
+<tr>
+<td><code>OACG004</code></td>
+<td>Error</td>
+<td>Duplicate normalized spec bundle ID</td>
+<td>同じSpec IDを宣言するBundleが複数ある</td>
+</tr>
+<tr>
 <td><code>OACG005</code></td>
-<td>生成メンバーの予約名を<code>apiName</code>に使う場合など、不正なクライアント定義</td>
+<td>Error</td>
+<td>Invalid OpenAPI client definition</td>
+<td><code>apiName</code>が生成メンバーの予約名（「生成結果と利用上の制約」）と一致する場合など</td>
+</tr>
+<tr>
+<td><code>OACG006</code></td>
+<td>Error</td>
+<td>Missing normalized spec bundle</td>
+<td>Spec IDに対応するBundleがない</td>
+</tr>
+<tr>
+<td><code>OACG007</code></td>
+<td>Error</td>
+<td>Duplicate OpenAPI client definition ID</td>
+<td>同じSpec IDのclient定義が複数ある</td>
+</tr>
+<tr>
+<td><code>OACG008</code></td>
+<td>Error</td>
+<td>Unsupported OpenAPI document format</td>
+<td>document formatが<code>Json</code>（0）・<code>Yaml</code>（1）以外</td>
+</tr>
+<tr>
+<td><code>OACG009</code></td>
+<td>Error</td>
+<td>Normalized spec bundle ID mismatch</td>
+<td>Bundle内のSpec IDとAdditionalFile名が一致しない</td>
 </tr>
 <tr>
 <td><code>OACG100</code></td>
-<td>InvalidDocument</td>
+<td>Error</td>
+<td>Invalid OpenAPI document</td>
+<td>仕様に反する、または矛盾した値（必須項目の欠落、不正な<code>pattern</code>・<code>style</code>・<code>$self</code>、<code>schema</code>と<code>content</code>の併記、未定義のsecurity scheme、重複するdiscriminator値・tag名など）。Swagger 2.0の正規化中の不正（body parameterの<code>schema</code>欠落、未知のflowなど）も含みます</td>
 </tr>
 <tr>
 <td><code>OACG101</code></td>
-<td>UnsupportedElement（bare non-Schema、<code>$id</code>/<code>$anchor</code>/<code>$dynamicAnchor</code>/<code>$dynamicRef</code>、Swagger 2.0でOpenAPI 3.0に相当する表現がないもの（<code>collectionFormat: tsv</code>など）など）</td>
+<td>Error</td>
+<td>Unsupported OpenAPI element</td>
+<td>対象外の要素（上の「対象外の項目」）、未知の項目（<code>requird</code>、未知のschemaキーワード、未知のcomponents section）、版に合わない項目（3.0／3.1の<code>query</code>・<code>in: querystring</code>、3.0のschemaで<code>patternProperties</code>など）、Swagger 2.0で3.0に相当しない表現</td>
 </tr>
 <tr>
 <td><code>OACG102</code></td>
-<td>Unresolved document or JSON Pointer target</td>
+<td>Error</td>
+<td>Unresolved OpenAPI reference</td>
+<td><code>$ref</code>が文書・JSON Pointerとして存在しない場合。OACG108で無視するsubtree内の<code>$ref</code>は解析しないので報告しません</td>
 </tr>
 <tr>
 <td><code>OACG103</code></td>
-<td>Cyclic reference</td>
+<td>Error</td>
+<td>Cyclic OpenAPI reference</td>
+<td><code>$ref</code>のaliasだけ、array／mapだけを経由して名前付き型で閉じない循環、<code>allOf</code>の循環、DTOを介さないsubschemaの自己参照</td>
 </tr>
 <tr>
 <td><code>OACG104</code></td>
-<td>ExternalReference（Bundle v1 compatibility）</td>
+<td>Error</td>
+<td>External OpenAPI reference is unsupported</td>
+<td>Bundle v1のexternal参照（互換診断）</td>
 </tr>
 <tr>
 <td><code>OACG105</code></td>
-<td>InconsistentResponse（1つのresponse・requestBody内で、schemaが異なる複数のJSON media typeを宣言した場合と、OpenAPI 3.2で1つのoperationに複数の<code>in: querystring</code> parameter、または<code>in: querystring</code>と<code>in: query</code>を併記した場合。status間でcontractが異なる成功responseはstatus別の結果型になります）</td>
+<td>Error</td>
+<td>Inconsistent OpenAPI response contract</td>
+<td>1つのresponse・requestBody内でschemaが異なる複数のJSON media type、3.2で複数の<code>in: querystring</code>、または<code>in: querystring</code>と<code>in: query</code>の併記。status間でcontractが異なる成功responseはstatus別の結果型になり、報告しません</td>
 </tr>
 <tr>
 <td><code>OACG106</code></td>
-<td>InvalidIdentifier</td>
+<td>Error</td>
+<td>Invalid generated API identifier</td>
+<td>明示した<code>operationId</code>が複数のoperationで重複した場合（省略した<code>operationId</code>は連番で一意にするので報告しません）</td>
 </tr>
 <tr>
 <td><code>OACG107</code></td>
-<td>Warning: deterministic type-name collision resolution</td>
+<td>Warning</td>
+<td>Generated type name collision</td>
+<td>型名が衝突し、決定的なsuffix（連番）で解消した場合</td>
 </tr>
 <tr>
 <td><code>OACG108</code></td>
-<td>Warning: ignored OpenAPI element, reported with its logical path (never changes the wire contract)</td>
+<td>Warning</td>
+<td>Ignored OpenAPI element</td>
+<td>要素を意図して無視した場合。wire contractは変わりません。ドキュメント専用の要素（<code>description</code>・<code>example</code>など）は黙って受理するので報告しません。主な場面: <code>Accept</code>／<code>Content-Type</code>／<code>Authorization</code>のheader parameter、webhooks・callbacks・links（とcomponentsの<code>links</code>・<code>callbacks</code>）、生成できる他のmedia typeがあるときのobject・arrayのxml、処理できない別media typeや生成できないerror schema、評価できない<code>not</code>・<code>const</code>・<code>x-enum-*</code>・<code>discriminator</code>、.NET構文を要する<code>pattern</code>、binaryに付いた制約キーワード、Encoding Objectの無視した項目、3.2の<code>itemSchema</code>（逐次media type）・<code>prefixEncoding</code>／<code>itemEncoding</code>・他documentを参照する<code>$self</code>、Swagger 2.0でhostがないときのoperationの<code>schemes</code></td>
 </tr>
 </tbody></table>
 <h2 id="検証済み環境">検証済み環境</h2>
@@ -1143,6 +1532,7 @@ CLR名に番号を付けます。Json.NETがschemaのboolean値を存在フラ�
 <code>adefab2c5bf367c3ecf5971fa555f1cbb68afa24</code>では、
 <a href="https://github.com/rebeat-jp/UnityOpenApiCodeGen/actions/runs/34987295723">run 34987295723</a>
 で3版のUnity検証とCD dry-runが成功しています。</p>
+<p>以下の検証結果は2026-09-20時点の記録で、その後に追加した対応範囲（上の各節）のテスト件数や、現在のテスト件数を表すものではありません。</p>
 <p>2026-09-20の追加レビュー対応後のローカル検証では、.NET 168/168、Node 50/50が成功しました。
 Analyzer再現ビルド・同梱DLL同期・package inspection・tarball再現性と、同一候補を使った
 次のUnity検証も成功しています。すべて失敗・スキップ0件です。</p>

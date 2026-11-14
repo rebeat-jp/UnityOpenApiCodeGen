@@ -54,7 +54,7 @@ loopbackホストを利用できますが、userinfo、HTTP(S)以外の方式、
 
 - [基本パッケージの日本語README](Packages/OpenApiCodeGen/README.ja.md)
 - [Source Generatorの日本語README](Packages/OpenApiCodeGen.SourceGenerator/README.ja.md)
-- [OpenAPI MVP日本語対応表](SourceGenerators/OpenApiMvpSupportMatrix.ja.md)
+- [OpenAPI日本語対応表](SourceGenerators/OpenApiMvpSupportMatrix.ja.md)
 - [Bundle v2形式](SourceGenerators/NormalizedSpecBundleV2.md)
 - [リリース・復旧手順](RELEASE.md)
 

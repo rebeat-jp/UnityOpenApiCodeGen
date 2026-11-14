@@ -825,7 +825,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "\"/e\":{\"post\":{\"operationId\":\"postE\",\"requestBody\":{\"content\":{\"multipart/form-data\":{" +
                 "\"schema\":{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"string\"}}}," + field + "}}}," +
                 "\"responses\":{\"204\":{\"description\":\"ok\"}}}}";
-            string name = field.Substring(1, field.IndexOf((char)34, 1) - 1);
+            string name = field.Substring(1, field.IndexOf('"', 1) - 1);
 
             AssertOnlyIgnoredWarnings(
                 Generate(Doc("3.2.0", paths)),
@@ -844,7 +844,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "\"responses\":{\"204\":{\"description\":\"ok\"}}}}";
             Diagnostic diagnostic = SingleDiagnostic(Doc("3.2.0", paths), "OACG100");
 
-            Assert.Contains("logical path \x27/paths/~1e/post/requestBody/content/multipart~1form-data/encoding\x27", diagnostic.GetMessage());
+            Assert.Contains("logical path '/paths/~1e/post/requestBody/content/multipart~1form-data/encoding'", diagnostic.GetMessage());
             Assert.Contains("must not be present together", diagnostic.GetMessage());
         }
 

@@ -16,27 +16,27 @@
     },
     {
       "path": "SourceGenerators/NormalizedSpecBundleV2.html",
-      "sha256": "98d5ee444a5fe2bdb2d44a0eb3156c53b10b8d36982649e3ee52a88845379d02"
+      "sha256": "b2aed6f6274639bae4d614b2d30a6bd7630fd6d65247aa10d3997f543e5a5f41"
     },
     {
       "path": "SourceGenerators/NormalizedSpecBundleV2.md",
-      "sha256": "7c4e0b76788ada68f76110c444e7c350d77a092f604d290cf5120f041c5da3e5"
+      "sha256": "d732253cb0ece948e77dd6d5e9dda0936450a3bd059a2476ea0320422fb25ecd"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.html",
-      "sha256": "5c5b77f645ed3803ed9ea2bb06f804878bf15542fae4a06626110a2e81ae4f8e"
+      "sha256": "95723a8aa17a793e9ee00ff792d6ae63ce80eb1a0e0703567e6ed1f3a296de3d"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.ja.html",
-      "sha256": "1f6396c95598dd659f32b0575a3763dd2a191c6be177d9869e69261133f47142"
+      "sha256": "bdc9a02fb7ac8d49ded25977cf49cff8dfd884b353979de9261ea62a494e6ebd"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.ja.md",
-      "sha256": "42d796b420c3de7276d635c990363995bdded76950ac853bbc339acb4ce13e63"
+      "sha256": "8b08b08fe10d7cca27cf23bcf7f8a17c216be7af3e062512f0c880d9304f25e7"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.md",
-      "sha256": "c605ae154c039221cbd2212528501cb9e58006c60a270b595d3ec991388bee5a"
+      "sha256": "90d35de0677ec67ac8bf4bdad4a72e70ab579510710ee3858a48425dda81f024"
     },
     {
       "path": "SourceGenerators/OpenUPM/jp.rhycol.openapicodegen.source-generator.yml",

@@ -156,6 +156,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             RequireKind(contentNode, SpecValueKind.Object, "The content field must be an object.");
             var parsed = new List<(OpenApiSemanticMediaContent Content, SpecNode Node)>();
             SpecNode? skippedWildcardJson = null;
+            // Deliberately conservative split. This check is a substring match on the raw key ("xml" anywhere, so
+            // even "application/vnd.x+xml" or an odd spelling counts as XML-looking): an XML entry is skipped only
+            // when another entry is clearly not XML. The skip test itself (IsXmlMediaType) matches the parsed
+            // subtype ("xml" or a "+xml" suffix), so only real XML types are ever ignored. A content map made
+            // only of XML variants therefore stays OACG101.
             bool hasNonXmlMediaType = contentNode.EnumerateObject().Any(static entry =>
                 entry.Name.IndexOf("xml", StringComparison.OrdinalIgnoreCase) < 0);
             foreach (SpecProperty mediaEntry in contentNode.EnumerateObject()

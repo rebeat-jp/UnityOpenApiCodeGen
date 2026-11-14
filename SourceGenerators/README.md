@@ -5,9 +5,9 @@
 このdirectoryには、`Rhycol.OpenApiCodeGen.SourceGenerator` のsource、tests、
 build toolsを置きます。Analyzerは`netstandard2.0`、testsとbuild toolsは
 `.NET SDK 10.0.301`を使用します。Unity利用者向けの入力範囲と制約は
-[OpenAPI MVP support matrix](OpenApiMvpSupportMatrix.md)を参照してください。
+[OpenAPI support matrix](OpenApiMvpSupportMatrix.md)を参照してください。
 
-## Phase 6/7の実装境界
+## 実装境界
 
 Source Generator providerはlocal `.json`、`.yaml`、`.yml`とHTTP(S) URLを
 受け付けます。`Generate`が明示的なfetch/refresh操作であり、バックグラウンド
@@ -28,8 +28,21 @@ Remote formatはfinal URL extensionとresponse `Content-Type`から決定しま�
 1 document 4 MiB、graph 32 MiB、64 documents、redirect 5回、reference depth 256の
 hard limitがあります。
 
-bare Schema external documentは対応します。bare non-Schema、`$id`、`$anchor`、
-`$dynamicAnchor`、`$dynamicRef`は未対応です。詳細なBundle schemaは
+入力documentはSwagger 2.0（`swagger: "2.0"`）とOpenAPI 3.0／3.1／3.2です。Swagger 2.0は
+AnalyzerがOpenAPI 3.0相当のtreeへ正規化してから同じpipelineで処理し、診断は元の
+Swagger 2.0の位置を指します。
+
+bare Schema external documentと、`openapi`／`swagger`を持たないbare Path Item file
+（HTTP method、または`$ref`・`parameters`・`servers`・`summary`・`description`だけを持ち、
+schemaキーワードを持たないもの）は対応します。それ以外のbare non-Schema、`$id`、`$anchor`、
+`$dynamicAnchor`、`$dynamicRef`は未対応です。
+
+Editorが`$ref`を収集する場所は、Analyzerが解析する場所と一致させています。
+webhooks、callbacks、links、`components.examples`、Media Typeの`itemSchema`はAnalyzerが解析せず
+`OACG108`で通知する（またはドキュメント専用の）ため、その内側の`$ref`は収集せず、解決できない
+参照があってもbundleは失敗しません。OpenAPI 3.2の`query`、`additionalOperations`、
+`components.mediaTypes`と、Swagger 2.0の`definitions`・`parameters`・`responses`は収集します。
+Bundleの形式は変わりません。詳細なBundle schemaは
 [Normalized Spec Bundle v2](NormalizedSpecBundleV2.md)を参照してください。
 
 ## Build and test

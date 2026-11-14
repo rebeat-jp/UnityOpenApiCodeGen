@@ -1182,6 +1182,24 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
+        public void ContentWithOnlyXmlVariantsStaysUnsupported()
+        {
+            // application/xml and text/xml are both XML representations: none of them is a media type that can be
+            // generated, so no entry is skipped and the first one (in ordinal order) is rejected.
+            string spec =
+                "{\"openapi\":\"3.0.3\",\"info\":{\"title\":\"X\",\"version\":\"1\"},\"servers\":[{\"url\":\"https://api.example.test\"}]," +
+                "\"paths\":{\"/pet\":{\"post\":{\"operationId\":\"addPet\",\"requestBody\":{\"content\":{" +
+                "\"application/xml\":{\"schema\":{\"$ref\":\"#/components/schemas/Pet\"}}," +
+                "\"text/xml\":{\"schema\":{\"$ref\":\"#/components/schemas/Pet\"}}}}," +
+                "\"responses\":{\"204\":{\"description\":\"ok\"}}}}}," +
+                "\"components\":{\"schemas\":{" + XmlPet + "}}}";
+
+            Diagnostic diagnostic = SingleDiagnostic(spec, "OACG101");
+
+            AssertLogicalPath(diagnostic, "/paths/~1pet/post/requestBody/content/application~1xml/schema");
+        }
+
+        [Fact]
         public void SecurityDefinitionsThatCannotBeConvertedAreReportedAtTheirLocation()
         {
             Diagnostic flow = SingleDiagnostic(
