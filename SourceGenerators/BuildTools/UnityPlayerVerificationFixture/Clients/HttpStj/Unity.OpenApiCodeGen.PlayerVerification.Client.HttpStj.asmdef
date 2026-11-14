@@ -1,0 +1,19 @@
+{
+  "name": "Unity.OpenApiCodeGen.PlayerVerification.Client.HttpStj",
+  "rootNamespace": "PlayerVerification.HttpStj",
+  "references": [
+    "Unity.OpenApiCodeGen.SourceGenerator",
+    "Unity.OpenApiCodeGen.PlayerVerification.Common"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "PV_HTTP_STJ"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

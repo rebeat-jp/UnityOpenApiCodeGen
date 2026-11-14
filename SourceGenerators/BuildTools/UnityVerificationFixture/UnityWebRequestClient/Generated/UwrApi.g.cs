@@ -2,13 +2,26 @@
 namespace Rhycol.OpenApiCodeGen.UnityWebRequestVerification
 {
     [global::Newtonsoft.Json.JsonObject(global::Newtonsoft.Json.MemberSerialization.OptIn)]
+    [global::Rhycol.OpenApiCodeGen.UnityWebRequestVerification.UwrApi_Preserve.Preserve]
     public sealed class Item
     {
+        [global::Rhycol.OpenApiCodeGen.UnityWebRequestVerification.UwrApi_Preserve.Preserve]
         [global::Newtonsoft.Json.JsonProperty("id", Required = global::Newtonsoft.Json.Required.Always, NullValueHandling = global::Newtonsoft.Json.NullValueHandling.Include, DefaultValueHandling = global::Newtonsoft.Json.DefaultValueHandling.Include)]
         public int Id { get; set; }
 
+        [global::Rhycol.OpenApiCodeGen.UnityWebRequestVerification.UwrApi_Preserve.Preserve]
         [global::Newtonsoft.Json.JsonProperty("label", Required = global::Newtonsoft.Json.Required.DisallowNull, NullValueHandling = global::Newtonsoft.Json.NullValueHandling.Ignore)]
         public string? Label { get; set; }
+    }
+}
+
+#nullable enable
+namespace Rhycol.OpenApiCodeGen.UnityWebRequestVerification.UwrApi_Preserve
+{
+    /// <summary>Marks members that are only used through reflection so Unity managed stripping keeps them.</summary>
+    [global::System.AttributeUsage(global::System.AttributeTargets.All)]
+    internal sealed class PreserveAttribute : global::System.Attribute
+    {
     }
 }
 
@@ -16,10 +29,13 @@ namespace Rhycol.OpenApiCodeGen.UnityWebRequestVerification
 namespace Rhycol.OpenApiCodeGen.UnityWebRequestVerification
 {
     [global::Newtonsoft.Json.JsonObject(global::Newtonsoft.Json.MemberSerialization.OptIn)]
+    [global::Rhycol.OpenApiCodeGen.UnityWebRequestVerification.UwrApi_Preserve.Preserve]
     public sealed class Problem
     {
+        [global::Rhycol.OpenApiCodeGen.UnityWebRequestVerification.UwrApi_Preserve.Preserve]
         [global::Newtonsoft.Json.JsonProperty("title", Required = global::Newtonsoft.Json.Required.Always, NullValueHandling = global::Newtonsoft.Json.NullValueHandling.Include, DefaultValueHandling = global::Newtonsoft.Json.DefaultValueHandling.Include)]
         public string Title { get; set; } = null !;
+        [global::Rhycol.OpenApiCodeGen.UnityWebRequestVerification.UwrApi_Preserve.Preserve]
         [global::System.Runtime.Serialization.OnSerializing]
         private void ValidateRequiredPropertiesOnSerializing(global::System.Runtime.Serialization.StreamingContext context)
         {

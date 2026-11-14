@@ -23,7 +23,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             usedTypeNames.UnionWith(model.Unions.Select(static value => value.Name));
             usedTypeNames.Add(model.ApiName);
             usedTypeNames.Add(model.ApiName + "Exception");
-            bool usePreserve = NeedsPreserve(model) && !usedTypeNames.Contains(PreserveAttributeName);
+            string? preserve = NeedsPreserve(model) ? PreserveReference(model, usedTypeNames) : null;
             foreach (GeneratedEnumModel enumModel in model.Enums.OrderBy(
                          static value => value.Name,
                          StringComparer.Ordinal))
@@ -35,29 +35,31 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     converterName = enumModel.Name + "WireConverter" + suffix++;
                 }
 
-                files.Add(EmitEnum(model.GeneratedNamespace, enumModel, converterName, suppressObsoleteWarnings));
+                files.Add(EmitEnum(model.GeneratedNamespace, enumModel, converterName, suppressObsoleteWarnings, preserve));
             }
 
             foreach (GeneratedDtoModel dto in model.Dtos.OrderBy(
                          static value => value.Name,
                          StringComparer.Ordinal))
             {
-                files.Add(EmitDto(model.GeneratedNamespace, dto, suppressObsoleteWarnings, usePreserve));
+                files.Add(EmitDto(model.GeneratedNamespace, dto, suppressObsoleteWarnings, preserve));
             }
 
             files.AddRange(new PolymorphicConverterEmitter().Emit(
                 model,
                 usedTypeNames,
-                usePreserve ? PreserveAttributeName : null,
+                preserve,
                 suppressObsoleteWarnings));
 
-            // Unity's managed stripping (IL2CPP) removes members that are only reached through
-            // reflection. Json.NET finds ShouldSerialize<Name>() and the extension data member by
-            // reflection, so they carry a PreserveAttribute (the linker recognizes it by name).
-            // The attribute is internal; it is skipped if a type with that name already exists.
-            if (usePreserve)
+            // Unity's managed stripping (IL2CPP, High) removes members that are only reached through
+            // reflection: Json.NET creates the wire converters and sets the DTO properties by reflection
+            // and finds ShouldSerialize<Name>() and the extension data member the same way. The DTOs and the
+            // converters therefore carry a PreserveAttribute (the linker recognizes it by name and keeps
+            // all members of the type). The attribute is internal; it is skipped if a type with that name
+            // already exists.
+            if (preserve is not null)
             {
-                files.Add(EmitPreserveAttribute(model.GeneratedNamespace));
+                files.Add(EmitPreserveAttribute(model.GeneratedNamespace, PreserveNamespaceOf(preserve!)));
             }
 
             return files;
@@ -67,7 +69,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string generatedNamespace,
             GeneratedEnumModel model,
             string converterName,
-            bool suppressObsoleteWarnings)
+            bool suppressObsoleteWarnings,
+            string? preserve)
         {
             bool isInteger = model.IsInteger;
             string wireKind = isInteger ? "integer" : "string";
@@ -107,6 +110,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             source.AppendLine("    }");
             source.AppendLine();
+            if (preserve is not null)
+            {
+                source.AppendLine("    [" + preserve + "]");
+            }
+
             source.Append("    internal sealed class ").Append(converterName)
                 .AppendLine(" : global::Newtonsoft.Json.JsonConverter");
             source.AppendLine("    {");
@@ -207,17 +215,43 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         internal const string PreserveAttributeName = "PreserveAttribute";
 
+        // Every generated DTO, enum wire converter and union carries the attribute, so a model without any of
+        // them (for example a spec of plain arrays) needs neither the attribute nor its file.
         internal static bool NeedsPreserve(OpenApiGenerationModel model)
         {
-            return model.Unions.Count > 0 ||
-                   model.Dtos.Any(static dto =>
-                       dto.IsOpen || dto.Properties.Any(static property => property.Annotations.ReadOnly));
+            return model.Dtos.Count > 0 || model.Enums.Count > 0 || model.Unions.Count > 0;
         }
 
-        internal static GeneratedFile EmitPreserveAttribute(string generatedNamespace)
+        /// <summary>
+        /// The PreserveAttribute is declared in a namespace of its own per client (<c>&lt;namespace&gt;.&lt;ApiName&gt;_Preserve</c>),
+        /// so that several clients in one namespace do not declare the same type. Unity's linker recognizes the
+        /// attribute by its type name only. Returns the fully qualified attribute reference.
+        /// </summary>
+        internal static string PreserveReference(OpenApiGenerationModel model, ISet<string> usedTypeNames)
+        {
+            string segment = model.ApiName + "_Preserve";
+            int suffix = 2;
+            while (usedTypeNames.Contains(segment))
+            {
+                segment = model.ApiName + "_Preserve" + suffix++;
+            }
+
+            return "global::" + model.GeneratedNamespace + "." + segment + ".Preserve";
+        }
+
+        private static string PreserveNamespaceOf(string reference)
+        {
+            const string Prefix = "global::";
+            const string Suffix = ".Preserve";
+            return reference.Substring(Prefix.Length, reference.Length - Prefix.Length - Suffix.Length);
+        }
+
+        internal static string PreserveNamespace(string reference) => PreserveNamespaceOf(reference);
+
+        internal static GeneratedFile EmitPreserveAttribute(string generatedNamespace, string preserveNamespace)
         {
             var source = new StringBuilder();
-            AppendHeader(source, generatedNamespace, false);
+            AppendHeader(source, preserveNamespace, false);
             source.AppendLine("    /// <summary>Marks members that are only used through reflection so Unity managed stripping keeps them.</summary>");
             source.AppendLine("    [global::System.AttributeUsage(global::System.AttributeTargets.All)]");
             source.AppendLine("    internal sealed class PreserveAttribute : global::System.Attribute");
@@ -236,7 +270,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string generatedNamespace,
             GeneratedDtoModel model,
             bool suppressObsoleteWarnings,
-            bool usePreserve)
+            string? preserve)
         {
             var source = new StringBuilder();
             AppendHeader(source, generatedNamespace, suppressObsoleteWarnings);
@@ -244,6 +278,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 source, "    ", model.Annotations, includeDefaultAndDirection: false, model.ConstraintSets);
             GeneratedDocumentationEmitter.AppendObsolete(source, "    ", model.Annotations.Deprecated);
             source.AppendLine("    [global::Newtonsoft.Json.JsonObject(global::Newtonsoft.Json.MemberSerialization.OptIn)]");
+            if (preserve is not null)
+            {
+                source.AppendLine("    [" + preserve + "]");
+            }
+
             source.Append("    public sealed class ").Append(model.Name).AppendLine();
             source.AppendLine("    {");
             var usedMemberNames = new HashSet<string>(model.Properties.Select(static value => value.Name),
@@ -309,6 +348,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 GeneratedDocumentationEmitter.AppendSummary(
                     source, "        ", property.Annotations, includeDefaultAndDirection: true, property.Type.ConstraintSets);
                 GeneratedDocumentationEmitter.AppendObsolete(source, "        ", property.Annotations.Deprecated);
+                if (preserve is not null)
+                {
+                    source.AppendLine("        [" + preserve + "]");
+                }
+
                 source.Append("        [global::Newtonsoft.Json.JsonProperty(")
                     .Append(GeneratedSourceEmitter.StringLiteral(property.WireName))
                     .Append(", Required = ")
@@ -341,6 +385,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         .Append(" = value; ")
                         .Append(property.Name)
                         .AppendLine("Specified = true; } }");
+                    if (preserve is not null)
+                    {
+                        source.AppendLine("        [" + preserve + "]");
+                    }
+
                     source.Append("        public bool ")
                         .Append(property.Name)
                         .AppendLine("Specified { get; set; }");
@@ -369,9 +418,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 if (property.Annotations.ReadOnly)
                 {
                     // Json.NET calls ShouldSerialize<Name>() by convention before writing a member.
-                    if (usePreserve)
+                    if (preserve is not null)
                     {
-                        source.AppendLine("        [global::" + generatedNamespace + ".Preserve]");
+                        source.AppendLine("        [" + preserve + "]");
                     }
 
                     source.AppendLine("        [global::System.ComponentModel.EditorBrowsable(global::System.ComponentModel.EditorBrowsableState.Never)]");
@@ -386,9 +435,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 source.AppendLine("        /// <summary>Members that are not declared by the schema, kept as raw JSON.</summary>");
                 source.AppendLine("        [global::Newtonsoft.Json.JsonExtensionData]");
-                if (usePreserve)
+                if (preserve is not null)
                 {
-                    source.AppendLine("        [global::" + generatedNamespace + ".Preserve]");
+                    source.AppendLine("        [" + preserve + "]");
                 }
                 source.Append("        public global::System.Collections.Generic.IDictionary<string, global::Newtonsoft.Json.Linq.JToken> ")
                     .Append(model.ExtensionDataName)
@@ -404,6 +453,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 while (!usedMemberNames.Add(callbackName))
                 {
                     callbackName = CallbackBaseName + suffix++;
+                }
+
+                if (preserve is not null)
+                {
+                    source.AppendLine("        [" + preserve + "]");
                 }
 
                 source.AppendLine("        [global::System.Runtime.Serialization.OnSerializing]");
