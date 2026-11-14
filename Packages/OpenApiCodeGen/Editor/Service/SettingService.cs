@@ -27,6 +27,23 @@ namespace Rhycol.OpenApiCodeGen.Core
         }
 
         /// <summary>
+        /// Source Generator のライブラリ状態を、指定した設定を基準に評価します。
+        /// Evaluates the Source Generator library states for the given settings.
+        /// </summary>
+        public SourceGeneratorLibrariesDto GetSourceGeneratorLibraries(ProjectSettingDisplayDto projectSetting)
+        {
+            GenerationLibraryAssessment assessment = GenerationLibraryAssessment.Assess(
+                Rhycol.OpenApiCodeGen.Editor.Generation.GenerationProviderRegistry.Shared,
+                projectSetting.GenerateProvider,
+                projectSetting.ApiClientOutputFolderPath,
+                projectSetting.HttpTransport,
+                projectSetting.JsonSerializer);
+            return SourceGeneratorLibraryPresentation.BuildSettings(
+                assessment,
+                SourceGeneratorLibraryPresentation.IsWebGlBuildTarget());
+        }
+
+        /// <summary>
         /// C#コード生成時の設定を取得します。
         /// </summary>
         /// <returns>C#コード生成時の設定のインスタンス。</returns>
@@ -118,7 +135,9 @@ namespace Rhycol.OpenApiCodeGen.Core
             return new ProjectSettingDisplayDto(
                 generateProvider: projectSetting.GenerateProvider,
                 apiDocumentFilePathOrUrl: projectSetting.ApiDocumentFilePathOrUrl,
-                apiClientOutputFolderPath: projectSetting.ApiClientOutputFolderPath
+                apiClientOutputFolderPath: projectSetting.ApiClientOutputFolderPath,
+                httpTransport: projectSetting.HttpTransport,
+                jsonSerializer: projectSetting.JsonSerializer
             );
         }
 
@@ -127,7 +146,9 @@ namespace Rhycol.OpenApiCodeGen.Core
             return new ProjectSetting(
                 generateProvider: projectSetting.GenerateProvider,
                 apiDocumentFilePathOrUrl: projectSetting.ApiDocumentFilePathOrUrl,
-                apiClientOutputFolderPath: projectSetting.ApiClientOutputFolderPath
+                apiClientOutputFolderPath: projectSetting.ApiClientOutputFolderPath,
+                httpTransport: projectSetting.HttpTransport,
+                jsonSerializer: projectSetting.JsonSerializer
             );
         }
 

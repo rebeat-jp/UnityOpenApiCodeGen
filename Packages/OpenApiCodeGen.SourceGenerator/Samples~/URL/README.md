@@ -6,6 +6,9 @@ This sample uses the pinned raw GitHub fixture for the `0.5.0` package:
 https://raw.githubusercontent.com/rebeat-jp/UnityOpenApiCodeGen/0.5.0/Packages/OpenApiCodeGen.SourceGenerator/Samples~/URL/openapi.json
 ```
 
+The default client needs Newtonsoft.Json installed in the project; see
+[Required libraries](../Local%20JSON/README.md#required-libraries).
+
 Paste that URL into the Generator window with **Source Generator** selected,
 then press **Generate**. Generate is the explicit fetch/refresh action. The
 Editor determines JSON format from the final URL and response metadata and

@@ -43,6 +43,19 @@ internal class SettingMenu : EditorWindow, ISettingView
     Foldout? _cSharpGenerationSettingsFoldout;
     bool _inputEnabled = true;
 
+    /* Source Generator libraries */
+    Foldout? _sourceGeneratorLibrariesFoldout;
+    Label? _librariesMessageLabel;
+    VisualElement? _librariesWebGlMessages;
+    RadioButtonGroup? _httpTransportGroup;
+    RadioButtonGroup? _jsonSerializerGroup;
+    VisualElement? _httpTransportDetails;
+    VisualElement? _jsonSerializerDetails;
+    TextField? _systemTextJsonStepsField;
+    SourceGeneratorLibrariesDto _libraries = SourceGeneratorLibrariesDto.Hidden;
+    bool _showSystemTextJsonSteps;
+    bool _renderingLibraries;
+
     /* Open API */
     Toggle? _allowUnicodeIdentifiersField;
     TextField? _apiNameField;
@@ -102,6 +115,16 @@ internal class SettingMenu : EditorWindow, ISettingView
         _generateProviderField?.RegisterValueChangedCallback(ProviderChangeEvent);
         _defaultApiClientOutputFolderPathField?.RegisterCallback((EventCallback<FocusOutEvent>)FocusOutEvent);
         _defaultApiDocumentFilePathOrUrlField?.RegisterCallback((EventCallback<FocusOutEvent>)FocusOutEvent);
+
+        // Source Generator libraries
+        void LibrarySelectionChangeEvent(ChangeEvent<int> e)
+        {
+            if (_renderingLibraries) return;
+            var settings = GetCurrentProjectSettingValue();
+            ProjectSettingChanged?.Invoke(settings);
+        }
+        _httpTransportGroup?.RegisterValueChangedCallback(LibrarySelectionChangeEvent);
+        _jsonSerializerGroup?.RegisterValueChangedCallback(LibrarySelectionChangeEvent);
 
     }
 
@@ -193,6 +216,13 @@ internal class SettingMenu : EditorWindow, ISettingView
         _defaultApiClientOutputFolderPathField = root.Q<TextField>("DefaultOutputFolderPathField");
         _defaultApiDocumentFilePathOrUrlField = root.Q<TextField>("DefaultApiDocumentFilePathOrUrlField");
         _cSharpGenerationSettingsFoldout = root.Q<Foldout>("CSharpGenerationSettingsFoldout");
+        _sourceGeneratorLibrariesFoldout = root.Q<Foldout>("SourceGeneratorLibrariesFoldout");
+        _librariesMessageLabel = root.Q<Label>("LibrariesMessageLabel");
+        _librariesWebGlMessages = root.Q<VisualElement>("LibrariesWebGlMessages");
+        _httpTransportGroup = root.Q<RadioButtonGroup>("HttpTransportGroup");
+        _jsonSerializerGroup = root.Q<RadioButtonGroup>("JsonSerializerGroup");
+        _httpTransportDetails = root.Q<VisualElement>("HttpTransportDetails");
+        _jsonSerializerDetails = root.Q<VisualElement>("JsonSerializerDetails");
 
         // Open API
         _allowUnicodeIdentifiersField = root.Q<Toggle>("AllowUnicodeIdentifiersField");
@@ -301,6 +331,10 @@ internal class SettingMenu : EditorWindow, ISettingView
             }
         }
 
+        _sourceGeneratorLibrariesFoldout?.EnableInClassList(
+            "source-generator-libraries-hidden",
+            provider != GenerateProvider.SourceGenerator || !_libraries.IsVisible);
+
         if (_defaultApiClientOutputFolderPathField != null)
         {
             _defaultApiClientOutputFolderPathField.label = provider == GenerateProvider.SourceGenerator
@@ -326,7 +360,120 @@ internal class SettingMenu : EditorWindow, ISettingView
         _generateProviderField?.SetValueWithoutNotify(projectSetting.GenerateProvider);
         _defaultApiClientOutputFolderPathField?.SetValueWithoutNotify(projectSetting.ApiClientOutputFolderPath);
         _defaultApiDocumentFilePathOrUrlField?.SetValueWithoutNotify(projectSetting.ApiDocumentFilePathOrUrl);
+        _httpTransportGroup?.SetValueWithoutNotify((int)projectSetting.HttpTransport);
+        _jsonSerializerGroup?.SetValueWithoutNotify((int)projectSetting.JsonSerializer);
         RefreshProviderUi();
+    }
+
+    public void SetSourceGeneratorLibraries(SourceGeneratorLibrariesDto libraries)
+    {
+        _libraries = libraries ?? SourceGeneratorLibrariesDto.Hidden;
+        RenderSourceGeneratorLibraries();
+        RefreshProviderUi();
+    }
+
+    void RenderSourceGeneratorLibraries()
+    {
+        if (_sourceGeneratorLibrariesFoldout == null) return;
+        _renderingLibraries = true;
+        try
+        {
+            if (_librariesMessageLabel != null)
+            {
+                _librariesMessageLabel.text = _libraries.Message;
+                _librariesMessageLabel.style.display = string.IsNullOrEmpty(_libraries.Message)
+                    ? DisplayStyle.None
+                    : DisplayStyle.Flex;
+            }
+
+            if (_librariesWebGlMessages != null)
+            {
+                _librariesWebGlMessages.Clear();
+                if (!string.IsNullOrEmpty(_libraries.WebGlNotice))
+                    _librariesWebGlMessages.Add(new HelpBox(_libraries.WebGlNotice, HelpBoxMessageType.Info));
+                if (!string.IsNullOrEmpty(_libraries.WebGlWarning))
+                    _librariesWebGlMessages.Add(new HelpBox(_libraries.WebGlWarning, HelpBoxMessageType.Warning));
+            }
+
+            RenderLibraryChoices(_httpTransportGroup, _httpTransportDetails, _libraries.HttpChoices);
+            RenderLibraryChoices(_jsonSerializerGroup, _jsonSerializerDetails, _libraries.JsonChoices);
+        }
+        finally
+        {
+            _renderingLibraries = false;
+        }
+    }
+
+    void RenderLibraryChoices(
+        RadioButtonGroup? group,
+        VisualElement? details,
+        IReadOnlyList<LibraryChoiceDto> choices)
+    {
+        if (group == null || details == null) return;
+
+        int selected = group.value;
+        var labels = new List<string>(choices.Count);
+        foreach (LibraryChoiceDto choice in choices) labels.Add(choice.Label);
+        group.choices = labels;
+        group.SetValueWithoutNotify(selected);
+        var radioButtons = group.Query<RadioButton>().ToList();
+        for (int index = 0; index < choices.Count && index < radioButtons.Count; index++)
+            radioButtons[index].SetEnabled(choices[index].IsSelectable);
+
+        details.Clear();
+        foreach (LibraryChoiceDto choice in choices)
+        {
+            var status = new Label(choice.Label + ": " + choice.StatusText);
+            status.AddToClassList("source-generator-libraries-status");
+            status.AddToClassList(choice.IsInstalled
+                ? "source-generator-libraries-status--ready"
+                : choice.IsSelectable
+                    ? "source-generator-libraries-status"
+                    : "source-generator-libraries-status--blocked");
+            details.Add(status);
+
+            if (!string.IsNullOrEmpty(choice.Guidance))
+            {
+                var guidance = new Label(choice.Guidance);
+                guidance.AddToClassList("source-generator-libraries-guidance");
+                details.Add(guidance);
+            }
+
+            if (choice.Action != LibraryInstallAction.None)
+            {
+                LibraryInstallAction action = choice.Action;
+                var button = new Button(() => OnLibraryAction(action)) { text = choice.ActionLabel };
+                button.AddToClassList("source-generator-libraries-action");
+                details.Add(button);
+            }
+        }
+
+        if (ReferenceEquals(group, _jsonSerializerGroup))
+        {
+            if (_systemTextJsonStepsField == null)
+            {
+                _systemTextJsonStepsField = new TextField { multiline = true, isReadOnly = true };
+                _systemTextJsonStepsField.AddToClassList("source-generator-libraries-steps");
+            }
+
+            _systemTextJsonStepsField.value = SourceGeneratorLibraryPresentation.BuildSystemTextJsonSteps();
+            _systemTextJsonStepsField.style.display = _showSystemTextJsonSteps
+                ? DisplayStyle.Flex
+                : DisplayStyle.None;
+            details.Add(_systemTextJsonStepsField);
+        }
+    }
+
+    void OnLibraryAction(LibraryInstallAction action)
+    {
+        if (action == LibraryInstallAction.ShowSystemTextJsonSteps)
+        {
+            _showSystemTextJsonSteps = !_showSystemTextJsonSteps;
+            RenderSourceGeneratorLibraries();
+            return;
+        }
+
+        LibraryInstaller.Run(action);
     }
     public void SetUserSettingValue(UserSettingDisplayDto userSetting)
     {
@@ -368,7 +515,9 @@ internal class SettingMenu : EditorWindow, ISettingView
         var projectSetting = new ProjectSettingDisplayDto(
             generateProvider: (GenerateProvider)(_generateProviderField?.value ?? GenerateProvider.OpenApi),
             apiClientOutputFolderPath: _defaultApiClientOutputFolderPathField?.value ?? "",
-            apiDocumentFilePathOrUrl: _defaultApiDocumentFilePathOrUrlField?.value ?? ""
+            apiDocumentFilePathOrUrl: _defaultApiDocumentFilePathOrUrlField?.value ?? "",
+            httpTransport: (GenerationHttpTransport)Mathf.Clamp(_httpTransportGroup?.value ?? 0, 0, 1),
+            jsonSerializer: (GenerationJsonSerializer)Mathf.Clamp(_jsonSerializerGroup?.value ?? 0, 0, 1)
         );
         return projectSetting;
     }

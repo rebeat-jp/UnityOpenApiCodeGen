@@ -73,12 +73,43 @@ namespace Rhycol.OpenApiCodeGen.Core
                     ? new GenerateApiClientDto(
                         generateProvider: projectSetting.GenerateProvider,
                         apiDocumentFilePathOrUrl: projectSetting.ApiDocumentFilePathOrUrl,
-                        apiClientOutputFolderPath: projectSetting.ApiClientOutputFolderPath)
+                        apiClientOutputFolderPath: projectSetting.ApiClientOutputFolderPath,
+                        httpTransport: projectSetting.HttpTransport,
+                        jsonSerializer: projectSetting.JsonSerializer)
                     : new GenerateApiClientDto();
             }
             catch (Exception e)
             {
                 throw new ApplicationServiceException("デフォルトのAPIクライアント生成設定の取得に失敗しました。", e);
+            }
+        }
+
+        /// <summary>
+        /// 選択中の組み合わせに対するライブラリの準備状況を返します。Docker など対象外の Provider は NotApplicable です。
+        /// Evaluates the libraries of the selected combination; providers without library checks are not applicable.
+        /// </summary>
+        internal GenerationLibraryReadinessDto GetLibraryReadiness(
+            GenerateProvider provider,
+            string outputFolderPath,
+            GenerationHttpTransport httpTransport,
+            GenerationJsonSerializer jsonSerializer)
+        {
+            try
+            {
+                GenerationLibraryAssessment assessment = GenerationLibraryAssessment.Assess(
+                    _providerRegistry,
+                    provider,
+                    outputFolderPath,
+                    httpTransport,
+                    jsonSerializer);
+                return SourceGeneratorLibraryPresentation.BuildReadiness(
+                    assessment,
+                    SourceGeneratorLibraryPresentation.IsWebGlBuildTarget());
+            }
+            catch (Exception)
+            {
+                // The readiness line is informational; the provider re-checks when generating.
+                return GenerationLibraryReadinessDto.NotApplicable;
             }
         }
 
@@ -128,6 +159,8 @@ namespace Rhycol.OpenApiCodeGen.Core
                     Path.GetFullPath(generateApiClientDto.ApiClientOutputFolderPath),
                     generationCSharpSetting.ApiName,
                     generationCSharpSetting.PackageName);
+                request.HttpTransport = savedProjectSetting.HttpTransport;
+                request.JsonSerializer = savedProjectSetting.JsonSerializer;
                 request.Progress = progress;
                 request.GitHubToken = userSetting?.GitHubToken;
                 GenerationResult result =

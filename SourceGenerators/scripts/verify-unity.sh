@@ -74,6 +74,7 @@ without_addon_results="${temporary_root}/without-addon-results.xml"
 without_addon_log="${temporary_root}/without-addon.log"
 without_addon_bootstrap_log="${temporary_root}/without-addon-bootstrap.log"
 consumer_log="${temporary_root}/source-generator-consumer.log"
+no_serializer_log="${temporary_root}/source-generator-no-serializer.log"
 gate_status="not-run"
 gate_reason="Source Generator Unity gate did not start"
 published_authoritative_cache=""
@@ -116,6 +117,7 @@ write_gate_evidence() {
   copy_evidence_file "${regeneration_results}" "source-generator-regeneration-results.xml"
   copy_evidence_file "${regeneration_log}" "source-generator-regeneration.log"
   copy_evidence_file "${regeneration_test_log}" "source-generator-regeneration-tests.log"
+  copy_evidence_file "${no_serializer_log}" "source-generator-no-serializer.log"
   copy_evidence_file "${without_addon_results}" "without-addon-results.xml"
   copy_evidence_file "${without_addon_log}" "without-addon.log"
   copy_evidence_file "${without_addon_bootstrap_log}" "without-addon-bootstrap.log"
@@ -228,6 +230,8 @@ cp "${source_generator_archive}" "${local_packages}/${source_generator_archive_n
 # A manifest under Packages/ resolves file: paths relative to that directory.
 # Keep both package entries explicit so Package Manager cannot satisfy the gate
 # from a repository copy or from a transitive dependency.
+# This first manifest deliberately has no JSON library: since 0.6.0 the add-on does not install
+# Newtonsoft.Json, and the packages must still compile in a project without any serializer.
 printf '%s\n' \
   '{' \
   '  "dependencies": {' \
@@ -288,12 +292,61 @@ for test_assembly in Unity.OpenApiCodeGen.Test.dll Unity.OpenApiCodeGen.SourceGe
   fi
 done
 
+# The project above has no JSON library at all. Package Manager must not have added Newtonsoft.Json
+# through the add-on's dependencies (they no longer include it).
+if grep -q 'com.unity.nuget.newtonsoft-json' "${project_path}/Packages/packages-lock.json"; then
+  fail_gate "Unity ${unity_version} serializer-less consumer unexpectedly resolved Newtonsoft.Json"
+fi
+
+# A definition that selects the default Newtonsoft.Json client must be reported by the analyzer as OACG011
+# (not as a package compile error) while the project has no Newtonsoft.Json. No spec bundle exists, so
+# OACG006 is expected as well; only the library diagnostic is asserted.
+no_serializer_assets="${project_path}/Assets/OpenApiCodeGenNoSerializerVerification"
+mkdir -p "${no_serializer_assets}"
+printf '%s\n' \
+  '{ "name": "OpenApiCodeGenNoSerializerVerification", "references": ["Unity.OpenApiCodeGen.SourceGenerator"] }' \
+  > "${no_serializer_assets}/OpenApiCodeGenNoSerializerVerification.asmdef"
+printf '%s\n' \
+  'namespace OpenApiCodeGenNoSerializerVerification' \
+  '{' \
+  '    [global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiClientDefinitionAttribute(' \
+  '        "0123456789abcdef0123456789abcdef",' \
+  '        "NoSerializerApi",' \
+  '        "OpenApiCodeGenNoSerializerVerification",' \
+  '        global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.Json)]' \
+  '    public partial class NoSerializerApi' \
+  '    {' \
+  '    }' \
+  '}' \
+  > "${no_serializer_assets}/NoSerializerApi.OpenApiDefinition.cs"
+if run_editor "${no_serializer_log}" \
+    "${unity_executable}" \
+    -batchmode \
+    -nographics \
+    -projectPath "${project_path}" \
+    -quit; then
+  fail_gate "Unity ${unity_version} serializer-less consumer compiled a Newtonsoft.Json definition without errors"
+else
+  editor_exit_code=$?
+  if [[ "${editor_exit_code}" == "142" || "${editor_exit_code}" == "124" || ! -f "${no_serializer_log}" ]]; then
+    fail_not_run "Unity ${unity_version} serializer-less consumer compilation timed out or produced no log"
+  fi
+fi
+if ! grep -q 'OACG011' "${no_serializer_log}"; then
+  fail_gate "Unity ${unity_version} serializer-less consumer did not report OACG011 for the Newtonsoft.Json definition"
+fi
+if grep -Eq 'error CS[0-9]{4}' "${no_serializer_log}"; then
+  fail_gate "Unity ${unity_version} serializer-less consumer reported a C# compiler error instead of only OACG011"
+fi
+rm -rf "${no_serializer_assets}" "${no_serializer_assets}.meta"
+
 # The verification fixture includes a UnityWebRequest client, which needs the
 # built-in UnityWebRequest module that a bare manifest does not enable.
 printf '%s\n' \
   '{' \
   '  "dependencies": {' \
   "    \"com.unity.test-framework\": \"${test_framework_version}\"," \
+  "    \"com.unity.nuget.newtonsoft-json\": \"3.2.2\"," \
   '    "com.unity.modules.unitywebrequest": "1.0.0",' \
   "    \"jp.rhycol.openapicodegen\": \"file:../../LocalPackages/${base_archive_name}\"," \
   "    \"jp.rhycol.openapicodegen.source-generator\": \"file:../../LocalPackages/${source_generator_archive_name}\"" \

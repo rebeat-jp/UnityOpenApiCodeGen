@@ -1634,7 +1634,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 GenerationProviderAvailability.Available(),
                 cacheService,
                 definitionWriter,
-                requestCompilation);
+                requestCompilation,
+                LibraryProbeTestSupport.AllInstalledProbe());
         }
 
         private static string ReadSpecId(string message)

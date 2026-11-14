@@ -23,8 +23,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             string preparedMigrationSourceSha256 = "",
             bool preparedMigrationSourceMetaExists = false,
             string preparedMigrationSourceMetaSha256 = "",
-            byte[] preparedMigrationSourceMetaBytes = null)
+            byte[] preparedMigrationSourceMetaBytes = null,
+            OpenApiHttpTransport httpTransport = OpenApiHttpTransport.HttpClient,
+            OpenApiJsonSerializer jsonSerializer = OpenApiJsonSerializer.NewtonsoftJson)
         {
+            HttpTransport = httpTransport;
+            JsonSerializer = jsonSerializer;
             SpecId = specId;
             ClientIdentitySha256 = clientIdentitySha256;
             TargetAssemblyName = targetAssemblyName;
@@ -61,6 +65,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         internal string GeneratedNamespace { get; }
 
         internal OpenApiDocumentFormat DocumentFormat { get; }
+
+        internal OpenApiHttpTransport HttpTransport { get; }
+
+        internal OpenApiJsonSerializer JsonSerializer { get; }
 
         internal byte[] Content { get; }
 

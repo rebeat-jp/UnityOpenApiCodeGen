@@ -1,8 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## [0.6.0] - Unreleased
+
+### Breaking changes
+
+- **The package no longer depends on `com.unity.nuget.newtonsoft-json`.** Installing the add-on does not install Newtonsoft.Json any more, and the Editor assembly no longer references it. Generated clients still use HttpClient and Newtonsoft.Json by default, so a project that generates them must install `com.unity.nuget.newtonsoft-json` `3.2.2` (or any Newtonsoft.Json 13.0 or later) itself. Without it the analyzer reports `OACG011` for existing definitions and Generate is disabled in the Generator window. Settings > Source Generator Libraries has an install button, and the Editor offers to install the package once when it finds existing Newtonsoft.Json definitions in a project without it.
 
 ### Added
+
+- Choose the HTTP implementation (HttpClient or UnityWebRequest) and the JSON serializer (Newtonsoft.Json or System.Text.Json) per project. The choice is written to the definition file as the named arguments `HttpTransport` / `JsonSerializer` of `OpenApiClientDefinitionAttribute` only when it is not the default, so existing definition files stay byte-identical and are still read.
+- Check the libraries before generating. Settings > Source Generator Libraries lists each choice with its state (installed, missing, not referenced by the output assembly, too old), disables choices that are not ready, and offers to add `com.unity.nuget.newtonsoft-json` or the Unity Web Request module. System.Text.Json is shown as manual steps (UnityNuGet `org.nuget.system.text.json` 8.0 or later, which brings `System.Text.Encodings.Web`); the manifest is never edited automatically. The Generator window shows the combination and its state, and disables Generate with the reason and a link to Settings when a library is missing. The provider checks again when Generate runs and returns the same guidance as the failure message.
+- Warn on WebGL: the Settings window recommends UnityWebRequest when the active build target is WebGL, and warns when HttpClient is selected (the analyzer reports `OACG014`).
 
 - Add warning `OACG108` ("Ignored OpenAPI element"), reported with the logical path of an element that the analyzer deliberately ignores without changing the wire contract: `Accept` / `Content-Type` / `Authorization` header parameters, `webhooks`, `callbacks` and `links`, an `application/xml` entry next to a generable media type, `const` / `not` / `x-enum-*` values that cannot be enforced, a `pattern` that needs .NET syntax, unused Encoding Object members, ignored OpenAPI 3.2 members and a Swagger 2.0 operation `schemes` without a `host`. The support matrix lists when each diagnostic is reported.
 - Generate open objects, maps and free-form objects: an object schema that omits `additionalProperties` (or sets `true` / a schema) keeps undeclared members in an `IDictionary<string, JToken>` `[JsonExtensionData]` member and no longer rejects them in successful responses; `additionalProperties: <schema>` without properties becomes `Dictionary<string, T>`, and a plain `type: object` becomes `JObject`. `additionalProperties: false` stays a closed DTO.

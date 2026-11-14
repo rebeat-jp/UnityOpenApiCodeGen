@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.6.0] - Unreleased
+
+### Added
+
+- Add `GenerationHttpTransport` and `GenerationJsonSerializer` (persisted numeric values `0` = HttpClient / Newtonsoft.Json, `1` = UnityWebRequest / System.Text.Json) and the properties `GenerationRequest.HttpTransport` / `JsonSerializer`, which default to the previous behaviour. A provider that has no such choice ignores them.
+- Add the optional interface `IGenerationLibraryInspector` with `GenerationLibraryReport`, `GenerationLibraryState` and `GenerationLibraryStatus` so a provider can report which libraries an output folder can use. `IGenerationProvider` is unchanged, and an unavailable library does not make a provider unavailable.
+- Add two fields to `projectSettings.json` (`HttpTransport`, `JsonSerializer`). Files without them keep working and mean the previous combination.
+- Settings and the Generator window show the library state of the Source Generator provider when the add-on is installed. The Docker provider UI is unchanged.
+
 ## [0.5.1] - 2026-11-10
 
 ### Added
