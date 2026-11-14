@@ -99,6 +99,21 @@ named <code>example</code>, <code>x-meta</code>, or <code>$ref</code> still cont
 Similarly, <code>responses.x-*</code> inside an operation is extension data, while a
 component response named <code>x-*</code> is a Response or Reference Object. Bare Schema
 roots follow the same Schema rules.</p>
+<p>The same context rules cover the later OpenAPI features. Subtrees that the analyzer
+deliberately ignores are never parsed, so their <code>$ref</code> values are opaque: a root
+<code>webhooks</code>, an operation <code>callbacks</code>, a response <code>links</code>, <code>components.callbacks</code>,
+<code>components.links</code>, <code>components.examples</code>, and Media Type <code>itemSchema</code>. They need
+no reference edge, are not collected by the Editor, and an unresolved or external
+<code>$ref</code> inside them cannot fail bundling (the analyzer reports <code>OACG108</code> for the
+element instead). OpenAPI 3.2 adds reference locations that are collected like the
+other Path Item and Media Type contexts: the <code>query</code> operation, <code>additionalOperations</code>
+(a map of Operation Objects), and <code>components.mediaTypes</code> (a Media Type Object may be
+a Reference Object). A Swagger 2.0 document is bundled as written: its <code>$ref</code> values
+under <code>definitions</code>, <code>parameters</code>, <code>responses</code> and in operation parameters and
+responses are collected with the same edges, and the analyzer normalizes the tree to
+OpenAPI 3.0 after reading the Bundle. The normalized nodes keep the original line,
+column and logical path, so diagnostics point at the Swagger 2.0 source. The Bundle
+format itself is unchanged.</p>
 <p>Edges are sorted by <code>sourceDocumentId</code>, then <code>sourcePointer</code> in ordinal order.
 Duplicate source identities, missing edges, invalid pointers, missing target
 documents, and unresolved targets are invalid Bundle structure. The analyzer
@@ -126,7 +141,10 @@ caller-supplied format hint are not used.</p>
 <p>The hard limits are 30 seconds per request, 120 seconds per graph, 4 MiB per
 document, 32 MiB per graph, 64 documents, five redirects, and reference depth
 256. Automatic retry and ETag revalidation are not performed.</p>
-<p>The supported external graph includes bare Schema documents. Bare non-Schema
+<p>The supported external graph includes bare Schema documents and bare Path Item
+documents (a file without <code>openapi</code> / <code>swagger</code> that has an HTTP method, or only
+<code>$ref</code>, <code>parameters</code>, <code>servers</code>, <code>summary</code> and <code>description</code>, and no JSON Schema
+keyword; any schema keyword makes it a bare Schema). Other bare non-Schema
 documents and <code>$id</code>, <code>$anchor</code>, <code>$dynamicAnchor</code>, and <code>$dynamicRef</code> are
 unsupported. Unresolved targets report <code>OACG102</code>; cycles report <code>OACG103</code>.
 Bundle v1 external-reference input retains <code>OACG104</code> for compatibility.</p>
