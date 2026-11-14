@@ -107,10 +107,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// <summary>
         /// transport / serializer の組み合わせ別に emitter を選ぶ切替点。
         /// 後続フェーズで UnityWebRequest の emitter をここへ追加する。
-        /// System.Text.Json で生成できない機能が必要なら LibrarySelectionNotSupportedException を投げる。
         /// Selection point that picks the emitters for a transport / serializer combination.
-        /// Later phases add the UnityWebRequest emitters here. Throws
-        /// LibrarySelectionNotSupportedException when System.Text.Json cannot generate a needed feature.
+        /// Later phases add the UnityWebRequest emitters here.
         /// </summary>
         internal IReadOnlyList<GeneratedFile> EmitMvpModel(
             OpenApiGenerationModel model,
@@ -133,7 +131,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             var files = new List<GeneratedFile>();
             if (json.IsSystemTextJson)
             {
-                SystemTextJsonFeatureGate.EnsureSupported(model);
                 files.AddRange(new SystemTextJsonDtoSourceEmitter().Emit(model));
             }
             else

@@ -37,7 +37,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             ResponseValidatorPlan validators,
             BodyHelperNames helpers)
         {
-            ISet<GeneratedTypeKind> kinds = SystemTextJsonFeatureGate.CollectKinds(model);
+            ISet<GeneratedTypeKind> kinds = SystemTextJsonTypeKinds.CollectKinds(model);
             GeneratedDtoModel[] rulesDtos = model.Dtos
                 .Where(static dto => dto.Properties.Any(static property =>
                     property.UseSpecified || property.Annotations.ReadOnly))
@@ -406,6 +406,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     .Append(".JsonDocument document = ").Append(StjJson)
                     .Append(".JsonDocument.Parse(json, new ").Append(StjJson).AppendLine(".JsonDocumentOptions { MaxDepth = maxDepth }))");
                 source.AppendLine("            {");
+                source.Append("                ").Append(_prefix).AppendLine("CheckSurrogates(json);");
                 source.Append("                ").Append(_prefix).AppendLine("CheckDuplicates(document.RootElement);");
                 source.AppendLine("                validate(document.RootElement, \"$\", nullable);");
                 source.AppendLine("            }");
@@ -444,6 +445,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     AppendSystemTextJsonIntegerLexemeHelper(source);
                 }
 
+                AppendSystemTextJsonTrialHelpers(source);
                 AppendSystemTextJsonDuplicateHelper(source);
             }
 
@@ -455,6 +457,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             // Json.NET rejects a repeated member name (DuplicatePropertyNameHandling.Error); JsonDocument keeps
             // both, and the deserializer would silently take the last one.
+            // JsonDocument also keeps a string with a lone surrogate escape (\ud83d) and fails only when the
+            // text is read (InvalidOperationException). System.Text.Json cannot deserialize such text, so
+            // CheckSurrogates rejects it as a JsonException, which lets every later read of a string or a name
+            // be safe. It scans the JSON text once and allocates nothing.
             private void AppendSystemTextJsonDuplicateHelper(StringBuilder source)
             {
                 source.AppendLine(@"
@@ -477,6 +483,49 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     __PREFIX__CheckDuplicates(item);
                 }
             }
+        }
+
+        // The JSON text is already known to be well formed (JsonDocument.Parse succeeded): only the \u escapes
+        // are inspected. A high surrogate must be followed by a \u low surrogate, and a low one must follow a high one.
+        private static void __PREFIX__CheckSurrogates(string json)
+        {
+            int index = json.IndexOf('\\');
+            while (index >= 0 && index + 1 < json.Length)
+            {
+                if (json[index + 1] != 'u')
+                {
+                    index = json.IndexOf('\\', index + 2);
+                    continue;
+                }
+                int unit = __PREFIX__ReadHex(json, index + 2);
+                if (unit >= 0xDC00 && unit <= 0xDFFF)
+                    throw new global::System.Text.Json.JsonException(""The response contains text that is not valid UTF-16 (an unpaired surrogate)."");
+                if (unit >= 0xD800 && unit <= 0xDBFF)
+                {
+                    if (index + 11 >= json.Length || json[index + 6] != '\\' || json[index + 7] != 'u')
+                        throw new global::System.Text.Json.JsonException(""The response contains text that is not valid UTF-16 (an unpaired surrogate)."");
+                    int next = __PREFIX__ReadHex(json, index + 8);
+                    if (next < 0xDC00 || next > 0xDFFF)
+                        throw new global::System.Text.Json.JsonException(""The response contains text that is not valid UTF-16 (an unpaired surrogate)."");
+                    index = json.IndexOf('\\', index + 12);
+                    continue;
+                }
+                index = json.IndexOf('\\', index + 6);
+            }
+        }
+
+        private static int __PREFIX__ReadHex(string json, int start)
+        {
+            int value = 0;
+            for (int offset = 0; offset < 4; offset++)
+            {
+                if (start + offset >= json.Length) return -1;
+                char c = json[start + offset];
+                int digit = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+                if (digit < 0) return -1;
+                value = value * 16 + digit;
+            }
+            return value;
         }
 ".Replace("__PREFIX__", _prefix));
             }
@@ -604,6 +653,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     source.Append("            if (!").Append(_prefix).AppendLine("IsBase64(token.GetString()!))");
                     source.Append("                throw new ").Append(StjException).AppendLine("(\"Invalid base64 response string at \" + path + \".\");");
                 }
+                else if (type.Kind == GeneratedTypeKind.Union && _unions.TryGetValue(type.Name, out GeneratedUnionModel? union))
+                {
+                    AppendSystemTextJsonUnionChecks(source, union);
+                }
                 else if (type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
                 {
                     AppendKindCheck(source, "Object", "Expected a response object at \" + path + \".");
@@ -710,7 +763,175 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     AppendSystemTextJsonConstCheck(source, type);
                 }
 
+                // Validation keywords (minLength, pattern, ...). A DTO keeps its sets in its model.
+                IReadOnlyList<GeneratedConstraints> constraintSets = type.ConstraintSets;
+                if (type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? constrainedDto))
+                {
+                    constraintSets = type.ConstraintSets.Concat(constrainedDto.ConstraintSets).ToArray();
+                }
+
+                _constraints.AppendOwnChecks(
+                    source, "            ", constraintSets, "token", "path", "\"response\"", contractScope: true);
+                AppendSystemTextJsonNotChecks(source, type);
                 source.AppendLine("        }");
+            }
+
+            // oneOf / anyOf: with a discriminator the value selects the schema that is checked; without
+            // one every candidate is tried against its own contract (the same decision as Newtonsoft.Json).
+            private void AppendSystemTextJsonUnionChecks(StringBuilder source, GeneratedUnionModel union)
+            {
+                string nullFlag(GeneratedTypeModel value) => value.Nullable ? "true" : "false";
+                if (union.DiscriminatorPropertyName is string discriminatorName)
+                {
+                    string propertyLiteral = GeneratedSourceEmitter.StringLiteral(discriminatorName);
+                    AppendKindCheck(source, "Object", "Expected a response object at \" + path + \".");
+                    source.Append("            string? unionDiscriminator = token.TryGetProperty(").Append(propertyLiteral)
+                        .Append(", out var unionDiscriminatorToken) && unionDiscriminatorToken.ValueKind == ").Append(StjKind)
+                        .AppendLine(".String ? unionDiscriminatorToken.GetString() : null;");
+                    if (union.DefaultMemberIndex >= 0)
+                    {
+                        source.AppendLine("            switch (unionDiscriminator)");
+                    }
+                    else
+                    {
+                        source.AppendLine("            if (unionDiscriminator == null)");
+                        source.Append("                throw new ").Append(StjException)
+                            .Append("(\"The discriminator property is missing or is not a string at \" + path + \".\" + ")
+                            .Append(propertyLiteral).AppendLine(" + \".\");");
+                        source.AppendLine("            switch (unionDiscriminator)");
+                    }
+
+                    source.AppendLine("            {");
+                    foreach (GeneratedUnionMemberModel member in union.Members)
+                    {
+                        foreach (string wireValue in member.DiscriminatorValues)
+                        {
+                            source.Append("                case ")
+                                .Append(GeneratedSourceEmitter.StringLiteral(wireValue)).AppendLine(":");
+                        }
+
+                        source.Append("                    ").Append(MethodName(member.Type))
+                            .Append("(token, path, ").Append(nullFlag(member.Type)).AppendLine(");");
+                        source.AppendLine("                    break;");
+                    }
+
+                    source.AppendLine("                default:");
+                    if (union.DefaultMemberIndex >= 0)
+                    {
+                        // OpenAPI 3.2 defaultMapping: any other discriminator value is checked as the default member.
+                        GeneratedUnionMemberModel defaultMember = union.Members[union.DefaultMemberIndex];
+                        source.Append("                    ").Append(MethodName(defaultMember.Type))
+                            .Append("(token, path, ").Append(nullFlag(defaultMember.Type)).AppendLine(");");
+                        source.AppendLine("                    break;");
+                    }
+                    else
+                    {
+                        source.Append("                    throw new ").Append(StjException)
+                            .Append("(\"The discriminator value '\" + unionDiscriminator + \"' does not select a schema at \" + path + \".\" + ")
+                            .Append(propertyLiteral).AppendLine(" + \".\");");
+                    }
+
+                    source.AppendLine("            }");
+                    return;
+                }
+
+                source.AppendLine("            int unionMatches = 0;");
+                int memberIndex = 0;
+                foreach (GeneratedUnionMemberModel member in union.Members)
+                {
+                    source.Append("            bool unionMatched").Append(memberIndex++).AppendLine(" = false;");
+                    source.AppendLine("            try");
+                    source.AppendLine("            {");
+                    source.Append("                ").Append(MethodName(member.Type))
+                        .Append("(token, path, ").Append(nullFlag(member.Type)).AppendLine(");");
+                    source.Append("                unionMatched").Append(memberIndex - 1).AppendLine(" = true;");
+                    source.AppendLine("                unionMatches++;");
+                    source.AppendLine("            }");
+                    source.Append("            catch (global::System.Exception exception) when (").Append(_prefix).AppendLine("IsTrialFailure(exception))");
+                    source.AppendLine("            {");
+                    source.AppendLine("            }");
+                }
+
+                if (union.IsOneOf)
+                {
+                    // Open candidates overlap easily. Tie-break: keep the candidates that declare every
+                    // property of the value (as if they were closed); still not exactly one is an error.
+                    source.AppendLine("            int unionStrict = 0;");
+                    source.AppendLine("            if (unionMatches > 1)");
+                    source.AppendLine("            {");
+                    for (int index = 0; index < union.Members.Count; index++)
+                    {
+                        GeneratedTypeModel memberType = union.Members[index].Type;
+                        string strict = memberType.Kind == GeneratedTypeKind.Named &&
+                                        _dtos.TryGetValue(memberType.Name, out GeneratedDtoModel? memberDto)
+                            ? " && " + _prefix + "AllDeclared(token, new string[] { " +
+                              string.Join(", ", memberDto.Properties.Select(static property =>
+                                  GeneratedSourceEmitter.StringLiteral(property.WireName))) + " })"
+                            : string.Empty;
+                        source.Append("                if (unionMatched").Append(index).Append(strict).AppendLine(") unionStrict++;");
+                    }
+
+                    source.AppendLine("            }");
+                    source.AppendLine("            if (unionMatches != 1 && unionStrict != 1)");
+                    source.Append("                throw new ").Append(StjException)
+                        .Append("(\"The response value must match exactly one oneOf schema at \" + path + \" but matched \" + unionMatches.ToString(")
+                        .Append(Invariant).AppendLine(") + \".\");");
+                }
+                else
+                {
+                    source.AppendLine("            if (unionMatches == 0)");
+                    source.Append("                throw new ").Append(StjException)
+                        .AppendLine("(\"The response value must match at least one anyOf schema at \" + path + \".\");");
+                }
+            }
+
+            // not is evaluated here only: a value that matches the not schema is rejected.
+            private void AppendSystemTextJsonNotChecks(StringBuilder source, GeneratedTypeModel type)
+            {
+                foreach (GeneratedTypeModel notType in type.NotTypes)
+                {
+                    source.AppendLine("            {");
+                    source.AppendLine("                bool notMatched = true;");
+                    source.AppendLine("                try");
+                    source.AppendLine("                {");
+                    source.Append("                    ").Append(MethodName(notType))
+                        .Append("(token, path, ").Append(notType.Nullable ? "true" : "false").AppendLine(");");
+                    source.AppendLine("                }");
+                    source.Append("                catch (global::System.Exception exception) when (").Append(_prefix).AppendLine("IsTrialFailure(exception))");
+                    source.AppendLine("                {");
+                    source.AppendLine("                    notMatched = false;");
+                    source.AppendLine("                }");
+                    source.AppendLine("                if (notMatched)");
+                    source.Append("                    throw new ").Append(StjException)
+                        .AppendLine("(\"The response value matches a schema that it must not match (not) at \" + path + \".\");");
+                    source.AppendLine("            }");
+                }
+            }
+
+            // A failed trial run (union candidate, not schema, a sub-schema of a keyword) is any exception that
+            // a contract check or a value conversion can raise for a value of the wrong shape.
+            private void AppendSystemTextJsonTrialHelpers(StringBuilder source)
+            {
+                source.AppendLine(@"
+        private static bool __PREFIX__IsTrialFailure(global::System.Exception exception)
+        {
+            return exception is global::System.Text.Json.JsonException ||
+                   exception is global::System.FormatException ||
+                   exception is global::System.InvalidCastException ||
+                   exception is global::System.OverflowException ||
+                   exception is global::System.ArgumentException;
+        }
+
+        private static bool __PREFIX__AllDeclared(global::System.Text.Json.JsonElement token, string[] names)
+        {
+            if (token.ValueKind != global::System.Text.Json.JsonValueKind.Object) return true;
+            foreach (var property in token.EnumerateObject())
+            {
+                if (global::System.Array.IndexOf(names, property.Name) < 0) return false;
+            }
+            return true;
+        }
+".Replace("__PREFIX__", _prefix));
             }
 
             private static void AppendKindCheck(StringBuilder source, string kind, string message)

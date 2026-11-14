@@ -4,6 +4,19 @@ using System.Collections.Generic;
 namespace Rhycol.OpenApiCodeGen.SourceGenerator
 {
     /// <summary>
+    /// 選択した組み合わせでは生成できない機能をスペックが必要とするときの例外。OACG010 で報告される。
+    /// Thrown when the spec needs a feature the selected library combination cannot generate.
+    /// Reported as OACG010.
+    /// </summary>
+    internal sealed class LibrarySelectionNotSupportedException : Exception
+    {
+        internal LibrarySelectionNotSupportedException(string message)
+            : base(message)
+        {
+        }
+    }
+
+    /// <summary>
     /// Runtime の OpenApiHttpTransport に対応する値。値は Runtime の enum と一致させる。
     /// Mirrors the Runtime OpenApiHttpTransport values.
     /// </summary>
@@ -67,11 +80,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         /// <summary>
         /// 実装済みの組み合わせか。後続フェーズで UnityWebRequest を実装したらここを広げる。
-        /// HttpClient + SystemTextJson は composition と constraint の検証を除いて実装済み
-        /// （それらを含むスペックは生成時に OACG010 で拒否される。SystemTextJsonFeatureGate）。
+        /// HttpClient + SystemTextJson は composition と constraint の検証を含めて実装済み。
         /// Whether an emitter exists for the combination. Widen this as UnityWebRequest lands.
-        /// HttpClient + SystemTextJson exists except for composition and constraint validation; a spec
-        /// that needs them is rejected with OACG010 at generation time (SystemTextJsonFeatureGate).
+        /// HttpClient + SystemTextJson is implemented, composition and constraint validation included.
         /// </summary>
         internal static bool IsImplemented(HttpTransportKind transport, JsonSerializerKind serializer)
         {

@@ -491,15 +491,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append("    public sealed class ").Append(union.Name).AppendLine();
         }
 
-        private static void AppendTypedAccessors(
+        internal static void AppendTypedAccessors(
             StringBuilder source,
             GeneratedUnionMemberModel member,
             int index,
             string typeName,
             bool tokenReader = false,
-            bool oneOfSelection = false)
+            bool oneOfSelection = false,
+            string tokenCondition = "_token != null",
+            string tokenValue = "_token",
+            string? readerNote = null)
         {
             source.AppendLine();
+            if (readerNote is not null)
+            {
+                source.Append("        /// <summary>").Append(readerNote).AppendLine("</summary>");
+            }
+
             source.Append("        public bool TryGet").Append(member.AccessorName).Append("(out ").Append(typeName)
                 .AppendLine(" value)");
             source.AppendLine("        {");
@@ -510,8 +518,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("            }");
             if (tokenReader)
             {
-                source.Append("            if (_token != null && ").Append(oneOfSelection ? "IsSelected(" + index + ") && " : string.Empty)
-                    .Append("TryRead").Append(index).AppendLine("(_token, out value))");
+                source.Append("            if (").Append(tokenCondition).Append(" && ").Append(oneOfSelection ? "IsSelected(" + index + ") && " : string.Empty)
+                    .Append("TryRead").Append(index).Append("(").Append(tokenValue).AppendLine(", out value))");
                 source.AppendLine("            {");
                 source.AppendLine("                return true;");
                 source.AppendLine("            }");
@@ -521,6 +529,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("            return false;");
             source.AppendLine("        }");
             source.AppendLine();
+            if (readerNote is not null)
+            {
+                source.Append("        /// <summary>").Append(readerNote).AppendLine("</summary>");
+            }
+
             source.Append("        public ").Append(typeName).Append(" As").Append(member.AccessorName).AppendLine("()");
             source.AppendLine("        {");
             source.Append("            if (TryGet").Append(member.AccessorName).AppendLine("(out var value))");
@@ -534,7 +547,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         }
 
         // A closed DTO candidate does not read a value with undeclared properties (an open one keeps them).
-        private static string GetClosedCheck(GeneratedTypeModel type, OpenApiGenerationModel model)
+        internal static string GetClosedCheck(GeneratedTypeModel type, OpenApiGenerationModel model)
         {
             GeneratedDtoModel? dto = type.Kind == GeneratedTypeKind.Named
                 ? model.Dtos.FirstOrDefault(value => string.Equals(value.Name, type.Name, StringComparison.Ordinal))
@@ -582,7 +595,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         }
 
         /// <summary>Avoids a member that has the name of its containing type (CS0542).</summary>
-        private static string Unique(string name, string typeName)
+        internal static string Unique(string name, string typeName)
         {
             return string.Equals(name, typeName.TrimStart('@'), StringComparison.Ordinal) ? name + "Member" : name;
         }

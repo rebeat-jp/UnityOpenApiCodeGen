@@ -36,6 +36,32 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 _ => new Lazy<Assembly>(() => CompileUncached(specFile, serializer))).Value;
         }
 
+        /// <summary>Compiles an inline spec once per (key, serializer); the key names the spec.</summary>
+        internal static Assembly CompileText(string key, string spec, string serializer)
+        {
+            return Compiled.GetOrAdd(
+                "text:" + key + "|" + serializer,
+                _ => new Lazy<Assembly>(() =>
+                {
+                    Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                        spec,
+                        options: new Phase4CompilationOptions
+                        {
+                            JsonSerializer = serializer,
+                            Newtonsoft = !IsStj(serializer)
+                        });
+                    if (execution.RunResult.Diagnostics.Length > 0 || execution.CompilationErrors.Count > 0)
+                    {
+                        throw new InvalidOperationException(
+                            key + " (" + serializer + "): " +
+                            string.Join("; ", execution.RunResult.Diagnostics.Select(static value => value.ToString())) +
+                            string.Join("; ", execution.CompilationErrors.Select(static value => value.ToString())));
+                    }
+
+                    return execution.EmitAssembly();
+                })).Value;
+        }
+
         internal static Assembly Core(string serializer) => Compile("serializer-core.json", serializer);
 
         internal static Assembly Bodies(string serializer) => Phase4BodyWireHarness.BodiesFor(serializer);

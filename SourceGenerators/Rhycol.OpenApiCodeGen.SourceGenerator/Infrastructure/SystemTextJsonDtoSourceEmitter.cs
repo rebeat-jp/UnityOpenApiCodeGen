@@ -60,6 +60,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 files.Add(EmitDto(model.GeneratedNamespace, dto, suppressObsoleteWarnings, usePreserve));
             }
 
+            files.AddRange(new SystemTextJsonPolymorphicConverterEmitter().Emit(
+                model,
+                usedTypeNames,
+                usePreserve ? NewtonsoftDtoSourceEmitter.PreserveAttributeName : null,
+                suppressObsoleteWarnings));
+
             // The extension data member is found by reflection; Unity's managed stripping (IL2CPP)
             // keeps members that carry a PreserveAttribute (recognized by name).
             if (usePreserve)

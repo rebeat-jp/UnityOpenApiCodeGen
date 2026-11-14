@@ -24,6 +24,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     /// </summary>
     public sealed class SerializerMatrixTests
     {
+        // The constraint spec of Phase6ConstraintTests stands in the spec file lists as a name.
+        private const string InlineConstraints = "constraints (inline)";
+
+        private static string ReadSpecOrInline(string specFile)
+        {
+            return specFile == InlineConstraints
+                ? Phase6ConstraintTests.Spec31()
+                : File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "ApiSurfaceSpecs", specFile));
+        }
+
         private const string Created = "2024-03-01T10:20:30+00:00";
 
         private const string MinimalWidget = "{\"id\":1,\"name\":\"w\",\"created\":\"" + Created + "\"}";
@@ -66,9 +76,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("operations.json")]
         [InlineData("security.json")]
         [InlineData("serializer-core.json")]
+        [InlineData("composition.json")]
+        [InlineData("openapi32.json")]
+        [InlineData("swagger2.json")]
+        [InlineData(InlineConstraints)]
         public void SystemTextJsonOutputCompilesWithoutReferencingNewtonsoft(string specFile)
         {
-            string spec = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "ApiSurfaceSpecs", specFile));
+            string spec = ReadSpecOrInline(specFile);
 
             Phase4GeneratorExecution stj = Phase4GeneratorTestHarness.GenerateAndCompile(
                 spec,
@@ -575,6 +589,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("operations.json", SystemTextJson)]
         [InlineData("security.json", NewtonsoftJson)]
         [InlineData("security.json", SystemTextJson)]
+        [InlineData("composition.json", NewtonsoftJson)]
+        [InlineData("composition.json", SystemTextJson)]
+        [InlineData("openapi32.json", NewtonsoftJson)]
+        [InlineData("openapi32.json", SystemTextJson)]
+        [InlineData("swagger2.json", NewtonsoftJson)]
+        [InlineData("swagger2.json", SystemTextJson)]
+        [InlineData(InlineConstraints, NewtonsoftJson)]
+        [InlineData(InlineConstraints, SystemTextJson)]
         public void GeneratedCodeCompilesAgainstTheUnityNetStandard21ReferenceSet(string specFile, string serializer)
         {
             string root = typeof(SerializerMatrixTests).Assembly
@@ -606,7 +628,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             }
 
             Assert.All(references, path => Assert.True(File.Exists(path), path));
-            string spec = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "ApiSurfaceSpecs", specFile));
+            string spec = ReadSpecOrInline(specFile);
 
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
                 spec,
@@ -624,6 +646,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("bodies.json")]
         [InlineData("representative.json")]
         [InlineData("operations.json")]
+        [InlineData("composition.json")]
+        [InlineData("openapi32.json")]
+        [InlineData("swagger2.json")]
+        [InlineData(InlineConstraints)]
         public void SystemTextJsonOutputCompilesAgainstTheNet8ReferenceAssemblies(string specFile)
         {
             string directory = typeof(SerializerMatrixTests).Assembly
@@ -631,7 +657,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 .Single(static attribute => attribute.Key == "Net8ReferenceDirectory")
                 .Value!;
             Assert.True(Directory.Exists(directory), "The .NET 8 reference assemblies are missing: " + directory);
-            string spec = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "ApiSurfaceSpecs", specFile));
+            string spec = ReadSpecOrInline(specFile);
 
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
                 spec,

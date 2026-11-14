@@ -43,7 +43,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             AppendConstructors(source, model);
             AppendServers(source, model);
             var responseValidators = new ResponseValidatorPlan(model, _json);
-            var constraints = new ConstraintValidationEmitter(model);
+            var constraints = new ConstraintValidationEmitter(model, _json);
             var bodyHelpers = new BodyHelperNames(model, constraints, _json);
             var responseJsonContracts = new ResponseJsonContractPlan(model, constraints, _json, bodyHelpers.JsonOptions);
             var parameterSerializer = new HttpClientParameterSerializationEmitter(
