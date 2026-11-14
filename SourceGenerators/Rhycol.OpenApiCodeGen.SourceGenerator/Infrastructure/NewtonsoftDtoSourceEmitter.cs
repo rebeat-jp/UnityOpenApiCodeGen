@@ -240,7 +240,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             var source = new StringBuilder();
             AppendHeader(source, generatedNamespace, suppressObsoleteWarnings);
-            GeneratedDocumentationEmitter.AppendSummary(source, "    ", model.Annotations, includeDefaultAndDirection: false);
+            GeneratedDocumentationEmitter.AppendSummary(
+                source, "    ", model.Annotations, includeDefaultAndDirection: false, model.ConstraintSets);
             GeneratedDocumentationEmitter.AppendObsolete(source, "    ", model.Annotations.Deprecated);
             source.AppendLine("    [global::Newtonsoft.Json.JsonObject(global::Newtonsoft.Json.MemberSerialization.OptIn)]");
             source.Append("    public sealed class ").Append(model.Name).AppendLine();
@@ -305,7 +306,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         : "global::Newtonsoft.Json.Required.DisallowNull";
                 }
 
-                GeneratedDocumentationEmitter.AppendSummary(source, "        ", property.Annotations, includeDefaultAndDirection: true);
+                GeneratedDocumentationEmitter.AppendSummary(
+                    source, "        ", property.Annotations, includeDefaultAndDirection: true, property.Type.ConstraintSets);
                 GeneratedDocumentationEmitter.AppendObsolete(source, "        ", property.Annotations.Deprecated);
                 source.Append("        [global::Newtonsoft.Json.JsonProperty(")
                     .Append(GeneratedSourceEmitter.StringLiteral(property.WireName))

@@ -180,9 +180,19 @@ Object schemas that omit `additionalProperties` or set it to `true` or a schema
 generate an open DTO whose undeclared members are kept in an
 `IDictionary<string, JToken>` `[JsonExtensionData]` member
 (`AdditionalProperties`); set `additionalProperties: false` for a closed DTO
-that rejects unknown response properties. Unsupported assertions such as
-`pattern`, `minimum`, and `minItems` receive `OACG101` instead of generating a
-weaker contract. Duplicate enum wire values also receive `OACG101`.
+that rejects unknown response properties. Validation keywords (`minLength`,
+`maxLength`, `pattern`, `minimum`, `maximum`, `exclusiveMinimum`,
+`exclusiveMaximum`, `multipleOf`, `minItems`, `maxItems`, `uniqueItems`,
+`minProperties`, `maxProperties`, and in OpenAPI 3.1 `patternProperties`,
+`propertyNames`, `contains`, `minContains`, `maxContains`, `prefixItems`,
+`dependentRequired`) are checked at run time and never change the generated
+types: a request that violates one is rejected before it is sent
+(`ArgumentException`), and a response or response header that violates one raises
+`JsonSerializationException`. Lengths count Unicode code points and `pattern` is
+an unanchored .NET `Regex` (ECMAScript mode unless the pattern needs .NET syntax, reported as `OACG108`; see the
+support matrix). `if` / `then` / `else`, `dependentSchemas` and
+`unevaluated*` still receive `OACG101`. Duplicate enum wire values also receive
+`OACG101`.
 `allOf` is flattened into one DTO, and `oneOf` / `anyOf` become a wrapper class
 (`FromX`, `TryGetX`, `AsX`) that is selected by the `discriminator` when there is
 one, or by structural matching of the response JSON when there is not;

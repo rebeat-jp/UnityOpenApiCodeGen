@@ -265,7 +265,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 type = type.WithNot(ResolveType(notSchema));
             }
 
-            return type;
+            return AttachConstraints(type, schema);
         }
 
         private GeneratedTypeModel ResolveTypeCore(OpenApiSemanticSchema schema)
@@ -336,6 +336,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         foreach (OpenApiSemanticSchema notSchema in referencedSchema.NotSchemas)
                         {
                             named = named.WithNot(ResolveType(notSchema));
+                        }
+
+                        // An enum carries its constraint sets on the type (a DTO keeps them in its model).
+                        if (referencedSchema.Kind == OpenApiSemanticSchemaKind.Enum)
+                        {
+                            named = named.WithConstraints(ConvertConstraintSets(referencedSchema.ConstraintSets));
                         }
 
                         return named;
@@ -584,7 +590,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     orderedProperties.Select(value => WithDiscriminatorInitialValue(allocatedProperties[value], discriminatorConsts)).ToArray(),
                     schema.Annotations,
                     extensionDataName,
-                    extensionDataValueType));
+                    extensionDataValueType,
+                    ConvertConstraintSets(schema.ConstraintSets)));
             }
             finally
             {

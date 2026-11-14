@@ -89,8 +89,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<GeneratedDtoPropertyModel> properties,
             OpenApiSemanticAnnotations? annotations = null,
             string? extensionDataName = null,
-            GeneratedTypeModel? extensionDataValueType = null)
+            GeneratedTypeModel? extensionDataValueType = null,
+            IReadOnlyList<GeneratedConstraints>? constraintSets = null)
         {
+            ConstraintSets = constraintSets ?? Array.Empty<GeneratedConstraints>();
             Name = name;
             Properties = properties;
             Annotations = annotations ?? OpenApiSemanticAnnotations.Empty;
@@ -111,6 +113,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal GeneratedTypeModel? ExtensionDataValueType { get; }
 
         internal bool IsOpen => ExtensionDataName is not null;
+
+        /// <summary>
+        /// Object level validation keywords of the schema (minProperties, patternProperties,
+        /// dependentRequired, ...). They are checked at run time and never change the class.
+        /// </summary>
+        internal IReadOnlyList<GeneratedConstraints> ConstraintSets { get; }
 
         internal OpenApiSemanticAnnotations Annotations { get; }
 
@@ -481,8 +489,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             GeneratedTypeModel? valueType = null,
             IReadOnlyList<GeneratedTypeModel>? unionMembers = null,
             OpenApiSemanticLiteral? constValue = null,
-            IReadOnlyList<GeneratedTypeModel>? notTypes = null)
+            IReadOnlyList<GeneratedTypeModel>? notTypes = null,
+            IReadOnlyList<GeneratedConstraints>? constraintSets = null)
         {
+            ConstraintSets = constraintSets ?? Array.Empty<GeneratedConstraints>();
             NotTypes = notTypes ?? Array.Empty<GeneratedTypeModel>();
             ConstValue = constValue;
             Kind = kind;
@@ -511,11 +521,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// </summary>
         internal IReadOnlyList<GeneratedTypeModel> NotTypes { get; }
 
+        /// <summary>
+        /// Validation keyword sets (minLength, pattern, minimum, ...) of a non-DTO type, all of which must
+        /// hold. Part of the type identity because the checks are generated per type. A DTO keeps its sets
+        /// in its model (GeneratedDtoModel.ConstraintSets) so that a recursive schema stays finite.
+        /// </summary>
+        internal IReadOnlyList<GeneratedConstraints> ConstraintSets { get; }
+
         internal GeneratedTypeModel WithNot(GeneratedTypeModel notType)
         {
             return new GeneratedTypeModel(
                 Kind, Nullable, Name, ItemType, ValueType, UnionMembers, ConstValue,
-                NotTypes.Concat(new[] { notType }).ToArray());
+                NotTypes.Concat(new[] { notType }).ToArray(), ConstraintSets);
+        }
+
+        internal GeneratedTypeModel WithConstraints(IReadOnlyList<GeneratedConstraints> constraintSets)
+        {
+            return constraintSets.Count == 0
+                ? this
+                : new GeneratedTypeModel(
+                    Kind, Nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes,
+                    ConstraintSets.Concat(constraintSets).ToArray());
         }
 
         internal GeneratedTypeKind Kind { get; }
@@ -530,14 +556,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             return nullable == Nullable
                 ? this
-                : new GeneratedTypeModel(Kind, nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes);
+                : new GeneratedTypeModel(Kind, nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes, ConstraintSets);
         }
 
         internal GeneratedTypeModel WithConst(OpenApiSemanticLiteral? constValue)
         {
             return System.Nullable.Equals(constValue, ConstValue)
                 ? this
-                : new GeneratedTypeModel(Kind, Nullable, Name, ItemType, ValueType, UnionMembers, constValue, NotTypes);
+                : new GeneratedTypeModel(Kind, Nullable, Name, ItemType, ValueType, UnionMembers, constValue, NotTypes, ConstraintSets);
         }
 
         /// <summary>
@@ -568,6 +594,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                    Equals(ValueType, other.ValueType) &&
                    System.Nullable.Equals(ConstValue, other.ConstValue) &&
                    NotTypes.SequenceEqual(other.NotTypes) &&
+                   ConstraintSets.SequenceEqual(other.ConstraintSets) &&
                    UnionMembers.SequenceEqual(other.UnionMembers);
         }
 
@@ -594,6 +621,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 foreach (GeneratedTypeModel member in UnionMembers)
                 {
                     hashCode = (hashCode * 397) ^ member.GetHashCode();
+                }
+
+                foreach (GeneratedConstraints set in ConstraintSets)
+                {
+                    hashCode = (hashCode * 397) ^ set.GetHashCode();
                 }
 
                 return hashCode;

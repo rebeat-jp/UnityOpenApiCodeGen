@@ -29,8 +29,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal HttpClientParameterSerializationEmitter(
             OpenApiGenerationModel model,
             string jsonSerializerName,
-            string headerValidatorName)
+            string headerValidatorName,
+            ConstraintValidationEmitter constraints)
         {
+            Constraints = constraints;
             _model = model;
             _jsonSerializerName = jsonSerializerName;
             _headerValidatorName = headerValidatorName;
@@ -41,6 +43,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         /// <summary>The security (authentication) emitter of the same client.</summary>
         internal SecurityEmitter Security { get; }
+
+        /// <summary>The validation keyword (minLength, pattern, ...) emitter of the same client.</summary>
+        internal ConstraintValidationEmitter Constraints { get; }
 
         private string SerializeName => _prefix + "Serialize";
 

@@ -49,11 +49,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             RequireKind(node, SpecValueKind.Object, "A schema must be an object in the Phase 4 MVP.");
             ValidateUnsupportedSchemaKeywords(node);
 
-            // not is a response-validation add-on that can accompany any schema shape.
-            return ApplyNotKeyword(
-                node,
-                suggestedName,
-                ParseSchemaShape(node, suggestedName, referenceStack));
+            OpenApiSemanticSchema shape = ParseSchemaShape(node, suggestedName, referenceStack);
+
+            // The validation keywords and not are run-time add-ons that can accompany any schema shape.
+            // A composition has already collected the constraint sets of every part, the node included.
+            bool composed = _constraintsComposed;
+            _constraintsComposed = false;
+            if (!composed)
+            {
+                shape = ApplyConstraintKeywords(node, shape);
+            }
+
+            return ApplyNotKeyword(node, suggestedName, shape);
         }
 
         private OpenApiSemanticSchema ParseSchemaShape(
@@ -164,10 +171,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 case "array":
                     // Items are a container boundary: a fresh alias stack lets an item refer back to
                     // an enclosing schema (recursion) while pure $ref alias chains stay rejected.
-                    OpenApiSemanticSchema itemSchema = ParseSchema(
-                        RequireProperty(node, "items"),
-                        suggestedName + "Item",
-                        new HashSet<NormalizedSpecNodeIdentity>());
+                    // With prefixItems (3.1) the elements have different schemas by position, so the
+                    // array holds untyped values; items and prefixItems are validation keywords.
+                    OpenApiSemanticSchema itemSchema = _minorVersion == 1 && GetProperty(node, "prefixItems") is not null
+                        ? CreateAnySchema(node, suggestedName + "Item", OpenApiSemanticAnnotations.Empty)
+                        : ParseSchema(
+                            RequireProperty(node, "items"),
+                            suggestedName + "Item",
+                            new HashSet<NormalizedSpecNodeIdentity>());
                     return new OpenApiSemanticSchema(
                         OpenApiSemanticSchemaKind.Array,
                         suggestedName,
@@ -770,7 +781,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 return "object";
             }
 
-            if (GetProperty(node, "items") is not null)
+            if (GetProperty(node, "items") is not null ||
+                (_minorVersion == 1 && GetProperty(node, "prefixItems") is not null))
             {
                 return "array";
             }
@@ -963,6 +975,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             List<NormalizedSpecNodeIdentity> path,
             HashSet<NormalizedSpecNodeIdentity> finished)
         {
+            // The schemas of contains / propertyNames / patternProperties / prefixItems are resolved
+            // into the generated type of a non-DTO schema, so they take part in the cycle check.
+            if (schema.Kind != OpenApiSemanticSchemaKind.Object &&
+                schema.Kind != OpenApiSemanticSchemaKind.Enum &&
+                schema.Kind != OpenApiSemanticSchemaKind.Union)
+            {
+                foreach (OpenApiSemanticConstraints set in schema.ConstraintSets)
+                {
+                    foreach (OpenApiSemanticSchema constraintSchema in EnumerateConstraintSchemas(set))
+                    {
+                        VisitStructuralSchema(constraintSchema, path, finished);
+                    }
+                }
+            }
+
             switch (schema.Kind)
             {
                 case OpenApiSemanticSchemaKind.Array:
