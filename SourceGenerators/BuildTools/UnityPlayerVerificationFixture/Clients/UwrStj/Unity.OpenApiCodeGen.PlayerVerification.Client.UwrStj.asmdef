@@ -1,0 +1,19 @@
+{
+  "name": "Unity.OpenApiCodeGen.PlayerVerification.Client.UwrStj",
+  "rootNamespace": "PlayerVerification.UwrStj",
+  "references": [
+    "Unity.OpenApiCodeGen.SourceGenerator",
+    "Unity.OpenApiCodeGen.PlayerVerification.Common"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "PV_UWR_STJ"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

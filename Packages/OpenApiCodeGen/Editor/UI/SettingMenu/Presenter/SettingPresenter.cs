@@ -72,6 +72,7 @@ namespace Rhycol.OpenApiCodeGen.Presenter
                 var generationCSharpSetting = await _settingService.GetGenerationCSharpSettingAsync();
 
                 _settingView?.SetProjectSettingValue(projectSetting ?? new ProjectSettingDisplayDto());
+                RefreshSourceGeneratorLibraries(projectSetting ?? new ProjectSettingDisplayDto());
                 _settingView?.SetUserSettingValue(userSetting ?? new UserSettingDisplayDto(""));
                 _settingView?.SetGenerationCSharpSettingValue(generationCSharpSetting ?? new GenerationCSharpSettingDisplayDto());
             }
@@ -93,7 +94,22 @@ namespace Rhycol.OpenApiCodeGen.Presenter
 
         void OnProjectSettingChanged(ProjectSettingDisplayDto projectSetting)
         {
+            RefreshSourceGeneratorLibraries(projectSetting);
             _ = SaveProjectSettingAsync(projectSetting);
+        }
+
+        void RefreshSourceGeneratorLibraries(ProjectSettingDisplayDto projectSetting)
+        {
+            try
+            {
+                _settingView?.SetSourceGeneratorLibraries(
+                    _settingService.GetSourceGeneratorLibraries(projectSetting));
+            }
+            catch (Exception exception)
+            {
+                // The library section is informational; a failure must not block settings.
+                Debug.LogException(exception);
+            }
         }
 
         internal Task SaveProjectSettingAsync(ProjectSettingDisplayDto projectSetting)

@@ -7,7 +7,7 @@ versioned な中間形式です。raw sourceはJSONまたはYAMLですが、cano
 JSONです。YAML sourceをJSON textへ変換してから解析するのではなく、JSON normalizerと
 BCL-only YAML lexer/parserがそれぞれshared `SpecNode`へ直接lowerします。
 
-- Editor は raw JSON を `Newtonsoft.Json` で検証し、source location 付きの `SpecNode` へ変換する
+- Editor は raw JSON を、BCL のみで実装した厳密な RFC 8259 パーサー（`StrictJsonSpecParser`）で検証し、source location 付きの `SpecNode` へ変換する（Editor アセンブリは JSON ライブラリを参照しない）
 - Editor は raw YAML を専用BCL-only lexer/parserでtoken streamから直接 `SpecNode` へ変換する
 - Editor は `SpecNode` を本書の canonical JSON として永続化する
 - Source Generator は canonical JSONだけを読み、raw JSON/YAMLを解析しない
@@ -226,7 +226,7 @@ version diagnosticを返します。
 - UTF-8 BOMは入力として許可するがhashには含め、decode後のtreeには含めない
 - invalid UTF-8、comment、trailing comma、duplicate property、複数root valueを拒否する
 - 最大nesting depthは256
-- `Newtonsoft.Json`のdate自動変換を無効化する
+- 値の字句（数値・文字列）は変換せずそのまま保持する（date などの自動変換は行わない）
 - 構文・制約違反はsource file、line、column、可能な範囲のlogical path付きで返す
 
 OpenAPIの意味解析はnormalizerで行いません。normalizerはJSON syntaxをlosslessな`SpecNode`へ変換する責務だけを

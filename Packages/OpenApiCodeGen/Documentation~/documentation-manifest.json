@@ -4,15 +4,19 @@
   "files": [
     {
       "path": "RELEASE.html",
-      "sha256": "99d1cdfe7599fd933b18fef717fc81a9e8f22e01045163a014e0c6b66737c11a"
+      "sha256": "21b3756c3c94df8643ae4e5eb1b2177af31e2d6456ccf8ed80a26bc9a2bc473c"
     },
     {
       "path": "RELEASE.md",
-      "sha256": "bf7a28e27fe8949b804d5da8496352fbe092426c2dcecc76bdde5964a8a5d3e8"
+      "sha256": "c3888978e62064217037873d9741bb40f1a72033e441f39e800bab120c57ac29"
     },
     {
       "path": "SourceGenerators/BuildTools/CI/unity-images.json",
-      "sha256": "808ed4d9828f560fe4780820b80dfc55c6dde5aa10d868b1aef2518d56d35eff"
+      "sha256": "56165d748c7d698dd494fd67a102e44f94d782d426102bb6eda7b562df22b7b3"
+    },
+    {
+      "path": "SourceGenerators/BuildTools/UnityPlayerVerificationFixture/Evidence/6000.3.2f1.json",
+      "sha256": "4e976b7cf0f45ac618598ee95a1a83cbcd1c644d27f877fd1c6e309909542fe1"
     },
     {
       "path": "SourceGenerators/NormalizedSpecBundleV2.html",
@@ -24,19 +28,19 @@
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.html",
-      "sha256": "95723a8aa17a793e9ee00ff792d6ae63ce80eb1a0e0703567e6ed1f3a296de3d"
+      "sha256": "39c5624b90cd7c318c46d6f41e8f156be9df9bf903975c67047a83da475d3ff6"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.ja.html",
-      "sha256": "bdc9a02fb7ac8d49ded25977cf49cff8dfd884b353979de9261ea62a494e6ebd"
+      "sha256": "6b130eb6814614ea37dd7b8804402d0675b935de000f1c9e0b3a86f032ae957e"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.ja.md",
-      "sha256": "8b08b08fe10d7cca27cf23bcf7f8a17c216be7af3e062512f0c880d9304f25e7"
+      "sha256": "0ec04067c9f00777df2e9e913728be0a24850ea16ab86673dd2cf94e0eea248c"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.md",
-      "sha256": "90d35de0677ec67ac8bf4bdad4a72e70ab579510710ee3858a48425dda81f024"
+      "sha256": "0092726302f1988a35c4a74ec202cfb81b08c3f7c722ae2f5c6650603990bbdc"
     },
     {
       "path": "SourceGenerators/OpenUPM/jp.rhycol.openapicodegen.source-generator.yml",

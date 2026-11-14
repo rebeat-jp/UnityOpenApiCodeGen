@@ -84,11 +84,22 @@ does not automatically trigger the ordinary PR workflow.
 
 The current package contract is:
 
-- Base `0.5.1`, minimum Unity `2021.3`.
-- Add-on `0.5.1`, minimum Unity `6000.0`.
-- Add-on dependency on base `0.5.1` and
-  `com.unity.nuget.newtonsoft-json` `3.2.2`.
-- Package versions, dependency version, requested version, and tag match.
+- Base `0.6.0`, minimum Unity `2021.3`.
+- Add-on `0.6.0`, minimum Unity `6000.0`.
+- Add-on dependency on base `0.6.0` only (`pack-release.sh` checks that the
+  dependency set is exactly the base package, in `package.json` and in
+  `packages-lock.json`). Since 0.6.0 the add-on no longer depends on
+  `com.unity.nuget.newtonsoft-json`; the project installs the libraries of the
+  selected HTTP / JSON combination itself.
+- The development project (`Packages/manifest.json`) pins
+  `com.unity.nuget.newtonsoft-json` `3.2.2` as a direct dependency, locked at
+  depth 0 in `packages-lock.json`, because it uses the default Newtonsoft.Json
+  client. `pack-release.sh` checks this too.
+- Package versions, dependency version, requested version, and tag match
+  (`pack-release.sh` compares both `package.json` versions and the base
+  dependency with the requested version). The versions in this document's
+  examples and contract list are updated together with the package versions
+  for each release.
 
 The shared pipeline checks out the exact clean SHA, runs script and .NET tests,
 checks deterministic DLL builds and committed DLL synchronization, and rejects

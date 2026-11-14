@@ -37,8 +37,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             usedTypeNames.UnionWith(model.Unions.Select(static value => value.Name));
             usedTypeNames.Add(model.ApiName);
             usedTypeNames.Add(model.ApiName + "Exception");
-            bool usePreserve = NewtonsoftDtoSourceEmitter.NeedsPreserve(model) &&
-                               !usedTypeNames.Contains(NewtonsoftDtoSourceEmitter.PreserveAttributeName);
+            string? preserve = NewtonsoftDtoSourceEmitter.NeedsPreserve(model)
+                ? NewtonsoftDtoSourceEmitter.PreserveReference(model, usedTypeNames)
+                : null;
             foreach (GeneratedEnumModel enumModel in model.Enums.OrderBy(
                          static value => value.Name,
                          StringComparer.Ordinal))
@@ -50,27 +51,29 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     converterName = enumModel.Name + "WireConverter" + suffix++;
                 }
 
-                files.Add(EmitEnum(model.GeneratedNamespace, enumModel, converterName, suppressObsoleteWarnings));
+                files.Add(EmitEnum(model.GeneratedNamespace, enumModel, converterName, suppressObsoleteWarnings, preserve));
             }
 
             foreach (GeneratedDtoModel dto in model.Dtos.OrderBy(
                          static value => value.Name,
                          StringComparer.Ordinal))
             {
-                files.Add(EmitDto(model.GeneratedNamespace, dto, suppressObsoleteWarnings, usePreserve));
+                files.Add(EmitDto(model.GeneratedNamespace, dto, suppressObsoleteWarnings, preserve));
             }
 
             files.AddRange(new SystemTextJsonPolymorphicConverterEmitter().Emit(
                 model,
                 usedTypeNames,
-                usePreserve ? NewtonsoftDtoSourceEmitter.PreserveAttributeName : null,
+                preserve,
                 suppressObsoleteWarnings));
 
-            // The extension data member is found by reflection; Unity's managed stripping (IL2CPP)
-            // keeps members that carry a PreserveAttribute (recognized by name).
-            if (usePreserve)
+            // System.Text.Json creates the wire converters and sets the DTO properties by reflection; Unity's
+            // managed stripping (IL2CPP, High) removes them unless the type carries a PreserveAttribute
+            // (recognized by name; it keeps all members of the type).
+            if (preserve is not null)
             {
-                files.Add(NewtonsoftDtoSourceEmitter.EmitPreserveAttribute(model.GeneratedNamespace));
+                files.Add(NewtonsoftDtoSourceEmitter.EmitPreserveAttribute(
+                    model.GeneratedNamespace, NewtonsoftDtoSourceEmitter.PreserveNamespace(preserve!)));
             }
 
             return files;
@@ -80,7 +83,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string generatedNamespace,
             GeneratedEnumModel model,
             string converterName,
-            bool suppressObsoleteWarnings)
+            bool suppressObsoleteWarnings,
+            string? preserve)
         {
             bool isInteger = model.IsInteger;
             string wireKind = isInteger ? "integer" : "string";
@@ -120,6 +124,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             source.AppendLine("    }");
             source.AppendLine();
+            if (preserve is not null)
+            {
+                source.AppendLine("    [" + preserve + "]");
+            }
+
             source.Append("    internal sealed class ").Append(converterName)
                 .Append(" : ").Append(Serialization).Append(".JsonConverter<").Append(model.Name).AppendLine(">");
             source.AppendLine("    {");
@@ -206,7 +215,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string generatedNamespace,
             GeneratedDtoModel model,
             bool suppressObsoleteWarnings,
-            bool usePreserve)
+            string? preserve)
         {
             var source = new StringBuilder();
             NewtonsoftDtoSourceEmitter.AppendHeader(source, generatedNamespace, suppressObsoleteWarnings);
@@ -221,6 +230,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                                           !property.Type.Nullable &&
                                           !property.Type.IsValueType)
                 .ToArray();
+            if (preserve is not null)
+            {
+                source.AppendLine("    [" + preserve + "]");
+            }
+
             source.Append("    public sealed class ").Append(model.Name);
             if (requiredReferenceProperties.Length > 0)
             {
@@ -261,6 +275,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 GeneratedDocumentationEmitter.AppendSummary(
                     source, "        ", property.Annotations, includeDefaultAndDirection: true, property.Type.ConstraintSets);
                 GeneratedDocumentationEmitter.AppendObsolete(source, "        ", property.Annotations.Deprecated);
+                if (preserve is not null)
+                {
+                    source.AppendLine("        [" + preserve + "]");
+                }
+
                 source.Append("        [").Append(Serialization).Append(".JsonPropertyName(")
                     .Append(GeneratedSourceEmitter.StringLiteral(property.WireName)).AppendLine(")]");
                 if (property.Required && !property.Annotations.ReadOnly && !property.Annotations.WriteOnly)
@@ -283,6 +302,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         .Append(" { get => ").Append(backingField)
                         .Append("; set { ").Append(backingField).Append(" = value; ")
                         .Append(property.Name).AppendLine("Specified = true; } }");
+                    if (preserve is not null)
+                    {
+                        source.AppendLine("        [" + preserve + "]");
+                    }
+
                     source.Append("        [").Append(Serialization).AppendLine(".JsonIgnore]");
                     source.Append("        public bool ").Append(property.Name).AppendLine("Specified { get; set; }");
                 }
@@ -312,9 +336,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 string valueType = Json.ExtensionDataValueTypeName;
                 source.AppendLine("        /// <summary>Members that are not declared by the schema, kept as raw JSON.</summary>");
                 source.Append("        [").Append(Serialization).AppendLine(".JsonExtensionData]");
-                if (usePreserve)
+                if (preserve is not null)
                 {
-                    source.AppendLine("        [global::" + generatedNamespace + ".Preserve]");
+                    source.AppendLine("        [" + preserve + "]");
                 }
 
                 source.Append("        public global::System.Collections.Generic.IDictionary<string, ").Append(valueType).Append("> ")

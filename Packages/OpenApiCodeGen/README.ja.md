@@ -18,8 +18,10 @@ Source Generator方式では、Unityプロジェクトの`Packages/manifest.json
 }
 ```
 
-Docker方式には基本パッケージだけを使用できます。追加パッケージにはUnity 6000.0以降と
-`com.unity.nuget.newtonsoft-json` `3.2.2`が必要です。例は`0.5.1`のリリースタグを使います。
+Docker方式には基本パッケージだけを使用できます。追加パッケージにはUnity 6000.0以降が必要です。
+0.6.0から追加パッケージはNewtonsoft.Jsonを導入しません。選んだHTTP／JSONの組み合わせのライブラリは利用者が導入します
+（既定は`com.unity.nuget.newtonsoft-json` `3.2.2`。代替は`UnityWebRequest`と`System.Text.Json`です）。
+例は`0.5.1`のリリースタグを使います。
 未リリースのコミットを試す場合は、両URLのタグ部分を同じ検証済みコミットSHAへ置き換えてください。
 
 ## Editorでの操作
@@ -28,6 +30,13 @@ Docker方式には基本パッケージだけを使用できます。追加パ�
 2. Docker方式を選んだ場合だけ、`Window/OpenAPI Code Generator/Setup`でDockerを設定します。
 3. `Window/OpenAPI Code Generator/Generator`に仕様書のパスまたはURLと、`Assets`配下の
    出力フォルダーを入力し、`Generate`を押します。
+
+Source Generator providerを選んでいる間、Settingsの**Source Generator Libraries**で、HTTP実装（HttpClientまたは
+UnityWebRequest）とJSONシリアライザー（Newtonsoft.JsonまたはSystem.Text.Json）を選べます。選択肢ごとの準備状況を表示し、
+Newtonsoft.JsonとUnity Web Requestモジュールは導入ボタンで追加できます。選択したライブラリが不足している間、Generator画面は
+理由とSettingsへの導線を示して`Generate`を無効にします。準備状況はproviderの利用可否とは別に扱うため、ライブラリ不足で
+`OPENAPI_CODEGEN_SOURCE_GENERATOR`が外れることはありません。ライブラリの確認にはDefault Output Folder Pathの設定が必要です（その出力先のアセンブリを基準に確認します）。Docker方式の画面は、追加パッケージを導入していても変わりません。要件と診断は
+[追加パッケージの日本語README](../OpenApiCodeGen.SourceGenerator/README.ja.md)を参照してください。
 
 GitHubのprivateリポジトリにある文書は`https://raw.githubusercontent.com/...`のURLを指定し、
 `Window/OpenAPI Code Generator/Settings`のUser Settingsで**GitHub Token**を設定します。

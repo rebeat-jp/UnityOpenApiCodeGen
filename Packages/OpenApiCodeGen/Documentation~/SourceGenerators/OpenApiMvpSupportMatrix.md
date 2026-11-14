@@ -22,6 +22,7 @@ canonical Normalized Spec Bundle v2へ正規化し、Analyzerは1 specIdにつ�
 Unsupportedに分類された要素と、Partialの制約外へ出た要素は診断を報告し、生成を完了しません。
 入力・bundle・definitionの診断`OACG001`–`OACG009`に加え、semantic generationではError `OACG100`–`OACG106`を使用します。型名の重複をsuffixで解消した場合はWarning `OACG107`を報告します。
 意図して無視する要素（webhooksなどclientの呼び出しに無関係なもの、仕様上無視すべきheader parameterなど）は、wire contractを変えないWarning `OACG108`で報告します。
+HTTP実装とJSONシリアライザーの選択と、必要なライブラリの不足は`OACG010`–`OACG014`で報告します（「Library選択（HTTPとJSON）」）。
 診断IDごとの報告場面は「診断」、ギャップ別の最終状況と対象外の項目は「ギャップ別の最終状況」「対象外の項目」の節にまとめています。
 
 | Status | 意味 |
@@ -371,21 +372,21 @@ Source Generatorの仕様対応で洗い出した33項目（G01–G33）の最�
 
 生成結果は次のpublic API contractです。
 
-- public mutable sealed DTO（Json.NET attribute使用）
+- public mutable sealed DTO（Newtonsoft.JsonではJson.NETのattribute、System.Text.JsonではSystem.Text.Jsonのattributeを使用）
 - 任意かつschema上nullableなDTO propertyの`<PropertyName>Specified`による存在状態の管理
 - 任意かつschema上nullableなrequest bodyの`<BodyParameterName>Specified`による明示的なJSON `null`送信
 - 宣言したwire文字列を完全一致で扱うstring enum converterと`List<T>`
 - `oneOf`／`anyOf`のsealed unionラッパークラス（`FromX`／`TryGetX`／`AsX`、discriminatorなしは`FromJToken`／`ToJToken`）と、internalな`JsonConverter`
-- injected `HttpClient`を使うasync client API。documentまたはexplicit base URLを指定するconstructorを使用可能
+- injected `HttpClient`を使うasync client API。documentまたはexplicit base URLを指定するconstructorを使用可能（`UnityWebRequest`を選んだclientは`HttpClient`の代わりに`baseAddress`を受け取ります）
 - path/query/header/body、`JsonConvert`、`CancellationToken`、宣言された`2xx` response handling
 - request本文のmedia type別メソッド（`<name>AsMultipart`など）、ファイルpartの`<ApiName>FileParameter`、status別の結果型`<OperationName>Response`、`<name>WithHttpInfo`と`<Name>HttpInfo`
 - generated `<ApiName>Exception`（`Error`／`TryGetError<T>`／`ErrorDeserializationException`を追加）
 
 生成モデルは、raw JSON/YAMLを各normalizerでnormalized bundleへ変換した後、OAS semantic parserとinternal reference resolverを通し、
 Roslyn非依存のgeneration modelを作ってから、Roslynでparseしたdeterministic source emitterへ渡します。
-emitterの結果を`AddSource`します。serializer/backendは固定で、generated clientは
-Newtonsoft.Jsonと`System.Net.Http.HttpClient`を使用します。Docker providerは別providerであり、
-fallbackまたは切替は行いません。
+emitterの結果を`AddSource`します。JSONシリアライザーとHTTP実装は、client定義の`JsonSerializer`／`HttpTransport`でclientごとに選びます。
+既定はNewtonsoft.Jsonと`System.Net.Http.HttpClient`で、この文書の他の節は既定の出力を前提にしています（選択肢と差異は「Library選択（HTTPとJSON）」）。
+Docker providerは別providerであり、fallbackまたは切替は行いません。
 
 生成物はhand-editするsourceではなく、再Generateされるpublic contractです。spec IDを含むhint nameは
 stableで、generated nameはordinalのdeterministic namingとsuffixによるcollision resolutionを使用します。
@@ -399,14 +400,99 @@ namespace-levelのため、同じnamespaceには共存できません。
 `ConvertToString`、`DateOnlyJsonConverter`、`ReadJsonResponseBodyAsync`、`HasPreamble`、
 `Servers`、`BuildServerUrl`、`ExpandServerUrl`、`OperationServerUrls`、
 `ResolveOperationServerUrl`、`OperationNames`、`GetOperationServers`、
-`BuildOperationServerUrl`です。
+`BuildOperationServerUrl`です。`UnityWebRequest`を選んだclientでは、次のメンバー名も予約名で、`apiName`が一致すると`OACG005`です:
+`_baseAddress`、`RequestTimeout`、`ConfigureUnityWebRequest`、`SendUnityWebRequestAsync`、
+`SetUnityRequestHeader`、`AddUnityResponseHeader`（`HttpClient`のclientで受理される名前は変わりません）。
+
+生成するDTO・enumのwire converter・unionと、そのpropertyには、IL2CPPのManaged Stripping Level Highでもリフレクション専用のmemberを残すため、
+internalな`PreserveAttribute`を付けます。attributeはclientごとに専用のnamespace `<generated namespace>.<ApiName>_Preserve`へ宣言します
+（同じnamespaceに複数のclientを生成しても重複しません）。DTO・enum・unionのないspecでは生成しません。
+同じnamespaceに利用者が`<ApiName>_Preserve`という名前の型を宣言すると、このnamespaceと衝突してコンパイルエラーになるため、別の名前にしてください。
+この変更により、DTOまたはenumを持つspecの生成出力は、既定の組み合わせでも変わります（attributeの追加と、`PreserveAttribute`の宣言先がclientのnamespaceから`<ApiName>_Preserve`へ移ったこと）。
 Schema members whose CLR names would match another member's `Name + "Specified"`
 are assigned a unique CLR name while retaining their JSON wire names. This
 prevents Json.NET from mistaking a schema boolean for a presence flag.
 
+## Library選択（HTTPとJSON）
+
+client定義の`OpenApiClientDefinitionAttribute`の名前付きプロパティ`HttpTransport`（`OpenApiHttpTransport`: `HttpClient`／`UnityWebRequest`）と
+`JsonSerializer`（`OpenApiJsonSerializer`: `NewtonsoftJson`／`SystemTextJson`）で、clientごとに選びます。省略時は
+`HttpClient` + `Newtonsoft.Json`です。constructorの引数は変わらず、旧4引数形式の定義も受理します。Editorは既定値と異なるプロパティだけを
+定義ファイルへ書き出すため、既存の定義ファイルはバイト単位で変わりません。選択を変えても`specId`とclient identityは変わりません。
+Editorでは、Settingsウィンドウ（`Window/OpenAPI Code Generator/Settings`）の**Source Generator Libraries**で選び、Generatorウィンドウで準備状況を確認します
+（不足していれば`Generate`を無効にします）。0.6.0からSource Generatorパッケージは`com.unity.nuget.newtonsoft-json`に依存せず、
+必要なライブラリは利用者が導入します。
+
+| 組み合わせ | Status | 条件・制約 |
+| --- | --- | --- |
+| `HttpClient` + `Newtonsoft.Json`（既定） | Supported | 既定です。WebGL Playerでは動作しません（`OACG014`）。 |
+| `HttpClient` + `System.Text.Json` | Supported | 下の「System.Text.JsonとNewtonsoft.Jsonの差異」を除き、同じ契約です。WebGL Playerでは動作しない見込みです（`OACG014`。実測はNewtonsoft.Jsonの1セルのみ）。 |
+| `UnityWebRequest` + `Newtonsoft.Json` | Supported | 下の「UnityWebRequestの制約」があります。WebGLではこのtransportを選びます。 |
+| `UnityWebRequest` + `System.Text.Json` | Supported | 同上。 |
+| 上記以外の値 | Unsupported | `OACG010` |
+
+### 必要なライブラリ
+
+Analyzerは、コンパイルが参照するアセンブリの公開型と、そのアセンブリ版（同じ型を複数の参照が持つ場合は最大の版）、`UNITY_WEBGL`シンボルで判定します。
+選択していないライブラリの不足や版は報告しません。Errorがあるclientは何も生成せず、診断だけを報告します。
+EditorのSettingsとGeneratorウィンドウは、出力先asmdefのPlayer用参照から事前に判定します（Editor専用のDLLは数えません）。
+NuGetForUnityや手動配置のDLLでも、参照があれば検出します。
+
+| 選択 | 必要な参照 | 最低版 | 不足・不一致の診断 |
+| --- | --- | --- | --- |
+| `HttpClient` | `System.Net.Http.HttpClient` | - | `OACG012` |
+| `UnityWebRequest` | `UnityEngine.Networking.UnityWebRequest`（Unity Web Requestモジュール）と`System.Net.Http.HttpClient`（アダプターが`HttpRequestMessage`／`HttpContent`を使うため） | - | `OACG012` |
+| `Newtonsoft.Json` | `Newtonsoft.Json.JsonConvert`（`com.unity.nuget.newtonsoft-json` 3.2.2など） | 13.0 | `OACG011`、版は`OACG013` |
+| `System.Text.Json` | `System.Text.Json.JsonSerializer`（UnityNuGetの`org.nuget.system.text.json` 8.0以上。実行時に`System.Text.Encodings.Web`も必要） | 8.0 | `OACG011`、版は`OACG013` |
+
+System.Text.Jsonの導入は手順の表示だけです（UnityNuGetのscoped registry `https://unitynuget-registry.openupm.com`（scope `org.nuget`）と
+`org.nuget.system.text.json` 8.0以上）。Editorは`Packages/manifest.json`を自動編集しません。
+
+### System.Text.JsonとNewtonsoft.Jsonの差異
+
+生成するpublic APIの形は同じで、次の点が異なります。それ以外の契約（wire形式、制約の検証、診断）は同じになるよう実装し、
+両方のシリアライザーで同じ種類のテストを実行しています。
+
+| 項目 | Newtonsoft.Json | System.Text.Json |
+| --- | --- | --- |
+| `{}`・任意の値（Any） | `JToken` | `JsonElement` |
+| propertiesのない`type: object`（FreeObject） | `JObject` | `System.Text.Json.Nodes.JsonObject` |
+| open DTOの宣言外member（ExtensionData） | `[JsonExtensionData]`の`IDictionary<string, JToken>` | `[JsonExtensionData]`の`IDictionary<string, JsonElement>` |
+| discriminatorなしunionの生の値 | `FromJToken`／`ToJToken` | `FromJsonElement`／`ToJsonElement`（`FromJsonElement`で作った値は既定のoptionsで読むため、clientのconverterは適用されません） |
+| contractに違反したresponse・response header | `Newtonsoft.Json.JsonSerializationException` | `System.Text.Json.JsonException` |
+| requestの制約違反 | `ArgumentException` | `ArgumentException`（同じ） |
+| `<Property>Specified`・`readOnly`の規則、日付・整数のconverter | DTOの属性と`ShouldSerialize<Name>()` | clientの`JsonSerializerOptions`（`DefaultJsonTypeInfoResolver.Modifiers`）が持ちます。DTOを独自のoptionsでシリアライズしても適用されません |
+| ホストの設定 | requestとresponseは独立したserializer。正の`JsonConvert.DefaultSettings.MaxDepth`が深さ上限64を上書き | グローバル設定は参照しません。深さ上限は64固定。`UnsafeRelaxedJsonEscaping`はHTTP本文専用で、出力をHTMLに埋め込まないでください |
+| responseの`$id`／`$ref`／`$values`参照メタデータ | 互換拡張として受理 | 非対応 |
+| integerの`2`と`2.0`・`1e0`（数学的に整数の字句） | DTOのproperty・配列要素はCLR型の範囲内で受理 | 同じ（clientのconverter）。ただしdiscriminatorなしunionの構造照合では、小数部または指数を持つ数はintegerとみなしません |
+| 孤立したサロゲートescape（`\ud83d`など）を含むresponse | - | 有効なUTF-16ではないため`JsonException`で拒否 |
+| 宣言したエラー本文（`Error`、`TryGetError<T>`） | 検査せずそのまま逆シリアル化。失敗は`ErrorDeserializationException` | 先に成功本文と同じ検査（重複名、closed DTOの宣言外member、整数の字句、enum値、必須member）を行います。失敗すると`Error`は`null`で、理由は`ErrorDeserializationException` |
+
+長さの制約はどちらもUnicodeコードポイント数で数え（サロゲートペアは1文字）、responseの重複したmember名はどちらも拒否します。
+この文書の他の節で`JToken`・`JObject`・`JsonSerializationException`・`$id`などと書いた箇所は、Newtonsoft.Jsonの場合の記述です。
+
+### UnityWebRequestの制約
+
+`UnityWebRequest`のclientは、request・response・検証の経路を`HttpClient`のclientと共有し（`HttpRequestMessage`／`HttpContent`／`HttpResponseMessage`を使うアダプター方式）、
+最後の送信だけを`UnityWebRequest`で行います。constructorは`HttpClient`の代わりに`Uri? baseAddress`（と任意の`baseUrl`）を受け取ります。
+
+| 項目 | Status | 条件・制約 |
+| --- | --- | --- |
+| 実行スレッド | Partial | `UnityWebRequest`の生成・送信・破棄は、呼び出し元の`SynchronizationContext`（Unityのメインスレッド）で行います。送信前に`ConfigureAwait(false)`は使いません。clientのメソッドはメインスレッドから呼んでください。 |
+| キャンセル | Supported | トークンのキャンセルでそのコンテキストの`Abort()`を呼び、`OperationCanceledException`を投げます。コンテキストがなければキャンセルしたスレッドで`Abort()`が走ります。 |
+| タイムアウト | Partial | `RequestTimeout`（`TimeSpan?`、`null`は無制限）を秒単位に切り上げて`UnityWebRequest.timeout`へ渡します。超過すると`HttpClient.Timeout`と同様に、`InnerException`が`TimeoutException`の`TaskCanceledException`です。`HttpClient`の`Timeout`や`HttpClientHandler`の設定は使いません。 |
+| エラー | Supported | 通信失敗は`HttpRequestException`です。HTTPのエラーstatus（4xx・5xx）は例外ではなく通常の応答として扱い、`HttpClient`のclientと同じ規則（`<ApiName>Exception`など）に従います。 |
+| 相対server URL | Partial | `/v1`・`//host/v1`・`v1`のような相対server URLには、絶対`baseAddress`が必要です（`HttpClient.BaseAddress`に相当）。ない場合は呼び出し時に`InvalidOperationException`です。絶対server URLなら不要です。WebGLでは`new Uri(Application.absoluteURL)`などをbase addressに渡します。 |
+| 送信前の設定 | Supported | `ConfigureUnityWebRequest`が送信直前に各`UnityWebRequest`を受け取ります（certificate handler、リダイレクト上限など）。`UseCookies`やクライアント証明書など`HttpClientHandler`の設定は適用されません。 |
+| 重複したレスポンスヘッダー | Partial | `UnityWebRequest`が1つのカンマ区切りの値に結合します。レスポンスのreason phraseは取得できません。 |
+| requestヘッダーの制限 | Partial | 生成コードはすべてのrequestヘッダー（cookie parameterとcookieのapiKeyは1本の`Cookie`ヘッダー）を`UnityWebRequest.SetRequestHeader`で設定し、Unityが拒否したヘッダーは黙って捨てず、ヘッダー名を示す`InvalidOperationException`（元の例外を`InnerException`に保持）にします。どのヘッダーが拒否されるかはUnityとプラットフォームの判断で、`Host`、`Connection`、`Expect`、`Transfer-Encoding`や、WebGLでブラウザーが禁止するヘッダーは送れない場合があります。WebGLの制限（`Cookie`、`User-Agent`を含む）は未検証です。 |
+| 本文のメモリ保持 | Partial | request本文（`Stream`のファイルpartを含む）とresponse本文は`byte[]`としてメモリに保持します。 |
+| 予約名 | Supported | `_baseAddress`、`RequestTimeout`、`ConfigureUnityWebRequest`、`SendUnityWebRequestAsync`、`SetUnityRequestHeader`、`AddUnityResponseHeader`は、このtransportだけの予約API名です（`OACG005`）。 |
+| WebGL | Supported | WebGLのHTTP経路はこのtransportだけです。Player検証の結果は「Player互換性（IL2CPP・WebGL）」を参照してください。ブラウザーのsame-origin／CORSの規則に従います（別originは未検証）。 |
+
 ## 診断
 
-診断は位置付き（logical path）で報告します。`OACG001`–`OACG009`はBundle・入力・client定義の診断で、`OACG100`–`OACG108`はOpenAPI document（Swagger 2.0を含む）のsemantic generationの診断です。ErrorはGenerateを完了させず、Warningは生成を続けます。
+診断は位置付き（logical path）で報告します。`OACG001`–`OACG009`はBundle・入力・client定義の診断、`OACG010`–`OACG014`はライブラリ選択の診断で、`OACG100`–`OACG108`はOpenAPI document（Swagger 2.0を含む）のsemantic generationの診断です。ErrorはGenerateを完了させず、Warningは生成を続けます。
 
 | ID | 重大度 | Title | 報告する場面 |
 | --- | --- | --- | --- |
@@ -414,11 +500,16 @@ prevents Json.NET from mistaking a schema boolean for a presence flag.
 | `OACG002` | Error | Unsupported normalized spec bundle version | Bundleのformat versionが未対応 |
 | `OACG003` | Error | OpenAPI generation failed | semantic generationが失敗した場合の通知 |
 | `OACG004` | Error | Duplicate normalized spec bundle ID | 同じSpec IDを宣言するBundleが複数ある |
-| `OACG005` | Error | Invalid OpenAPI client definition | `apiName`が生成メンバーの予約名（「生成結果と利用上の制約」）と一致する場合など |
+| `OACG005` | Error | Invalid OpenAPI client definition | `apiName`が生成メンバーの予約名（「Generated outputと利用上の制約」。`UnityWebRequest`専用の予約名はそのtransportのときだけ）と一致する場合など |
 | `OACG006` | Error | Missing normalized spec bundle | Spec IDに対応するBundleがない |
 | `OACG007` | Error | Duplicate OpenAPI client definition ID | 同じSpec IDのclient定義が複数ある |
 | `OACG008` | Error | Unsupported OpenAPI document format | document formatが`Json`（0）・`Yaml`（1）以外 |
 | `OACG009` | Error | Normalized spec bundle ID mismatch | Bundle内のSpec IDとAdditionalFile名が一致しない |
+| `OACG010` | Error | Unsupported library selection | client定義の`HttpTransport`／`JsonSerializer`が未知の値、または実装のない組み合わせ |
+| `OACG011` | Error | JSON library is not referenced | 選択したJSONライブラリの公開型（`Newtonsoft.Json.JsonConvert`または`System.Text.Json.JsonSerializer`）が参照にない |
+| `OACG012` | Error | HTTP implementation is not referenced | 選択したHTTP実装の公開型（`System.Net.Http.HttpClient`、`UnityWebRequest`では`UnityEngine.Networking.UnityWebRequest`と`System.Net.Http.HttpClient`）が参照にない |
+| `OACG013` | Error | Referenced library version is too low | 参照しているライブラリが最低版未満（Newtonsoft.Json 13.0、System.Text.Json 8.0） |
+| `OACG014` | Warning | HttpClient is not supported on WebGL | `UNITY_WEBGL`が定義されている状態で`HttpClient`を選んでいる。生成とコンパイルは通りますが、WebGL Playerでは動作しません |
 | `OACG100` | Error | Invalid OpenAPI document | 仕様に反する、または矛盾した値（必須項目の欠落、不正な`pattern`・`style`・`$self`、`schema`と`content`の併記、未定義のsecurity scheme、重複するdiscriminator値・tag名など）。Swagger 2.0の正規化中の不正（body parameterの`schema`欠落、未知のflowなど）も含みます |
 | `OACG101` | Error | Unsupported OpenAPI element | 対象外の要素（上の「対象外の項目」）、未知の項目（`requird`、未知のschemaキーワード、未知のcomponents section）、版に合わない項目（3.0／3.1の`query`・`in: querystring`、3.0のschemaで`patternProperties`など）、Swagger 2.0で3.0に相当しない表現 |
 | `OACG102` | Error | Unresolved OpenAPI reference | `$ref`が文書・JSON Pointerとして存在しない場合。OACG108で無視するsubtree内の`$ref`は解析しないので報告しません |
@@ -428,6 +519,55 @@ prevents Json.NET from mistaking a schema boolean for a presence flag.
 | `OACG106` | Error | Invalid generated API identifier | 明示した`operationId`が複数のoperationで重複した場合（省略した`operationId`は連番で一意にするので報告しません） |
 | `OACG107` | Warning | Generated type name collision | 型名が衝突し、決定的なsuffix（連番）で解消した場合 |
 | `OACG108` | Warning | Ignored OpenAPI element | 要素を意図して無視した場合。wire contractは変わりません。ドキュメント専用の要素（`description`・`example`など）は黙って受理するので報告しません。主な場面: `Accept`／`Content-Type`／`Authorization`のheader parameter、webhooks・callbacks・links（とcomponentsの`links`・`callbacks`）、生成できる他のmedia typeがあるときのobject・arrayのxml、処理できない別media typeや生成できないerror schema、評価できない`not`・`const`・`x-enum-*`・`discriminator`、.NET構文を要する`pattern`、binaryに付いた制約キーワード、Encoding Objectの無視した項目、3.2の`itemSchema`（逐次media type）・`prefixEncoding`／`itemEncoding`・他documentを参照する`$self`、Swagger 2.0でhostがないときのoperationの`schemes` |
+
+## Player互換性（IL2CPP・WebGL）
+
+[#57](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/57)の検証結果です。検証は`SourceGenerators/scripts/verify-player.js`
+（`verify-player.sh`から実行）で行い、`SourceGenerators/BuildTools/UnityPlayerVerificationFixture/`のfixtureを使います。
+fixtureはSource Generatorの本来の経路（Editor Writerの定義ファイル、normalized spec bundle、Analyzer）で4つのclient
+（HttpClientまたはUnityWebRequest × Newtonsoft.JsonまたはSystem.Text.Json）を生成し、Player内でJSON往復（DTO、string／integer enum、
+`date-time`、`date`、map、配列、discriminator付き`oneOf`）、GET 1回、POST 1回、constraint違反の事前拒否を実行します。
+結果は各セルの`result.json`（ビルド・Playerログ付き）として`artifacts/player-gate/<Unity版>/<セルID>/`へ保存され、
+要約を[`Evidence/6000.3.2f1.json`](BuildTools/UnityPlayerVerificationFixture/Evidence/6000.3.2f1.json)に残しています。
+
+検証条件: Unity `6000.3.2f1`、Windows 11 x64ホスト、2026-11-14実行。Standalone Win64はIL2CPPで、WebGLはIL2CPP（WebGLに別のbackendはありません）。
+ビルドは非Development、IL2CPPコード生成・WebGLの例外サポートなどのPlayer設定は既定のままです（WebGLは圧縮なし）。
+WebGLはヘッドレスChrome（157）で、Playerと同一originのローカルHTTPサーバー（`127.0.0.1`）に対して実行しました。
+System.Text.Jsonは`org.nuget.system.text.json` 8.0.5（UnityNuGet、netstandard2.0版）、Newtonsoft.Jsonは`com.unity.nuget.newtonsoft-json` 3.2.2です。
+
+| Target | Backend | Managed Stripping | HTTP | JSON | 結果 | ビルド（秒） | チェック |
+| --- | --- | --- | --- | --- | --- | ---: | --- |
+| Standalone Win64 | IL2CPP | Minimal | HttpClient | Newtonsoft.Json | Pass | 157 | 21/21 passed |
+| Standalone Win64 | IL2CPP | Minimal | HttpClient | System.Text.Json | Pass | 84 | 21/21 passed |
+| Standalone Win64 | IL2CPP | Minimal | UnityWebRequest | Newtonsoft.Json | Pass | 87 | 21/21 passed |
+| Standalone Win64 | IL2CPP | Minimal | UnityWebRequest | System.Text.Json | Pass | 71 | 21/21 passed |
+| Standalone Win64 | IL2CPP | High | HttpClient | Newtonsoft.Json | Pass | 99 | 21/21 passed |
+| Standalone Win64 | IL2CPP | High | HttpClient | System.Text.Json | Pass | 83 | 21/21 passed |
+| Standalone Win64 | IL2CPP | High | UnityWebRequest | Newtonsoft.Json | Pass | 87 | 21/21 passed |
+| Standalone Win64 | IL2CPP | High | UnityWebRequest | System.Text.Json | Pass | 74 | 21/21 passed |
+| Standalone Win64 | Mono（比較） | Minimal | HttpClient | Newtonsoft.Json | Pass | 35 | 21/21 passed |
+| Standalone Win64 | Mono（比較） | Minimal | UnityWebRequest | Newtonsoft.Json | Pass | 26 | 21/21 passed |
+| WebGL | IL2CPP | Minimal | UnityWebRequest | Newtonsoft.Json | Pass | 181 | 21/21 passed |
+| WebGL | IL2CPP | Minimal | UnityWebRequest | System.Text.Json | Pass | 120 | 21/21 passed |
+| WebGL | IL2CPP | High | UnityWebRequest | Newtonsoft.Json | Pass | 166 | 21/21 passed |
+| WebGL | IL2CPP | High | UnityWebRequest | System.Text.Json | Pass | 117 | 21/21 passed |
+| WebGL | IL2CPP | Minimal | HttpClient | Newtonsoft.Json | 非対応（`OACG014`。Playerは90秒で無応答） | 175 | 0/1 passed |
+
+- **Pass**: 21チェックがすべて成功し、サーバーがGET 1件・POST 1件を受信して、POST本文のwire形式（enumのwire値、日付、map、discriminatorとメンバー）も正しいことを確認しました。
+- **WebGL × HttpClientは非対応**です。`UNITY_WEBGL`定義下でHttpClient transportを選ぶとAnalyzerが`OACG014`（Warning）を報告し、生成とビルドは成功しますが、
+  Playerのprobeは完了せず、サーバーはrequestを1件も受信しません（90秒のwatchdogで失敗を記録）。WebGLでは`UnityWebRequest`を選んでください。実測したのはNewtonsoft.Jsonの1セルだけです。原因はtransport（`System.Net.Http.HttpClient`のソケットがWebGLのブラウザー環境に無いこと）でserializerとは無関係なので、System.Text.Jsonも同様と判断しており、個別には実測していません。
+- **Managed Stripping Level High**: 生成物に何も加えない初回の実行は、Standalone IL2CPP 4セルとWebGL 2セルで失敗しました。
+  Newtonsoft.Jsonは列挙型のwire converterを生成できず（`No parameterless constructor defined for '...ColorWireConverter'`）、
+  System.Text.Jsonはsetterを持たないpropertyとして`JsonRequired`のpropertyを拒否しました（`JsonPropertyInfo 'radius' ... is marked required but does not specify a setter`）。
+  どちらも、リフレクションだけで使うメンバー（converterのコンストラクター、コードから設定しないDTO propertyのaccessor）がHighで削除されるためです。
+  型への`PreserveAttribute`だけではproperty accessorが残らないことも確認しました（型単位だけの再実行は、System.Text.Jsonで同じ失敗、Newtonsoft.Jsonでunionメンバーの検査失敗でした）。
+  そのため生成器は、DTO型・enumのwire converter・各DTO propertyと`<Name>Specified`・`OnSerializing`コールバックに、internalな`PreserveAttribute`を付けます
+  （Unityのlinkerは名前で認識します。`link.xml`は生成assembly名を持てないため使いません）。attributeはclientごとの専用namespace（`<生成namespace>.<ApiName>_Preserve`）に宣言するので、同じnamespaceに複数のclientを生成しても重複しません（型名が衝突する場合は連番を付けます）。
+  DTO・enum・unionを持たないspecでは、attributeもそのファイルも生成しません。この変更後に全セルがPassしました。
+- 対象外（未検証）: Unity `6000.0.23f1`と`2021.3`、Linux・macOS・Android・iOSのPlayer、Development Player、Managed Stripping Level Low／Medium／Disabled、
+  IL2CPPのコード生成設定とWebGLの例外サポートの既定以外、別origin（CORS）への通信、WebGLの圧縮形式、Safari／Firefox。
+  Linux Standalone IL2CPPとWebGLの手動CI（`.github/workflows/source-generator-player.yml`）は用意しましたが、まだ実行していません。
+- WebGLでUnityWebRequestを使う場合、server URLが相対（`/api`など）なら、`new Uri(Application.absoluteURL)`のような絶対URIをbase addressに渡す必要があります。
 
 ## 検証済み環境
 
@@ -470,6 +610,5 @@ Docker専用項目は無効になります。実UXMLテストに加え、Unity E
 このローカル候補は`--allow-dirty`で作成した開発用証拠です。公開に使うclean commitと
 最新のCI結果・成果物は[PR #56](https://github.com/rebeat-jp/UnityOpenApiCodeGen/pull/56)
 で確認し、[RELEASE.md](../RELEASE.md)の承認・検証手順に従ってください。
-IL2CPP/WebGLのPlayer互換性は未検証で、[#57](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/57)
-で追跡します。正式タグ・公開・OpenUPM初回登録は
+IL2CPP/WebGLのPlayer互換性は、上の「Player互換性（IL2CPP・WebGL）」にUnity `6000.3.2f1`での検証結果を記録しています（[#57](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/57)）。正式タグ・公開・OpenUPM初回登録は
 [#62](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/62)の別作業です。

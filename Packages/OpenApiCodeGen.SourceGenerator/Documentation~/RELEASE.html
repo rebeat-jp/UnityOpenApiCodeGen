@@ -113,11 +113,22 @@ does not automatically trigger the ordinary PR workflow.</p>
 <h2 id="candidate-contract-and-evidence">Candidate contract and evidence</h2>
 <p>The current package contract is:</p>
 <ul>
-<li>Base <code>0.5.1</code>, minimum Unity <code>2021.3</code>.</li>
-<li>Add-on <code>0.5.1</code>, minimum Unity <code>6000.0</code>.</li>
-<li>Add-on dependency on base <code>0.5.1</code> and
-<code>com.unity.nuget.newtonsoft-json</code> <code>3.2.2</code>.</li>
-<li>Package versions, dependency version, requested version, and tag match.</li>
+<li>Base <code>0.6.0</code>, minimum Unity <code>2021.3</code>.</li>
+<li>Add-on <code>0.6.0</code>, minimum Unity <code>6000.0</code>.</li>
+<li>Add-on dependency on base <code>0.6.0</code> only (<code>pack-release.sh</code> checks that the
+dependency set is exactly the base package, in <code>package.json</code> and in
+<code>packages-lock.json</code>). Since 0.6.0 the add-on no longer depends on
+<code>com.unity.nuget.newtonsoft-json</code>; the project installs the libraries of the
+selected HTTP / JSON combination itself.</li>
+<li>The development project (<code>Packages/manifest.json</code>) pins
+<code>com.unity.nuget.newtonsoft-json</code> <code>3.2.2</code> as a direct dependency, locked at
+depth 0 in <code>packages-lock.json</code>, because it uses the default Newtonsoft.Json
+client. <code>pack-release.sh</code> checks this too.</li>
+<li>Package versions, dependency version, requested version, and tag match
+(<code>pack-release.sh</code> compares both <code>package.json</code> versions and the base
+dependency with the requested version). The versions in this document&#39;s
+examples and contract list are updated together with the package versions
+for each release.</li>
 </ul>
 <p>The shared pipeline checks out the exact clean SHA, runs script and .NET tests,
 checks deterministic DLL builds and committed DLL synchronization, and rejects
