@@ -12,8 +12,8 @@ Source Generator方式では、Unityプロジェクトの`Packages/manifest.json
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.1",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.1"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.1",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.1"
   }
 }
 ```
@@ -21,7 +21,8 @@ Source Generator方式では、Unityプロジェクトの`Packages/manifest.json
 Docker方式には基本パッケージだけを使用できます。追加パッケージにはUnity 6000.0以降が必要です。
 0.6.0から追加パッケージはNewtonsoft.Jsonを導入しません。選んだHTTP／JSONの組み合わせのライブラリは利用者が導入します
 （既定は`com.unity.nuget.newtonsoft-json` `3.2.2`。代替は`UnityWebRequest`と`System.Text.Json`です）。
-例は`0.5.1`のリリースタグを使います。
+例は`0.6.0-preview.1`のリリースタグを使います。これはプレリリース版です。最新の安定版は`0.5.1`で、HTTP／JSONライブラリの
+選択は含まれません。
 未リリースのコミットを試す場合は、両URLのタグ部分を同じ検証済みコミットSHAへ置き換えてください。
 
 ## Editorでの操作
