@@ -66,13 +66,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         }
 
         /// <summary>
-        /// 実装済みの組み合わせか。後続フェーズで STJ / UnityWebRequest を実装したらここを広げる。
-        /// Whether an emitter exists for the combination. Widen this as STJ / UnityWebRequest land.
+        /// 実装済みの組み合わせか。後続フェーズで UnityWebRequest を実装したらここを広げる。
+        /// HttpClient + SystemTextJson は composition と constraint の検証を除いて実装済み
+        /// （それらを含むスペックは生成時に OACG010 で拒否される。SystemTextJsonFeatureGate）。
+        /// Whether an emitter exists for the combination. Widen this as UnityWebRequest lands.
+        /// HttpClient + SystemTextJson exists except for composition and constraint validation; a spec
+        /// that needs them is rejected with OACG010 at generation time (SystemTextJsonFeatureGate).
         /// </summary>
         internal static bool IsImplemented(HttpTransportKind transport, JsonSerializerKind serializer)
         {
             return transport == HttpTransportKind.HttpClient &&
-                   serializer == JsonSerializerKind.NewtonsoftJson;
+                   (serializer == JsonSerializerKind.NewtonsoftJson ||
+                    serializer == JsonSerializerKind.SystemTextJson);
         }
 
         /// <summary>

@@ -17,11 +17,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     /// </summary>
     internal static class Phase4BodyWireHarness
     {
-        private static readonly Lazy<Assembly> BodiesAssembly = new Lazy<Assembly>(() =>
+        private static readonly Lazy<Assembly> BodiesAssembly = new Lazy<Assembly>(() => CompileBodies(null));
+
+        private static readonly Lazy<Assembly> BodiesSystemTextJsonAssembly = new Lazy<Assembly>(
+            () => CompileBodies("SystemTextJson"));
+
+        private static Assembly CompileBodies(string? serializer)
         {
             string spec = System.IO.File.ReadAllText(
                 System.IO.Path.Combine(AppContext.BaseDirectory, "ApiSurfaceSpecs", "bodies.json"));
-            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(spec);
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
+                spec,
+                options: serializer is null ? null : new Phase4CompilationOptions { JsonSerializer = serializer });
             if (execution.RunResult.Diagnostics.Length > 0 || execution.CompilationErrors.Count > 0)
             {
                 throw new InvalidOperationException(
@@ -30,10 +37,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             }
 
             return execution.EmitAssembly();
-        });
+        }
 
         /// <summary>The client compiled from ApiSurfaceSpecs/bodies.json (compiled once).</summary>
         internal static Assembly Bodies => BodiesAssembly.Value;
+
+        /// <summary>The same client compiled for a JSON serializer ("NewtonsoftJson" or "SystemTextJson").</summary>
+        internal static Assembly BodiesFor(string serializer) =>
+            serializer == "SystemTextJson" ? BodiesSystemTextJsonAssembly.Value : Bodies;
 
         internal sealed class Exchange
         {

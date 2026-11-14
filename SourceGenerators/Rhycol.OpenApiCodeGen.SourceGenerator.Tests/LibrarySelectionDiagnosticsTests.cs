@@ -71,7 +71,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
         [Theory]
         [InlineData("UnityWebRequest", "NewtonsoftJson")]
-        [InlineData("HttpClient", "SystemTextJson")]
         [InlineData("UnityWebRequest", "SystemTextJson")]
         public void UnimplementedCombinationsReportOACG010WhenLibrariesArePresent(
             string httpTransport,
@@ -117,7 +116,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 SystemTextJson = false,
                 JsonSerializer = "SystemTextJson"
             });
-            Assert.Equal(new[] { "OACG010", "OACG011" }, SelectionDiagnosticIds(selected));
+            Assert.Equal(new[] { "OACG011" }, SelectionDiagnosticIds(selected));
             Assert.Empty(selected.RunResult.GeneratedTrees);
             Assert.Contains(
                 "System.Text.Json",
@@ -180,14 +179,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 SystemTextJsonStubVersion = new Version(7, 0, 0, 0),
                 JsonSerializer = "SystemTextJson"
             });
-            Assert.Equal(new[] { "OACG010", "OACG013" }, SelectionDiagnosticIds(tooLow));
+            Assert.Equal(new[] { "OACG013" }, SelectionDiagnosticIds(tooLow));
 
             Phase4GeneratorExecution minimum = Run(new Phase4CompilationOptions
             {
                 SystemTextJsonStubVersion = LibraryAvailability.MinimumSystemTextJsonVersion,
                 JsonSerializer = "SystemTextJson"
             });
-            Assert.Equal(new[] { "OACG010" }, SelectionDiagnosticIds(minimum));
+            Assert.Empty(SelectionDiagnosticIds(minimum));
+            Assert.NotEmpty(minimum.RunResult.GeneratedTrees);
 
             Phase4GeneratorExecution notSelected = Run(new Phase4CompilationOptions
             {
@@ -409,9 +409,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 model,
                 HttpTransportKind.HttpClient,
                 JsonSerializerKind.NewtonsoftJson));
-            Assert.Throws<NotSupportedException>(() => service.EmitMvpModel(
+            Assert.NotEmpty(service.EmitMvpModel(
                 model,
                 HttpTransportKind.HttpClient,
+                JsonSerializerKind.SystemTextJson));
+            Assert.Throws<NotSupportedException>(() => service.EmitMvpModel(
+                model,
+                HttpTransportKind.UnityWebRequest,
                 JsonSerializerKind.SystemTextJson));
             Assert.Throws<NotSupportedException>(() => service.EmitMvpModel(
                 model,

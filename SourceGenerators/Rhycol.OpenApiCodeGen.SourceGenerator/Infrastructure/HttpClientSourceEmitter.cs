@@ -7,6 +7,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 {
     internal sealed partial class HttpClientSourceEmitter
     {
+        private readonly JsonSerializerProfile _json;
+
+        internal HttpClientSourceEmitter()
+            : this(JsonSerializerProfile.Newtonsoft)
+        {
+        }
+
+        internal HttpClientSourceEmitter(JsonSerializerProfile json)
+        {
+            _json = json ?? throw new ArgumentNullException(nameof(json));
+        }
+
         internal GeneratedFile Emit(OpenApiGenerationModel model)
         {
             if (model is null)
@@ -30,17 +42,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine();
             AppendConstructors(source, model);
             AppendServers(source, model);
-            var responseValidators = new ResponseValidatorPlan(model);
+            var responseValidators = new ResponseValidatorPlan(model, _json);
             var constraints = new ConstraintValidationEmitter(model);
-            var responseJsonContracts = new ResponseJsonContractPlan(model, constraints);
+            var bodyHelpers = new BodyHelperNames(model, constraints, _json);
+            var responseJsonContracts = new ResponseJsonContractPlan(model, constraints, _json, bodyHelpers.JsonOptions);
             var parameterSerializer = new HttpClientParameterSerializationEmitter(
                 model,
                 responseValidators.RequestJsonSerializerName,
                 responseValidators.HeaderValueValidatorName,
-                constraints);
+                constraints,
+                _json);
 
             parameterSerializer.Security.AppendProperties(source);
-            var bodyHelpers = new BodyHelperNames(model, constraints);
             foreach (GeneratedOperationModel operation in model.Operations)
             {
                 source.AppendLine();
@@ -49,10 +62,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             source.AppendLine();
-            AppendHelpers(source, responseValidators);
+            AppendHelpers(source, model, responseValidators, bodyHelpers);
             parameterSerializer.AppendHelpers(source);
             parameterSerializer.Security.AppendHelpers(source);
-            AppendBodyHelpers(source, model, bodyHelpers);
+            AppendBodyHelpers(source, model, bodyHelpers, responseJsonContracts);
             responseValidators.AppendMethods(source);
             responseJsonContracts.AppendMethods(source);
             constraints.AppendMethods(source);
@@ -64,7 +77,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return GeneratedSourceEmitter.Create(model.ApiName + ".g.cs", source.ToString());
         }
 
-        private static void AppendConstructors(StringBuilder source, OpenApiGenerationModel model)
+        private void AppendConstructors(StringBuilder source, OpenApiGenerationModel model)
         {
             source.Append("        public ").Append(model.ApiName)
                 .Append("(global::System.Net.Http.HttpClient httpClient) : this(httpClient, ")
@@ -80,7 +93,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("            _baseUrl = baseUrl ?? throw new global::System.ArgumentNullException(nameof(baseUrl));");
             source.AppendLine("        }");
         }
-        private static void AppendNumericParameterValidation(
+        private void AppendNumericParameterValidation(
             StringBuilder source,
             GeneratedOperationModel operation)
         {
@@ -161,7 +174,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         : "((int)response.StatusCode == " + code + ")"));
         }
 
-        private static void AppendResponseContentTypeValidation(
+        private void AppendResponseContentTypeValidation(
             StringBuilder source, GeneratedOperationModel operation, ResponseValidatorPlan validators)
         {
             source.Append("                    string[] ").Append(validators.MediaTypesLocalName).AppendLine(";");
@@ -186,7 +199,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 .Append("(response, ").Append(validators.MediaTypesLocalName).AppendLine(");");
         }
 
-        private static void AppendDeclaredResponseMediaTypes(
+        private void AppendDeclaredResponseMediaTypes(
             StringBuilder source, string localName, IReadOnlyList<string> mediaTypes)
         {
             source.Append("                            ").Append(localName).Append(" = new string[] { ");
@@ -217,10 +230,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private static void AppendHelpers(StringBuilder source, ResponseValidatorPlan validators)
+        private void AppendHelpers(
+            StringBuilder source,
+            OpenApiGenerationModel model,
+            ResponseValidatorPlan validators,
+            BodyHelperNames helpers)
         {
-            source.AppendLine("        private static readonly global::Newtonsoft.Json.JsonConverter DateOnlyJsonConverterInstance = new DateOnlyJsonConverter();");
-            AppendRequestJsonSerializationHelper(source, validators.RequestJsonSerializerName);
+            if (_json.IsSystemTextJson)
+            {
+                AppendSystemTextJsonSupport(source, model, validators, helpers);
+            }
+            else
+            {
+                source.AppendLine("        private static readonly global::Newtonsoft.Json.JsonConverter DateOnlyJsonConverterInstance = new DateOnlyJsonConverter();");
+                AppendRequestJsonSerializationHelper(source, validators.RequestJsonSerializerName);
+            }
+
             AppendResponseContentTypeHelper(source, validators.MediaTypeValidatorName);
             source.AppendLine();
             source.Append("        private static string ").Append(validators.HeaderValueValidatorName)
@@ -451,7 +476,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("            }");
             source.AppendLine("            catch (global::System.Text.DecoderFallbackException exception)");
             source.AppendLine("            {");
-            source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response contains invalid encoded bytes.\", exception);");
+            source.AppendLine("                throw new " + _json.SerializationExceptionName + "(\"The successful response contains invalid encoded bytes.\", exception);");
             source.AppendLine("            }");
             source.AppendLine("        }");
             source.AppendLine();
@@ -510,15 +535,29 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine();
             source.AppendLine("            if (value is global::System.Enum)");
             source.AppendLine("            {");
-            source.AppendLine("                var serializer = global::Newtonsoft.Json.JsonSerializer.Create();");
-            source.AppendLine("                var token = global::Newtonsoft.Json.Linq.JToken.FromObject(value, serializer);");
-            source.AppendLine("                return (string?)token ?? string.Empty;");
+            if (_json.IsSystemTextJson)
+            {
+                AppendSystemTextJsonEnumToString(source, helpers);
+            }
+            else
+            {
+                source.AppendLine("                var serializer = global::Newtonsoft.Json.JsonSerializer.Create();");
+                source.AppendLine("                var token = global::Newtonsoft.Json.Linq.JToken.FromObject(value, serializer);");
+                source.AppendLine("                return (string?)token ?? string.Empty;");
+            }
+
             source.AppendLine("            }");
             source.AppendLine();
             source.AppendLine("            return value is global::System.IFormattable formattable");
             source.AppendLine("                ? formattable.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)");
             source.AppendLine("                : value.ToString() ?? string.Empty;");
             source.AppendLine("        }");
+
+            if (_json.IsSystemTextJson)
+            {
+                // The date converter of the request serializer is part of the System.Text.Json support.
+                return;
+            }
             source.AppendLine();
             source.AppendLine("        private sealed class DateOnlyJsonConverter : global::Newtonsoft.Json.JsonConverter");
             source.AppendLine("        {");
@@ -556,7 +595,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        }");
         }
 
-        private static void AppendResponseContentTypeHelper(StringBuilder source, string methodName)
+        private void AppendResponseContentTypeHelper(StringBuilder source, string methodName)
         {
             string decodeMethodName = methodName + "DecodeParameter";
             string validHeadMethodName = methodName + "HasValidHead";
@@ -570,20 +609,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("            string? header = null;");
             source.AppendLine("            foreach (string value in headerValues)");
             source.AppendLine("            {");
-            source.AppendLine("                if (header != null) throw new global::Newtonsoft.Json.JsonSerializationException(\"The response contains multiple Content-Type values.\");");
+            source.AppendLine("                if (header != null) throw new " + _json.SerializationExceptionName + "(\"The response contains multiple Content-Type values.\");");
             source.AppendLine("                header = value;");
             source.AppendLine("            }");
             source.Append("            if (string.IsNullOrWhiteSpace(header) || !")
                 .Append(validHeadMethodName).AppendLine("(header) ||");
             source.AppendLine("                !global::System.Net.Http.Headers.MediaTypeHeaderValue.TryParse(header, out var actual) ||");
             source.AppendLine("                actual.MediaType == null || actual.MediaType.IndexOf('*') >= 0)");
-            source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"The response Content-Type is malformed.\");");
+            source.AppendLine("                throw new " + _json.SerializationExceptionName + "(\"The response Content-Type is malformed.\");");
             source.AppendLine("            var actualParameters = new global::System.Collections.Generic.Dictionary<string, string>(global::System.StringComparer.OrdinalIgnoreCase);");
             source.AppendLine("            foreach (var parameter in actual.Parameters)");
             source.AppendLine("            {");
             source.Append("                if (parameter.Value == null || actualParameters.ContainsKey(parameter.Name) || !")
                 .Append(decodeMethodName).AppendLine("(parameter.Value, out string decodedValue))");
-            source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"The response Content-Type is malformed.\");");
+            source.AppendLine("                    throw new " + _json.SerializationExceptionName + "(\"The response Content-Type is malformed.\");");
             source.AppendLine("                actualParameters.Add(parameter.Name, decodedValue);");
             source.AppendLine("            }");
             source.AppendLine("            foreach (string declaredValue in declaredMediaTypes)");
@@ -611,7 +650,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("                }");
             source.AppendLine("                if (parametersMatch) return;");
             source.AppendLine("            }");
-            source.AppendLine("            throw new global::Newtonsoft.Json.JsonSerializationException(\"The response Content-Type '" + "\" + header + \"' does not match the declared media type.\");");
+            source.AppendLine("            throw new " + _json.SerializationExceptionName + "(\"The response Content-Type '" + "\" + header + \"' does not match the declared media type.\");");
             source.AppendLine("        }");
             source.AppendLine();
             source.Append("        private static bool ").Append(decodeMethodName)
@@ -677,7 +716,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        }");
         }
 
-        private static void AppendRequestJsonSerializationHelper(StringBuilder source, string methodName)
+        private void AppendRequestJsonSerializationHelper(StringBuilder source, string methodName)
         {
             source.AppendLine();
             source.Append("        private static string ").Append(methodName).AppendLine("(object? value)");
@@ -694,7 +733,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        }");
         }
 
-        private static void AppendException(StringBuilder source, string apiName)
+        private void AppendException(StringBuilder source, string apiName)
         {
             source.Append("    public sealed class ").Append(apiName)
                 .AppendLine("Exception : global::System.Exception");
@@ -741,8 +780,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("    }");
         }
 
-        private sealed class ResponseJsonContractPlan
+        private sealed partial class ResponseJsonContractPlan
         {
+            private readonly JsonSerializerProfile _json;
+            private readonly string _jsonOptions;
             private readonly IReadOnlyDictionary<string, GeneratedDtoModel> _dtos;
             private readonly IReadOnlyDictionary<string, GeneratedEnumModel> _enums;
             private readonly IReadOnlyDictionary<string, GeneratedUnionModel> _unions;
@@ -752,8 +793,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             private readonly string _prefix;
             private readonly ConstraintValidationEmitter _constraints;
 
-            internal ResponseJsonContractPlan(OpenApiGenerationModel model, ConstraintValidationEmitter constraints)
+            internal ResponseJsonContractPlan(
+                OpenApiGenerationModel model,
+                ConstraintValidationEmitter constraints,
+                JsonSerializerProfile json,
+                string jsonOptionsName)
             {
+                _json = json;
+                _jsonOptions = jsonOptionsName;
                 _constraints = constraints;
                 _constraints.ContractMethodName = MethodName;
                 _dtos = model.Dtos.ToDictionary(static dto => dto.Name, StringComparer.Ordinal);
@@ -793,6 +840,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     foreach (GeneratedTypeModel responseType in operation.EnumerateJsonResponseTypes())
                     {
                         Register(responseType);
+                    }
+
+                    if (json.IsSystemTextJson)
+                    {
+                        // The declared error bodies are checked against the same contract before they are read.
+                        foreach (GeneratedErrorResponseModel error in operation.ErrorResponses)
+                        {
+                            if (error.Type is not null)
+                            {
+                                Register(error.Type);
+                            }
+                        }
                     }
 
                     // The sub-schemas of validation keywords (contains, patternProperties, ...) of the typed
@@ -921,6 +980,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 if (_types.Count == 0)
                 {
+                    return;
+                }
+
+                if (_json.IsSystemTextJson)
+                {
+                    AppendSystemTextJsonMethods(source);
                     return;
                 }
 
@@ -1723,6 +1788,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private sealed class ResponseValidatorPlan
         {
+            private readonly JsonSerializerProfile _json;
             private readonly IReadOnlyDictionary<string, GeneratedDtoModel> _dtos;
             private readonly List<GeneratedTypeModel> _types = new List<GeneratedTypeModel>();
             private readonly Dictionary<GeneratedTypeModel, int> _indices =
@@ -1730,8 +1796,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             private readonly string _methodPrefix;
             private readonly string _mediaTypePrefix;
 
-            internal ResponseValidatorPlan(OpenApiGenerationModel model)
+            internal ResponseValidatorPlan(OpenApiGenerationModel model, JsonSerializerProfile json)
             {
+                _json = json;
                 _dtos = model.Dtos.ToDictionary(static dto => dto.Name, StringComparer.Ordinal);
                 var occupiedNames = new HashSet<string>(StringComparer.Ordinal) { model.ApiName };
                 foreach (GeneratedOperationModel operation in model.Operations)
@@ -1914,7 +1981,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 TryGetMethodName(type, out string? methodName);
                 int validatorIndex = _indices[type.WithNullable(false)];
                 source.Append("        private static void ").Append(methodName).Append('(')
-                    .Append(GeneratedSourceEmitter.TypeName(type.WithNullable(true)))
+                    .Append(_json.TypeName(type.WithNullable(true)))
                     .AppendLine(" value, string path, string contract, global::System.Collections.Generic.Dictionary<object, global::System.Collections.Generic.HashSet<int>> visited)");
                 source.AppendLine("        {");
                 source.AppendLine("            if (value is null)");
@@ -1928,7 +1995,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         .Append(numberType).Append(".IsNaN(value.Value) || global::System.")
                         .Append(numberType).AppendLine(".IsInfinity(value.Value)))");
                     source.AppendLine("            {");
-                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-finite \" + contract + \" number at \" + path + \".\");");
+                    source.AppendLine("                throw new " + _json.SerializationExceptionName + "(\"Non-finite \" + contract + \" number at \" + path + \".\");");
                     source.AppendLine("            }");
                     source.AppendLine("            return;");
                     source.AppendLine("        }");
@@ -1957,7 +2024,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     {
                         source.AppendLine("                if (item is null)");
                         source.AppendLine("                {");
-                        source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-nullable \" + contract + \" array element was null at \" + itemPath + \".\");");
+                        source.AppendLine("                    throw new " + _json.SerializationExceptionName + "(\"Non-nullable \" + contract + \" array element was null at \" + itemPath + \".\");");
                         source.AppendLine("                }");
                     }
 
@@ -1980,7 +2047,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     {
                         source.AppendLine("                if (item is null)");
                         source.AppendLine("                {");
-                        source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-nullable \" + contract + \" map value was null at \" + itemPath + \".\");");
+                        source.AppendLine("                    throw new " + _json.SerializationExceptionName + "(\"Non-nullable \" + contract + \" map value was null at \" + itemPath + \".\");");
                         source.AppendLine("                }");
                     }
 
