@@ -340,11 +340,14 @@ if grep -Eq 'error CS[0-9]{4}' "${no_serializer_log}"; then
 fi
 rm -rf "${no_serializer_assets}" "${no_serializer_assets}.meta"
 
+# The verification fixture includes a UnityWebRequest client, which needs the
+# built-in UnityWebRequest module that a bare manifest does not enable.
 printf '%s\n' \
   '{' \
   '  "dependencies": {' \
   "    \"com.unity.test-framework\": \"${test_framework_version}\"," \
   "    \"com.unity.nuget.newtonsoft-json\": \"3.2.2\"," \
+  '    "com.unity.modules.unitywebrequest": "1.0.0",' \
   "    \"jp.rhycol.openapicodegen\": \"file:../../LocalPackages/${base_archive_name}\"," \
   "    \"jp.rhycol.openapicodegen.source-generator\": \"file:../../LocalPackages/${source_generator_archive_name}\"" \
   '  },' \
