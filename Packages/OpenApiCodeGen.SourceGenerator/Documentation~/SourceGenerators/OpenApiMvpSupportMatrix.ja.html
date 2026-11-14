@@ -60,7 +60,7 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 <tr>
 <td>OpenAPI version</td>
 <td>一部対応</td>
-<td><code>3.0.*</code>、<code>3.1.*</code>、<code>3.2.*</code>のみ。<code>3.2.*</code>は3.1と同じJSON Schema 2020-12 dialectとschema規則で扱い、3.2で加わった項目は下の「OpenAPI 3.2」にまとめています。</td>
+<td><code>3.0.*</code>、<code>3.1.*</code>、<code>3.2.*</code>、およびSwagger 2.0（<code>swagger: &quot;2.0&quot;</code>）のみ。<code>3.2.*</code>は3.1と同じJSON Schema 2020-12 dialectとschema規則で扱い、3.2で加わった項目は下の「OpenAPI 3.2」にまとめています。</td>
 </tr>
 <tr>
 <td>OpenAPI 3.1 schema dialect</td>
@@ -69,8 +69,8 @@ Unsupportedに分類された要素と、Partialの制約外へ出た要素は�
 </tr>
 <tr>
 <td>Swagger 2</td>
-<td>非対応</td>
-<td>document versionは受け付けません。</td>
+<td>一部対応</td>
+<td><code>swagger: &quot;2.0&quot;</code>のdocumentを、OpenAPI 3.0へ正規化してから同じ生成pipelineで処理します（下の「Swagger 2.0」）。<code>1.2</code>など他の版は<code>OACG101</code>です。</td>
 </tr>
 <tr>
 <td>URL入力</td>
@@ -483,7 +483,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>request body</td>
 <td>一部対応</td>
-<td>複数のmedia typeを宣言できます。<code>application/json</code>（パラメーター付きも含む具体的な<code>application/&lt;subtype&gt;+json</code>。<code>application/*+json</code>だけの宣言は<code>OACG101</code>で、具体型と併記された場合は具体型を選びます）、<code>application/x-www-form-urlencoded</code>、<code>multipart/form-data</code>、テキスト（<code>text/*</code>、<code>application/xml</code>・<code>+xml</code>・<code>application/yaml</code>でschemaが<code>string</code>などのscalar）、バイナリ（<code>application/octet-stream</code>、<code>image/*</code>、<code>*/*</code>などその他のmedia typeで、schemaが<code>format: binary</code>・<code>contentMediaType</code>・省略）を扱います。type/subtypeを正規化して判定します。object schemaの<code>application/xml</code>など表せない組み合わせは該当位置の<code>OACG101</code>です。<code>requestBody.required: false</code>ならどのmedia typeでも<code>null</code>引数は本文なしで送信します（<code>&lt;BodyParameterName&gt;Specified</code>はJSONでschemaがnullableの場合だけです）。</td>
+<td>複数のmedia typeを宣言できます。<code>application/json</code>（パラメーター付きも含む具体的な<code>application/&lt;subtype&gt;+json</code>。<code>application/*+json</code>だけの宣言は<code>OACG101</code>で、具体型と併記された場合は具体型を選びます）、<code>application/x-www-form-urlencoded</code>、<code>multipart/form-data</code>、テキスト（<code>text/*</code>、<code>application/xml</code>・<code>+xml</code>・<code>application/yaml</code>でschemaが<code>string</code>などのscalar）、バイナリ（<code>application/octet-stream</code>、<code>image/*</code>、<code>*/*</code>などその他のmedia typeで、schemaが<code>format: binary</code>・<code>contentMediaType</code>・省略）を扱います。type/subtypeを正規化して判定します。object・arrayのschemaの<code>application/xml</code>（<code>+xml</code>）など表せない組み合わせは該当位置の<code>OACG101</code>ですが、同じ<code>content</code>にJSONなど生成できる他のmedia typeがあれば、そのxmlの項目だけをmedia typeの位置の<code>OACG108</code>で無視して残りで生成します（xmlだけなら<code>OACG101</code>のままです。生成クライアントは<code>Accept</code>を送らないので、xmlを要求することもありません）。<code>requestBody.required: false</code>ならどのmedia typeでも<code>null</code>引数は本文なしで送信します（<code>&lt;BodyParameterName&gt;Specified</code>はJSONでschemaがnullableの場合だけです）。</td>
 </tr>
 <tr>
 <td>multiple request media types</td>
@@ -578,7 +578,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>text / binary response</td>
 <td>一部対応</td>
-<td><code>text/*</code>・<code>application/xml</code>・<code>+xml</code>・<code>application/yaml</code>でschemaがscalar（<code>string</code>など）の成功本文は<code>string</code>（ほかのscalarは宣言型へ変換。変換できなければ<code>JsonSerializationException</code>）、<code>application/octet-stream</code>・<code>image/*</code>・<code>*/*</code>・schemaが<code>format: binary</code>または省略の成功本文は<code>byte[]</code>です。本文の文字コードはJSONと同じ規則（charset・BOM）で読みます。<code>HttpResponseMessage</code>を返すオーバーロードと<code>Stream</code>を返すメソッドは生成しません（巨大なファイルは<code>byte[]</code>に全読みします）。</td>
+<td><code>text/*</code>・<code>application/xml</code>・<code>+xml</code>・<code>application/yaml</code>でschemaがscalar（<code>string</code>など）の成功本文は<code>string</code>（ほかのscalarは宣言型へ変換。変換できなければ<code>JsonSerializationException</code>）、<code>application/octet-stream</code>・<code>image/*</code>・<code>*/*</code>・schemaが<code>format: binary</code>または省略の成功本文は<code>byte[]</code>です。object・arrayのschemaの<code>application/xml</code>（<code>+xml</code>）は、同じ<code>content</code>に生成できる他のmedia typeがあればその項目だけを<code>OACG108</code>で無視します（なければ<code>OACG101</code>）。本文の文字コードはJSONと同じ規則（charset・BOM）で読みます。<code>HttpResponseMessage</code>を返すオーバーロードと<code>Stream</code>を返すメソッドは生成しません（巨大なファイルは<code>byte[]</code>に全読みします）。</td>
 </tr>
 <tr>
 <td>response <code>Accept</code> header</td>
@@ -726,6 +726,102 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>その他の3.2の項目</td>
 <td>対応</td>
 <td>Serverの<code>name</code>、Exampleの<code>dataValue</code>／<code>serializedValue</code>、XML Objectの<code>nodeType</code>、Tag Objectの<code>summary</code>は、ドキュメント専用として黙って受理します。</td>
+</tr>
+</tbody></table>
+<h2 id="swagger-20">Swagger 2.0</h2>
+<p>Swagger 2.0のdocument（<code>swagger: &quot;2.0&quot;</code>）は、意味解析の前にOpenAPI 3.0（<code>3.0.3</code>）の等価なtreeへ正規化してから、3.0と同じ処理（parser、生成model、出力、診断、実行時検証）に渡します。専用の生成器はなく、生成されるクライアントは、同じ内容を手で書いたOpenAPI 3.0 documentのものと一致します。YAMLのSwagger 2.0も同じです。<code>openapi</code>と<code>swagger</code>を併記したdocument、<code>&quot;2.0&quot;</code>以外の<code>swagger</code>の値（<code>&quot;1.2&quot;</code>、数値の<code>2.0</code>など）は、<code>swagger</code>の位置で<code>OACG101</code>です。</p>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>対応状況</th>
+<th>条件・制約</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>host</code>・<code>basePath</code>・<code>schemes</code></td>
+<td>一部対応</td>
+<td><code>servers</code>になります。<code>schemes</code>の各値が1つのserverで、<code>https://&lt;host&gt;&lt;basePath&gt;</code>の形です（<code>schemes</code>の順序が<code>servers</code>の順序です）。<code>schemes</code>がなければ<code>https</code>、<code>basePath</code>が<code>/</code>または省略なら末尾の<code>/</code>なし、<code>basePath</code>の末尾の<code>/</code>は除きます。<code>host</code>がなければ相対serverで、<code>basePath</code>（なければ<code>/</code>）だけです（<code>schemes</code>は使いません）。<code>host</code>も<code>basePath</code>も<code>schemes</code>もなければ<code>servers</code>は付けません。operationの<code>schemes</code>は、<code>host</code>があればそのoperationのserversになります（<code>host</code>がなければ相対serverに適用できないため、<code>schemes</code>の位置で<code>OACG108</code>を報告して無視します）。<code>ws</code>／<code>wss</code>は他の非HTTP(S) serverと同じく診断です。</td>
+</tr>
+<tr>
+<td><code>definitions</code>・<code>parameters</code>・<code>responses</code>・<code>securityDefinitions</code></td>
+<td>対応</td>
+<td>それぞれ<code>components.schemas</code>・<code>components.parameters</code>・<code>components.responses</code>・<code>components.securitySchemes</code>になります。<code>parameters</code>のうち<code>in: body</code>／<code>in: formData</code>は、使う側のoperationの<code>requestBody</code>になるため、componentにはなりません（使われないbody／formDataのparameterは検証しません）。</td>
+</tr>
+<tr>
+<td><code>$ref</code></td>
+<td>対応</td>
+<td><code>#/definitions/X</code>は<code>#/components/schemas/X</code>、<code>#/parameters/X</code>は<code>#/components/parameters/X</code>、<code>#/responses/X</code>は<code>#/components/responses/X</code>に書き換えます。外部の<code>file.json#/definitions/X</code>も同じです（Editorは3.0と同じ規則で参照先のdocumentを集めます）。<code>#/definitions/</code>以外（schema）、<code>#/parameters/</code>・<code>#/responses/</code>以外（それぞれのparameter・response）を指す<code>$ref</code>、Path Itemの<code>$ref</code>は<code>OACG101</code>です。<code>$ref</code>の兄弟項目は3.0の規則（<code>description</code>、<code>x-nullable</code>→<code>nullable</code>など）に従います。</td>
+</tr>
+<tr>
+<td>複数document（Swagger 2.0同士）</td>
+<td>一部対応</td>
+<td>Swagger 2.0のdocumentからSwagger 2.0のdocumentの<code>definitions</code>・<code>parameters</code>・<code>responses</code>を参照できます。参照先がOpenAPI 3.xのdocument、<code>openapi</code>も<code>swagger</code>も持たないbare schemaのfile、また3.xのdocumentからSwagger 2.0のdocumentへの参照は、参照の位置で<code>OACG101</code>です（版を混ぜられません）。他のdocumentのbody／formData parameterを<code>$ref</code>で使うことも<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td><code>in: body</code> parameter</td>
+<td>対応</td>
+<td><code>requestBody</code>になります。media typeはoperationの<code>consumes</code>、なければdocumentの<code>consumes</code>、なければ<code>application/json</code>で、列挙した各media typeに同じschemaを付けます。<code>description</code>・<code>required</code>は<code>requestBody</code>へ移ります。<code>consumes</code>にxmlがJSONと併記されている場合はxmlを<code>OACG108</code>で無視します（上の<code>produces</code>の行と同じ）。<code>schema</code>がない、またはbodyが複数なら<code>OACG100</code>、<code>in: formData</code>との併記も<code>OACG100</code>です。path itemのbody parameterは、operationの同名・同<code>in</code>のparameterで置き換わります。</td>
+</tr>
+<tr>
+<td><code>in: formData</code> parameter</td>
+<td>対応</td>
+<td>1つのobject schemaの<code>requestBody</code>になります（各parameterがproperty、<code>required: true</code>のものが<code>required</code>、<code>description</code>はpropertyのdescription、<code>type: file</code>は<code>type: string</code>／<code>format: binary</code>、<code>additionalProperties: false</code>）。<code>type: file</code>のparameterがあれば<code>multipart/form-data</code>、なければ<code>consumes</code>が挙げる<code>multipart/form-data</code>／<code>application/x-www-form-urlencoded</code>（両方なら両方）、どちらもなければ<code>application/x-www-form-urlencoded</code>です。url-encodedで配列のparameterは<code>collectionFormat</code>を<code>encoding</code>の<code>style</code>／<code>explode</code>に写します（下表の<code>query</code>と同じ。省略時の<code>csv</code>も含みます）。multipartの配列は要素ごとにpartを繰り返し、<code>collectionFormat</code>は使いません。parameter名の重複は<code>OACG100</code>です。</td>
+</tr>
+<tr>
+<td>非body parameter</td>
+<td>対応</td>
+<td><code>type</code>・<code>format</code>・<code>items</code>・<code>enum</code>・<code>default</code>・<code>minimum</code>／<code>maximum</code>／<code>exclusiveMinimum</code>／<code>exclusiveMaximum</code>・<code>minLength</code>／<code>maxLength</code>・<code>pattern</code>・<code>minItems</code>／<code>maxItems</code>・<code>uniqueItems</code>・<code>multipleOf</code>は<code>schema</code>へ移ります（<code>x-nullable: true</code>は<code>nullable: true</code>）。<code>name</code>・<code>in</code>・<code>description</code>・<code>required</code>・<code>allowEmptyValue</code>・<code>x-*</code>はそのままです。<code>type</code>がない、<code>type: file</code>（formData以外）、<code>in</code>が<code>query</code>／<code>header</code>／<code>path</code>／<code>formData</code>／<code>body</code>以外（<code>cookie</code>を含みます）は<code>OACG100</code>です。path itemのparameterはpath itemに残り、3.0と同じくoperationのparameterが同名・同<code>in</code>のものを置き換えます。</td>
+</tr>
+<tr>
+<td><code>collectionFormat</code></td>
+<td>一部対応</td>
+<td>配列parameterだけに効きます（省略時は<code>csv</code>）。<code>query</code>は、<code>csv</code>→<code>style: form</code>＋<code>explode: false</code>、<code>ssv</code>→<code>spaceDelimited</code>、<code>pipes</code>→<code>pipeDelimited</code>、<code>multi</code>→<code>explode: true</code>（<code>form</code>の既定）です。<code>path</code>・<code>header</code>は<code>csv</code>（<code>simple</code>、既定）だけで、他の値は<code>OACG101</code>です。<code>tsv</code>は3.0に相当する表現がなく、どこでも<code>OACG101</code>です（<code>collectionFormat</code>の位置）。<code>items</code>の入れ子の<code>collectionFormat</code>は<code>csv</code>以外が<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td><code>produces</code>と応答</td>
+<td>対応</td>
+<td>responseの<code>schema</code>は、operationの<code>produces</code>、なければdocumentの<code>produces</code>の各media typeの<code>content</code>へ付きます（なければ<code>application/json</code>、<code>type: file</code>なら<code>application/octet-stream</code>）。<code>schema</code>のないresponseは<code>content</code>を持ちません。<code>components.responses</code>はdocumentの<code>produces</code>だけを使います（operationごとの<code>produces</code>は参照元で変えられません）。<code>examples</code>（media typeごとの例）はドキュメント専用なので黙って捨てます。<code>produces</code>／<code>consumes</code>に<code>application/xml</code>とJSONが併記され、schemaがobject・arrayの場合、xmlの項目は<code>OACG108</code>で無視してJSONで生成します（位置は<code>in: body</code>ならそのparameter、応答なら<code>schema</code>です。xmlだけなら<code>OACG101</code>です）。</td>
+</tr>
+<tr>
+<td>応答の<code>type: file</code></td>
+<td>対応</td>
+<td><code>type: string</code>／<code>format: binary</code>になり、3.0と同じく<code>byte[]</code>で受け取ります。</td>
+</tr>
+<tr>
+<td>応答の<code>headers</code></td>
+<td>対応</td>
+<td>Header Objectになり、<code>type</code>・<code>format</code>・<code>items</code>・<code>enum</code>などは<code>schema</code>へ移ります。<code>description</code>は残ります。配列の<code>collectionFormat</code>は<code>csv</code>だけです。</td>
+</tr>
+<tr>
+<td><code>securityDefinitions</code></td>
+<td>対応</td>
+<td><code>basic</code>→<code>type: http</code>＋<code>scheme: basic</code>、<code>apiKey</code>→そのまま、<code>oauth2</code>→<code>flows</code>です。flowは<code>implicit</code>→<code>implicit</code>、<code>password</code>→<code>password</code>、<code>application</code>→<code>clientCredentials</code>、<code>accessCode</code>→<code>authorizationCode</code>で、<code>authorizationUrl</code>・<code>tokenUrl</code>・<code>scopes</code>（なければ空）を移します。未知のflowは<code>OACG100</code>、上記以外の<code>type</code>は<code>OACG101</code>です。<code>security</code>（document・operation）は3.0と同じで、資格情報の扱いは「Security」の節に従います。</td>
+</tr>
+<tr>
+<td>schemaの項目</td>
+<td>対応</td>
+<td><code>x-nullable: true</code>→<code>nullable: true</code>（真偽値以外は<code>OACG100</code>）、文字列の<code>discriminator</code>→<code>{ propertyName }</code>（継承形のbaseとして扱います）、<code>type: file</code>→<code>type: string</code>／<code>format: binary</code>です。<code>allOf</code>・<code>readOnly</code>・<code>example</code>・<code>xml</code>・<code>externalDocs</code>・制約キーワード・<code>x-*</code>はそのまま3.0のschemaとして処理します。</td>
+</tr>
+<tr>
+<td>document直下の<code>info</code>・<code>tags</code>・<code>externalDocs</code>・<code>x-*</code></td>
+<td>対応</td>
+<td>3.0にも同じ項目があるため、そのまま受理します（ドキュメント専用で、診断はありません）。<code>x-ms-*</code>などのベンダー拡張も他の<code>x-*</code>と同じく黙って無視します（<code>x-ms-paths</code>のようにpathを増やす拡張は解釈しません）。それ以外の未知の項目は、3.0と同じく、項目を知っているobjectで診断になります。</td>
+</tr>
+<tr>
+<td>診断の位置</td>
+<td>対応</td>
+<td>正規化したtreeの各nodeは、元のSwagger 2.0 nodeの行・桁・logical pathを持ちます。診断（<code>OACG100</code>／<code>OACG101</code>／<code>OACG102</code>／<code>OACG108</code>など）は、書いたSwagger 2.0の位置を指します。例: <code>definitions</code>のschemaの誤りは<code>/definitions/X/...</code>、formData parameterの誤りは<code>/paths/~1p/post/parameters/N</code>、body parameterのschemaは<code>/paths/~1p/post/parameters/N/schema/...</code>、応答のschemaは<code>/paths/~1p/get/responses/200/schema</code>です。複数のmedia typeへ複製したschemaは、どれも同じ元のnodeを指します。formData parameterをまとめたobject schema・<code>requestBody</code>の誤りは、最初のformData parameterの位置です。</td>
+</tr>
+<tr>
+<td><code>OACG101</code>の対象</td>
+<td>一部対応</td>
+<td>3.0に相当する表現がないものは、黙って落とさず<code>OACG101</code>です: <code>collectionFormat: tsv</code>、<code>path</code>／<code>header</code>の<code>csv</code>以外の<code>collectionFormat</code>、Path Itemの<code>$ref</code>、<code>#/definitions/</code>・<code>#/parameters/</code>・<code>#/responses/</code>以外を指す<code>$ref</code>、複数documentの版の混在、他documentのbody／formData parameterの参照、<code>oauth2</code>・<code>basic</code>・<code>apiKey</code>以外の<code>securityDefinitions</code>のtype。</td>
+</tr>
+<tr>
+<td>既存の別の生成器</td>
+<td>対応</td>
+<td><code>GenerationService.GenerateFromApiDocument</code>が使う、Phase 3以前の別のSwagger用の生成器（<code>SwaggerCSharpClientFileGenerator</code>）は、そのまま残しています。Source Generatorの入口（<code>ApiClientCodeGenerator</code>）は使わず、Swagger 2.0は常にこの節の正規化とPhase 4のpipelineを通ります。</td>
 </tr>
 </tbody></table>
 <h2 id="security">Security</h2>
@@ -1011,7 +1107,7 @@ CLR名に番号を付けます。Json.NETがschemaのboolean値を存在フラ�
 </tr>
 <tr>
 <td><code>OACG101</code></td>
-<td>UnsupportedElement（bare non-Schema、<code>$id</code>/<code>$anchor</code>/<code>$dynamicAnchor</code>/<code>$dynamicRef</code>など）</td>
+<td>UnsupportedElement（bare non-Schema、<code>$id</code>/<code>$anchor</code>/<code>$dynamicAnchor</code>/<code>$dynamicRef</code>、Swagger 2.0でOpenAPI 3.0に相当する表現がないもの（<code>collectionFormat: tsv</code>など）など）</td>
 </tr>
 <tr>
 <td><code>OACG102</code></td>
