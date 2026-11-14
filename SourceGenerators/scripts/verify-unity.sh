@@ -288,10 +288,13 @@ for test_assembly in Unity.OpenApiCodeGen.Test.dll Unity.OpenApiCodeGen.SourceGe
   fi
 done
 
+# The verification fixture includes a UnityWebRequest client, which needs the
+# built-in UnityWebRequest module that a bare manifest does not enable.
 printf '%s\n' \
   '{' \
   '  "dependencies": {' \
   "    \"com.unity.test-framework\": \"${test_framework_version}\"," \
+  '    "com.unity.modules.unitywebrequest": "1.0.0",' \
   "    \"jp.rhycol.openapicodegen\": \"file:../../LocalPackages/${base_archive_name}\"," \
   "    \"jp.rhycol.openapicodegen.source-generator\": \"file:../../LocalPackages/${source_generator_archive_name}\"" \
   '  },' \
