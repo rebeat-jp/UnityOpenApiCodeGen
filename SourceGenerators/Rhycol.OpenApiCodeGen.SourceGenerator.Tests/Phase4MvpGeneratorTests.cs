@@ -31,16 +31,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void OpenApi32IsRejectedAtVersionNode()
+        public void OpenApi33IsRejectedAtVersionNode()
         {
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
-                CreateMinimalDocument("3.2.0"));
+                CreateMinimalDocument("3.3.0"));
             Diagnostic diagnostic = Assert.Single(execution.RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
             Assert.Equal(TestBundleFactory.SourcePath, diagnostic.Location.GetLineSpan().Path);
             Assert.Contains("logical path '/openapi'", diagnostic.GetMessage());
-            Assert.Contains("supports OpenAPI 3.0.* and 3.1.*", diagnostic.GetMessage());
+            Assert.Contains("supports OpenAPI 3.0.*, 3.1.* and 3.2.*", diagnostic.GetMessage());
             Assert.Empty(execution.RunResult.GeneratedTrees);
         }
 
@@ -144,11 +144,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "OACG104",
                 "External $ref values are not supported"
             };
+            // A%2F decodes to a nested pointer (schema refs may target any pointer since P1), so the
+            // reference is now unresolved rather than a non-component target.
             yield return new object[]
             {
                 "#/components/schemas/A%2FB",
-                "OACG101",
-                "requires $ref values to target a named component directly"
+                "OACG102",
+                "could not be resolved"
             };
             yield return new object[]
             {
@@ -187,14 +189,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             const string Document = @"{
   ""openapi"": ""3.1.0"",
   ""info"": { ""title"": ""Position"", ""version"": ""1"" },
-  ""security"": [],
+  ""components"": { ""foo"": {} },
   ""paths"": {}
 }";
             string bundle = TestBundleFactory.Create(Document);
             const string Original =
-                "\"name\":\"security\",\"line\":1,\"column\":1,\"value\":{\"kind\":\"array\",\"line\":1,\"column\":1,\"items\":[]}";
+                "\"name\":\"foo\",\"line\":1,\"column\":1,\"value\":{\"kind\":\"object\",\"line\":1,\"column\":1,\"properties\":[]}";
             const string Positioned =
-                "\"name\":\"security\",\"line\":3,\"column\":3,\"value\":{\"kind\":\"array\",\"line\":23,\"column\":9,\"items\":[]}";
+                "\"name\":\"foo\",\"line\":3,\"column\":3,\"value\":{\"kind\":\"object\",\"line\":23,\"column\":9,\"properties\":[]}";
             Assert.Contains(Original, bundle);
             bundle = bundle.Replace(Original, Positioned);
 
@@ -207,7 +209,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Equal("OACG101", diagnostic.Id);
             Assert.Equal(TestBundleFactory.SourcePath, span.Path);
             Assert.Equal(new LinePosition(22, 8), span.StartLinePosition);
-            Assert.Contains("logical path '/security'", diagnostic.GetMessage());
+            Assert.Contains("logical path '/components/foo'", diagnostic.GetMessage());
         }
 
         [Fact]
@@ -407,7 +409,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Theory]
         [InlineData("readOnly")]
         [InlineData("writeOnly")]
-        public void ReadOnlyAndWriteOnlySchemasAreRejected(string keyword)
+        public void ReadOnlyAndWriteOnlySchemasAreAccepted(string keyword)
         {
             string document = @"{
   ""openapi"": ""3.1.0"",
@@ -420,17 +422,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 }";
 
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
-            Diagnostic diagnostic = Assert.Single(execution.RunResult.Diagnostics);
 
-            Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("Schema keyword '" + keyword + "' is not supported", diagnostic.GetMessage());
-            Assert.Contains(
-                "logical path '/components/schemas/Payload/properties/value/" + keyword + "'",
-                diagnostic.GetMessage());
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
         }
 
         [Fact]
-        public void QueryAllowReservedFalseIsAcceptedButTrueIsRejected()
+        public void QueryAllowReservedFalseAndTrueAreBothAccepted()
         {
             Phase4GeneratorExecution allowed = Phase4GeneratorTestHarness.GenerateAndCompile(
                 CreateAllowReservedDocument(allowReserved: false));
@@ -438,15 +436,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Empty(allowed.RunResult.Diagnostics);
             Assert.Empty(allowed.CompilationErrors);
 
-            Phase4GeneratorExecution rejected = Phase4GeneratorTestHarness.GenerateAndCompile(
+            // P3: allowReserved: true is supported (wire behavior is covered in
+            // Phase4ParameterSerializationTests).
+            Phase4GeneratorExecution reserved = Phase4GeneratorTestHarness.GenerateAndCompile(
                 CreateAllowReservedDocument(allowReserved: true));
-            Diagnostic diagnostic = Assert.Single(rejected.RunResult.Diagnostics);
 
-            Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("allowReserved set to true are not supported", diagnostic.GetMessage());
-            Assert.Contains(
-                "logical path '/paths/~1items/get/parameters/0/allowReserved'",
-                diagnostic.GetMessage());
+            Assert.Empty(reserved.RunResult.Diagnostics);
+            Assert.Empty(reserved.CompilationErrors);
         }
 
         [Fact]

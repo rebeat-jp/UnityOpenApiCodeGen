@@ -42,6 +42,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         internal string LogicalPath { get; }
 
+        /// <summary>
+        /// The logical path of the node this node was synthesized from, when it differs from
+        /// <see cref="LogicalPath"/> (a Swagger 2.0 document is normalized into an OpenAPI 3.0 tree whose
+        /// nodes keep the position and path of the original Swagger node). Null for nodes read as written.
+        /// </summary>
+        internal string? OriginLogicalPath { get; set; }
+
+        /// <summary>
+        /// The path reported in diagnostics: the original document path when the node was synthesized.
+        /// </summary>
+        internal string DiagnosticLogicalPath => OriginLogicalPath ?? LogicalPath;
+
         internal bool IsInteger { get; }
 
         internal SpecNode Value => this;

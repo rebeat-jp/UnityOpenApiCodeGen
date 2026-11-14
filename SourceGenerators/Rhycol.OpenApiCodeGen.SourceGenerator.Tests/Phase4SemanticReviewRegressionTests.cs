@@ -168,8 +168,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Theory]
-        [InlineData("array", "\"items\": { \"type\": \"string\" }")]
-        [InlineData("object", "\"additionalProperties\": false, \"properties\": { \"value\": { \"type\": \"string\" } }")]
+        // P3: arrays of primitives and objects of primitives are supported parameters; only nested
+        // values (no defined serialization) are still rejected.
+        [InlineData("array", "\"items\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } }")]
+        [InlineData("object", "\"additionalProperties\": false, \"properties\": { \"value\": { \"type\": \"object\", \"additionalProperties\": false, \"properties\": { \"inner\": { \"type\": \"string\" } } } }")]
         public void ReferencedComplexParameterSchemaIsRejected(string type, string shape)
         {
             string document = @"{
@@ -190,7 +192,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Phase4GeneratorTestHarness.GenerateAndCompile(document).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("Array and object parameters", diagnostic.GetMessage());
+            Assert.Contains("is not a primitive, an array of primitives", diagnostic.GetMessage());
         }
 
         [Fact]
@@ -207,7 +209,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     ""responses"": { ""204"": { ""description"": ""OK"" } }
   } } }
 }";
-            const string External = "{\"type\":\"array\",\"items\":{\"type\":\"string\"}}";
+            const string External = "{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}}";
             const string SourcePointer = "/paths/~1values/get/parameters/0/schema/$ref";
             string bundle = TestBundleFactory.CreateV2(
                 Root,
@@ -232,7 +234,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Phase4GeneratorTestHarness.GenerateAndCompile(Root, bundle: bundle).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("Array and object parameters", diagnostic.GetMessage());
+            Assert.Contains("is not a primitive, an array of primitives", diagnostic.GetMessage());
         }
 
         [Fact]
@@ -453,9 +455,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Theory]
-        [InlineData("type", "\"object\"")]
-        [InlineData("properties", "{\"name\":{\"type\":\"string\"}}")]
-        [InlineData("required", "[\"name\"]")]
+        // P2 (G09): in 3.1 a $ref with siblings is allOf [ref, siblings], so type / properties / required
+        // are composed instead of rejected. Siblings that cannot be part of an object composition still
+        // report their own position.
+        [InlineData("items", "{\"type\":\"string\"}")]
+        [InlineData("enum", "[\"a\"]")]
         public void MeaningfulReferenceSchemaSiblingsReportTheirSourcePosition(
             string keyword,
             string value)
@@ -483,7 +487,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Phase4GeneratorTestHarness.GenerateAndCompile(document).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("Schema keyword '" + keyword + "' cannot be combined with $ref", diagnostic.GetMessage());
+            Assert.Contains("must be an object schema", diagnostic.GetMessage());
             Assert.Contains("/schema/" + keyword, diagnostic.GetMessage());
         }
 
@@ -537,7 +541,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     } } }
   } } }
 }";
-            const string Alias = "{\"$ref\":\"value.yaml\",\"type\":\"string\"}";
+            const string Alias = "{\"$ref\":\"value.yaml\",\"items\":{\"type\":\"string\"}}";
             const string Value = "{\"type\":\"string\"}";
             const string RootPointer = "/paths/~1values/get/responses/200/content/application~1json/schema/$ref";
             const string AliasPointer = "/$ref";
@@ -574,9 +578,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Phase4GeneratorTestHarness.GenerateAndCompile(Root, bundle: bundle).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("Schema keyword 'type' cannot be combined with $ref", diagnostic.GetMessage());
+            Assert.Contains("must be an object schema", diagnostic.GetMessage());
             Assert.Contains("Assets/Specs/alias.yaml", diagnostic.GetMessage());
-            Assert.Contains("logical path '/type'", diagnostic.GetMessage());
+            Assert.Contains("logical path '/items'", diagnostic.GetMessage());
         }
 
         [Theory]
@@ -640,7 +644,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Phase4GeneratorExecution execution =
                 Phase4GeneratorTestHarness.GenerateAndCompile(Document);
 
-            Assert.Empty(execution.RunResult.Diagnostics);
+            // P4: the allOf siblings cannot be generated as a typed error, so OACG108 is reported (no error).
+            Assert.All(execution.RunResult.Diagnostics, diagnostic => Assert.Equal("OACG108", diagnostic.Id));
             Assert.Empty(execution.CompilationErrors);
         }
 
@@ -690,7 +695,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void SuccessfulPlainTextBodyRemainsUnsupported()
+        // P4 (G22): a text/plain success body is supported; the method returns the string.
+        public void SuccessfulPlainTextBodyReturnsString()
         {
             const string Document = @"{
   ""openapi"": ""3.1.0"",
@@ -702,11 +708,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     } } }
   } } }
 }";
-            Diagnostic diagnostic = Assert.Single(
-                Phase4GeneratorTestHarness.GenerateAndCompile(Document).RunResult.Diagnostics);
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(Document);
 
-            Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("Only application/json", diagnostic.GetMessage());
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.Contains("Task<string> getValues", execution.GeneratedSource);
         }
 
         [Fact]

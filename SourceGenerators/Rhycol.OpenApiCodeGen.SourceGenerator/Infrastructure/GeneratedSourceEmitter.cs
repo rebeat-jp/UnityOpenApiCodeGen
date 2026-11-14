@@ -64,10 +64,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     break;
                 case GeneratedTypeKind.Named:
                 case GeneratedTypeKind.NamedEnum:
+                case GeneratedTypeKind.File:
                     name = type.Name;
                     break;
                 case GeneratedTypeKind.Array:
                     name = "global::System.Collections.Generic.List<" + TypeName(type.ItemType!) + ">";
+                    break;
+                case GeneratedTypeKind.Any:
+                    name = "global::Newtonsoft.Json.Linq.JToken";
+                    break;
+                case GeneratedTypeKind.Binary:
+                    name = "byte[]";
+                    break;
+                case GeneratedTypeKind.FreeObject:
+                    name = "global::Newtonsoft.Json.Linq.JObject";
+                    break;
+                case GeneratedTypeKind.Map:
+                    name = "global::System.Collections.Generic.Dictionary<string, " +
+                           TypeName(type.ValueType!) + ">";
+                    break;
+                case GeneratedTypeKind.Union:
+                    name = type.Name;
                     break;
                 default:
                     throw new InvalidOperationException("Unknown generated type kind.");

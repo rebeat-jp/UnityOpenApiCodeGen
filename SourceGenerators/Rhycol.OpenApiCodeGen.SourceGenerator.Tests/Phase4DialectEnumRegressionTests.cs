@@ -161,13 +161,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Theory]
         [InlineData("3.1.0", "{\"type\":[\"string\",\"null\"],\"enum\":[\"ready\",null]}")]
         [InlineData("3.0.3", "{\"type\":\"string\",\"nullable\":true,\"enum\":[\"ready\",null]}")]
-        public void NullValuedStringEnumIsExplicitlyRejected(string version, string schema)
+        public void NullValuedStringEnumIsNullable(string version, string schema)
         {
+            // Null in the enum values makes the enum nullable (it was rejected before P1), so a
+            // required parameter that uses it hits the nullable-parameter restriction instead.
             Diagnostic diagnostic = GetOnlyDiagnostic(CreateRequiredParameterDocument(version, schema));
 
             Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("String enums containing null", diagnostic.GetMessage());
-            Assert.Contains("/parameters/0/schema/enum", diagnostic.GetMessage());
+            Assert.Contains("cannot use a nullable schema", diagnostic.GetMessage());
+            Assert.Contains("/parameters/0/schema", diagnostic.GetMessage());
         }
 
         [Fact]

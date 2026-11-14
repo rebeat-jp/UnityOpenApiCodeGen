@@ -17,7 +17,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
     /// Entry point for the incremental source generator.
     /// </summary>
     [Generator(LanguageNames.CSharp)]
-    public sealed class ApiClientCodeGenerator : IIncrementalGenerator
+    public sealed partial class ApiClientCodeGenerator : IIncrementalGenerator
     {
         internal const string AdditionalFileSuffix = ".Rhycol.OpenApiCodeGen.SourceGenerator.additionalfile";
         internal const string AttributeMetadataName =
@@ -32,7 +32,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             "CreateRequestUri", "CombineAbsoluteUri", "CombinePaths", "CombineQueries",
             "AppendQuery", "SplitPathAndQuery", "ValidatePathSegments",
             "CreateJsonContent", "ConvertToString", "DateOnlyJsonConverter",
-            "ReadJsonResponseBodyAsync", "HasPreamble"
+            "ReadJsonResponseBodyAsync", "HasPreamble", "Servers", "BuildServerUrl",
+            "ExpandServerUrl", "OperationServerUrls", "ResolveOperationServerUrl",
+            "OperationNames", "GetOperationServers", "BuildOperationServerUrl"
         };
 
         private static readonly DiagnosticDescriptor MalformedBundle = new(
@@ -172,6 +174,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
 
+        private static readonly DiagnosticDescriptor IgnoredOpenApiElementDiagnostic = new(
+            "OACG108",
+            "Ignored OpenAPI element",
+            "OpenAPI element ignored for '{0}' at logical path '{1}': {2}",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
         /// <summary>
         /// ジェネレータの初期化。
         /// Initializes the generator.
@@ -220,8 +230,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             context.RegisterSourceOutput(
                 workItems,
-                static (productionContext, workItem) =>
-                    ExecuteWorkItem(productionContext, workItem));
+                (productionContext, workItem) =>
+                    ExecuteWorkItem(productionContext, workItem, _testWarningInjector));
         }
 
         private static OpenApiClientDefinitionInput CreateDefinitionInput(
@@ -633,7 +643,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private static void ExecuteWorkItem(
             SourceProductionContext context,
-            OpenApiGenerationWorkItem workItem)
+            OpenApiGenerationWorkItem workItem,
+            Action<OpenApiSemanticParser, SpecNode>? injectWarnings)
         {
             switch (workItem.Kind)
             {
@@ -657,7 +668,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         workItem.SpecId));
                     return;
                 case OpenApiGenerationWorkItem.WorkItemKind.Generate:
-                    Generate(context, workItem);
+                    Generate(context, workItem, injectWarnings);
                     return;
                 default:
                     throw new InvalidOperationException("Unknown OpenAPI generator work item.");
@@ -666,15 +677,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         private static void Generate(
             SourceProductionContext context,
-            OpenApiGenerationWorkItem workItem)
+            OpenApiGenerationWorkItem workItem,
+            Action<OpenApiSemanticParser, SpecNode>? injectWarnings)
         {
             NormalizedSpecBundle bundle = workItem.Bundle.Bundle!;
             try
             {
                 var service = new GenerationService();
                 OpenApiGenerationModel model = bundle.IsMultiDocument
-                    ? service.BuildMvpModelFromOpenApiBundle(bundle, workItem.Definition.Options)
-                    : service.BuildMvpModelFromOpenApiNode(bundle.Root, workItem.Definition.Options);
+                    ? service.BuildMvpModelFromOpenApiBundle(bundle, workItem.Definition.Options, injectWarnings)
+                    : service.BuildMvpModelFromOpenApiNode(bundle.Root, workItem.Definition.Options, injectWarnings);
                 foreach (GeneratedTypeNameCollision collision in model.TypeNameCollisions)
                 {
                     context.ReportDiagnostic(Diagnostic.Create(
@@ -693,6 +705,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         collision.RequestedName,
                         collision.GeneratedName));
                 }
+                foreach (Diagnostic warning in CreateIgnoredElementDiagnostics(
+                             model.Warnings,
+                             bundle.SourcePath))
+                {
+                    context.ReportDiagnostic(warning);
+                }
+
                 IReadOnlyList<GeneratedFile> files = service.EmitMvpModel(model);
                 for (int index = 0; index < files.Count; index++)
                 {

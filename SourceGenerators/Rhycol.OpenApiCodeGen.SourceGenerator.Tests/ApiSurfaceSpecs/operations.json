@@ -1,0 +1,33 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Operations", "version": "1", "description": "P3: operation ids, parameters, servers." },
+  "servers": [
+    { "url": "https://{region}.example.com/{base}", "variables": { "region": { "default": "us", "enum": ["us", "eu"] }, "base": { "default": "v1" } } },
+    { "url": "https://staging.example.com" }
+  ],
+  "paths": {
+    "/pets/{petId}": {
+      "parameters": [ { "name": "petId", "in": "path", "required": true, "schema": { "type": "string" } } ],
+      "get": {
+        "parameters": [
+          { "name": "tags", "in": "query", "explode": false, "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "path", "in": "query", "allowReserved": true, "schema": { "type": "string" } },
+          { "name": "session", "in": "cookie", "schema": { "type": "string" } }
+        ],
+        "responses": { "204": { "description": "ok" } }
+      }
+    },
+    "/search": {
+      "servers": [ { "url": "https://search.example.com" } ],
+      "get": {
+        "operationId": "search",
+        "deprecated": true,
+        "parameters": [
+          { "name": "filter", "in": "query", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": { "type": "integer" } } } } },
+          { "name": "color", "in": "query", "style": "deepObject", "explode": true, "schema": { "type": "object", "additionalProperties": { "type": "integer" } } }
+        ],
+        "responses": { "204": { "description": "ok" } }
+      }
+    }
+  }
+}

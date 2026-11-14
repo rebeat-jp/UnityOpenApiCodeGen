@@ -1,6 +1,6 @@
 # OpenApiCodeGen Source Generator (Beta)
 
-[English](README.md) · [OpenAPI MVP日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)
+[English](README.md) · [OpenAPI日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)
 
 Unity 6のRoslyn Source Generatorで型付きC# RESTクライアントを生成する追加パッケージです。
 **生成機能はベータ版**です。基本パッケージ`jp.rhycol.openapicodegen`が必要です。
@@ -65,17 +65,176 @@ personal access tokenを使ってください。`github.com`のページ、REST 
 対応するOpenAPI要素、YAMLの範囲、診断は[日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)に記載しています。
 YAMLの二重引用符内では有効な`\u`サロゲート対を非BMP文字として保持し、
 孤立・不一致のサロゲートは位置付き`YAML006`で拒否します。
-OpenAPI 3.1は標準schema dialectのみを受け付けます。独自dialectや`null`入りstring enumは診断で拒否します。
+OpenAPI 3.1と3.2は標準schema dialectのみを受け付けます。独自dialectは診断で拒否します。
+OpenAPI 3.2では`query` method、`additionalOperations`、`in: querystring`、`components.mediaTypes`、
+discriminatorの`defaultMapping`を追加で扱います。streaming（`text/event-stream`、`itemSchema`の逐次処理）は対象外です。
+対応する入力はOpenAPI 3.0.*、3.1.*、3.2.*とSwagger 2.0（`swagger: "2.0"`）です。Swagger 2.0は、
+`host`／`basePath`／`schemes`を`servers`、`definitions`を`components.schemas`、`body`と`formData`のparameterを
+`requestBody`、`collectionFormat`を`style`／`explode`、`securityDefinitions`を`securitySchemes`、`x-nullable`を
+`nullable`へ読み替えたOpenAPI 3.0として同じ生成pipelineで処理し、診断は元のSwagger 2.0の位置を指します。
+OpenAPI 3.0に相当する表現がないもの（`collectionFormat: tsv`、Swagger 2.0とOpenAPI 3.xの参照の混在など）は`OACG101`です。
 参照先が完全なOpenAPI文書の場合、その文書の`openapi`版と`jsonSchemaDialect`も確認します。
 入口文書とmajor.minor版が異なる参照先、および未対応dialectは位置付き診断で拒否します。
 版のpatch差と、`openapi`を持たない外部bare schemaは許可します。
 string enumは宣言したwire文字列と大小文字・空白も含め完全一致で送受信します。重複値、JSON数値、未宣言値は拒否します。
 path／query／headerのenum値も専用のJson.NET serializerで変換し、ホストの
 `JsonConvert.DefaultSettings`のconverterやcontract resolverによる書き換えを防ぎます。
-名前付きobjectのDTO生成には`additionalProperties: false`の明示が必要です。省略や追加プロパティの許可、
-`pattern`・`minimum`・`minItems`などの未対応assertionは`OACG101`になります。
-header parameterはscalarに対応しますが、`Content-Language`や`Content-Encoding`などの
+`additionalProperties`を省略した、または`true`やschemaを指定したobjectは、宣言外のメンバーを
+`[JsonExtensionData]`の`IDictionary<string, JToken>`（`AdditionalProperties`）に保持するopen DTOになります。
+未知のresponse propertyを拒否するclosed DTOにするには`additionalProperties: false`を指定します。
+検証キーワード（`minLength`・`maxLength`・`pattern`・`minimum`・`maximum`・`exclusiveMinimum`・
+`exclusiveMaximum`・`multipleOf`・`minItems`・`maxItems`・`uniqueItems`・`minProperties`・
+`maxProperties`と、OpenAPI 3.1の`patternProperties`・`propertyNames`・`contains`・`minContains`・
+`maxContains`・`prefixItems`・`dependentRequired`）は実行時に検証し、生成する型は変えません。
+違反するrequestは送信前に`ArgumentException`で、違反するresponse・response headerは
+`JsonSerializationException`で拒否します。長さはUnicodeコードポイントで数え、`pattern`は
+アンカーなしの.NET `Regex`です（.NET構文が必要なpatternを除きECMAScriptモードで、必要な場合は`OACG108`。対応表を参照）。
+`if`／`then`／`else`・`dependentSchemas`・`unevaluated*`は引き続き`OACG101`です。
+`allOf`は1つのDTOへ平坦化し、`oneOf`／`anyOf`はラッパークラス（`FromX`／`TryGetX`／`AsX`）になります。
+`discriminator`があればその値で、なければ成功応答のJSONの構造検査で候補を決めます。`[X, null]`はnullableな`X`です。`oneOf`で複数の候補が一致したときは、応答のすべてのpropertyを宣言している候補を選び、区別できない候補は失敗します。
+`not`は成功応答の検査だけで評価します。詳細は対応表を参照してください。
+path・query・header・cookieのparameterに対応しますが、`Content-Language`や`Content-Encoding`などの
 content専用headerは位置付き診断で拒否します。対象名は[日本語対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)を参照してください。
+
+## 対応する版と主な機能
+
+| 入力 | 対応 |
+| --- | --- |
+| Swagger 2.0（`swagger: "2.0"`） | OpenAPI 3.0へ正規化し、同じpipelineで生成します。診断は元のSwagger 2.0の位置を指します。 |
+| OpenAPI 3.0.* | 対応します。 |
+| OpenAPI 3.1.* | 既定のOAS 3.1 schema dialectと3.1のJSON Schemaキーワードを含めて対応します。 |
+| OpenAPI 3.2.* | streamingを除いて対応します（`query`、`additionalOperations`、`in: querystring`、`components.mediaTypes`、tagの`parent`／`kind`）。 |
+
+主な機能: open object・map・free-form object、`allOf`・`oneOf`／`anyOf`・`discriminator`、integer enumとnullable enum、
+`readOnly`／`writeOnly`、すべてのparameter locationと`style`、JSON・form-urlencoded・multipart・text・binaryの
+request body、型付き・status別のresponse、型付きエラー、response header、variables付きの複数server、security scheme、
+制約キーワードの実行時検証、意図して無視した要素へのOACG108 Warning。対象外の要素（`$dynamicRef`、
+`if`／`then`／`else`、streaming、oauth2のtoken取得など）は位置付きの診断のままです。全要素と全診断の最終状況は
+[対応表](Documentation~/SourceGenerators/OpenApiMvpSupportMatrix.ja.md)にあります。
+
+## 使い方のメモ
+
+以下は`PetApi`という架空のAPIの例です。メソッド名は`operationId`（なければmethodとpathから決めた名前）に従います。
+示したメンバーは、その機能を使うすべての生成clientにあります。
+
+### 認証
+
+security schemeごとに、`components.securitySchemes`のキー名に由来するpublicプロパティが生成されます
+（`bearerAuth`なら`BearerAuth...`）。リクエストは、含まれるすべてのschemeに資格情報が設定済みの最初の
+requirementを使い、満たせるものがなければ認証なしで送ります。
+
+```csharp
+var client = new PetApi(httpClient);
+client.HeaderKeyApiKey = "secret";               // apiKey: string? <Scheme>ApiKey
+client.BasicAuthUsername = "user";               // http basic: <Scheme>Username / <Scheme>Password
+client.BasicAuthPassword = "pass";
+client.BearerAuthAccessToken = "token";          // http bearer / oauth2 / openIdConnect
+client.OauthAccessTokenProvider = async ct =>    // Func<CancellationToken, Task<string?>>?
+    await tokenStore.GetAccessTokenAsync(ct);    // プロパティより優先され、送信ごとに呼ばれます
+```
+
+oauth2とopenIdConnectは、渡されたtokenをBearerとして送るだけで、取得も更新もしません。その他の`http` schemeは
+`<Scheme>Credentials`です。プロパティは送信前に設定してください（スレッドセーフではありません）。
+
+### server の選択
+
+```csharp
+IReadOnlyList<string> templates = PetApi.Servers;               // serverのURLテンプレート
+string url = PetApi.BuildServerUrl(0, new Dictionary<string, string> { ["region"] = "eu" });
+var client = new PetApi(httpClient, url);                       // baseUrlはdocument levelのserversを置き換えます
+
+// Path Itemやoperationが独自のserversを宣言しているoperation:
+client.OperationServerUrls[PetApi.OperationNames.search] = "https://search.example.com";
+```
+
+`BuildServerUrl`はvariablesを`enum`で検証します（違反は`ArgumentException`、範囲外のindexは
+`ArgumentOutOfRangeException`）。既定のコンストラクターは`servers[0]`の`default`値を使います。
+`OperationServerUrls`と`OperationNames`は、serversを宣言したoperationがある場合だけ生成されます。`OperationServerUrls`は
+最初の送信より前に設定してください。`GetOperationServers`と`BuildOperationServerUrl`で、1つのoperationの候補を
+列挙・展開できます。
+
+### 実行時の制約検証
+
+`minLength`、`maxLength`、`pattern`、`minimum`／`maximum`（とexclusive形式）、`multipleOf`、`minItems`、`maxItems`、
+`uniqueItems`、`minProperties`、`maxProperties`と、3.1のobject・array向けキーワードを実行時に検証します。
+
+```csharp
+try { await client.createPet(new Pet { Name = "x" }); }          // schema: minLength 3
+catch (ArgumentException e) { /* 送信前に拒否。e.ParamNameが引数名 */ }
+
+try { var pet = await client.getPet(1); }
+catch (Newtonsoft.Json.JsonSerializationException e) { /* responseが制約（またはschema）に違反 */ }
+```
+
+requestの違反は`ArgumentException`で、`HttpClient`は呼ばれません。responseの違反は`JsonSerializationException`です。
+メッセージには値ではなくパス（`$.items[2].name`）とkeywordを含めます。これらのキーワードを持つ仕様は従来拒否されて
+いたため、挙動の変更にあたります。
+
+### ファイルparameterとmultipart
+
+multipartのobject schemaの`format: binary` propertyは、生成される`<ApiName>FileParameter`になります。
+
+```csharp
+var file = new PetApiFileParameter(File.OpenRead(path), "avatar.png", "image/png"); // (byte[] data, ...)も可
+await client.uploadPetAsMultipart(new PetForm { Name = "Rex", Avatar = file });
+```
+
+`Stream`はリクエストと一緒に破棄されるため、呼び出しごとに新しいstreamを渡してください。binaryのrequest bodyは
+`byte[]`で、wildcardのmedia typeでは任意引数`<body>ContentType`が加わります。複数のrequest media typeを宣言した
+operationは、優先順位が最上位のものがoperation名を使い、残りは`<name>AsFormUrlEncoded`・`<name>AsMultipart`・
+`<name>AsText`・`<name>AsBinary`になります。
+
+### 型付きresponseとエラー
+
+```csharp
+var result = await client.getStatus();                  // 2xxのcontractが異なるときのstatus別の結果
+if (result.IsStatus200) Use(result.Status200!);         // StatusCode、Is<Status>、型付きStatus<Code>
+
+var info = await client.getWithHeadersWithHttpInfo();  // response headerを宣言したoperationだけ
+Use(info.Data, info.StatusCode, info.Headers);          // 宣言したheaderごとの型付きプロパティもあります
+
+try { await client.getPet(1); }
+catch (PetApiException e)                               // <ApiName>Exception
+{
+    var status = e.StatusCode; var body = e.ResponseBody;      // 常に利用できます
+    if (e.TryGetError<Problem>(out var problem)) { }           // 宣言したJSONエラー本文
+    var parseFailure = e.ErrorDeserializationException;        // 本文を解析できなかったときに設定
+}
+```
+
+textの成功本文は`string`、binaryは`byte[]`です。`Error`は、そのstatusにJSON本文の宣言がない場合や逆シリアル化に
+失敗した場合は`null`で、`ResponseBody`には常に本文の文字列が残ります。
+
+### OACG108 Warning
+
+`OACG108`はErrorではなくWarningです。analyzerが意図して要素を無視しただけで、生成されるwire contractは変わりません。
+メッセージには無視した要素のlogical pathが入ります。主な原因は、`Accept`／`Content-Type`／`Authorization`のheader
+parameter（仕様どおり無視）、`webhooks`・operationの`callbacks`・responseの`links`（client memberは生成しません。
+`components.schemas`に宣言したschemaのDTOは生成します）、生成できるmedia typeと並ぶ`application/xml`、.NET構文を要する
+`pattern`などです。全一覧は対応表の`OACG108`の行を参照してください。
+
+### 診断ID
+
+| ID | Title | 補足 |
+| --- | --- | --- |
+| `OACG001` | Malformed normalized spec bundle | Bundleの構造・参照edgeの不正 |
+| `OACG002` | Unsupported normalized spec bundle version | Bundleのformat versionが未対応 |
+| `OACG003` | OpenAPI generation failed | 生成失敗の通知 |
+| `OACG004` | Duplicate normalized spec bundle ID | 同じSpec IDのBundleが複数 |
+| `OACG005` | Invalid OpenAPI client definition | 予約名の`apiName`など |
+| `OACG006` | Missing normalized spec bundle | Spec IDのBundleがない |
+| `OACG007` | Duplicate OpenAPI client definition ID | 同じSpec IDのclient定義が複数 |
+| `OACG008` | Unsupported OpenAPI document format | `Json`・`Yaml`以外 |
+| `OACG009` | Normalized spec bundle ID mismatch | Spec IDとAdditionalFile名の不一致 |
+| `OACG100` | Invalid OpenAPI document | 不正なdocument |
+| `OACG101` | Unsupported OpenAPI element | 対象外の要素 |
+| `OACG102` | Unresolved OpenAPI reference | 解決できない参照 |
+| `OACG103` | Cyclic OpenAPI reference | 循環参照 |
+| `OACG104` | External OpenAPI reference is unsupported | Bundle v1の互換診断 |
+| `OACG105` | Inconsistent OpenAPI response contract | responseの不整合 |
+| `OACG106` | Invalid generated API identifier | `operationId`の重複 |
+| `OACG107` | Generated type name collision | Warning。型名をsuffixで解消 |
+| `OACG108` | Ignored OpenAPI element | Warning。無視した要素（wire contractは不変） |
 
 ## 生成されたDTOとHTTPクライアント
 
@@ -111,28 +270,70 @@ server URLが`//host/path`形式の場合は`HttpClient.BaseAddress`のschemeで
 どちらも`BaseAddress`が未設定なら送信前に`InvalidOperationException`になります。
 root `servers`を省略するか空配列にした場合は`/`が既定値となり、同様に`BaseAddress`が必要です。
 絶対server URLはHTTP(S)のみ対応し、FTPなどのschemeは位置付き`OACG101`で拒否します。
-不正な絶対URL風・相対URL参照は位置付き`OACG100`、未解決の`{...}`変数は`OACG101`です。server URLのfragmentは操作pathとの結合前に除き、
+不正な絶対URL風・相対URL参照は位置付き`OACG100`、`variables`に宣言のない`{...}`は`OACG101`です。server URLのfragmentは操作pathとの結合前に除き、
 エンコード済みの`%23`はpath内に保持します。
 Response Objectの`contents`など未知項目も位置付き`OACG101`です。
-Parameter ObjectもOpenAPI 3.0／3.1の標準項目と`x-*`拡張を認識し、`requird`などの未知項目は
+Parameter ObjectもOpenAPI 3.0／3.1／3.2の標準項目と`x-*`拡張を認識し、`requird`などの未知項目は
 path直下・components・外部参照先を含めて位置付き`OACG101`です。
 path templateで対応しない`{`／`}`は、`/pets}`や`/pets/{id}}`を含めて位置付き`OACG100`です。
 header parameterの名前はASCIIのHTTP field-name tokenに限り、不正な名前は位置付き`OACG100`です。
 Pathsのキーに生の`?`・`#`がある場合も位置付き`OACG100`です。path内の文字は
 percent-encodeし、query値はquery parameterで宣言します。
-`Accept`と`Authorization`のheader parameterは大小文字を問わず`OACG101`です。
+`Accept`・`Content-Type`・`Authorization`のheader parameterは、OpenAPI仕様どおり大小文字を問わず無視し、
+`OACG108`のWarningを報告します。
 header値はHTABと印字可能ASCII（U+0020～U+007E）だけを受け付け、
 それ以外は送信前に`ArgumentException`になります。
 `requestBody`を宣言したTRACEは、参照経由も含めて`OACG101`です。
+複数の`servers`とserverの`variables`に対応します。既定のクライアントは`servers[0]`の各variableを
+`default`で置換したURLを使います。生成クライアントは`Servers`（URLテンプレートの一覧）と
+`BuildServerUrl(int index, IReadOnlyDictionary<string, string>? variables = null)`
+（variablesは`enum`で検証）を公開しており、結果を`baseUrl`引数として渡せます。
+Path Itemまたはoperationに`servers`がある場合、そのoperationではdocumentのserversより優先します。
+`baseUrl`引数が置き換えるのはdocument levelのserversだけで、operation levelのURLは
+`OperationServerUrls`プロパティで実行時に置き換えます。`operationId`のないoperationは
+メソッドとpathから命名します（`GET /pets/{petId}`は`GetPetsByPetId`）。Path Itemの`$ref`
+（とOpenAPI 3.1の`components.pathItems`）も辿ります。
+path・query・header・cookieのparameterは、プリミティブ、プリミティブの配列、プリミティブpropertyだけの
+objectを、OpenAPIの`style`／`explode`のすべての組み合わせで送信できます。queryの`allowReserved`と、
+JSON media typeの`content`にも対応します。cookie parameterは1本の`Cookie`ヘッダーで送信します。
+手動の`Cookie`ヘッダーは`CookieContainer`の値と併用・上書きされることがあるため、
+`HttpClientHandler.UseCookies = false`にするか`CookieContainer`を使ってください。
+securityScheme（`components.securitySchemes`: header／query／cookieの`apiKey`、`http`の`bearer`／`basic`／その他のscheme、
+`oauth2`、`openIdConnect`、`mutualTLS`）とsecurity requirement（document・operation単位。`security: []`で認証なし）に
+対応します。生成クライアントにはschemeごとにpublicプロパティが付きます: `string? <Scheme>ApiKey`、
+`string? <Scheme>AccessToken`と非同期の`Func<CancellationToken, Task<string?>>? <Scheme>AccessTokenProvider`
+（bearer・oauth2・openIdConnect）、`string? <Scheme>Username`／`<Scheme>Password`（basic）、
+`string? <Scheme>Credentials`（その他のhttp scheme）。送信時は、文書順のrequirement（OR）のうち、含まれるすべてのscheme（AND）に
+資格情報が設定された最初のものを使い、満たせるものがなければ認証なしで送ります。oauth2とopenIdConnectは、
+渡されたtokenをBearerとして送るだけで、tokenの取得・更新はしません。`mutualTLS`はプロパティを持たず、
+クライアント証明書は`HttpClientHandler`に設定します。cookieのapiKeyは、cookie parameterと同じ1本の`Cookie`ヘッダーにまとめます。
+資格情報プロパティはスレッドセーフではないため、送信前に設定してください。不正なschemeと、未定義のschemeを指すrequirementは
+位置付き`OACG100`です。
 明示的な`baseUrl=""`の上書きは相対URLのままです。
 相対server URLとoperation pathが`/`の場合、`BaseAddress`のqueryは1回だけ付加します。
-リクエスト本文には具体的な`application/json`または`application/<subtype>+json`を送信します。
-`application/*+json`のみを宣言すると`OACG101`になり、具体型も宣言すると具体型を選びます。
-`application/vnd.*+json`など部分的なwildcard subtypeは、リクエスト・成功レスポンスとも
-生成時に`OACG101`で拒否します。
-HEADの応答と成功204・205・`2XX`には、参照先を含めて本文の`content`を宣言できません
-（`OACG101`）。`2XX`は204・205を含むため、型付き本文契約は対象外です。
-responseの`headers`を宣言する場合はobjectが必要で、非空のmapは対象外です。
+リクエスト本文は`application/json`（具体的な`application/<subtype>+json`も可）、
+`application/x-www-form-urlencoded`、`multipart/form-data`、テキスト（`text/*`と、schemaが
+stringの`application/xml`）、バイナリ（`application/octet-stream`、`image/*`、`*/*`、または
+`format: binary`のschema）を送信できます。複数のmedia typeを宣言したoperationは、優先順位が最上位
+（JSON、form-urlencoded、multipart、text、binary）のmedia typeがoperation名のメソッドになり、
+残りは`<name>AsFormUrlEncoded`、`<name>AsMultipart`、`<name>AsText`、`<name>AsBinary`の
+追加メソッド（`CreatePetAsMultipart`の形）になります。multipartのファイルpart（`format: binary`）は
+生成する`<ApiName>FileParameter`（`byte[]`または`Stream`、`FileName`、`ContentType`）で、`Stream`は
+リクエストに渡されて一緒に破棄されるので、呼び出しごとに新しいstreamを渡してください。
+Encoding Object（`contentType`、静的な`headers`、`style`／`explode`／`allowReserved`）に対応します。
+form-urlencodedの値はpercent-encodeします（空白は`+`ではなく`%20`）。`application/*+json`のみを宣言すると
+`OACG101`、`application/xml`のobject schemaも`OACG101`です。`application/vnd.*+json`など
+部分的なwildcard subtypeも`OACG101`で拒否します。
+成功レスポンスはJSON、テキスト（`string`）、バイナリ（`byte[]`）に対応します。2xxのcontractが異なる場合や
+`2XX`範囲に本文がある場合は、status別の`<OperationName>Response`（`StatusCode`、`IsStatus200`、
+`Status200`など）を返します。`default`だけのoperationは`default`を成功contractとみなし、
+`responses`の省略（OpenAPI 3.1）は任意の`2xx`で成功します。`3XX`の宣言は受理し、`HttpClient`の
+リダイレクト後の最終応答で判定します。型付きエラーとして、`<ApiName>Exception`は`StatusCode`と
+`ResponseBody`に加え、宣言されたJSONエラー本文の`Error`、`TryGetError<T>(out T)`、
+`ErrorDeserializationException`を持ちます（完全一致のstatus、`4XX`／`5XX`、`default`の順）。
+responseの`headers`（と`components.headers`）は追加メソッド`<name>WithHttpInfo`で公開します
+（status、raw・型付きheader、データ）。必須headerの欠落は`JsonSerializationException`です。
+HEADの応答と成功204・205には、参照先を含めて本文の`content`を宣言できません（`OACG101`）。
 Parameter・Request Body・Responseの`$ref`と並ぶ項目も検査します。OpenAPI 3.1では
 文字列の`summary`・`description`を許可し、3.0では契約項目の黙示的な無視を避けるため
 ジェネレーターの入力規則として`$ref`のみを受け付けます。

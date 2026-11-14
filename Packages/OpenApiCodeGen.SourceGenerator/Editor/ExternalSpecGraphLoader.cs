@@ -112,9 +112,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         private sealed class GraphBuilder
         {
             private static readonly string[] HttpMethods =
-                { "delete", "get", "head", "options", "patch", "post", "put", "trace" };
+                { "delete", "get", "head", "options", "patch", "post", "put", "query", "trace" };
             private static readonly string[] ReferenceObjectComponentMaps =
-                { "securitySchemes", "links" };
+                { "securitySchemes" };
             private static readonly string[] SchemaMapProperties =
                 { "properties", "patternProperties", "dependentSchemas", "$defs", "definitions" };
             private static readonly string[] SchemaProperties =
@@ -131,7 +131,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             private static readonly ReferenceCollector ParameterCollector = CollectParameter;
             private static readonly ReferenceCollector ReferenceObjectCollector = CollectReferenceObject;
             private static readonly ReferenceCollector RequestBodyCollector = CollectRequestBody;
-            private static readonly ReferenceCollector CallbackCollector = CollectCallback;
+            private static readonly ReferenceCollector MediaTypeCollector = CollectMediaType;
+            private static readonly ReferenceCollector OperationCollector = CollectOperation;
 
             private readonly ExternalSpecGraphLoader owner;
             private readonly string specId;
@@ -1060,6 +1061,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 {
                     CollectSwaggerDocument(root, path, references);
                 }
+                else if (IsBarePathItem(root))
+                {
+                    // An external Path Item $ref may point at a file that is only a Path Item
+                    // (no 'openapi' field): its parameters and operations still hold references.
+                    CollectPathItem(root, path, references);
+                }
                 else
                 {
                     // External documents may intentionally be a bare JSON Schema.
@@ -1067,19 +1074,54 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 }
             }
 
+            private static readonly string[] PathItemOnlyKeys =
+                { "$ref", "parameters", "servers", "summary", "description", "additionalOperations" };
+            private static readonly string[] SchemaOnlyKeys =
+            {
+                "$schema", "$id", "$defs", "definitions", "type", "properties", "patternProperties",
+                "additionalProperties", "items", "prefixItems", "allOf", "anyOf", "oneOf", "not", "enum",
+                "const", "required", "format", "nullable", "discriminator", "contains", "propertyNames",
+                "if", "then", "else", "dependentSchemas", "dependentRequired", "unevaluatedProperties",
+                "unevaluatedItems", "contentSchema", "$anchor", "$dynamicRef", "$dynamicAnchor"
+            };
+
+            // An external file without 'openapi' / 'swagger' is a bare Path Item when it has an
+            // HTTP method, or only Path Item keys ($ref, parameters, servers, summary, description),
+            // and no JSON Schema keyword. A file with any schema keyword stays a bare schema.
+            private static bool IsBarePathItem(SpecObjectNode root)
+            {
+                for (int index = 0; index < SchemaOnlyKeys.Length; index++)
+                {
+                    if (TryGetProperty(root, SchemaOnlyKeys[index], out _)) return false;
+                }
+
+                for (int index = 0; index < HttpMethods.Length; index++)
+                {
+                    if (TryGetProperty(root, HttpMethods[index], out _)) return true;
+                }
+
+                for (int index = 0; index < PathItemOnlyKeys.Length; index++)
+                {
+                    if (TryGetProperty(root, PathItemOnlyKeys[index], out _)) return true;
+                }
+
+                return false;
+            }
+
             private static void CollectOpenApiDocument(
                 SpecObjectNode root,
                 ReferencePath path,
                 List<ReferenceValue> references)
             {
+                // webhooks, callbacks, links and examples are ignored by the analyzer (OACG108 or
+                // documentation only) and never parsed, so their $refs are not collected: an
+                // unresolvable or external $ref there must not fail the bundling.
                 CollectPathMapProperty(root, path, "paths", PathItemCollector, references);
-                CollectPathMapProperty(root, path, "webhooks", PathItemCollector, references);
                 if (!TryGetObjectProperty(root, "components", out SpecObjectNode? components)) return;
                 path.Push("components");
                 CollectObjectMapProperty(components, path, "schemas", SchemaCollector, references);
                 CollectObjectMapProperty(components, path, "responses", ResponseCollector, references);
                 CollectObjectMapProperty(components, path, "parameters", ParameterCollector, references);
-                CollectObjectMapProperty(components, path, "examples", ReferenceObjectCollector, references);
                 CollectObjectMapProperty(components, path, "requestBodies", RequestBodyCollector, references);
                 CollectObjectMapProperty(components, path, "headers", ParameterCollector, references);
                 for (int index = 0; index < ReferenceObjectComponentMaps.Length; index++)
@@ -1092,8 +1134,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                         references);
                 }
 
-                CollectObjectMapProperty(components, path, "callbacks", CallbackCollector, references);
                 CollectObjectMapProperty(components, path, "pathItems", PathItemCollector, references);
+                // OpenAPI 3.2 components.mediaTypes: reusable Media Type Objects.
+                CollectObjectMapProperty(components, path, "mediaTypes", MediaTypeCollector, references);
                 path.Pop();
             }
 
@@ -1125,6 +1168,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     CollectOperation(operation!, path, references);
                     path.Pop();
                 }
+
+                // OpenAPI 3.2 additionalOperations: a map from a custom method name to an Operation.
+                CollectObjectMapProperty(pathItem, path, "additionalOperations", OperationCollector, references);
             }
 
             private static void CollectOperation(
@@ -1143,7 +1189,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     ResponseCollector,
                     references,
                     true);
-                CollectObjectMapProperty(operation, path, "callbacks", CallbackCollector, references);
             }
 
             private static void CollectParameter(
@@ -1156,7 +1201,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 if (parameter == null) return;
                 CollectProperty(parameter, path, "schema", SchemaCollector, references);
                 CollectContentProperty(parameter, path, references);
-                CollectObjectMapProperty(parameter, path, "examples", ReferenceObjectCollector, references);
                 CollectProperty(parameter, path, "items", SchemaCollector, references);
             }
 
@@ -1183,26 +1227,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 CollectContentProperty(response, path, references);
                 CollectProperty(response, path, "schema", SchemaCollector, references);
                 CollectObjectMapProperty(response, path, "headers", ParameterCollector, references);
-                CollectObjectMapProperty(response, path, "links", ReferenceObjectCollector, references);
-            }
-
-            private static void CollectCallback(
-                SpecNode node,
-                ReferencePath path,
-                List<ReferenceValue> references)
-            {
-                int originalCount = references.Count;
-                CollectDirectReference(node, path, references);
-                if (references.Count != originalCount) return;
-                SpecObjectNode? callback = node as SpecObjectNode;
-                if (callback == null) return;
-                foreach (SpecProperty expression in callback.Properties)
-                {
-                    if (expression.Name.StartsWith("x-", StringComparison.Ordinal)) continue;
-                    path.Push(expression.Name);
-                    CollectPathItem(expression.Value, path, references);
-                    path.Pop();
-                }
             }
 
             private static void CollectContentProperty(
@@ -1214,36 +1238,45 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 path.Push("content");
                 foreach (SpecProperty mediaType in content.Properties)
                 {
-                    SpecObjectNode? media = mediaType.Value as SpecObjectNode;
-                    if (media == null) continue;
                     path.Push(mediaType.Name);
-                    CollectProperty(media, path, "schema", SchemaCollector, references);
-                    CollectObjectMapProperty(media, path, "examples", ReferenceObjectCollector, references);
-                    if (TryGetObjectProperty(media, "encoding", out SpecObjectNode? encodings))
-                    {
-                        path.Push("encoding");
-                        foreach (SpecProperty encoding in encodings.Properties)
-                        {
-                            if (encoding.Value is SpecObjectNode encodingObject)
-                            {
-                                path.Push(encoding.Name);
-                                CollectObjectMapProperty(
-                                    encodingObject,
-                                    path,
-                                    "headers",
-                                    ParameterCollector,
-                                    references);
-                                path.Pop();
-                            }
-                        }
-
-                        path.Pop();
-                    }
-
+                    CollectMediaType(mediaType.Value, path, references);
                     path.Pop();
                 }
 
                 path.Pop();
+            }
+
+            // A Media Type Object. In OpenAPI 3.2 it can also be a Reference Object (to components.mediaTypes).
+            // itemSchema is never parsed by the analyzer (not interpreted), so its $refs are not collected.
+            private static void CollectMediaType(
+                SpecNode node,
+                ReferencePath path,
+                List<ReferenceValue> references)
+            {
+                CollectDirectReference(node, path, references);
+                SpecObjectNode? media = node as SpecObjectNode;
+                if (media == null) return;
+                CollectProperty(media, path, "schema", SchemaCollector, references);
+                if (TryGetObjectProperty(media, "encoding", out SpecObjectNode? encodings))
+                {
+                    path.Push("encoding");
+                    foreach (SpecProperty encoding in encodings.Properties)
+                    {
+                        if (encoding.Value is SpecObjectNode encodingObject)
+                        {
+                            path.Push(encoding.Name);
+                            CollectObjectMapProperty(
+                                encodingObject,
+                                path,
+                                "headers",
+                                ParameterCollector,
+                                references);
+                            path.Pop();
+                        }
+                    }
+
+                    path.Pop();
+                }
             }
 
             private static void CollectSchema(

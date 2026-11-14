@@ -5,7 +5,7 @@ using System.Text;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator
 {
-    internal sealed class HttpClientSourceEmitter
+    internal sealed partial class HttpClientSourceEmitter
     {
         internal GeneratedFile Emit(OpenApiGenerationModel model)
         {
@@ -16,6 +16,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             var source = new StringBuilder();
             source.AppendLine("#nullable enable");
+            if (GeneratedDocumentationEmitter.AnyDeprecated(model))
+            {
+                source.AppendLine(GeneratedDocumentationEmitter.PragmaLine);
+            }
+
             source.Append("namespace ").Append(model.GeneratedNamespace).AppendLine();
             source.AppendLine("{");
             source.Append("    public partial class ").Append(model.ApiName).AppendLine();
@@ -24,19 +29,34 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        private readonly string _baseUrl;");
             source.AppendLine();
             AppendConstructors(source, model);
+            AppendServers(source, model);
             var responseValidators = new ResponseValidatorPlan(model);
-            var responseJsonContracts = new ResponseJsonContractPlan(model);
+            var constraints = new ConstraintValidationEmitter(model);
+            var responseJsonContracts = new ResponseJsonContractPlan(model, constraints);
+            var parameterSerializer = new HttpClientParameterSerializationEmitter(
+                model,
+                responseValidators.RequestJsonSerializerName,
+                responseValidators.HeaderValueValidatorName,
+                constraints);
 
+            parameterSerializer.Security.AppendProperties(source);
+            var bodyHelpers = new BodyHelperNames(model, constraints);
             foreach (GeneratedOperationModel operation in model.Operations)
             {
                 source.AppendLine();
-                AppendOperation(source, model, operation, responseValidators, responseJsonContracts);
+                AppendOperationMethods(
+                    source, model, operation, responseValidators, responseJsonContracts, parameterSerializer, bodyHelpers);
             }
 
             source.AppendLine();
             AppendHelpers(source, responseValidators);
+            parameterSerializer.AppendHelpers(source);
+            parameterSerializer.Security.AppendHelpers(source);
+            AppendBodyHelpers(source, model, bodyHelpers);
             responseValidators.AppendMethods(source);
             responseJsonContracts.AppendMethods(source);
+            constraints.AppendMethods(source);
+            constraints.AppendHelpers(source);
             source.AppendLine("    }");
             source.AppendLine();
             AppendException(source, model.ApiName);
@@ -60,244 +80,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("            _baseUrl = baseUrl ?? throw new global::System.ArgumentNullException(nameof(baseUrl));");
             source.AppendLine("        }");
         }
-
-        private static void AppendOperation(
-            StringBuilder source,
-            OpenApiGenerationModel model,
-            GeneratedOperationModel operation,
-            ResponseValidatorPlan responseValidators,
-            ResponseJsonContractPlan responseJsonContracts)
-        {
-            string summary = string.IsNullOrWhiteSpace(operation.Summary)
-                ? operation.Name
-                : operation.Summary;
-            source.Append("        /// <summary>")
-                .Append(EscapeXml(summary))
-                .AppendLine("</summary>");
-            foreach (GeneratedParameterModel parameter in operation.Parameters)
-            {
-                source.Append("        /// <param name=\"")
-                    .Append(parameter.Name)
-                    .Append("\">")
-                    .Append(EscapeXml(parameter.WireName))
-                    .AppendLine("</param>");
-            }
-
-            if (operation.RequestBody is not null)
-            {
-                source.Append("        /// <param name=\"")
-                    .Append(operation.RequestBody.ParameterName)
-                    .AppendLine("\">JSON request body.</param>");
-            }
-
-            source.AppendLine("        /// <param name=\"cancellationToken\">Cancellation token.</param>");
-            if (operation.RequestBody?.SpecifiedParameterName is string specifiedParameterName)
-            {
-                source.Append("        /// <param name=\"").Append(specifiedParameterName)
-                    .AppendLine("\">Send the JSON body even when its value is null.</param>");
-            }
-            string taskType = operation.ResponseType is null
-                ? "global::System.Threading.Tasks.Task"
-                : "global::System.Threading.Tasks.Task<" +
-                  GeneratedSourceEmitter.TypeName(operation.ResponseType) + ">";
-            source.Append("        public async ").Append(taskType).Append(' ').Append(operation.Name).Append('(');
-            bool first = true;
-            foreach (GeneratedParameterModel parameter in operation.Parameters)
-            {
-                AppendParameterSeparator(source, ref first);
-                source.Append(GeneratedSourceEmitter.TypeName(parameter.Type))
-                    .Append(' ')
-                    .Append(parameter.Name);
-            }
-
-            if (operation.RequestBody is not null)
-            {
-                AppendParameterSeparator(source, ref first);
-                source.Append(GeneratedSourceEmitter.TypeName(operation.RequestBody.Type))
-                    .Append(' ')
-                    .Append(operation.RequestBody.ParameterName);
-            }
-
-            AppendParameterSeparator(source, ref first);
-            source.Append("global::System.Threading.CancellationToken cancellationToken = default");
-            if (operation.RequestBody?.SpecifiedParameterName is string specifiedParameter)
-            {
-                source.Append(", bool ").Append(specifiedParameter).Append(" = false");
-            }
-            source.AppendLine(")");
-            source.AppendLine("        {");
-            AppendNumericParameterValidation(source, operation);
-            AppendRequestBodyValidation(source, operation.RequestBody);
-            source.Append("            string relativePath = ")
-                .Append(GeneratedSourceEmitter.StringLiteral(operation.Path))
-                .AppendLine(";");
-            AppendPathParameters(source, operation);
-            AppendQueryParameters(source, operation);
-            source.AppendLine("            ValidatePathSegments(relativePath);");
-            source.AppendLine("            var requestUri = CreateRequestUri(relativePath);");
-            source.Append("            using (var request = new global::System.Net.Http.HttpRequestMessage(")
-                .Append(GetHttpMethod(operation.HttpMethod))
-                .AppendLine(", requestUri))");
-            source.AppendLine("            {");
-            AppendHeaderParameters(source, operation, responseValidators);
-            AppendRequestBody(source, operation.RequestBody, responseValidators);
-            source.AppendLine("                using (var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false))");
-            source.AppendLine("                {");
-            if (operation.ResponseType is null)
-            {
-                source.AppendLine("                    string responseBody = response.Content == null");
-                source.AppendLine("                        ? string.Empty");
-                source.AppendLine("                        : await response.Content.ReadAsStringAsync().ConfigureAwait(false);");
-                source.Append("                    if (!(")
-                    .Append(CreateSuccessExpression(operation.SuccessStatusCodes))
-                    .AppendLine("))");
-                source.AppendLine("                    {");
-                source.Append("                        throw new ").Append(model.ApiName)
-                    .AppendLine("Exception(response.StatusCode, responseBody);");
-                source.AppendLine("                    }");
-                AppendResponseContentTypeValidation(source, operation, responseValidators);
-            }
-            else
-            {
-                source.Append("                    if (!(")
-                    .Append(CreateSuccessExpression(operation.SuccessStatusCodes))
-                    .AppendLine("))");
-                source.AppendLine("                    {");
-                source.Append("                        throw new ").Append(model.ApiName)
-                    .AppendLine("Exception(response.StatusCode, response.Content == null");
-                source.AppendLine("                            ? string.Empty");
-                source.AppendLine("                            : await response.Content.ReadAsStringAsync().ConfigureAwait(false));");
-                source.AppendLine("                    }");
-                AppendResponseContentTypeValidation(source, operation, responseValidators);
-                source.AppendLine("                    string responseBody = response.Content == null");
-                source.AppendLine("                        ? string.Empty");
-                source.AppendLine("                        : await ReadJsonResponseBodyAsync(response.Content).ConfigureAwait(false);");
-            }
-
-            if (operation.ResponseType is null)
-            {
-                source.AppendLine("                    return;");
-            }
-            else
-            {
-                source.AppendLine("                    if (global::System.String.IsNullOrWhiteSpace(responseBody))");
-                source.AppendLine("                    {");
-                source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response requires a JSON body.\");");
-                source.AppendLine("                    }");
-                if (!operation.ResponseType.Nullable)
-                {
-                    source.AppendLine("                    if (global::System.String.Equals(responseBody.Trim(), \"null\", global::System.StringComparison.Ordinal))");
-                    source.AppendLine("                    {");
-                    source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response requires a non-null JSON body.\");");
-                    source.AppendLine("                    }");
-                }
-                source.AppendLine("                    var defaultResponseSettings = global::Newtonsoft.Json.JsonConvert.DefaultSettings?.Invoke();");
-                source.AppendLine("                    var responseSerializer = global::Newtonsoft.Json.JsonSerializer.Create();");
-                source.AppendLine("                    responseSerializer.DateParseHandling = global::Newtonsoft.Json.DateParseHandling.None;");
-                source.AppendLine("                    responseSerializer.MaxDepth = defaultResponseSettings?.MaxDepth > 0 ? defaultResponseSettings.MaxDepth : 64;");
-                source.Append("                    string validatedResponseBody = ").Append(responseJsonContracts.ParseMethodName)
-                    .Append("(responseBody, ").Append(responseJsonContracts.MethodName(operation.ResponseType))
-                    .Append(", ").Append(operation.ResponseType.Nullable ? "true" : "false")
-                    .AppendLine(", responseSerializer.MaxDepth);");
-                source.Append("                    var deserializedResponse = ").Append(responseJsonContracts.DeserializeMethodName).Append('<')
-                    .Append(GeneratedSourceEmitter.TypeName(operation.ResponseType))
-                    .AppendLine(">(validatedResponseBody, responseSerializer);");
-                if (!operation.ResponseType.Nullable && !operation.ResponseType.IsValueType)
-                {
-                    source.AppendLine("                    if (deserializedResponse is null)");
-                    source.AppendLine("                    {");
-                    source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response requires a non-null JSON body.\");");
-                    source.AppendLine("                    }");
-                }
-                if (responseValidators.TryGetMethodName(operation.ResponseType, out string? validatorName))
-                {
-                    source.Append("                    ").Append(validatorName)
-                        .Append("(deserializedResponse, \"$\", \"response\", new global::System.Collections.Generic.Dictionary<object, global::System.Collections.Generic.HashSet<int>>(new ")
-                        .Append(responseValidators.ComparerName).AppendLine("()));");
-                }
-                source.AppendLine("                    return deserializedResponse!;");
-            }
-
-            source.AppendLine("                }");
-            source.AppendLine("            }");
-            source.AppendLine("        }");
-        }
-
-        private static void AppendPathParameters(StringBuilder source, GeneratedOperationModel operation)
-        {
-            foreach (GeneratedParameterModel parameter in operation.Parameters.Where(
-                         static value => value.LocationName == "path"))
-            {
-                source.Append("            relativePath = relativePath.Replace(")
-                    .Append(GeneratedSourceEmitter.StringLiteral("{" + parameter.WireName + "}"))
-                    .Append(", global::System.Uri.EscapeDataString(ConvertToString(")
-                    .Append(GetValueExpression(parameter))
-                    .AppendLine(")));");
-            }
-        }
-
-        private static void AppendQueryParameters(StringBuilder source, GeneratedOperationModel operation)
-        {
-            GeneratedParameterModel[] queryParameters = operation.Parameters
-                .Where(static value => value.LocationName == "query")
-                .ToArray();
-            if (queryParameters.Length == 0)
-            {
-                return;
-            }
-
-            source.AppendLine("            var queryParts = new global::System.Collections.Generic.List<string>();");
-            foreach (GeneratedParameterModel parameter in queryParameters)
-            {
-                string statement = "queryParts.Add(global::System.Uri.EscapeDataString(" +
-                                   GeneratedSourceEmitter.StringLiteral(parameter.WireName) +
-                                   ") + \"=\" + global::System.Uri.EscapeDataString(ConvertToString(" +
-                                   GetValueExpression(parameter) + ")));";
-                AppendConditionalStatement(source, parameter, statement, 12);
-            }
-
-            source.AppendLine("            if (queryParts.Count > 0)");
-            source.AppendLine("            {");
-            source.AppendLine("                relativePath += (relativePath.IndexOf('?') >= 0 ? \"&\" : \"?\") + string.Join(\"&\", queryParts);");
-            source.AppendLine("            }");
-        }
-
-        private static void AppendHeaderParameters(
-            StringBuilder source,
-            GeneratedOperationModel operation,
-            ResponseValidatorPlan validators)
-        {
-            foreach (GeneratedParameterModel parameter in operation.Parameters.Where(
-                         static value => value.LocationName == "header"))
-            {
-                string statement = "if (!request.Headers.TryAddWithoutValidation(" +
-                                   GeneratedSourceEmitter.StringLiteral(parameter.WireName) +
-                                   ", " + validators.HeaderValueValidatorName + "(ConvertToString(" +
-                                   GetValueExpression(parameter) + "), " +
-                                   GeneratedSourceEmitter.StringLiteral(parameter.WireName) + "))) " +
-                                   "throw new global::System.InvalidOperationException(" +
-                                   GeneratedSourceEmitter.StringLiteral(
-                                       "Unable to add request header '" + parameter.WireName + "'.") + ");";
-                AppendConditionalStatement(source, parameter, statement, 16);
-            }
-        }
-
-        private static void AppendRequestBodyValidation(
-            StringBuilder source,
-            GeneratedRequestBodyModel? body)
-        {
-            if (body is null || !body.Required || body.Type.Nullable || body.Type.IsValueType)
-            {
-                return;
-            }
-
-            source.Append("            if (").Append(body.ParameterName).AppendLine(" is null)");
-            source.AppendLine("            {");
-            source.Append("                throw new global::System.ArgumentNullException(nameof(")
-                .Append(body.ParameterName).AppendLine("));");
-            source.AppendLine("            }");
-        }
-
         private static void AppendNumericParameterValidation(
             StringBuilder source,
             GeneratedOperationModel operation)
@@ -329,49 +111,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private static void AppendRequestBody(
-            StringBuilder source,
-            GeneratedRequestBodyModel? body,
-            ResponseValidatorPlan validators)
-        {
-            if (body is null)
-            {
-                return;
-            }
 
-            if (!body.Required)
-            {
-                source.Append("                if (").Append(body.ParameterName).Append(" != null");
-                if (body.SpecifiedParameterName is not null)
-                {
-                    source.Append(" || ").Append(body.SpecifiedParameterName);
-                }
-                source.AppendLine(")");
-                source.AppendLine("                {");
-            }
-
-            string indent = body.Required ? "                " : "                    ";
-            if (validators.TryGetMethodName(body.Type, out string? validatorName))
-            {
-                source.Append(indent).Append(validatorName).Append('(')
-                    .Append(body.ParameterName)
-                    .Append(", \"$\", \"request\", new global::System.Collections.Generic.Dictionary<object, global::System.Collections.Generic.HashSet<int>>(new ")
-                    .Append(validators.ComparerName).AppendLine("()));");
-            }
-            source.Append(indent).Append("string requestJson = ")
-                .Append(validators.RequestJsonSerializerName).Append('(')
-                .Append(body.ParameterName)
-                .AppendLine(");");
-            source.Append(indent).Append("request.Content = CreateJsonContent(requestJson, ")
-                .Append(GeneratedSourceEmitter.StringLiteral(body.MediaType))
-                .AppendLine(");");
-            if (!body.Required)
-            {
-                source.AppendLine("                }");
-            }
-        }
-
-        private static void AppendConditionalStatement(
+        internal static void AppendConditionalStatement(
             StringBuilder source,
             GeneratedParameterModel parameter,
             string statement,
@@ -391,7 +132,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append(indent).AppendLine("}");
         }
 
-        private static string? GetPresenceCondition(GeneratedParameterModel parameter)
+        internal static string? GetPresenceCondition(GeneratedParameterModel parameter)
         {
             if (parameter.Required)
             {
@@ -403,7 +144,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 : parameter.Name + " != null";
         }
 
-        private static string GetValueExpression(GeneratedParameterModel parameter)
+        internal static string GetValueExpression(GeneratedParameterModel parameter)
         {
             return !parameter.Required && parameter.Type.IsValueType
                 ? parameter.Name + ".Value"
@@ -495,9 +236,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine();
             source.AppendLine("        private global::System.Uri CreateRequestUri(string relativePath)");
             source.AppendLine("        {");
+            source.AppendLine("            return CreateRequestUri(relativePath, _baseUrl);");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        private global::System.Uri CreateRequestUri(string relativePath, string serverUrl)");
+            source.AppendLine("        {");
             source.AppendLine("            SplitPathAndQuery(relativePath, out string operationPath, out string operationQuery);");
-            source.AppendLine("            int baseFragment = _baseUrl.IndexOf('#');");
-            source.AppendLine("            string baseUrl = baseFragment < 0 ? _baseUrl : _baseUrl.Substring(0, baseFragment);");
+            source.AppendLine("            int baseFragment = serverUrl.IndexOf('#');");
+            source.AppendLine("            string baseUrl = baseFragment < 0 ? serverUrl : serverUrl.Substring(0, baseFragment);");
             source.AppendLine("            if (baseUrl.StartsWith(\"//\", global::System.StringComparison.Ordinal))");
             source.AppendLine("            {");
             source.AppendLine("                if (_httpClient.BaseAddress is null)");
@@ -737,6 +483,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("                return text;");
             source.AppendLine("            }");
             source.AppendLine();
+            source.AppendLine("            if (value is byte[] bytes)");
+            source.AppendLine("            {");
+            source.AppendLine("                return global::System.Convert.ToBase64String(bytes);");
+            source.AppendLine("            }");
+            source.AppendLine();
             source.AppendLine("            if (value is bool boolean)");
             source.AppendLine("            {");
             source.AppendLine("                return boolean ? \"true\" : \"false\";");
@@ -784,6 +535,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("                if (value == null)");
             source.AppendLine("                {");
             source.AppendLine("                    writer.WriteNull();");
+            source.AppendLine("                    return;");
+            source.AppendLine("                }");
+            source.AppendLine();
+            source.AppendLine("                // JValue writes its DateTime through a converter with a default serializer. Only members typed as date use the request serializer that carries this converter, so a DateTime held by a JToken keeps its full value.");
+            source.AppendLine("                if (!serializer.Converters.Contains(this))");
+            source.AppendLine("                {");
+            source.AppendLine("                    writer.WriteValue((global::System.DateTime)value);");
             source.AppendLine("                    return;");
             source.AppendLine("                }");
             source.AppendLine();
@@ -943,32 +701,68 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("    {");
             source.Append("        public ").Append(apiName)
                 .AppendLine("Exception(global::System.Net.HttpStatusCode statusCode, string responseBody)");
+            source.AppendLine("            : this(statusCode, responseBody, null, null)");
+            source.AppendLine("        {");
+            source.AppendLine("        }");
+            source.AppendLine();
+            source.AppendLine("        /// <summary>Creates the exception with the declared error body of the response, when there is one.</summary>");
+            source.Append("        public ").Append(apiName)
+                .AppendLine("Exception(global::System.Net.HttpStatusCode statusCode, string responseBody, object? error, global::System.Exception? errorDeserializationException)");
             source.AppendLine("            : base(\"The API returned HTTP status \" + ((int)statusCode).ToString(global::System.Globalization.CultureInfo.InvariantCulture) + \" (\" + statusCode + \").\")");
             source.AppendLine("        {");
             source.AppendLine("            StatusCode = statusCode;");
             source.AppendLine("            ResponseBody = responseBody ?? string.Empty;");
+            source.AppendLine("            Error = error;");
+            source.AppendLine("            ErrorDeserializationException = errorDeserializationException;");
             source.AppendLine("        }");
             source.AppendLine();
             source.AppendLine("        public global::System.Net.HttpStatusCode StatusCode { get; }");
             source.AppendLine();
             source.AppendLine("        public string ResponseBody { get; }");
+            source.AppendLine();
+            source.AppendLine("        /// <summary>The error body deserialized to the type the operation declares for this status (exact code, then 4XX / 5XX range, then default); null when none is declared or it could not be read.</summary>");
+            source.AppendLine("        public object? Error { get; }");
+            source.AppendLine();
+            source.AppendLine("        /// <summary>Why the declared error body could not be deserialized; null when it was or none is declared. ResponseBody always keeps the raw text.</summary>");
+            source.AppendLine("        public global::System.Exception? ErrorDeserializationException { get; }");
+            source.AppendLine();
+            source.AppendLine("        /// <summary>Gets the declared error body as <typeparamref name=\"T\"/>.</summary>");
+            source.AppendLine("        public bool TryGetError<T>(out T value)");
+            source.AppendLine("        {");
+            source.AppendLine("            if (Error is T typed)");
+            source.AppendLine("            {");
+            source.AppendLine("                value = typed;");
+            source.AppendLine("                return true;");
+            source.AppendLine("            }");
+            source.AppendLine();
+            source.AppendLine("            value = default!;");
+            source.AppendLine("            return false;");
+            source.AppendLine("        }");
             source.AppendLine("    }");
         }
 
         private sealed class ResponseJsonContractPlan
         {
             private readonly IReadOnlyDictionary<string, GeneratedDtoModel> _dtos;
+            private readonly IReadOnlyDictionary<string, GeneratedEnumModel> _enums;
+            private readonly IReadOnlyDictionary<string, GeneratedUnionModel> _unions;
             private readonly List<GeneratedTypeModel> _types = new List<GeneratedTypeModel>();
             private readonly Dictionary<GeneratedTypeModel, int> _indices =
                 new Dictionary<GeneratedTypeModel, int>();
             private readonly string _prefix;
+            private readonly ConstraintValidationEmitter _constraints;
 
-            internal ResponseJsonContractPlan(OpenApiGenerationModel model)
+            internal ResponseJsonContractPlan(OpenApiGenerationModel model, ConstraintValidationEmitter constraints)
             {
+                _constraints = constraints;
+                _constraints.ContractMethodName = MethodName;
                 _dtos = model.Dtos.ToDictionary(static dto => dto.Name, StringComparer.Ordinal);
+                _enums = model.Enums.ToDictionary(static value => value.Name, StringComparer.Ordinal);
+                _unions = model.Unions.ToDictionary(static value => value.Name, StringComparer.Ordinal);
                 var occupied = new HashSet<string>(StringComparer.Ordinal) { model.ApiName };
                 occupied.UnionWith(model.Dtos.Select(static dto => dto.Name));
                 occupied.UnionWith(model.Enums.Select(static value => value.Name));
+                occupied.UnionWith(model.Unions.Select(static value => value.Name));
                 foreach (GeneratedOperationModel operation in model.Operations)
                 {
                     occupied.Add(operation.Name);
@@ -996,9 +790,61 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 _prefix = prefix;
                 foreach (GeneratedOperationModel operation in model.Operations)
                 {
-                    if (operation.ResponseType is GeneratedTypeModel responseType)
+                    foreach (GeneratedTypeModel responseType in operation.EnumerateJsonResponseTypes())
                     {
                         Register(responseType);
+                    }
+
+                    // The sub-schemas of validation keywords (contains, patternProperties, ...) of the typed
+                    // values that are not JSON response bodies (requests, parameters, headers) are
+                    // evaluated by the contract methods of their types as well.
+                    foreach (GeneratedTypeModel typedValue in EnumerateTypedValues(operation))
+                    {
+                        _constraints.CollectSubTypes(typedValue, Register);
+                    }
+                }
+            }
+
+            private static IEnumerable<GeneratedTypeModel> EnumerateTypedValues(GeneratedOperationModel operation)
+            {
+                foreach (GeneratedParameterModel parameter in operation.Parameters)
+                {
+                    yield return parameter.Type;
+                }
+
+                if (operation.RequestBody is GeneratedRequestBodyModel body)
+                {
+                    foreach (GeneratedBodyVariantModel variant in body.Variants)
+                    {
+                        if (variant.Kind == GeneratedBodyKind.Json || variant.Kind == GeneratedBodyKind.Text)
+                        {
+                            yield return variant.Type;
+                        }
+
+                        foreach (GeneratedFormFieldModel field in variant.Fields)
+                        {
+                            if (field.Role == GeneratedFormFieldRole.Text || field.Role == GeneratedFormFieldRole.Json)
+                            {
+                                yield return field.Type;
+                            }
+                        }
+                    }
+                }
+
+                if (operation.ResponsePlan is GeneratedResponsePlanModel plan)
+                {
+                    foreach (GeneratedSuccessResponseModel success in plan.Successes)
+                    {
+                        foreach (GeneratedResponseHeaderModel header in success.Headers)
+                        {
+                            yield return header.Type;
+                        }
+
+                        if (success.Type is not null &&
+                            success.Contents.Any(static content => content.Kind == GeneratedResponseBodyKind.Text))
+                        {
+                            yield return success.Type;
+                        }
                     }
                 }
             }
@@ -1020,16 +866,53 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
                 _indices.Add(type, _types.Count);
                 _types.Add(type);
+                foreach (GeneratedTypeModel notType in type.NotTypes)
+                {
+                    Register(notType);
+                }
+
+                RegisterConstraintTypes(type.ConstraintSets);
                 if (type.Kind == GeneratedTypeKind.Array)
                 {
                     Register(type.ItemType!);
                 }
+                else if (type.Kind == GeneratedTypeKind.Map)
+                {
+                    Register(type.ValueType!);
+                }
+                else if (type.Kind == GeneratedTypeKind.Union &&
+                         _unions.TryGetValue(type.Name, out GeneratedUnionModel? union))
+                {
+                    foreach (GeneratedUnionMemberModel member in union.Members)
+                    {
+                        Register(member.Type);
+                    }
+                }
                 else if (type.Kind == GeneratedTypeKind.Named &&
                          _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
                 {
+                    RegisterConstraintTypes(dto.ConstraintSets);
                     foreach (GeneratedDtoPropertyModel property in dto.Properties)
                     {
                         Register(property.Type);
+                    }
+
+                    if (dto.ExtensionDataValueType is not null)
+                    {
+                        Register(dto.ExtensionDataValueType);
+                    }
+                }
+            }
+
+            // contains / propertyNames / patternProperties / prefixItems schemas are evaluated by the
+            // contract method of their type.
+            private void RegisterConstraintTypes(IReadOnlyList<GeneratedConstraints> sets)
+            {
+                foreach (GeneratedConstraints set in sets)
+                {
+                    foreach (GeneratedTypeModel subType in set.SubTypes())
+                    {
+                        Register(subType);
                     }
                 }
             }
@@ -1107,7 +990,46 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     AppendStringFormatHelpers(source);
                 }
 
+                if (_types.Any(static type => type.Kind == GeneratedTypeKind.Binary))
+                {
+                    AppendBase64Helper(source);
+                }
+
+                if (_types.Any(static type => type.ConstValue.HasValue &&
+                                              (type.ConstValue.Value.Kind == OpenApiSemanticLiteralKind.Integer ||
+                                               type.ConstValue.Value.Kind == OpenApiSemanticLiteralKind.Number)))
+                {
+                    AppendNumberEqualsHelper(source);
+                }
+
+                AppendTrialHelpers(source);
                 AppendSyntaxHelpers(source);
+            }
+
+            // A failed trial run (union candidate, not schema) is any exception that a contract check or a
+            // value conversion can raise for a value of the wrong shape.
+            private void AppendTrialHelpers(StringBuilder source)
+            {
+                source.AppendLine(@"
+        private static bool __PREFIX__IsTrialFailure(global::System.Exception exception)
+        {
+            return exception is global::Newtonsoft.Json.JsonException ||
+                   exception is global::System.FormatException ||
+                   exception is global::System.InvalidCastException ||
+                   exception is global::System.OverflowException ||
+                   exception is global::System.ArgumentException;
+        }
+
+        private static bool __PREFIX__AllDeclared(global::Newtonsoft.Json.Linq.JToken token, string[] names)
+        {
+            if (!(token is global::Newtonsoft.Json.Linq.JObject objectToken)) return true;
+            foreach (var property in objectToken.Properties())
+            {
+                if (global::System.Array.IndexOf(names, property.Name) < 0) return false;
+            }
+            return true;
+        }
+".Replace("__PREFIX__", _prefix));
             }
 
             private void AppendSyntaxHelpers(StringBuilder source)
@@ -1297,6 +1219,41 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         .Append(type.ItemType!.Nullable ? "true" : "false").AppendLine(", json, lineStarts, replacements);");
                     source.AppendLine("            }");
                 }
+                else if (type.Kind == GeneratedTypeKind.Any)
+                {
+                    // Any JSON value (including null) is valid; there is nothing to check.
+                }
+                else if (type.Kind == GeneratedTypeKind.FreeObject)
+                {
+                    source.AppendLine("            if (!(token is global::Newtonsoft.Json.Linq.JObject))");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Expected a response object at \" + path + \".\");");
+                }
+                else if (type.Kind == GeneratedTypeKind.Map)
+                {
+                    source.AppendLine("            if (!(token is global::Newtonsoft.Json.Linq.JObject mapToken))");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Expected a response object at \" + path + \".\");");
+                    source.AppendLine("            foreach (var property in mapToken.Properties())");
+                    source.AppendLine("            {");
+                    source.AppendLine("                if (property.Name == \"$id\" || property.Name == \"$ref\" || property.Name == \"$type\" || property.Name == \"$values\")");
+                    source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"A response map key conflicts with Json.NET metadata at \" + path + \".\" + property.Name + \".\");");
+                    source.Append("                ").Append(MethodName(type.ValueType!))
+                        .Append("(property.Value, path + \".\" + property.Name, ")
+                        .Append(type.ValueType!.Nullable ? "true" : "false")
+                        .AppendLine(", json, lineStarts, replacements);");
+                    source.AppendLine("            }");
+                }
+                else if (type.Kind == GeneratedTypeKind.Binary)
+                {
+                    source.AppendLine("            if (token.Type != global::Newtonsoft.Json.Linq.JTokenType.String)");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Unexpected response JSON token at \" + path + \".\");");
+                    source.Append("            if (!").Append(_prefix)
+                        .AppendLine("IsBase64((string)((global::Newtonsoft.Json.Linq.JValue)token).Value!))");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Invalid base64 response string at \" + path + \".\");");
+                }
+                else if (type.Kind == GeneratedTypeKind.Union && _unions.TryGetValue(type.Name, out GeneratedUnionModel? union))
+                {
+                    AppendUnionChecks(source, union);
+                }
                 else if (type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
                 {
                     source.AppendLine("            if (!(token is global::Newtonsoft.Json.Linq.JObject objectToken))");
@@ -1321,9 +1278,39 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     }
                     source.AppendLine("                    default:");
                     source.AppendLine("                        if (property.Name == \"$id\") break;");
-                    source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"Undeclared response property at \" + path + \".\" + property.Name + \".\");");
+                    if (!dto.IsOpen)
+                    {
+                        source.AppendLine("                        throw new global::Newtonsoft.Json.JsonSerializationException(\"Undeclared response property at \" + path + \".\" + property.Name + \".\");");
+                    }
+                    else
+                    {
+                        // An open DTO keeps undeclared members in its extension data. When
+                        // additionalProperties declares a value schema, those values are validated.
+                        if (dto.ExtensionDataValueType is not null)
+                        {
+                            source.Append("                        ").Append(MethodName(dto.ExtensionDataValueType))
+                                .Append("(property.Value, path + \".\" + property.Name, ")
+                                .Append(dto.ExtensionDataValueType.Nullable ? "true" : "false")
+                                .AppendLine(", json, lineStarts, replacements);");
+                        }
+
+                        source.AppendLine("                        break;");
+                    }
                     source.AppendLine("                }");
                     source.AppendLine("            }");
+                    // Json.NET reports a missing required member only while deserializing; checking it
+                    // here keeps the response contract complete, so that a oneOf / anyOf member whose
+                    // required property is absent does not match.
+                    foreach (GeneratedDtoPropertyModel requiredProperty in dto.Properties.Where(
+                                 static value => value.Required && !value.Annotations.WriteOnly))
+                    {
+                        source.Append("            if (objectToken.Property(")
+                            .Append(GeneratedSourceEmitter.StringLiteral(requiredProperty.WireName))
+                            .AppendLine(") == null)");
+                        source.Append("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Missing required response property at \" + path + \".\" + ")
+                            .Append(GeneratedSourceEmitter.StringLiteral(requiredProperty.WireName))
+                            .AppendLine(" + \".\");");
+                    }
                 }
                 else
                 {
@@ -1342,7 +1329,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     }
                     else
                     {
-                        string expected = type.Kind == GeneratedTypeKind.Int32 || type.Kind == GeneratedTypeKind.Int64
+                        bool integerEnum = type.Kind == GeneratedTypeKind.NamedEnum &&
+                            _enums.TryGetValue(type.Name, out GeneratedEnumModel? enumModel) && enumModel.IsInteger;
+                        string expected = type.Kind == GeneratedTypeKind.Int32 || type.Kind == GeneratedTypeKind.Int64 || integerEnum
                             ? "Integer"
                             : type.Kind == GeneratedTypeKind.Boolean ? "Boolean" : "String";
                         source.Append("            if (token.Type != global::Newtonsoft.Json.Linq.JTokenType.")
@@ -1359,9 +1348,245 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                             .AppendLine("((string)((global::Newtonsoft.Json.Linq.JValue)token).Value!))");
                         source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Invalid response string format at \" + path + \".\");");
                     }
+
+                    if (type.Kind == GeneratedTypeKind.NamedEnum &&
+                        _enums.TryGetValue(type.Name, out GeneratedEnumModel? enumMembers))
+                    {
+                        AppendEnumMembershipCheck(source, enumMembers);
+                    }
+
+                    AppendConstCheck(source, type);
                 }
 
+                // Validation keywords (minLength, pattern, ...). A DTO keeps its sets in its model.
+                IReadOnlyList<GeneratedConstraints> constraintSets = type.ConstraintSets;
+                if (type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? constrainedDto))
+                {
+                    constraintSets = type.ConstraintSets.Concat(constrainedDto.ConstraintSets).ToArray();
+                }
+
+                _constraints.AppendOwnChecks(
+                    source, "            ", constraintSets, "token", "path", "\"response\"", contractScope: true);
+                AppendNotChecks(source, type);
                 source.AppendLine("        }");
+            }
+
+            // The converter of an enum rejects undeclared values while deserializing; the contract
+            // checks them as well so that a union candidate or a not schema is decided by the value.
+            private static void AppendEnumMembershipCheck(StringBuilder source, GeneratedEnumModel enumModel)
+            {
+                if (enumModel.IsInteger)
+                {
+                    source.AppendLine("            switch (((global::Newtonsoft.Json.Linq.JValue)token).ToString(global::System.Globalization.CultureInfo.InvariantCulture))");
+                }
+                else
+                {
+                    source.AppendLine("            switch ((string)((global::Newtonsoft.Json.Linq.JValue)token).Value!)");
+                }
+
+                source.AppendLine("            {");
+                foreach (GeneratedEnumMemberModel member in enumModel.Members)
+                {
+                    source.Append("                case ")
+                        .Append(GeneratedSourceEmitter.StringLiteral(member.WireValue)).AppendLine(":");
+                }
+
+                source.AppendLine("                    break;");
+                source.AppendLine("                default:");
+                source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"The response value is not a declared enum value at \" + path + \".\");");
+                source.AppendLine("            }");
+            }
+
+            private void AppendUnionChecks(StringBuilder source, GeneratedUnionModel union)
+            {
+                if (union.DiscriminatorPropertyName is string discriminatorName)
+                {
+                    string propertyLiteral = GeneratedSourceEmitter.StringLiteral(discriminatorName);
+                    source.AppendLine("            if (!(token is global::Newtonsoft.Json.Linq.JObject unionObject))");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Expected a response object at \" + path + \".\");");
+                    source.Append("            var unionDiscriminator = unionObject[").Append(propertyLiteral).AppendLine("];");
+                    if (union.DefaultMemberIndex >= 0)
+                    {
+                        source.AppendLine("            switch (unionDiscriminator != null && unionDiscriminator.Type == global::Newtonsoft.Json.Linq.JTokenType.String ? (string?)unionDiscriminator : null)");
+                    }
+                    else
+                    {
+                        source.AppendLine("            if (unionDiscriminator == null || unionDiscriminator.Type != global::Newtonsoft.Json.Linq.JTokenType.String)");
+                        source.Append("                throw new global::Newtonsoft.Json.JsonSerializationException(\"The discriminator property is missing or is not a string at \" + path + \".\" + ")
+                            .Append(propertyLiteral).AppendLine(" + \".\");");
+                        source.AppendLine("            switch ((string)unionDiscriminator!)");
+                    }
+
+                    source.AppendLine("            {");
+                    foreach (GeneratedUnionMemberModel member in union.Members)
+                    {
+                        foreach (string wireValue in member.DiscriminatorValues)
+                        {
+                            source.Append("                case ")
+                                .Append(GeneratedSourceEmitter.StringLiteral(wireValue)).AppendLine(":");
+                        }
+
+                        source.Append("                    ").Append(MethodName(member.Type))
+                            .Append("(token, path, ").Append(member.Type.Nullable ? "true" : "false")
+                            .AppendLine(", json, lineStarts, replacements);");
+                        source.AppendLine("                    break;");
+                    }
+
+                    source.AppendLine("                default:");
+                    if (union.DefaultMemberIndex >= 0)
+                    {
+                        // OpenAPI 3.2 defaultMapping: any other discriminator value is checked as the default member.
+                        GeneratedUnionMemberModel defaultMember = union.Members[union.DefaultMemberIndex];
+                        source.Append("                    ").Append(MethodName(defaultMember.Type))
+                            .Append("(token, path, ").Append(defaultMember.Type.Nullable ? "true" : "false")
+                            .AppendLine(", json, lineStarts, replacements);");
+                        source.AppendLine("                    break;");
+                    }
+                    else
+                    {
+                        source.Append("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"The discriminator value '\" + (string)unionDiscriminator! + \"' does not select a schema at \" + path + \".\" + ")
+                            .Append(propertyLiteral).AppendLine(" + \".\");");
+                    }
+                    source.AppendLine("            }");
+                    return;
+                }
+
+                // Without a discriminator every candidate is tried against its own contract. The
+                // normalization of integer lexemes is applied only to a single typed candidate, so
+                // the trial runs use a throw-away replacement list.
+                source.AppendLine("            int unionMatches = 0;");
+                int memberIndex = 0;
+                foreach (GeneratedUnionMemberModel member in union.Members)
+                {
+                    source.Append("            bool unionMatched").Append(memberIndex++).AppendLine(" = false;");
+                    source.AppendLine("            try");
+                    source.AppendLine("            {");
+                    source.Append("                ").Append(MethodName(member.Type))
+                        .Append("(token, path, ").Append(member.Type.Nullable ? "true" : "false")
+                        .AppendLine(", json, lineStarts, new global::System.Collections.Generic.List<global::System.Tuple<int, int, string>>());");
+                    source.Append("                unionMatched").Append(memberIndex - 1).AppendLine(" = true;");
+                    source.AppendLine("                unionMatches++;");
+                    source.AppendLine("            }");
+                    source.Append("            catch (global::System.Exception exception) when (").Append(_prefix).AppendLine("IsTrialFailure(exception))");
+                    source.AppendLine("            {");
+                    source.AppendLine("            }");
+                }
+
+                if (union.IsOneOf)
+                {
+                    // Open candidates overlap easily. Tie-break: keep the candidates that declare every
+                    // property of the value (as if they were closed); still not exactly one is an error.
+                    source.AppendLine("            int unionStrict = 0;");
+                    source.AppendLine("            if (unionMatches > 1)");
+                    source.AppendLine("            {");
+                    for (int index = 0; index < union.Members.Count; index++)
+                    {
+                        GeneratedTypeModel memberType = union.Members[index].Type;
+                        string strict = memberType.Kind == GeneratedTypeKind.Named &&
+                                        _dtos.TryGetValue(memberType.Name, out GeneratedDtoModel? memberDto)
+                            ? " && " + _prefix + "AllDeclared(token, new string[] { " +
+                              string.Join(", ", memberDto.Properties.Select(static property =>
+                                  GeneratedSourceEmitter.StringLiteral(property.WireName))) + " })"
+                            : string.Empty;
+                        source.Append("                if (unionMatched").Append(index).Append(strict).AppendLine(") unionStrict++;");
+                    }
+
+                    source.AppendLine("            }");
+                    source.AppendLine("            if (unionMatches != 1 && unionStrict != 1)");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"The response value must match exactly one oneOf schema at \" + path + \" but matched \" + unionMatches.ToString(global::System.Globalization.CultureInfo.InvariantCulture) + \".\");");
+                }
+                else
+                {
+                    source.AppendLine("            if (unionMatches == 0)");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"The response value must match at least one anyOf schema at \" + path + \".\");");
+                }
+            }
+
+            // not is evaluated here only: a value that matches the not schema is rejected.
+            private void AppendNotChecks(StringBuilder source, GeneratedTypeModel type)
+            {
+                foreach (GeneratedTypeModel notType in type.NotTypes)
+                {
+                    source.AppendLine("            {");
+                    source.AppendLine("                bool notMatched = true;");
+                    source.AppendLine("                try");
+                    source.AppendLine("                {");
+                    source.Append("                    ").Append(MethodName(notType))
+                        .Append("(token, path, ").Append(notType.Nullable ? "true" : "false")
+                        .AppendLine(", json, lineStarts, new global::System.Collections.Generic.List<global::System.Tuple<int, int, string>>());");
+                    source.AppendLine("                }");
+                    source.Append("                catch (global::System.Exception exception) when (").Append(_prefix).AppendLine("IsTrialFailure(exception))");
+                    source.AppendLine("                {");
+                    source.AppendLine("                    notMatched = false;");
+                    source.AppendLine("                }");
+                    source.AppendLine("                if (notMatched)");
+                    source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"The response value matches a schema that it must not match (not) at \" + path + \".\");");
+                    source.AppendLine("            }");
+                }
+            }
+
+            private void AppendConstCheck(StringBuilder source, GeneratedTypeModel type)
+            {
+                if (!type.ConstValue.HasValue)
+                {
+                    return;
+                }
+
+                OpenApiSemanticLiteral literal = type.ConstValue.Value;
+                const string Failure =
+                    "                throw new global::Newtonsoft.Json.JsonSerializationException(\"The response value does not equal the declared const at \" + path + \".\");";
+                switch (literal.Kind)
+                {
+                    case OpenApiSemanticLiteralKind.String:
+                        source.Append("            if (!global::System.String.Equals((string)((global::Newtonsoft.Json.Linq.JValue)token).Value!, ")
+                            .Append(GeneratedSourceEmitter.StringLiteral(literal.RawText))
+                            .AppendLine(", global::System.StringComparison.Ordinal))");
+                        source.AppendLine(Failure);
+                        break;
+                    case OpenApiSemanticLiteralKind.Boolean:
+                        source.Append("            if ((bool)((global::Newtonsoft.Json.Linq.JValue)token).Value! != ")
+                            .Append(literal.RawText).AppendLine(")");
+                        source.AppendLine(Failure);
+                        break;
+                    case OpenApiSemanticLiteralKind.Integer:
+                    case OpenApiSemanticLiteralKind.Number:
+                        source.Append("            if (!").Append(_prefix).Append("NumberEquals(token, ")
+                            .Append(GeneratedSourceEmitter.StringLiteral(literal.RawText)).AppendLine("))");
+                        source.AppendLine(Failure);
+                        break;
+                }
+            }
+
+            private void AppendBase64Helper(StringBuilder source)
+            {
+                source.AppendLine(@"
+        private static bool __PREFIX__IsBase64(string value)
+        {
+            try
+            {
+                global::System.Convert.FromBase64String(value);
+                return true;
+            }
+            catch (global::System.FormatException)
+            {
+                return false;
+            }
+        }
+".Replace("__PREFIX__", _prefix));
+            }
+
+            private void AppendNumberEqualsHelper(StringBuilder source)
+            {
+                source.AppendLine(@"
+        private static bool __PREFIX__NumberEquals(global::Newtonsoft.Json.Linq.JToken token, string expected)
+        {
+            var value = ((global::Newtonsoft.Json.Linq.JValue)token).Value;
+            string actual = global::System.Convert.ToString(value, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+            return global::System.Decimal.TryParse(actual, global::System.Globalization.NumberStyles.Float, global::System.Globalization.CultureInfo.InvariantCulture, out var left) &&
+                   global::System.Decimal.TryParse(expected, global::System.Globalization.NumberStyles.Float, global::System.Globalization.CultureInfo.InvariantCulture, out var right) &&
+                   left == right;
+        }
+".Replace("__PREFIX__", _prefix));
             }
 
             private void AppendStringFormatHelpers(StringBuilder source)
@@ -1537,6 +1762,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     occupiedNames.Add(generatedEnum.Name);
                 }
 
+                foreach (GeneratedUnionModel union in model.Unions)
+                {
+                    occupiedNames.Add(union.Name);
+                }
+
                 string prefix = "__OacgResponseValidator_";
                 while (occupiedNames.Any(name => name.StartsWith(prefix, StringComparison.Ordinal)))
                 {
@@ -1553,13 +1783,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 _mediaTypePrefix = prefix;
                 foreach (GeneratedOperationModel operation in model.Operations)
                 {
-                    if (operation.ResponseType is GeneratedTypeModel responseType &&
-                        RequiresValidation(responseType, new HashSet<string>(StringComparer.Ordinal)))
+                    foreach (GeneratedTypeModel responseType in operation.EnumerateJsonResponseTypes())
                     {
-                        Register(responseType);
+                        if (RequiresValidation(responseType, new HashSet<string>(StringComparer.Ordinal)))
+                        {
+                            Register(responseType);
+                        }
                     }
 
                     if (operation.RequestBody is GeneratedRequestBodyModel requestBody &&
+                        requestBody.Variants[0].Kind == GeneratedBodyKind.Json &&
                         RequiresValidation(requestBody.Type, new HashSet<string>(StringComparer.Ordinal)))
                     {
                         Register(requestBody.Type);
@@ -1625,6 +1858,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                            RequiresValidation(itemType, visited);
                 }
 
+                if (type.Kind == GeneratedTypeKind.Map)
+                {
+                    GeneratedTypeModel valueType = type.ValueType!;
+                    return (!valueType.Nullable && !valueType.IsValueType) ||
+                           RequiresValidation(valueType, visited);
+                }
+
                 if (type.Kind != GeneratedTypeKind.Named ||
                     !_dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto) ||
                     !visited.Add(type.Name))
@@ -1654,6 +1894,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 if (type.Kind == GeneratedTypeKind.Array)
                 {
                     Register(type.ItemType!);
+                }
+                else if (type.Kind == GeneratedTypeKind.Map)
+                {
+                    Register(type.ValueType!);
                 }
                 else if (type.Kind == GeneratedTypeKind.Named &&
                          _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
@@ -1725,25 +1969,57 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
                     source.AppendLine("            }");
                 }
+                else if (type.Kind == GeneratedTypeKind.Map)
+                {
+                    GeneratedTypeModel valueType = type.ValueType!;
+                    source.AppendLine("            foreach (var entry in value)");
+                    source.AppendLine("            {");
+                    source.AppendLine("                var item = entry.Value;");
+                    source.AppendLine("                string itemPath = path + \".\" + entry.Key;");
+                    if (!valueType.Nullable && !valueType.IsValueType)
+                    {
+                        source.AppendLine("                if (item is null)");
+                        source.AppendLine("                {");
+                        source.AppendLine("                    throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-nullable \" + contract + \" map value was null at \" + itemPath + \".\");");
+                        source.AppendLine("                }");
+                    }
+
+                    if (TryGetMethodName(valueType, out string? valueMethodName))
+                    {
+                        source.Append("                ").Append(valueMethodName)
+                            .AppendLine("(item, itemPath, contract, visited);");
+                    }
+
+                    source.AppendLine("            }");
+                }
                 else if (type.Kind == GeneratedTypeKind.Named)
                 {
                     foreach (GeneratedDtoPropertyModel property in _dtos[type.Name].Properties)
                     {
                         if (TryGetMethodName(property.Type, out string? propertyMethodName))
                         {
+                            // readOnly members are never sent, so their values are not request-validated.
+                            string? guard = property.Annotations.ReadOnly
+                                ? "contract != \"request\""
+                                : null;
                             if (property.UseSpecified)
                             {
-                                source.Append("            if (contract != \"request\" || value.")
-                                    .Append(property.Name).AppendLine("Specified)");
+                                guard = (guard is null ? string.Empty : guard + " && ") +
+                                        "(contract != \"request\" || value." + property.Name + "Specified)";
+                            }
+
+                            if (guard is not null)
+                            {
+                                source.Append("            if (").Append(guard).AppendLine(")");
                                 source.AppendLine("            {");
                             }
 
-                            string indent = property.UseSpecified ? "                " : "            ";
+                            string indent = guard is not null ? "                " : "            ";
                             source.Append(indent).Append(propertyMethodName)
                                 .Append("(value.").Append(property.Name).Append(", path + \".\" + ")
                                 .Append(GeneratedSourceEmitter.StringLiteral(property.WireName))
                                 .AppendLine(", contract, visited);");
-                            if (property.UseSpecified)
+                            if (guard is not null)
                             {
                                 source.AppendLine("            }");
                             }

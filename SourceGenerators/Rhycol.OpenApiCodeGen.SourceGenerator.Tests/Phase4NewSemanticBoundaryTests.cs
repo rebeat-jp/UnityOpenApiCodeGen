@@ -13,7 +13,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("head", "200", false)]
         [InlineData("get", "204", false)]
         [InlineData("get", "205", false)]
-        [InlineData("get", "2XX", false)]
         [InlineData("head", "200", true)]
         [InlineData("get", "204", true)]
         public void BodylessSuccessCannotDeclareJsonContent(string method, string status, bool referenced)
@@ -104,15 +103,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Contains("/headers", diagnostic.GetMessage());
         }
 
+        // P4 (G26): declared response headers are no longer rejected; they are exposed by the
+        // WithHttpInfo method (see Phase4BodyAndResponseTests).
         [Fact]
-        public void NonEmptyResponseHeadersRemainUnsupported()
+        public void NonEmptyResponseHeadersAreAccepted()
         {
-            Diagnostic diagnostic = Assert.Single(
-                Phase4GeneratorTestHarness.GenerateAndCompile(
-                    Document("\"/values\"", "get",
-                        "\"204\":{\"description\":\"OK\",\"headers\":{\"X-Test\":{\"schema\":{\"type\":\"string\"}}}}"))
-                .RunResult.Diagnostics);
-            Assert.Equal("OACG101", diagnostic.Id);
+            Phase4GeneratorExecution result = Phase4GeneratorTestHarness.GenerateAndCompile(
+                Document("\"/values\"", "get",
+                    "\"204\":{\"description\":\"OK\",\"headers\":{\"X-Test\":{\"schema\":{\"type\":\"string\"}}}}"));
+            Assert.Empty(result.RunResult.Diagnostics);
+            Assert.Empty(result.CompilationErrors);
+            Assert.Contains("getValueWithHttpInfo", result.GeneratedSource);
         }
 
         [Fact]

@@ -1,0 +1,133 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Coverage", "version": "1", "description": "Elements later phases may touch." },
+  "servers": [ { "url": "https://api.example.com" } ],
+  "paths": {
+    "/items": {
+      "get": {
+        "operationId": "listItems",
+        "summary": "List items",
+        "description": "Long description.",
+        "deprecated": true,
+        "parameters": [
+          { "name": "limit", "in": "query", "description": "Page size", "schema": { "type": "integer", "format": "int32", "default": 20 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "format": "int64" } },
+          { "name": "ratio", "in": "query", "schema": { "type": "number", "format": "double" } },
+          { "name": "factor", "in": "query", "schema": { "type": "number", "format": "float" } },
+          { "name": "amount", "in": "query", "schema": { "type": "number" } },
+          { "name": "flag", "in": "query", "schema": { "type": "boolean" } },
+          { "name": "name", "in": "query", "schema": { "type": "string" } },
+          { "name": "day", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "since", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "ref", "in": "query", "schema": { "type": "string", "format": "uuid" } },
+          { "name": "kind", "in": "query", "schema": { "type": "string", "enum": ["a", "b"] } },
+          { "name": "X-Request-Id", "in": "header", "schema": { "type": "string" } },
+          { "name": "X-Count", "in": "header", "required": true, "schema": { "type": "integer", "format": "int64" } },
+          { "name": "X-Flag", "in": "header", "schema": { "type": "boolean" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Item" } } } }
+          },
+          "201": {
+            "description": "Created",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Item" } } } }
+          }
+        }
+      }
+    },
+    "/items/{id}": {
+      "put": {
+        "operationId": "updateItem",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Item" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/vnd.api+json": { "schema": { "$ref": "#/components/schemas/Item" } } }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } }
+          },
+          "default": {
+            "description": "Unexpected error",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteItem",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": { "204": { "description": "Deleted" } }
+      }
+    },
+    "/kinds": {
+      "get": {
+        "operationId": "listKinds",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Kind" } } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Kind": {
+        "type": "string",
+        "description": "Kinds",
+        "enum": ["small", "large"],
+        "x-enum-varnames": ["Small", "Large"]
+      },
+      "Problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string" },
+          "status": { "type": "integer", "format": "int32" }
+        }
+      },
+      "Item": {
+        "type": "object",
+        "description": "An item.",
+        "additionalProperties": false,
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string", "description": "Display name", "default": "unnamed" },
+          "legacy": { "type": "string", "deprecated": true },
+          "count": { "type": "integer", "format": "int32", "default": 1 },
+          "big": { "type": "integer", "format": "int64", "nullable": true },
+          "ratio": { "type": "number", "format": "double", "nullable": true },
+          "payload": { "type": "string", "format": "byte" },
+          "day": { "type": "string", "format": "date" },
+          "when": { "type": "string", "format": "date-time", "nullable": true },
+          "secret": { "type": "string", "nullable": true },
+          "kind": { "$ref": "#/components/schemas/Kind" },
+          "kinds": { "type": "array", "items": { "$ref": "#/components/schemas/Kind" } },
+          "modes": { "type": "array", "items": { "type": "string", "enum": ["on", "off"] } },
+          "flags": { "type": "array", "items": { "type": "boolean" } },
+          "numbers": { "type": "array", "items": { "type": "number", "format": "float" } },
+          "inner": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["v"],
+            "properties": { "v": { "type": "integer" } }
+          }
+        }
+      }
+    }
+  }
+}

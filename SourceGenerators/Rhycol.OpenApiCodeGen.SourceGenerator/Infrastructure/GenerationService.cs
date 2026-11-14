@@ -80,14 +80,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return EmitMvpModel(model);
         }
 
-        internal OpenApiGenerationModel BuildMvpModelFromOpenApiNode(SpecNode root, GeneratorOptions options)
+        internal OpenApiGenerationModel BuildMvpModelFromOpenApiNode(
+            SpecNode root,
+            GeneratorOptions options,
+            Action<OpenApiSemanticParser, SpecNode>? injectWarnings = null)
         {
-            return OpenApiGenerationModelBuilder.Build(OpenApiSemanticParser.Parse(root), options);
+            return OpenApiGenerationModelBuilder.Build(OpenApiSemanticParser.Parse(root, injectWarnings), options);
         }
 
-        internal OpenApiGenerationModel BuildMvpModelFromOpenApiBundle(NormalizedSpecBundle bundle, GeneratorOptions options)
+        internal OpenApiGenerationModel BuildMvpModelFromOpenApiBundle(
+            NormalizedSpecBundle bundle,
+            GeneratorOptions options,
+            Action<OpenApiSemanticParser, SpecNode>? injectWarnings = null)
         {
-            return OpenApiGenerationModelBuilder.Build(OpenApiSemanticParser.Parse(bundle), options);
+            return OpenApiGenerationModelBuilder.Build(OpenApiSemanticParser.Parse(bundle, injectWarnings), options);
         }
 
         internal IReadOnlyList<GeneratedFile> EmitMvpModel(OpenApiGenerationModel model)
@@ -100,6 +106,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             var files = new List<GeneratedFile>();
             files.AddRange(new NewtonsoftDtoSourceEmitter().Emit(model));
             files.Add(new HttpClientSourceEmitter().Emit(model));
+            files.AddRange(new HttpContentEmitter().Emit(model));
             return files.OrderBy(static file => file.FileName, StringComparer.Ordinal).ToArray();
         }
 

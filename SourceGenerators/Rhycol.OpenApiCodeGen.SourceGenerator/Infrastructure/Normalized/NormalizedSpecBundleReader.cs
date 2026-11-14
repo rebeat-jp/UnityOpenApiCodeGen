@@ -426,7 +426,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 yield break;
             }
 
-            bool hasDirectReference = false;
             if (AllowsDirectReference(context) && node.TryGetProperty("$ref", out SpecNode referenceNode))
             {
                 if (referenceNode.ValueKind != SpecValueKind.String)
@@ -434,12 +433,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     throw CreateFormatException("Every semantic $ref value must be a string.");
                 }
 
-                hasDirectReference = true;
                 yield return (referenceNode.LogicalPath, referenceNode);
             }
 
-            if (context == ReferenceContext.ReferenceOnly ||
-                (context == ReferenceContext.Callback && hasDirectReference))
+            if (context == ReferenceContext.ReferenceOnly)
             {
                 yield break;
             }
@@ -474,7 +471,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                    context == ReferenceContext.Parameter ||
                    context == ReferenceContext.Response ||
                    context == ReferenceContext.RequestBody ||
-                   context == ReferenceContext.Callback ||
+                   context == ReferenceContext.MediaType ||
                    context == ReferenceContext.ReferenceOnly;
         }
 
@@ -496,7 +493,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             switch (context)
             {
                 case ReferenceContext.OpenApiDocument:
-                    if (propertyName == "paths" || propertyName == "webhooks") return ReferenceContext.PathsMap;
+                    // webhooks, callbacks, links and examples are ignored by the parser (OACG108 or
+                    // documentation only), so their $refs are opaque and need no reference edge.
+                    if (propertyName == "paths") return ReferenceContext.PathsMap;
                     if (propertyName == "components") return ReferenceContext.Components;
                     return ReferenceContext.Opaque;
 
@@ -511,11 +510,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     if (propertyName == "schemas") return ReferenceContext.SchemaMap;
                     if (propertyName == "responses") return ReferenceContext.ResponsesMap;
                     if (propertyName == "parameters" || propertyName == "headers") return ReferenceContext.ParametersMap;
-                    if (propertyName == "examples" || propertyName == "securitySchemes" || propertyName == "links")
-                        return ReferenceContext.ReferenceMap;
+                    if (propertyName == "securitySchemes") return ReferenceContext.ReferenceMap;
                     if (propertyName == "requestBodies") return ReferenceContext.RequestBodiesMap;
-                    if (propertyName == "callbacks") return ReferenceContext.CallbacksMap;
                     if (propertyName == "pathItems") return ReferenceContext.PathItemsMap;
+                    if (propertyName == "mediaTypes") return ReferenceContext.MediaTypesMap;
                     return ReferenceContext.Opaque;
 
                 case ReferenceContext.PathsMap:
@@ -524,6 +522,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         : ReferenceContext.PathItem;
                 case ReferenceContext.PathItemsMap:
                     return ReferenceContext.PathItem;
+                case ReferenceContext.MediaTypesMap:
+                    return propertyName.StartsWith("x-", StringComparison.Ordinal)
+                        ? ReferenceContext.Opaque
+                        : ReferenceContext.MediaType;
+                case ReferenceContext.AdditionalOperationsMap:
+                    return ReferenceContext.Operation;
                 case ReferenceContext.ParametersMap:
                     return ReferenceContext.Parameter;
                 case ReferenceContext.ResponsesMap:
@@ -536,8 +540,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     return ReferenceContext.RequestBody;
                 case ReferenceContext.ReferenceMap:
                     return ReferenceContext.ReferenceOnly;
-                case ReferenceContext.CallbacksMap:
-                    return ReferenceContext.Callback;
                 case ReferenceContext.ContentMap:
                     return ReferenceContext.MediaType;
                 case ReferenceContext.EncodingsMap:
@@ -549,20 +551,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     if (propertyName == "parameters") return ReferenceContext.ParametersArray;
                     if (propertyName == "delete" || propertyName == "get" || propertyName == "head" ||
                         propertyName == "options" || propertyName == "patch" || propertyName == "post" ||
-                        propertyName == "put" || propertyName == "trace") return ReferenceContext.Operation;
+                        propertyName == "put" || propertyName == "trace" || propertyName == "query") return ReferenceContext.Operation;
+                    if (propertyName == "additionalOperations") return ReferenceContext.AdditionalOperationsMap;
                     return ReferenceContext.Opaque;
 
                 case ReferenceContext.Operation:
                     if (propertyName == "parameters") return ReferenceContext.ParametersArray;
                     if (propertyName == "requestBody") return ReferenceContext.RequestBody;
                     if (propertyName == "responses") return ReferenceContext.OperationResponsesMap;
-                    if (propertyName == "callbacks") return ReferenceContext.CallbacksMap;
                     return ReferenceContext.Opaque;
 
                 case ReferenceContext.Parameter:
                     if (propertyName == "schema" || propertyName == "items") return ReferenceContext.Schema;
                     if (propertyName == "content") return ReferenceContext.ContentMap;
-                    if (propertyName == "examples") return ReferenceContext.ReferenceMap;
                     return ReferenceContext.Opaque;
 
                 case ReferenceContext.RequestBody:
@@ -572,22 +573,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     if (propertyName == "schema") return ReferenceContext.Schema;
                     if (propertyName == "content") return ReferenceContext.ContentMap;
                     if (propertyName == "headers") return ReferenceContext.ParametersMap;
-                    if (propertyName == "links") return ReferenceContext.ReferenceMap;
                     return ReferenceContext.Opaque;
 
                 case ReferenceContext.MediaType:
                     if (propertyName == "schema") return ReferenceContext.Schema;
-                    if (propertyName == "examples") return ReferenceContext.ReferenceMap;
                     if (propertyName == "encoding") return ReferenceContext.EncodingsMap;
                     return ReferenceContext.Opaque;
 
                 case ReferenceContext.Encoding:
                     return propertyName == "headers" ? ReferenceContext.ParametersMap : ReferenceContext.Opaque;
-
-                case ReferenceContext.Callback:
-                    return propertyName.StartsWith("x-", StringComparison.Ordinal)
-                        ? ReferenceContext.Opaque
-                        : ReferenceContext.PathItem;
 
                 case ReferenceContext.Schema:
                     if (propertyName == "properties" || propertyName == "patternProperties" ||
@@ -616,6 +610,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             Components,
             PathsMap,
             PathItemsMap,
+            MediaTypesMap,
+            AdditionalOperationsMap,
             PathItem,
             Operation,
             ParametersMap,
@@ -628,8 +624,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             RequestBody,
             ReferenceMap,
             ReferenceOnly,
-            CallbacksMap,
-            Callback,
             ContentMap,
             MediaType,
             EncodingsMap,

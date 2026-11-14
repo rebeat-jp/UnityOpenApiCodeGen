@@ -147,6 +147,102 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             }
         }
 
+        private const string PathItemRoot =
+            "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Root\",\"version\":\"1\"}," +
+            "\"paths\":{\"/pets\":{\"$ref\":\"item.json\"}},\"components\":{}}";
+
+        [Theory]
+        [InlineData(
+            "{\"parameters\":[{\"name\":\"l\",\"in\":\"query\",\"schema\":{\"$ref\":\"s.json\"}}]," +
+            "\"get\":{\"responses\":{\"200\":{\"description\":\"OK\",\"content\":{\"application/json\":{\"schema\":{\"$ref\":\"s.json\"}}}}}}," +
+            "\"post\":{\"requestBody\":{\"content\":{\"application/json\":{\"schema\":{\"$ref\":\"s.json\"}}}},\"responses\":{\"204\":{\"description\":\"n\"}}}}",
+            new[]
+            {
+                "/parameters/0/schema/$ref",
+                "/get/responses/200/content/application~1json/schema/$ref",
+                "/post/requestBody/content/application~1json/schema/$ref"
+            })]
+        [InlineData(
+            "{\"summary\":\"s\",\"parameters\":[{\"name\":\"l\",\"in\":\"query\",\"schema\":{\"$ref\":\"s.json\"}}]}",
+            new[] { "/parameters/0/schema/$ref" })]
+        [InlineData(
+            "{\"servers\":[{\"url\":\"https://x\"}],\"parameters\":[{\"name\":\"l\",\"in\":\"query\",\"schema\":{\"$ref\":\"s.json\"}}]}",
+            new[] { "/parameters/0/schema/$ref" })]
+        [InlineData("{\"$ref\":\"s.json\",\"summary\":\"chain\"}", new[] { "/$ref" })]
+        public async Task BarePathItemFileReferencesAreCollected(string item, string[] expectedPointers)
+        {
+            string projectRoot = CreateProjectRoot();
+            try
+            {
+                WriteText(projectRoot, "Assets/Specs/root.json", PathItemRoot);
+                WriteText(projectRoot, "Assets/Specs/item.json", item);
+                WriteText(projectRoot, "Assets/Specs/s.json", "{\"type\":\"integer\"}");
+
+                (_, _, NormalizedSpecBundle bundle) =
+                    await LoadWriteAndReadAsync(projectRoot, "Assets/Specs/root.json");
+
+                foreach (string pointer in expectedPointers)
+                {
+                    Assert.Contains(bundle.ReferenceEdges, edge => edge.SourcePointer == pointer);
+                }
+            }
+            finally
+            {
+                Directory.Delete(projectRoot, true);
+            }
+        }
+
+        [Fact]
+        public async Task BarePathItemChainIsFollowedAcrossFiles()
+        {
+            string projectRoot = CreateProjectRoot();
+            try
+            {
+                WriteText(projectRoot, "Assets/Specs/root.json", PathItemRoot);
+                WriteText(projectRoot, "Assets/Specs/item.json", "{\"$ref\":\"second.json\"}");
+                WriteText(
+                    projectRoot,
+                    "Assets/Specs/second.json",
+                    "{\"parameters\":[{\"name\":\"l\",\"in\":\"query\",\"schema\":{\"$ref\":\"s.json\"}}]}");
+                WriteText(projectRoot, "Assets/Specs/s.json", "{\"type\":\"integer\"}");
+
+                (_, string text, NormalizedSpecBundle bundle) =
+                    await LoadWriteAndReadAsync(projectRoot, "Assets/Specs/root.json");
+
+                Assert.Contains("Assets/Specs/second.json", text);
+                Assert.Contains("Assets/Specs/s.json", text);
+                Assert.Equal(3, bundle.ReferenceEdges.Count);
+            }
+            finally
+            {
+                Directory.Delete(projectRoot, true);
+            }
+        }
+
+        [Fact]
+        public async Task FileWithSchemaKeywordsStaysABareSchemaEvenWithDescription()
+        {
+            string projectRoot = CreateProjectRoot();
+            try
+            {
+                WriteText(projectRoot, "Assets/Specs/root.json", PathItemRoot);
+                WriteText(
+                    projectRoot,
+                    "Assets/Specs/item.json",
+                    "{\"description\":\"d\",\"type\":\"object\",\"properties\":{\"x\":{\"$ref\":\"s.json\"}}}");
+                WriteText(projectRoot, "Assets/Specs/s.json", "{\"type\":\"integer\"}");
+
+                (_, _, NormalizedSpecBundle bundle) =
+                    await LoadWriteAndReadAsync(projectRoot, "Assets/Specs/root.json");
+
+                Assert.Contains(bundle.ReferenceEdges, edge => edge.SourcePointer == "/properties/x/$ref");
+            }
+            finally
+            {
+                Directory.Delete(projectRoot, true);
+            }
+        }
+
         private static async Task<(NormalizedSpecGraph Graph, string Text, NormalizedSpecBundle Bundle)>
             LoadWriteAndReadAsync(string projectRoot, string source)
         {
