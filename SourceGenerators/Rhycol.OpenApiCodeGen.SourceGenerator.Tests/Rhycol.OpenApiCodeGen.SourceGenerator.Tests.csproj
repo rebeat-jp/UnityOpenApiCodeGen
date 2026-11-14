@@ -6,6 +6,7 @@
     <IsPackable>false</IsPackable>
     <LangVersion>10.0</LangVersion>
     <Nullable>enable</Nullable>
+    <NoWarn>$(NoWarn);NU1510</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,6 +23,26 @@
     </PackageReference>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <!--
+      Reference assemblies of .NET 8 (System.Text.Json 8.0). The tests run on net10, so this pack is
+      only used to prove that the System.Text.Json output compiles against the 8.0 API surface (the
+      minimum version of LibraryAvailability.MinimumSystemTextJsonVersion). Nothing from it is loaded.
+    -->
+    <PackageReference Include="Microsoft.NETCore.App.Ref" Version="8.0.0" GeneratePathProperty="true" ExcludeAssets="all" PrivateAssets="all" />
+    <!--
+      Unity compiles against netstandard2.1 with the netstandard2.0 build of System.Text.Json 8 and
+      Newtonsoft.Json 13. These reference-only packages let a test compile the generated code against that
+      exact set (BCL members that net8 has but netstandard2.1 lacks are caught). Nothing is loaded.
+    -->
+    <PackageReference Include="NETStandard.Library.Ref" Version="2.1.0" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="System.Text.Encodings.Web" Version="8.0.0" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="System.Memory" Version="4.5.5" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="System.Buffers" Version="4.5.1" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="System.Numerics.Vectors" Version="4.5.0" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.4" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" ExcludeAssets="all" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
@@ -42,6 +63,14 @@
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>ProjectDirectory</_Parameter1>
       <_Parameter2>$(MSBuildProjectDirectory)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>NuGetPackageRoot</_Parameter1>
+      <_Parameter2>$(NuGetPackageRoot)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>Net8ReferenceDirectory</_Parameter1>
+      <_Parameter2>$(PkgMicrosoft_NETCore_App_Ref)/ref/net8.0</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
 

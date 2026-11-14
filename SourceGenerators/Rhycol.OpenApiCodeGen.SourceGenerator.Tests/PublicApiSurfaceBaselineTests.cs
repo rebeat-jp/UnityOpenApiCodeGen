@@ -148,6 +148,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             AssertBaseline("unity-fixture-inlined", "BaselineFixtureApi", root.ToJsonString());
         }
 
+        /// <summary>
+        /// The System.Text.Json clients (HttpClient + SystemTextJson) have their own baselines
+        /// (ApiSurfaceBaselines/*.stj.txt). Specs that need composition or constraint validation are
+        /// rejected with OACG010 for System.Text.Json, so only the specs without them are listed.
+        /// </summary>
+        [Theory]
+        [InlineData("representative", "BaselineRepresentativeApi", "representative.json")]
+        [InlineData("coverage", "BaselineCoverageApi", "coverage.json")]
+        [InlineData("operations", "BaselineOperationsApi", "operations.json")]
+        [InlineData("bodies", "BaselineBodiesApi", "bodies.json")]
+        [InlineData("security", "BaselineSecurityApi", "security.json")]
+        [InlineData("serializer-core", "BaselineSerializerCoreApi", "serializer-core.json")]
+        public void SystemTextJsonSpecsKeepPublicSurface(string name, string apiName, string specFile)
+        {
+            AssertBaseline(name, apiName, File.ReadAllText(SpecPath(specFile)), systemTextJson: true);
+        }
+
         [Fact]
         public void BaselineCheckAllowsAdditionsButNotRemovalsOrChanges()
         {
@@ -215,13 +232,25 @@ namespace Probe
                 .Value!;
         }
 
-        private static void AssertBaseline(string name, string apiName, string specJson)
+        /// <summary>
+        /// Compares the public surface with the baseline. A System.Text.Json client uses the baseline
+        /// "<name>.stj.txt" (its attributes and the Any / FreeObject types differ from the Newtonsoft one).
+        /// </summary>
+        private static void AssertBaseline(
+            string name,
+            string apiName,
+            string specJson,
+            bool systemTextJson = false)
         {
             string ns = "Generated.Baseline." + apiName;
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(
                 specJson,
                 apiName: apiName,
-                generatedNamespace: ns);
+                generatedNamespace: ns,
+                options: systemTextJson
+                    ? new Phase4CompilationOptions { JsonSerializer = "SystemTextJson" }
+                    : null);
+            string baselineName = systemTextJson ? name + ".stj" : name;
             Assert.Empty(execution.RunResult.Diagnostics);
             Assert.Empty(execution.CompilationErrors);
 
@@ -230,16 +259,16 @@ namespace Probe
 
             if (Environment.GetEnvironmentVariable(UpdateVariable) == "1")
             {
-                string target = Path.Combine(GetProjectDirectory(), "ApiSurfaceBaselines", name + ".txt");
+                string target = Path.Combine(GetProjectDirectory(), "ApiSurfaceBaselines", baselineName + ".txt");
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 File.WriteAllText(target, string.Join("\n", actual) + "\n", new UTF8Encoding(false));
                 return;
             }
 
-            string path = Path.Combine(AppContext.BaseDirectory, "ApiSurfaceBaselines", name + ".txt");
+            string path = Path.Combine(AppContext.BaseDirectory, "ApiSurfaceBaselines", baselineName + ".txt");
             Assert.True(
                 File.Exists(path),
-                "Missing baseline '" + name + "'. Run with " + UpdateVariable + "=1 to create it.");
+                "Missing baseline '" + baselineName + "'. Run with " + UpdateVariable + "=1 to create it.");
             string[] baseline = File.ReadAllLines(path)
                 .Select(static line => line.TrimEnd('\r'))
                 .Where(static line => line.Length > 0)
@@ -247,7 +276,7 @@ namespace Probe
             IReadOnlyList<string> missing = FindMissing(baseline, actual);
             Assert.True(
                 missing.Count == 0,
-                "Public API signatures from the baseline '" + name + "' were removed or changed:" +
+                "Public API signatures from the baseline '" + baselineName + "' were removed or changed:" +
                 Environment.NewLine + string.Join(Environment.NewLine, missing) +
                 Environment.NewLine + "If this is intentional, rerun with " + UpdateVariable + "=1.");
         }

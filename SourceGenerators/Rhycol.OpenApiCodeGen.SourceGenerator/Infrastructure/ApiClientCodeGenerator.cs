@@ -950,6 +950,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     exception.Location.LogicalPath,
                     exception.Message));
             }
+            catch (LibrarySelectionNotSupportedException exception)
+            {
+                // Nothing was added: the files are emitted before the first AddSource.
+                context.ReportDiagnostic(Diagnostic.Create(
+                    UnsupportedLibrarySelection,
+                    workItem.Definition.Location.ToLocation(),
+                    workItem.SpecId,
+                    exception.Message));
+            }
             catch (Exception exception)
             {
                 context.ReportDiagnostic(Diagnostic.Create(

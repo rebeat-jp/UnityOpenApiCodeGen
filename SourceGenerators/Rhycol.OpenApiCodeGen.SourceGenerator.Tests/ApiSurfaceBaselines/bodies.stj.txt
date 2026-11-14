@@ -1,0 +1,84 @@
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi ctor public (System.Net.Http.HttpClient httpClient)
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi ctor public (System.Net.Http.HttpClient httpClient, string baseUrl)
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task getSilent(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task postOptional(Generated.Baseline.BaselineBodiesApi.Pet? body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task uploadAvatar(byte[]? body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken), string? bodyContentType = null)
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineBodiesApi.GetStatusResponse> getStatus(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineBodiesApi.GetWithHeadersHttpInfo> getWithHeadersWithHttpInfo(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineBodiesApi.Pet> createPet(Generated.Baseline.BaselineBodiesApi.Pet body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineBodiesApi.Pet> createPetAsBinary(byte[] body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineBodiesApi.Pet> createPetAsFormUrlEncoded(Generated.Baseline.BaselineBodiesApi.PetFields body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineBodiesApi.Pet> createPetAsMultipart(Generated.Baseline.BaselineBodiesApi.PetForm body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineBodiesApi.Pet> createPetAsText(string body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineBodiesApi.Pet> getFallback(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineBodiesApi.Pet> getRange(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineBodiesApi.Pet> getWithHeaders(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task<byte[]> downloadFile(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task<string> getNote(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task<string> getRedirect(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public System.Threading.Tasks.Task<string> getReport(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi method public static string BuildServerUrl(int index, System.Collections.Generic.IReadOnlyDictionary<string, string>? variables = null)
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi property public static System.Collections.Generic.IReadOnlyList<string> Servers { get; }
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody)
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody, object? error, System.Exception? errorDeserializationException)
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiException method public bool TryGetError<T>(out T value)
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiException property public System.Exception? ErrorDeserializationException { get; }
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiException property public System.Net.HttpStatusCode StatusCode { get; }
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiException property public object? Error { get; }
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiException property public string ResponseBody { get; }
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiFileParameter ctor public (System.IO.Stream stream, string? fileName = null, string? contentType = null)
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiFileParameter ctor public (byte[] data, string? fileName = null, string? contentType = null)
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiFileParameter property public System.IO.Stream? DataStream { get; }
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiFileParameter property public byte[]? Data { get; }
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiFileParameter property public string? ContentType { get; }
+Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiFileParameter property public string? FileName { get; }
+Generated.Baseline.BaselineBodiesApi.Created ctor public ()
+Generated.Baseline.BaselineBodiesApi.GenericError ctor public ()
+Generated.Baseline.BaselineBodiesApi.GetStatusResponse property public Generated.Baseline.BaselineBodiesApi.Created? Status201 { get; }
+Generated.Baseline.BaselineBodiesApi.GetStatusResponse property public Generated.Baseline.BaselineBodiesApi.Pet? Status200 { get; }
+Generated.Baseline.BaselineBodiesApi.GetStatusResponse property public System.Net.HttpStatusCode StatusCode { get; }
+Generated.Baseline.BaselineBodiesApi.GetStatusResponse property public bool IsStatus200 { get; }
+Generated.Baseline.BaselineBodiesApi.GetStatusResponse property public bool IsStatus201 { get; }
+Generated.Baseline.BaselineBodiesApi.GetStatusResponse property public bool IsStatus202 { get; }
+Generated.Baseline.BaselineBodiesApi.GetWithHeadersHttpInfo ctor public ()
+Generated.Baseline.BaselineBodiesApi.GetWithHeadersHttpInfo property public Generated.Baseline.BaselineBodiesApi.Pet Data { get; }
+Generated.Baseline.BaselineBodiesApi.GetWithHeadersHttpInfo property public System.Collections.Generic.IReadOnlyDictionary<string, string[]> Headers { get; }
+Generated.Baseline.BaselineBodiesApi.GetWithHeadersHttpInfo property public System.Collections.Generic.List<string>? XTags { get; }
+Generated.Baseline.BaselineBodiesApi.GetWithHeadersHttpInfo property public System.Net.HttpStatusCode StatusCode { get; }
+Generated.Baseline.BaselineBodiesApi.GetWithHeadersHttpInfo property public int XRateLimit { get; }
+Generated.Baseline.BaselineBodiesApi.GetWithHeadersHttpInfo property public string? XTrace { get; }
+Generated.Baseline.BaselineBodiesApi.Meta ctor public ()
+Generated.Baseline.BaselineBodiesApi.Pet ctor public ()
+Generated.Baseline.BaselineBodiesApi.PetFields ctor public ()
+Generated.Baseline.BaselineBodiesApi.PetForm ctor public ()
+Generated.Baseline.BaselineBodiesApi.Problem ctor public ()
+[Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiClientDefinitionAttribute("0123456789abcdef0123456789abcdef", "BaselineBodiesApi", "Generated.Baseline.BaselineBodiesApi", Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.Json, JsonSerializer = Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiJsonSerializer.SystemTextJson)] type public class Generated.Baseline.BaselineBodiesApi.BaselineBodiesApi
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("attachments")] Generated.Baseline.BaselineBodiesApi.PetForm property public System.Collections.Generic.List<Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiFileParameter>? Attachments { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("attrs")] Generated.Baseline.BaselineBodiesApi.PetFields property public System.Collections.Generic.Dictionary<string, int>? Attrs { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("count")] Generated.Baseline.BaselineBodiesApi.PetForm property public int? Count { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("id")] Generated.Baseline.BaselineBodiesApi.Pet property public int? Id { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("meta")] Generated.Baseline.BaselineBodiesApi.PetFields property public Generated.Baseline.BaselineBodiesApi.Meta? Meta { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("meta")] Generated.Baseline.BaselineBodiesApi.PetForm property public Generated.Baseline.BaselineBodiesApi.Meta? Meta { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("note")] Generated.Baseline.BaselineBodiesApi.PetFields property public string? Note { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("origin")] Generated.Baseline.BaselineBodiesApi.Meta property public string? Origin { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("photo")] Generated.Baseline.BaselineBodiesApi.PetForm property public Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiFileParameter? Photo { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("status")] Generated.Baseline.BaselineBodiesApi.Problem property public int? Status { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("tags")] Generated.Baseline.BaselineBodiesApi.PetFields property public System.Collections.Generic.List<string>? Tags { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("tags")] Generated.Baseline.BaselineBodiesApi.PetForm property public System.Collections.Generic.List<string>? Tags { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("id")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineBodiesApi.Created property public int Id { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("message")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineBodiesApi.GenericError property public string Message { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("name")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineBodiesApi.Pet property public string Name { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("name")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineBodiesApi.PetFields property public string Name { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("name")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineBodiesApi.PetForm property public string Name { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("title")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineBodiesApi.Problem property public string Title { get; set; }
+type public sealed class Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiException : System.Exception
+type public sealed class Generated.Baseline.BaselineBodiesApi.BaselineBodiesApiFileParameter
+type public sealed class Generated.Baseline.BaselineBodiesApi.Created
+type public sealed class Generated.Baseline.BaselineBodiesApi.GenericError : System.Text.Json.Serialization.IJsonOnSerializing
+type public sealed class Generated.Baseline.BaselineBodiesApi.GetStatusResponse
+type public sealed class Generated.Baseline.BaselineBodiesApi.GetWithHeadersHttpInfo
+type public sealed class Generated.Baseline.BaselineBodiesApi.Meta
+type public sealed class Generated.Baseline.BaselineBodiesApi.Pet : System.Text.Json.Serialization.IJsonOnSerializing
+type public sealed class Generated.Baseline.BaselineBodiesApi.PetFields : System.Text.Json.Serialization.IJsonOnSerializing
+type public sealed class Generated.Baseline.BaselineBodiesApi.PetForm : System.Text.Json.Serialization.IJsonOnSerializing
+type public sealed class Generated.Baseline.BaselineBodiesApi.Problem : System.Text.Json.Serialization.IJsonOnSerializing

@@ -18,8 +18,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// </summary>
         private sealed class BodyHelperNames
         {
-            internal BodyHelperNames(OpenApiGenerationModel model, ConstraintValidationEmitter constraints)
+            internal BodyHelperNames(
+                OpenApiGenerationModel model,
+                ConstraintValidationEmitter constraints,
+                JsonSerializerProfile json)
             {
+                Json = json;
                 Constraints = constraints;
                 Model = model;
                 Prefix = HttpClientParameterSerializationEmitter.CreatePrefix(model, "__OacgBody_");
@@ -38,6 +42,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 operation.RequestBody.Variants.Any(static variant => variant.Kind == GeneratedBodyKind.Multipart));
 
             internal string Disposition => Prefix + "Disposition";
+
+            internal JsonSerializerProfile Json { get; }
+
+            /// <summary>The shared System.Text.Json options of the client (System.Text.Json only).</summary>
+            internal string JsonOptions => Prefix + "JsonOptions";
 
             internal OpenApiGenerationModel Model { get; }
 
@@ -72,7 +81,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         // ---- request content -------------------------------------------------------------------------
 
-        private static void AppendRequestBody(
+        private void AppendRequestBody(
             StringBuilder source,
             GeneratedRequestBodyModel body,
             GeneratedBodyVariantModel variant,
@@ -123,7 +132,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private static void AppendJsonRequestBody(
+        private void AppendJsonRequestBody(
             StringBuilder source,
             GeneratedRequestBodyModel body,
             GeneratedBodyVariantModel variant,
@@ -152,7 +161,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 .AppendLine(");");
         }
 
-        private static void AppendBinaryRequestBody(
+        private void AppendBinaryRequestBody(
             StringBuilder source,
             GeneratedRequestBodyModel body,
             GeneratedBodyVariantModel variant,
@@ -173,7 +182,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         // application/x-www-form-urlencoded: every field is serialized with the query form style rules (the
         // style / explode / allowReserved of its Encoding Object) and the fields are joined with '&'.
         // Characters are percent-encoded (a space is %20, not '+').
-        private static void AppendFormRequestBody(
+        private void AppendFormRequestBody(
             StringBuilder source,
             GeneratedRequestBodyModel body,
             GeneratedBodyVariantModel variant,
@@ -214,7 +223,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append(indent).AppendLine("}");
         }
 
-        private static void AppendMultipartRequestBody(
+        private void AppendMultipartRequestBody(
             StringBuilder source,
             GeneratedRequestBodyModel body,
             GeneratedBodyVariantModel variant,
@@ -234,7 +243,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append(indent).AppendLine("}");
         }
 
-        private static void AppendMultipartField(
+        private void AppendMultipartField(
             StringBuilder source,
             GeneratedRequestBodyModel body,
             GeneratedFormFieldModel field,
@@ -330,7 +339,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append(indent).AppendLine("}");
         }
 
-        private static void AppendPartHeaders(StringBuilder source, GeneratedFormFieldModel field, string indent)
+        private void AppendPartHeaders(StringBuilder source, GeneratedFormFieldModel field, string indent)
         {
             if (field.ContentType.Length > 0)
             {
@@ -346,7 +355,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private static void AppendStringPart(
+        private void AppendStringPart(
             StringBuilder source,
             GeneratedFormFieldModel field,
             string valueExpression,
@@ -362,7 +371,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append(indent).AppendLine("oacgMultipart.Add(oacgPart);");
         }
 
-        private static void AppendFilePart(
+        private void AppendFilePart(
             StringBuilder source,
             GeneratedFormFieldModel field,
             string fileExpression,
@@ -391,7 +400,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         // The primary media type is requested first; the other declared media types follow with a
         // decreasing quality value.
-        private static void AppendAcceptHeader(StringBuilder source, GeneratedResponsePlanModel plan)
+        private void AppendAcceptHeader(StringBuilder source, GeneratedResponsePlanModel plan)
         {
             if (plan.AcceptMediaTypes.Count == 0)
             {
@@ -430,9 +439,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         // ---- generated helpers -----------------------------------------------------------------------
 
-        private static void AppendBodyHelpers(StringBuilder source, OpenApiGenerationModel model, BodyHelperNames names)
+        private void AppendBodyHelpers(
+            StringBuilder source,
+            OpenApiGenerationModel model,
+            BodyHelperNames names,
+            ResponseJsonContractPlan contracts)
         {
-            if (names.UsesErrors)
+            if (names.UsesErrors && names.Json.IsSystemTextJson)
+            {
+                AppendSystemTextJsonErrorHelper(source, names, contracts);
+            }
+
+            if (names.UsesErrors && !names.Json.IsSystemTextJson)
             {
                 source.AppendLine(@"
         private static object? __DESERIALIZE__<T>(string json, out global::System.Exception? failure)
@@ -517,11 +535,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 return parse(raw);
             }
-            catch (global::System.Exception exception) when (exception is global::Newtonsoft.Json.JsonException ||
+            catch (global::System.Exception exception) when (exception is __JEX__ ||
                 exception is global::System.FormatException || exception is global::System.InvalidCastException ||
                 exception is global::System.OverflowException || exception is global::System.ArgumentException)
             {
-                throw new global::Newtonsoft.Json.JsonSerializationException(""The "" + description + "" has an invalid value."", exception);
+                throw new __SEX__(""The "" + description + "" has an invalid value."", exception);
             }
         }
 
@@ -537,7 +555,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
             throw new global::System.FormatException(""A boolean must be true or false."");
         }
-".Replace("__PARSE__", names.Parse).Replace("__PARSEBOOL__", names.ParseBool));
+".Replace("__JEX__", names.Json.JsonExceptionName).Replace("__SEX__", names.Json.SerializationExceptionName).Replace("__PARSE__", names.Parse).Replace("__PARSEBOOL__", names.ParseBool));
             }
 
             if (names.UsesMultipart)

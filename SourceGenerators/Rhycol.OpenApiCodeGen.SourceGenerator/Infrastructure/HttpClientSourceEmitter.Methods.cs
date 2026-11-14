@@ -21,7 +21,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             HttpInfo
         }
 
-        private static void AppendOperationMethods(
+        private void AppendOperationMethods(
             StringBuilder source,
             OpenApiGenerationModel model,
             GeneratedOperationModel operation,
@@ -57,7 +57,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private static void AppendOperationVariant(
+        private void AppendOperationVariant(
             StringBuilder source,
             OpenApiGenerationModel model,
             GeneratedOperationModel operation,
@@ -98,7 +98,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        }");
         }
 
-        private static void AppendForwardedArguments(
+        private void AppendForwardedArguments(
             StringBuilder source,
             GeneratedOperationModel operation,
             GeneratedBodyVariantModel? variant)
@@ -129,7 +129,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private static string GetTaskType(
+        private string GetTaskType(
             GeneratedOperationModel operation,
             GeneratedResponsePlanModel? plan,
             MethodMode mode)
@@ -149,11 +149,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return operation.ResponseType is null
                 ? "global::System.Threading.Tasks.Task"
                 : "global::System.Threading.Tasks.Task<" +
-                  GeneratedSourceEmitter.TypeName(operation.ResponseType) + ">";
+                  _json.TypeName(operation.ResponseType) + ">";
         }
 
         /// <summary>Writes the documentation, the signature and the opening brace of a method.</summary>
-        private static void AppendMethodHeader(
+        private void AppendMethodHeader(
             StringBuilder source,
             GeneratedOperationModel operation,
             GeneratedBodyVariantModel? variant,
@@ -238,7 +238,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             foreach (GeneratedParameterModel parameter in operation.Parameters)
             {
                 AppendParameterSeparator(source, ref first);
-                source.Append(GeneratedSourceEmitter.TypeName(parameter.Type))
+                source.Append(_json.TypeName(parameter.Type))
                     .Append(' ')
                     .Append(parameter.Name);
             }
@@ -246,7 +246,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (operation.RequestBody is not null && variant is not null)
             {
                 AppendParameterSeparator(source, ref first);
-                source.Append(GeneratedSourceEmitter.TypeName(variant.Type))
+                source.Append(_json.TypeName(variant.Type))
                     .Append(' ')
                     .Append(operation.RequestBody.ParameterName);
             }
@@ -284,7 +284,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private static void AppendOperationMethod(
+        private void AppendOperationMethod(
             StringBuilder source,
             OpenApiGenerationModel model,
             GeneratedOperationModel operation,
@@ -363,7 +363,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         }
 
         /// <summary>The response handling of operations that fit the original contract: void or one JSON type.</summary>
-        private static void AppendOriginalResponse(
+        private void AppendOriginalResponse(
             StringBuilder source,
             OpenApiGenerationModel model,
             GeneratedOperationModel operation,
@@ -380,7 +380,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     .Append(CreateSuccessExpression(operation.SuccessStatusCodes))
                     .AppendLine("))");
                 source.AppendLine("                    {");
-                AppendThrowApiException(source, model, operation, "responseBody", helpers);
+                AppendThrowApiException(source, model, operation, "responseBody", helpers, responseJsonContracts);
                 source.AppendLine("                    }");
                 AppendResponseContentTypeValidation(source, operation, responseValidators);
                 source.AppendLine("                    return;");
@@ -396,7 +396,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 model,
                 operation,
                 "response.Content == null ? string.Empty : await response.Content.ReadAsStringAsync().ConfigureAwait(false)",
-                helpers);
+                helpers,
+                responseJsonContracts);
             source.AppendLine("                    }");
             AppendResponseContentTypeValidation(source, operation, responseValidators);
             source.AppendLine("                    string responseBody = response.Content == null");
@@ -412,7 +413,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// <c>responseBody</c>. Ends with <c>return deserializedResponse!;</c> or, with
         /// <paramref name="resultVariable"/>, with an assignment to it.
         /// </summary>
-        private static void AppendJsonDecode(
+        private void AppendJsonDecode(
             StringBuilder source,
             GeneratedTypeModel type,
             string indent,
@@ -420,6 +421,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             ResponseJsonContractPlan responseJsonContracts,
             string? resultVariable)
         {
+            if (responseJsonContracts.IsSystemTextJson)
+            {
+                responseJsonContracts.AppendSystemTextJsonDecode(source, type, indent, responseValidators, resultVariable);
+                return;
+            }
+
             source.Append(indent).AppendLine("if (global::System.String.IsNullOrWhiteSpace(responseBody))");
             source.Append(indent).AppendLine("{");
             source.Append(indent).AppendLine("    throw new global::Newtonsoft.Json.JsonSerializationException(\"The successful response requires a JSON body.\");");
@@ -441,7 +448,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 .Append(", ").Append(type.Nullable ? "true" : "false")
                 .AppendLine(", responseSerializer.MaxDepth);");
             source.Append(indent).Append("var deserializedResponse = ").Append(responseJsonContracts.DeserializeMethodName).Append('<')
-                .Append(GeneratedSourceEmitter.TypeName(type))
+                .Append(_json.TypeName(type))
                 .AppendLine(">(validatedResponseBody, responseSerializer);");
             if (!type.Nullable && !type.IsValueType)
             {
@@ -463,7 +470,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 : resultVariable + " = deserializedResponse!;");
         }
 
-        private static void AppendRequestBodyValidation(
+        private void AppendRequestBodyValidation(
             StringBuilder source,
             GeneratedRequestBodyModel? body,
             GeneratedBodyVariantModel? variant)
@@ -487,12 +494,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// bodies, the body is deserialized for the matching status (exact code, range, default) and
         /// handed to the exception; a failure to deserialize is kept next to the raw body text.
         /// </summary>
-        private static void AppendThrowApiException(
+        private void AppendThrowApiException(
             StringBuilder source,
             OpenApiGenerationModel model,
             GeneratedOperationModel operation,
             string bodyExpression,
-            BodyHelperNames helpers)
+            BodyHelperNames helpers,
+            ResponseJsonContractPlan contracts)
         {
             string indent = "                        ";
             if (operation.ErrorResponses.All(static value => value.Type is null))
@@ -511,8 +519,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 string call = error.Type is null
                     ? ";"
                     : "oacgError = " + helpers.DeserializeError + "<" +
-                      GeneratedSourceEmitter.TypeName(error.Type.WithNullable(false)) +
-                      ">(oacgErrorBody, out oacgErrorFailure);";
+                      _json.TypeName(error.Type.WithNullable(false)) +
+                      ">(oacgErrorBody, " +
+                      (_json.IsSystemTextJson ? contracts.MethodName(error.Type) + ", " : string.Empty) +
+                      "out oacgErrorFailure);";
                 if (error.StatusKey == "DEFAULT")
                 {
                     if (first)

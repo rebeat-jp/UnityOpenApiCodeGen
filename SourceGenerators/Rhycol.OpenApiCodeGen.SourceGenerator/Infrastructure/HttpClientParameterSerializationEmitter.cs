@@ -25,13 +25,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private readonly string _prefix;
         private readonly string _jsonSerializerName;
         private readonly string _headerValidatorName;
+        private readonly JsonSerializerProfile _json;
 
         internal HttpClientParameterSerializationEmitter(
             OpenApiGenerationModel model,
             string jsonSerializerName,
             string headerValidatorName,
-            ConstraintValidationEmitter constraints)
+            ConstraintValidationEmitter constraints,
+            JsonSerializerProfile json)
         {
+            _json = json;
             Constraints = constraints;
             _model = model;
             _jsonSerializerName = jsonSerializerName;
@@ -587,24 +590,60 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        }");
             source.AppendLine();
             source.AppendLine();
-            source.Append("        private static string? ").Append(ExtraName)
-                .AppendLine("(global::Newtonsoft.Json.Linq.JToken? token, string parameterName)");
-            source.AppendLine("        {");
-            source.AppendLine("            if (token == null || token.Type == global::Newtonsoft.Json.Linq.JTokenType.Null)");
-            source.AppendLine("            {");
-            source.AppendLine("                return null;");
-            source.AppendLine("            }");
-            source.AppendLine("            if (token is global::Newtonsoft.Json.Linq.JValue jsonValue && jsonValue.Value != null)");
-            source.AppendLine("            {");
-            source.AppendLine("                return ConvertToString(jsonValue.Value);");
-            source.AppendLine("            }");
-            source.AppendLine("            throw new global::System.ArgumentException(\"An additional member must be a primitive value.\", parameterName);");
-            source.AppendLine("        }");
+            if (_json.IsSystemTextJson)
+            {
+                AppendSystemTextJsonExtraHelper(source);
+            }
+            else
+            {
+                source.Append("        private static string? ").Append(ExtraName)
+                    .AppendLine("(global::Newtonsoft.Json.Linq.JToken? token, string parameterName)");
+                source.AppendLine("        {");
+                source.AppendLine("            if (token == null || token.Type == global::Newtonsoft.Json.Linq.JTokenType.Null)");
+                source.AppendLine("            {");
+                source.AppendLine("                return null;");
+                source.AppendLine("            }");
+                source.AppendLine("            if (token is global::Newtonsoft.Json.Linq.JValue jsonValue && jsonValue.Value != null)");
+                source.AppendLine("            {");
+                source.AppendLine("                return ConvertToString(jsonValue.Value);");
+                source.AppendLine("            }");
+                source.AppendLine("            throw new global::System.ArgumentException(\"An additional member must be a primitive value.\", parameterName);");
+                source.AppendLine("        }");
+            }
+
             AppendConstants(source);
             source.AppendLine();
             AppendEncodeHelper(source);
             source.AppendLine();
             AppendSerializeHelper(source);
+        }
+
+        /// <summary>
+        /// The additional member of an open DTO as a parameter value (System.Text.Json: the extension
+        /// data holds JsonElement values). Numbers keep their JSON text.
+        /// </summary>
+        private void AppendSystemTextJsonExtraHelper(StringBuilder source)
+        {
+            source.Append("        private static string? ").Append(ExtraName)
+                .AppendLine("(global::System.Text.Json.JsonElement token, string parameterName)");
+            source.AppendLine("        {");
+            source.AppendLine("            switch (token.ValueKind)");
+            source.AppendLine("            {");
+            source.AppendLine("                case global::System.Text.Json.JsonValueKind.Undefined:");
+            source.AppendLine("                case global::System.Text.Json.JsonValueKind.Null:");
+            source.AppendLine("                    return null;");
+            source.AppendLine("                case global::System.Text.Json.JsonValueKind.String:");
+            source.AppendLine("                    return token.GetString();");
+            source.AppendLine("                case global::System.Text.Json.JsonValueKind.True:");
+            source.AppendLine("                    return \"true\";");
+            source.AppendLine("                case global::System.Text.Json.JsonValueKind.False:");
+            source.AppendLine("                    return \"false\";");
+            source.AppendLine("                case global::System.Text.Json.JsonValueKind.Number:");
+            source.AppendLine("                    return token.GetRawText();");
+            source.AppendLine("                default:");
+            source.AppendLine("                    throw new global::System.ArgumentException(\"An additional member must be a primitive value.\", parameterName);");
+            source.AppendLine("            }");
+            source.AppendLine("        }");
         }
 
         private static readonly string[] Styles =

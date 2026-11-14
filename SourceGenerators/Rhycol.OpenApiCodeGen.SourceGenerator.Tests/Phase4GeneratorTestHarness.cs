@@ -160,9 +160,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string trustedAssemblies =
                 (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? string.Empty;
             var paths = new HashSet<string>(
-                trustedAssemblies.Split(Path.PathSeparator),
+                options.ReferenceDirectory is null
+                    ? trustedAssemblies.Split(Path.PathSeparator)
+                    : Directory.GetFiles(options.ReferenceDirectory, "*.dll"),
                 StringComparer.OrdinalIgnoreCase);
-            paths.Add(typeof(JsonConvert).Assembly.Location);
+            if (options.ReferencePaths is null)
+            {
+                paths.Add(typeof(JsonConvert).Assembly.Location);
+            }
+            else
+            {
+                paths = new HashSet<string>(options.ReferencePaths, StringComparer.OrdinalIgnoreCase);
+            }
 
             var excludedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (!options.Newtonsoft || options.NewtonsoftStubVersion is not null)
@@ -262,6 +271,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal bool SystemTextJson { get; init; } = true;
 
         internal bool HttpClient { get; init; } = true;
+
+        /// <summary>
+        /// When set, the framework references come from this directory (for example the reference
+        /// assemblies of .NET 8) instead of the runtime that executes the tests.
+        /// </summary>
+        internal string? ReferenceDirectory { get; init; }
+
+        /// <summary>When set, these assemblies are the complete reference set (nothing from the running runtime).</summary>
+        internal IReadOnlyList<string>? ReferencePaths { get; init; }
 
         internal bool UnityWebRequestStub { get; init; }
 

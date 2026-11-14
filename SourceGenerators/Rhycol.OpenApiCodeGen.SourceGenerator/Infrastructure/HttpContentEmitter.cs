@@ -12,6 +12,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
     /// </summary>
     internal sealed class HttpContentEmitter
     {
+        private readonly JsonSerializerProfile _json;
+
+        internal HttpContentEmitter()
+            : this(JsonSerializerProfile.Newtonsoft)
+        {
+        }
+
+        internal HttpContentEmitter(JsonSerializerProfile json)
+        {
+            _json = json ?? throw new ArgumentNullException(nameof(json));
+        }
+
         internal IReadOnlyList<GeneratedFile> Emit(OpenApiGenerationModel model)
         {
             if (model is null)
@@ -59,7 +71,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("{");
         }
 
-        private static GeneratedFile EmitFileParameter(OpenApiGenerationModel model, string name)
+        private GeneratedFile EmitFileParameter(OpenApiGenerationModel model, string name)
         {
             var source = new StringBuilder();
             AppendHeader(source, model);
@@ -129,7 +141,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return value.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
         }
 
-        private static GeneratedFile EmitWrapper(OpenApiGenerationModel model, GeneratedResponseWrapperModel wrapper)
+        private GeneratedFile EmitWrapper(OpenApiGenerationModel model, GeneratedResponseWrapperModel wrapper)
         {
             var source = new StringBuilder();
             AppendHeader(source, model);
@@ -149,7 +161,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     .AppendLine(", global::System.StringComparison.Ordinal);");
                 if (member.Type is not null)
                 {
-                    string typeName = GeneratedSourceEmitter.TypeName(member.Type.WithNullable(true));
+                    string typeName = _json.TypeName(member.Type.WithNullable(true));
                     source.Append("            ").Append(member.AccessorName).Append(" = Is").Append(member.AccessorName)
                         .Append(" ? (").Append(typeName).AppendLine(")body : default;");
                 }
@@ -171,7 +183,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 {
                     source.AppendLine();
                     source.Append("        /// <summary>The body of ").Append(label).AppendLine("; null for another response.</summary>");
-                    source.Append("        public ").Append(GeneratedSourceEmitter.TypeName(member.Type.WithNullable(true)))
+                    source.Append("        public ").Append(_json.TypeName(member.Type.WithNullable(true)))
                         .Append(' ').Append(member.AccessorName).AppendLine(" { get; }");
                 }
             }
@@ -181,7 +193,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return GeneratedSourceEmitter.Create(wrapper.TypeName + ".g.cs", source.ToString());
         }
 
-        private static GeneratedFile EmitHttpInfo(OpenApiGenerationModel model, GeneratedResponsePlanModel plan)
+        private GeneratedFile EmitHttpInfo(OpenApiGenerationModel model, GeneratedResponsePlanModel plan)
         {
             GeneratedHttpInfoModel info = plan.HttpInfo!;
             var source = new StringBuilder();
@@ -216,7 +228,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
                 source.AppendLine(". Null when the response does not carry it.</summary>");
                 GeneratedDocumentationEmitter.AppendObsolete(source, "        ", header.Deprecated);
-                source.Append("        public ").Append(GeneratedSourceEmitter.TypeName(header.Type))
+                source.Append("        public ").Append(_json.TypeName(header.Type))
                     .Append(' ').Append(header.PropertyName).Append(" { get; internal set; }")
                     .Append(!header.Type.Nullable && !header.Type.IsValueType ? " = default!;" : string.Empty)
                     .AppendLine();

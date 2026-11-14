@@ -205,16 +205,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return GeneratedSourceEmitter.Create(model.Name + ".g.cs", source.ToString());
         }
 
-        private const string PreserveAttributeName = "PreserveAttribute";
+        internal const string PreserveAttributeName = "PreserveAttribute";
 
-        private static bool NeedsPreserve(OpenApiGenerationModel model)
+        internal static bool NeedsPreserve(OpenApiGenerationModel model)
         {
             return model.Unions.Count > 0 ||
                    model.Dtos.Any(static dto =>
                        dto.IsOpen || dto.Properties.Any(static property => property.Annotations.ReadOnly));
         }
 
-        private static GeneratedFile EmitPreserveAttribute(string generatedNamespace)
+        internal static GeneratedFile EmitPreserveAttribute(string generatedNamespace)
         {
             var source = new StringBuilder();
             AppendHeader(source, generatedNamespace, false);
@@ -227,7 +227,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return GeneratedSourceEmitter.Create(PreserveAttributeName + ".g.cs", source.ToString());
         }
 
-        private static bool IsInt32(string raw)
+        internal static bool IsInt32(string raw)
         {
             return int.TryParse(raw, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out _);
         }
@@ -433,7 +433,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// Initial value for a property whose schema has a const: a request DTO then sends the
         /// constant without the caller setting it. Returns null for types without a literal form.
         /// </summary>
-        private static string? GetConstInitializer(GeneratedTypeModel type)
+        internal static string? GetConstInitializer(GeneratedTypeModel type)
         {
             if (!type.ConstValue.HasValue)
             {
@@ -482,7 +482,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                    !double.IsInfinity(parsed);
         }
 
-        private static void AppendHeader(
+        internal static void AppendHeader(
             StringBuilder source,
             string generatedNamespace,
             bool suppressObsoleteWarnings)

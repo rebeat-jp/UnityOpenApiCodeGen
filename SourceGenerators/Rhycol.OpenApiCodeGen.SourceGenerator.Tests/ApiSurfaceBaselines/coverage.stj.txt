@@ -1,0 +1,58 @@
+Generated.Baseline.BaselineCoverageApi.BaselineCoverageApi ctor public (System.Net.Http.HttpClient httpClient)
+Generated.Baseline.BaselineCoverageApi.BaselineCoverageApi ctor public (System.Net.Http.HttpClient httpClient, string baseUrl)
+Generated.Baseline.BaselineCoverageApi.BaselineCoverageApi method public System.Threading.Tasks.Task deleteItem(System.Guid id, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineCoverageApi.BaselineCoverageApi method public System.Threading.Tasks.Task<Generated.Baseline.BaselineCoverageApi.Item> updateItem(System.Guid id, Generated.Baseline.BaselineCoverageApi.Item? body, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineCoverageApi.BaselineCoverageApi method public System.Threading.Tasks.Task<System.Collections.Generic.List<Generated.Baseline.BaselineCoverageApi.Kind>> listKinds(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineCoverageApi.BaselineCoverageApi method public static string BuildServerUrl(int index, System.Collections.Generic.IReadOnlyDictionary<string, string>? variables = null)
+Generated.Baseline.BaselineCoverageApi.BaselineCoverageApi property public static System.Collections.Generic.IReadOnlyList<string> Servers { get; }
+Generated.Baseline.BaselineCoverageApi.BaselineCoverageApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody)
+Generated.Baseline.BaselineCoverageApi.BaselineCoverageApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody, object? error, System.Exception? errorDeserializationException)
+Generated.Baseline.BaselineCoverageApi.BaselineCoverageApiException method public bool TryGetError<T>(out T value)
+Generated.Baseline.BaselineCoverageApi.BaselineCoverageApiException property public System.Exception? ErrorDeserializationException { get; }
+Generated.Baseline.BaselineCoverageApi.BaselineCoverageApiException property public System.Net.HttpStatusCode StatusCode { get; }
+Generated.Baseline.BaselineCoverageApi.BaselineCoverageApiException property public object? Error { get; }
+Generated.Baseline.BaselineCoverageApi.BaselineCoverageApiException property public string ResponseBody { get; }
+Generated.Baseline.BaselineCoverageApi.Item ctor public ()
+Generated.Baseline.BaselineCoverageApi.ItemInner ctor public ()
+Generated.Baseline.BaselineCoverageApi.ItemModesItem ctor public ()
+Generated.Baseline.BaselineCoverageApi.Kind ctor public ()
+Generated.Baseline.BaselineCoverageApi.KindParameter ctor public ()
+Generated.Baseline.BaselineCoverageApi.Problem ctor public ()
+[Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiClientDefinitionAttribute("0123456789abcdef0123456789abcdef", "BaselineCoverageApi", "Generated.Baseline.BaselineCoverageApi", Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.Json, JsonSerializer = Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiJsonSerializer.SystemTextJson)] type public class Generated.Baseline.BaselineCoverageApi.BaselineCoverageApi
+[System.ObsoleteAttribute] Generated.Baseline.BaselineCoverageApi.BaselineCoverageApi method public System.Threading.Tasks.Task<System.Collections.Generic.List<Generated.Baseline.BaselineCoverageApi.Item>> listItems(long XCount, bool? XFlag, string? XRequestId, double? amount, System.DateTime? day, float? factor, bool? flag, Generated.Baseline.BaselineCoverageApi.KindParameter? kind, int? limit, string? name, long? offset, double? ratio, System.Guid? ref, System.DateTimeOffset? since, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+[System.ObsoleteAttribute] [System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("legacy")] Generated.Baseline.BaselineCoverageApi.Item property public string? Legacy { get; set; }
+[System.Runtime.Serialization.EnumMemberAttribute(Value = "a")] Generated.Baseline.BaselineCoverageApi.KindParameter field public const Generated.Baseline.BaselineCoverageApi.KindParameter A = 0
+[System.Runtime.Serialization.EnumMemberAttribute(Value = "b")] Generated.Baseline.BaselineCoverageApi.KindParameter field public const Generated.Baseline.BaselineCoverageApi.KindParameter B = 1
+[System.Runtime.Serialization.EnumMemberAttribute(Value = "large")] Generated.Baseline.BaselineCoverageApi.Kind field public const Generated.Baseline.BaselineCoverageApi.Kind Large = 0
+[System.Runtime.Serialization.EnumMemberAttribute(Value = "off")] Generated.Baseline.BaselineCoverageApi.ItemModesItem field public const Generated.Baseline.BaselineCoverageApi.ItemModesItem Off = 0
+[System.Runtime.Serialization.EnumMemberAttribute(Value = "on")] Generated.Baseline.BaselineCoverageApi.ItemModesItem field public const Generated.Baseline.BaselineCoverageApi.ItemModesItem On = 1
+[System.Runtime.Serialization.EnumMemberAttribute(Value = "small")] Generated.Baseline.BaselineCoverageApi.Kind field public const Generated.Baseline.BaselineCoverageApi.Kind Small = 1
+[System.Text.Json.Serialization.JsonConverterAttribute(typeof(Generated.Baseline.BaselineCoverageApi.ItemModesItemWireConverter))] type public enum Generated.Baseline.BaselineCoverageApi.ItemModesItem : int
+[System.Text.Json.Serialization.JsonConverterAttribute(typeof(Generated.Baseline.BaselineCoverageApi.KindParameterWireConverter))] type public enum Generated.Baseline.BaselineCoverageApi.KindParameter : int
+[System.Text.Json.Serialization.JsonConverterAttribute(typeof(Generated.Baseline.BaselineCoverageApi.KindWireConverter))] type public enum Generated.Baseline.BaselineCoverageApi.Kind : int
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("count")] Generated.Baseline.BaselineCoverageApi.Item property public int? Count { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("day")] Generated.Baseline.BaselineCoverageApi.Item property public System.DateTime? Day { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("flags")] Generated.Baseline.BaselineCoverageApi.Item property public System.Collections.Generic.List<bool>? Flags { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("inner")] Generated.Baseline.BaselineCoverageApi.Item property public Generated.Baseline.BaselineCoverageApi.ItemInner? Inner { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("kind")] Generated.Baseline.BaselineCoverageApi.Item property public Generated.Baseline.BaselineCoverageApi.Kind? Kind { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("kinds")] Generated.Baseline.BaselineCoverageApi.Item property public System.Collections.Generic.List<Generated.Baseline.BaselineCoverageApi.Kind>? Kinds { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("modes")] Generated.Baseline.BaselineCoverageApi.Item property public System.Collections.Generic.List<Generated.Baseline.BaselineCoverageApi.ItemModesItem>? Modes { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("numbers")] Generated.Baseline.BaselineCoverageApi.Item property public System.Collections.Generic.List<float>? Numbers { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("payload")] Generated.Baseline.BaselineCoverageApi.Item property public byte[]? Payload { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] [System.Text.Json.Serialization.JsonPropertyNameAttribute("status")] Generated.Baseline.BaselineCoverageApi.Problem property public int? Status { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute] Generated.Baseline.BaselineCoverageApi.Item property public bool BigSpecified { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute] Generated.Baseline.BaselineCoverageApi.Item property public bool RatioSpecified { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute] Generated.Baseline.BaselineCoverageApi.Item property public bool SecretSpecified { get; set; }
+[System.Text.Json.Serialization.JsonIgnoreAttribute] Generated.Baseline.BaselineCoverageApi.Item property public bool WhenSpecified { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("big")] Generated.Baseline.BaselineCoverageApi.Item property public long? Big { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("id")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineCoverageApi.Item property public System.Guid Id { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("name")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineCoverageApi.Item property public string Name { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("ratio")] Generated.Baseline.BaselineCoverageApi.Item property public double? Ratio { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("secret")] Generated.Baseline.BaselineCoverageApi.Item property public string? Secret { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("title")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineCoverageApi.Problem property public string Title { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("v")] [System.Text.Json.Serialization.JsonRequiredAttribute] Generated.Baseline.BaselineCoverageApi.ItemInner property public int V { get; set; }
+[System.Text.Json.Serialization.JsonPropertyNameAttribute("when")] Generated.Baseline.BaselineCoverageApi.Item property public System.DateTimeOffset? When { get; set; }
+type public sealed class Generated.Baseline.BaselineCoverageApi.BaselineCoverageApiException : System.Exception
+type public sealed class Generated.Baseline.BaselineCoverageApi.Item : System.Text.Json.Serialization.IJsonOnSerializing
+type public sealed class Generated.Baseline.BaselineCoverageApi.ItemInner
+type public sealed class Generated.Baseline.BaselineCoverageApi.Problem : System.Text.Json.Serialization.IJsonOnSerializing
