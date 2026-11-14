@@ -232,6 +232,18 @@ primitives and objects of primitive properties in every OpenAPI `style` /
 a JSON media type. Cookie parameters are sent in one `Cookie` header; set
 `HttpClientHandler.UseCookies = false` (or use the `CookieContainer`) because a
 manual `Cookie` header can otherwise be merged with or replaced by the container.
+Security schemes (`components.securitySchemes`: `apiKey` in header / query / cookie, `http` bearer / basic /
+any other scheme, `oauth2`, `openIdConnect`, `mutualTLS`) and security requirements (document and operation
+level; `security: []` disables authentication) are supported. The generated client gets one public property
+per scheme: `string? <Scheme>ApiKey`, `string? <Scheme>AccessToken` plus an async
+`Func<CancellationToken, Task<string?>>? <Scheme>AccessTokenProvider` (bearer, oauth2, openIdConnect), `string? <Scheme>Username` /
+`<Scheme>Password` (basic) or `string? <Scheme>Credentials` (other http schemes). A request uses the first
+requirement (the OR list in document order) whose schemes (AND) all have a credential; when none does, it is sent
+without authentication. oauth2 and openIdConnect only send a token you supply as a Bearer credential: no token is
+fetched or refreshed. `mutualTLS` needs no property; configure the client certificate on the `HttpClientHandler`.
+An API key in a cookie shares the single `Cookie` header with cookie parameters. The credential properties are not
+thread safe; set them before sending. A malformed scheme or a requirement that names an undefined scheme receives a
+positioned `OACG100`.
 An explicit `baseUrl=""` override remains relative.
 With a relative server URL, an operation at `/` includes a base address query once.
 Request bodies support `application/json` (a concrete `application/<subtype>+json`

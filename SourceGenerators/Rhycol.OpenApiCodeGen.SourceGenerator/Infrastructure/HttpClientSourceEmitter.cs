@@ -37,6 +37,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 responseValidators.RequestJsonSerializerName,
                 responseValidators.HeaderValueValidatorName);
 
+            parameterSerializer.Security.AppendProperties(source);
             var bodyHelpers = new BodyHelperNames(model);
             foreach (GeneratedOperationModel operation in model.Operations)
             {
@@ -48,6 +49,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine();
             AppendHelpers(source, responseValidators);
             parameterSerializer.AppendHelpers(source);
+            parameterSerializer.Security.AppendHelpers(source);
             AppendBodyHelpers(source, model, bodyHelpers);
             responseValidators.AppendMethods(source);
             responseJsonContracts.AppendMethods(source);

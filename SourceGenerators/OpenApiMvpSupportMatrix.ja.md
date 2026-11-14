@@ -195,6 +195,20 @@ YAMLの診断IDは次のとおりです。
 
 status codeはASCII数字で検証します。属性付きのジェネリックclassは`OACG005`で拒否します。
 
+## Security
+
+| 項目 | 対応状況 | 条件・制約 |
+| --- | --- | --- |
+| `components.securitySchemes` | 対応 | `apiKey`（`in`は`header`／`query`／`cookie`、`name`必須。header・cookieの`name`はHTTP tokenに限り、headerの`name`が`Cookie`または`Content-*`（大小文字を問わない）の場合は`name`の位置付き`OACG100`です）、`http`（`scheme`必須。`bearer`／`basic`／その他の任意のscheme）、`oauth2`（`flows`と各flowの必須URL・`scopes`）、`openIdConnect`（`openIdConnectUrl`必須）、`mutualTLS`（OpenAPI 3.1以降）を解析します。scheme自体の`$ref`（internal）も辿ります。必須項目の欠落、`in`の不正値、未知の`type`、未知のoauth2 flow、3.0の`mutualTLS`は不正な項目の位置付き`OACG100`です。 |
+| security requirement | 対応 | root `security`とoperation `security`を評価します。operationの`security`はrootを上書きし、`security: []`はそのoperationの認証をなくします。配列はOR、1つのobjectに並べた複数のschemeはANDです。`{}`（匿名可）は認証を要求しないrequirementとして扱い、他のrequirementより優先しません。未定義のschemeを参照すると、その参照の位置付き`OACG100`です。scopesは文字列配列として検証し、XML docにだけ出力します（送信前に検証・取得しません）。OpenAPI 3.1の「scheme名をURIで参照する」形は未定義schemeとして`OACG100`です。 |
+| 資格情報API | 対応 | schemeごとにclientのpublicプロパティを生成します。名前は`components.securitySchemes`のキーをPascalCaseにした後ろに種別の語を付けます（衝突時は数字を付けて一意にします）。`apiKey`: `string? <Scheme>ApiKey`。`http bearer`／`oauth2`／`openIdConnect`: `string? <Scheme>AccessToken`と`Func<CancellationToken, Task<string?>>? <Scheme>AccessTokenProvider`。`http basic`: `string? <Scheme>Username`と`string? <Scheme>Password`。その他のhttp scheme: `string? <Scheme>Credentials`。`mutualTLS`は何も生成しません。XML docにschemeの`description`、`bearerFormat`、oauth2のflowとscopes、`openIdConnectUrl`を出力します。簡略名（`BearerToken`など）は生成しません。 |
+| requirementの適用 | 対応 | 各operationの有効なrequirementを文書順に調べ、含まれるすべてのschemeに資格情報が設定済みの最初のrequirementを適用します（送信ごとに評価します）。どのrequirementも満たせないとき、および`{}`だけのときは認証なしで送ります（例外にはしません）。`apiKey`／`bearer`／`basic`／その他のhttp schemeは、nullまたは空の資格情報を未設定として扱います（`basic`は`Username`が`null`のときだけ未設定で、`Password`が`null`なら空のpasswordです）。 |
+| `apiKey` の送信 | 対応 | header: `name`のheaderとして送信します。query: 既存のquery parameterの後ろに`name=value`（名前と値をpercent-encode）を足します。cookie: parameterのcookieと合わせて**1本の`Cookie`ヘッダー**にします（値はpercent-encode）。同名のheader parameterがあっても、そのschemeに資格情報が設定されているときはsecurityの値が優先します（設定されていないときはparameterの値を送ります）。cookieも同様で、cookie apiKeyに資格情報が設定されているときは同名のcookie parameterの部分を除き、その名前は`Cookie`ヘッダー内で1回だけ送ります。 |
+| `http` の送信 | 対応 | `bearer`: `Authorization: Bearer <token>`。`basic`: `Authorization: Basic <base64(username:password)>`（UTF-8でバイト列にしてからBase64。`Username`に`:`を含むと`InvalidOperationException`です）。その他のscheme: `Authorization: <scheme> <credentials>`（`scheme`は仕様に書かれた表記のまま）。Authorizationが複数のschemeから出るANDでは最後のschemeが勝ちます。送信するheader値は既存のheader parameterと同じ規則（ASCII）で検査し、違反は`ArgumentException`です。 |
+| `oauth2` / `openIdConnect` | 一部対応 | 外から渡されたtokenをBearerとして送るだけです。flowによるtoken取得、更新、OpenID Connect discoveryは行いません（URLやscopesはXML docのみ）。tokenは`<Scheme>AccessToken`に設定するか、`<Scheme>AccessTokenProvider`で供給します。providerは設定されていればプロパティより優先し、送信ごとにそのリクエストの`CancellationToken`付きで呼びます。providerが`null`または空を返したときはプロパティを使います。 |
+| `mutualTLS` | 一部対応 | 受理しますが、クライアント証明書の設定はclientではなく`HttpClientHandler`で行います（XML doc・生成コードでは何も送りません）。送るものがないため、`mutualTLS`だけのrequirementは匿名と同じ扱いで、他のrequirementを妨げません。このためOACG108のWarningは出しません。 |
+| 資格情報の取り扱い | 対応 | 資格情報プロパティはスレッドセーフではありません（XML docに明記）。リクエストごとに1回だけ読みます。生成コードはログを出さず、例外メッセージに資格情報を含めません（header名とscheme名だけを使います）。 |
+
 ## スキーマ
 
 以下は生成するrequest／成功response／DTOの制限です。非2xxと`default`の本文は構造・参照検証の対象です。

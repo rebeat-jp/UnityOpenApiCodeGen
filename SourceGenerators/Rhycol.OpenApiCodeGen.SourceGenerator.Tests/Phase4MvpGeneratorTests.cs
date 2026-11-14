@@ -189,14 +189,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             const string Document = @"{
   ""openapi"": ""3.1.0"",
   ""info"": { ""title"": ""Position"", ""version"": ""1"" },
-  ""security"": [],
+  ""webhooks"": {},
   ""paths"": {}
 }";
             string bundle = TestBundleFactory.Create(Document);
             const string Original =
-                "\"name\":\"security\",\"line\":1,\"column\":1,\"value\":{\"kind\":\"array\",\"line\":1,\"column\":1,\"items\":[]}";
+                "\"name\":\"webhooks\",\"line\":1,\"column\":1,\"value\":{\"kind\":\"object\",\"line\":1,\"column\":1,\"properties\":[]}";
             const string Positioned =
-                "\"name\":\"security\",\"line\":3,\"column\":3,\"value\":{\"kind\":\"array\",\"line\":23,\"column\":9,\"items\":[]}";
+                "\"name\":\"webhooks\",\"line\":3,\"column\":3,\"value\":{\"kind\":\"object\",\"line\":23,\"column\":9,\"properties\":[]}";
             Assert.Contains(Original, bundle);
             bundle = bundle.Replace(Original, Positioned);
 
@@ -209,7 +209,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Equal("OACG101", diagnostic.Id);
             Assert.Equal(TestBundleFactory.SourcePath, span.Path);
             Assert.Equal(new LinePosition(22, 8), span.StartLinePosition);
-            Assert.Contains("logical path '/security'", diagnostic.GetMessage());
+            Assert.Contains("logical path '/webhooks'", diagnostic.GetMessage());
         }
 
         [Fact]

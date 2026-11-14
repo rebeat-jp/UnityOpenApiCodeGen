@@ -17,8 +17,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<OpenApiSemanticWarning>? warnings = null,
             IReadOnlyList<GeneratedUnionModel>? unions = null,
             IReadOnlyList<OpenApiSemanticServer>? servers = null,
-            string? fileParameterTypeName = null)
+            string? fileParameterTypeName = null,
+            IReadOnlyList<GeneratedSecuritySchemeModel>? securitySchemes = null)
         {
+            SecuritySchemes = securitySchemes ?? Array.Empty<GeneratedSecuritySchemeModel>();
             FileParameterTypeName = fileParameterTypeName;
             Unions = unions ?? Array.Empty<GeneratedUnionModel>();
             Servers = servers ?? Array.Empty<OpenApiSemanticServer>();
@@ -31,6 +33,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             Operations = operations;
             TypeNameCollisions = typeNameCollisions;
         }
+
+        /// <summary>Security schemes of the document; each adds credential properties to the client.</summary>
+        internal IReadOnlyList<GeneratedSecuritySchemeModel> SecuritySchemes { get; }
 
         internal string ApiName { get; }
 
@@ -275,8 +280,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             bool deprecated = false,
             IReadOnlyList<OpenApiSemanticServer>? servers = null,
             GeneratedResponsePlanModel? responsePlan = null,
-            IReadOnlyList<GeneratedErrorResponseModel>? errorResponses = null)
+            IReadOnlyList<GeneratedErrorResponseModel>? errorResponses = null,
+            IReadOnlyList<OpenApiSemanticSecurityRequirement>? securityRequirements = null)
         {
+            SecurityRequirements = securityRequirements ?? Array.Empty<OpenApiSemanticSecurityRequirement>();
             ResponsePlan = responsePlan;
             ErrorResponses = errorResponses ?? Array.Empty<GeneratedErrorResponseModel>();
             Name = name;
@@ -296,6 +303,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal string Name { get; }
 
         internal string Summary { get; }
+
+        /// <summary>Effective security requirements (OR of ANDs); empty = no authentication.</summary>
+        internal IReadOnlyList<OpenApiSemanticSecurityRequirement> SecurityRequirements { get; }
 
         internal string Description { get; }
 

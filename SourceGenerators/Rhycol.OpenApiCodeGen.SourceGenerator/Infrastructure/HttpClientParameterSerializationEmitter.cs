@@ -36,7 +36,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             _headerValidatorName = headerValidatorName;
             _dtos = model.Dtos.ToDictionary(static dto => dto.Name, StringComparer.Ordinal);
             _prefix = CreatePrefix(model, "__OacgParam_");
+            Security = new SecurityEmitter(model, headerValidatorName);
         }
+
+        /// <summary>The security (authentication) emitter of the same client.</summary>
+        internal SecurityEmitter Security { get; }
 
         private string SerializeName => _prefix + "Serialize";
 
@@ -272,7 +276,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             GeneratedParameterModel[] cookieParameters = operation.Parameters
                 .Where(static value => value.LocationName == "cookie")
                 .ToArray();
-            if (cookieParameters.Length == 0)
+            if (cookieParameters.Length == 0 && !Security.UsesCookie(operation))
             {
                 return;
             }
@@ -288,6 +292,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     source.Append(' ', indent + 4).AppendLine("cookieParts.Add(" + ResultVar + ");");
                     source.Append(' ', indent).AppendLine("}");
                 });
+            }
+
+            if (Security.UsesCookie(operation))
+            {
+                source.AppendLine("                foreach (var oacgItem in " + SecurityEmitter.LocalName + ".Cookies)");
+                source.AppendLine("                {");
+                source.AppendLine("                    cookieParts.RemoveAll(oacgPart => oacgPart.StartsWith(oacgItem.Substring(0, oacgItem.IndexOf('=') + 1), global::System.StringComparison.Ordinal));");
+                source.AppendLine("                    cookieParts.Add(oacgItem);");
+                source.AppendLine("                }");
             }
 
             source.AppendLine("                if (cookieParts.Count > 0 && !request.Headers.TryAddWithoutValidation(\"Cookie\", string.Join(\"; \", cookieParts)))");

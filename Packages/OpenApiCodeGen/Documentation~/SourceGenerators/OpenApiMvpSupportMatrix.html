@@ -647,6 +647,61 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 </tr>
 </tbody></table>
 <p>status codeはASCII数字で検証します。属性付きのジェネリックclassは<code>OACG005</code>で拒否します。</p>
+<h2 id="security">Security</h2>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>Status</th>
+<th>条件・制約</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>components.securitySchemes</code></td>
+<td>Supported</td>
+<td><code>apiKey</code>（<code>in</code>は<code>header</code>／<code>query</code>／<code>cookie</code>、<code>name</code>必須。header・cookieの<code>name</code>はHTTP tokenに限り、headerの<code>name</code>が<code>Cookie</code>または<code>Content-*</code>（大小文字を問わない）の場合は<code>name</code>の位置付き<code>OACG100</code>です）、<code>http</code>（<code>scheme</code>必須。<code>bearer</code>／<code>basic</code>／その他の任意のscheme）、<code>oauth2</code>（<code>flows</code>と各flowの必須URL・<code>scopes</code>）、<code>openIdConnect</code>（<code>openIdConnectUrl</code>必須）、<code>mutualTLS</code>（OpenAPI 3.1以降）を解析します。scheme自体の<code>$ref</code>（internal）も辿ります。必須項目の欠落、<code>in</code>の不正値、未知の<code>type</code>、未知のoauth2 flow、3.0の<code>mutualTLS</code>は不正な項目の位置付き<code>OACG100</code>です。</td>
+</tr>
+<tr>
+<td>security requirement</td>
+<td>Supported</td>
+<td>root <code>security</code>とoperation <code>security</code>を評価します。operationの<code>security</code>はrootを上書きし、<code>security: []</code>はそのoperationの認証をなくします。配列はOR、1つのobjectに並べた複数のschemeはANDです。<code>{}</code>（匿名可）は認証を要求しないrequirementとして扱い、他のrequirementより優先しません。未定義のschemeを参照すると、その参照の位置付き<code>OACG100</code>です。scopesは文字列配列として検証し、XML docにだけ出力します（送信前に検証・取得しません）。OpenAPI 3.1の「scheme名をURIで参照する」形は未定義schemeとして<code>OACG100</code>です。</td>
+</tr>
+<tr>
+<td>資格情報API</td>
+<td>Supported</td>
+<td>schemeごとにclientのpublicプロパティを生成します。名前は<code>components.securitySchemes</code>のキーをPascalCaseにした後ろに種別の語を付けます（衝突時は数字を付けて一意にします）。<code>apiKey</code>: <code>string? &lt;Scheme&gt;ApiKey</code>。<code>http bearer</code>／<code>oauth2</code>／<code>openIdConnect</code>: <code>string? &lt;Scheme&gt;AccessToken</code>と<code>Func&lt;CancellationToken, Task&lt;string?&gt;&gt;? &lt;Scheme&gt;AccessTokenProvider</code>。<code>http basic</code>: <code>string? &lt;Scheme&gt;Username</code>と<code>string? &lt;Scheme&gt;Password</code>。その他のhttp scheme: <code>string? &lt;Scheme&gt;Credentials</code>。<code>mutualTLS</code>は何も生成しません。XML docにschemeの<code>description</code>、<code>bearerFormat</code>、oauth2のflowとscopes、<code>openIdConnectUrl</code>を出力します。簡略名（<code>BearerToken</code>など）は生成しません。</td>
+</tr>
+<tr>
+<td>requirementの適用</td>
+<td>Supported</td>
+<td>各operationの有効なrequirementを文書順に調べ、含まれるすべてのschemeに資格情報が設定済みの最初のrequirementを適用します（送信ごとに評価します）。どのrequirementも満たせないとき、および<code>{}</code>だけのときは認証なしで送ります（例外にはしません）。<code>apiKey</code>／<code>bearer</code>／<code>basic</code>／その他のhttp schemeは、nullまたは空の資格情報を未設定として扱います（<code>basic</code>は<code>Username</code>が<code>null</code>のときだけ未設定で、<code>Password</code>が<code>null</code>なら空のpasswordです）。</td>
+</tr>
+<tr>
+<td><code>apiKey</code> の送信</td>
+<td>Supported</td>
+<td>header: <code>name</code>のheaderとして送信します。query: 既存のquery parameterの後ろに<code>name=value</code>（名前と値をpercent-encode）を足します。cookie: parameterのcookieと合わせて<strong>1本の<code>Cookie</code>ヘッダー</strong>にします（値はpercent-encode）。同名のheader parameterがあっても、そのschemeに資格情報が設定されているときはsecurityの値が優先します（設定されていないときはparameterの値を送ります）。cookieも同様で、cookie apiKeyに資格情報が設定されているときは同名のcookie parameterの部分を除き、その名前は<code>Cookie</code>ヘッダー内で1回だけ送ります。</td>
+</tr>
+<tr>
+<td><code>http</code> の送信</td>
+<td>Supported</td>
+<td><code>bearer</code>: <code>Authorization: Bearer &lt;token&gt;</code>。<code>basic</code>: <code>Authorization: Basic &lt;base64(username:password)&gt;</code>（UTF-8でバイト列にしてからBase64。<code>Username</code>に<code>:</code>を含むと<code>InvalidOperationException</code>です）。その他のscheme: <code>Authorization: &lt;scheme&gt; &lt;credentials&gt;</code>（<code>scheme</code>は仕様に書かれた表記のまま）。Authorizationが複数のschemeから出るANDでは最後のschemeが勝ちます。送信するheader値は既存のheader parameterと同じ規則（ASCII）で検査し、違反は<code>ArgumentException</code>です。</td>
+</tr>
+<tr>
+<td><code>oauth2</code> / <code>openIdConnect</code></td>
+<td>Partial</td>
+<td>外から渡されたtokenをBearerとして送るだけです。flowによるtoken取得、更新、OpenID Connect discoveryは行いません（URLやscopesはXML docのみ）。tokenは<code>&lt;Scheme&gt;AccessToken</code>に設定するか、<code>&lt;Scheme&gt;AccessTokenProvider</code>で供給します。providerは設定されていればプロパティより優先し、送信ごとにそのリクエストの<code>CancellationToken</code>付きで呼びます。providerが<code>null</code>または空を返したときはプロパティを使います。</td>
+</tr>
+<tr>
+<td><code>mutualTLS</code></td>
+<td>Partial</td>
+<td>受理しますが、クライアント証明書の設定はclientではなく<code>HttpClientHandler</code>で行います（XML doc・生成コードでは何も送りません）。送るものがないため、<code>mutualTLS</code>だけのrequirementは匿名と同じ扱いで、他のrequirementを妨げません。このためOACG108のWarningは出しません。</td>
+</tr>
+<tr>
+<td>資格情報の取り扱い</td>
+<td>Supported</td>
+<td>資格情報プロパティはスレッドセーフではありません（XML docに明記）。リクエストごとに1回だけ読みます。生成コードはログを出さず、例外メッセージに資格情報を含めません（header名とscheme名だけを使います）。</td>
+</tr>
+</tbody></table>
 <h2 id="schema">Schema</h2>
 <p>以下は生成するrequest／成功response／DTOの制限です。非2xxと<code>default</code>の本文は構造・参照検証の対象です。</p>
 <table>
