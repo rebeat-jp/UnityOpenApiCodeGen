@@ -429,6 +429,55 @@ prevents Json.NET from mistaking a schema boolean for a presence flag.
 | `OACG107` | Warning | Generated type name collision | 型名が衝突し、決定的なsuffix（連番）で解消した場合 |
 | `OACG108` | Warning | Ignored OpenAPI element | 要素を意図して無視した場合。wire contractは変わりません。ドキュメント専用の要素（`description`・`example`など）は黙って受理するので報告しません。主な場面: `Accept`／`Content-Type`／`Authorization`のheader parameter、webhooks・callbacks・links（とcomponentsの`links`・`callbacks`）、生成できる他のmedia typeがあるときのobject・arrayのxml、処理できない別media typeや生成できないerror schema、評価できない`not`・`const`・`x-enum-*`・`discriminator`、.NET構文を要する`pattern`、binaryに付いた制約キーワード、Encoding Objectの無視した項目、3.2の`itemSchema`（逐次media type）・`prefixEncoding`／`itemEncoding`・他documentを参照する`$self`、Swagger 2.0でhostがないときのoperationの`schemes` |
 
+## Player互換性（IL2CPP・WebGL）
+
+[#57](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/57)の検証結果です。検証は`SourceGenerators/scripts/verify-player.js`
+（`verify-player.sh`から実行）で行い、`SourceGenerators/BuildTools/UnityPlayerVerificationFixture/`のfixtureを使います。
+fixtureはSource Generatorの本来の経路（Editor Writerの定義ファイル、normalized spec bundle、Analyzer）で4つのclient
+（HttpClientまたはUnityWebRequest × Newtonsoft.JsonまたはSystem.Text.Json）を生成し、Player内でJSON往復（DTO、string／integer enum、
+`date-time`、`date`、map、配列、discriminator付き`oneOf`）、GET 1回、POST 1回、constraint違反の事前拒否を実行します。
+結果は各セルの`result.json`（ビルド・Playerログ付き）として`artifacts/player-gate/<Unity版>/<セルID>/`へ保存され、
+要約を[`Evidence/6000.3.2f1.json`](BuildTools/UnityPlayerVerificationFixture/Evidence/6000.3.2f1.json)に残しています。
+
+検証条件: Unity `6000.3.2f1`、Windows 11 x64ホスト、2026-11-14実行。Standalone Win64はIL2CPPで、WebGLはIL2CPP（WebGLに別のbackendはありません）。
+ビルドは非Development、IL2CPPコード生成・WebGLの例外サポートなどのPlayer設定は既定のままです（WebGLは圧縮なし）。
+WebGLはヘッドレスChrome（157）で、Playerと同一originのローカルHTTPサーバー（`127.0.0.1`）に対して実行しました。
+System.Text.Jsonは`org.nuget.system.text.json` 8.0.5（UnityNuGet、netstandard2.0版）、Newtonsoft.Jsonは`com.unity.nuget.newtonsoft-json` 3.2.2です。
+
+| Target | Backend | Managed Stripping | HTTP | JSON | 結果 | ビルド（秒） | チェック |
+| --- | --- | --- | --- | --- | --- | ---: | --- |
+| Standalone Win64 | IL2CPP | Minimal | HttpClient | Newtonsoft.Json | Pass | 157 | 21/21 passed |
+| Standalone Win64 | IL2CPP | Minimal | HttpClient | System.Text.Json | Pass | 84 | 21/21 passed |
+| Standalone Win64 | IL2CPP | Minimal | UnityWebRequest | Newtonsoft.Json | Pass | 87 | 21/21 passed |
+| Standalone Win64 | IL2CPP | Minimal | UnityWebRequest | System.Text.Json | Pass | 71 | 21/21 passed |
+| Standalone Win64 | IL2CPP | High | HttpClient | Newtonsoft.Json | Pass | 99 | 21/21 passed |
+| Standalone Win64 | IL2CPP | High | HttpClient | System.Text.Json | Pass | 83 | 21/21 passed |
+| Standalone Win64 | IL2CPP | High | UnityWebRequest | Newtonsoft.Json | Pass | 87 | 21/21 passed |
+| Standalone Win64 | IL2CPP | High | UnityWebRequest | System.Text.Json | Pass | 74 | 21/21 passed |
+| Standalone Win64 | Mono（比較） | Minimal | HttpClient | Newtonsoft.Json | Pass | 35 | 21/21 passed |
+| Standalone Win64 | Mono（比較） | Minimal | UnityWebRequest | Newtonsoft.Json | Pass | 26 | 21/21 passed |
+| WebGL | IL2CPP | Minimal | UnityWebRequest | Newtonsoft.Json | Pass | 181 | 21/21 passed |
+| WebGL | IL2CPP | Minimal | UnityWebRequest | System.Text.Json | Pass | 120 | 21/21 passed |
+| WebGL | IL2CPP | High | UnityWebRequest | Newtonsoft.Json | Pass | 166 | 21/21 passed |
+| WebGL | IL2CPP | High | UnityWebRequest | System.Text.Json | Pass | 117 | 21/21 passed |
+| WebGL | IL2CPP | Minimal | HttpClient | Newtonsoft.Json | 非対応（`OACG014`。Playerは90秒で無応答） | 175 | 0/1 passed |
+
+- **Pass**: 21チェックがすべて成功し、サーバーがGET 1件・POST 1件を受信して、POST本文のwire形式（enumのwire値、日付、map、discriminatorとメンバー）も正しいことを確認しました。
+- **WebGL × HttpClientは非対応**です。`UNITY_WEBGL`定義下でHttpClient transportを選ぶとAnalyzerが`OACG014`（Warning）を報告し、生成とビルドは成功しますが、
+  Playerのprobeは完了せず、サーバーはrequestを1件も受信しません（90秒のwatchdogで失敗を記録）。WebGLでは`UnityWebRequest`を選んでください。実測したのはNewtonsoft.Jsonの1セルだけです。原因はtransport（`System.Net.Http.HttpClient`のソケットがWebGLのブラウザー環境に無いこと）でserializerとは無関係なので、System.Text.Jsonも同様と判断しており、個別には実測していません。
+- **Managed Stripping Level High**: 生成物に何も加えない初回の実行は、Standalone IL2CPP 4セルとWebGL 2セルで失敗しました。
+  Newtonsoft.Jsonは列挙型のwire converterを生成できず（`No parameterless constructor defined for '...ColorWireConverter'`）、
+  System.Text.Jsonはsetterを持たないpropertyとして`JsonRequired`のpropertyを拒否しました（`JsonPropertyInfo 'radius' ... is marked required but does not specify a setter`）。
+  どちらも、リフレクションだけで使うメンバー（converterのコンストラクター、コードから設定しないDTO propertyのaccessor）がHighで削除されるためです。
+  型への`PreserveAttribute`だけではproperty accessorが残らないことも確認しました（型単位だけの再実行は、System.Text.Jsonで同じ失敗、Newtonsoft.Jsonでunionメンバーの検査失敗でした）。
+  そのため生成器は、DTO型・enumのwire converter・各DTO propertyと`<Name>Specified`・`OnSerializing`コールバックに、internalな`PreserveAttribute`を付けます
+  （Unityのlinkerは名前で認識します。`link.xml`は生成assembly名を持てないため使いません）。attributeはclientごとの専用namespace（`<生成namespace>.<ApiName>_Preserve`）に宣言するので、同じnamespaceに複数のclientを生成しても重複しません（型名が衝突する場合は連番を付けます）。
+  DTO・enum・unionを持たないspecでは、attributeもそのファイルも生成しません。この変更後に全セルがPassしました。
+- 対象外（未検証）: Unity `6000.0.23f1`と`2021.3`、Linux・macOS・Android・iOSのPlayer、Development Player、Managed Stripping Level Low／Medium／Disabled、
+  IL2CPPのコード生成設定とWebGLの例外サポートの既定以外、別origin（CORS）への通信、WebGLの圧縮形式、Safari／Firefox。
+  Linux Standalone IL2CPPとWebGLの手動CI（`.github/workflows/source-generator-player.yml`）は用意しましたが、まだ実行していません。
+- WebGLでUnityWebRequestを使う場合、server URLが相対（`/api`など）なら、`new Uri(Application.absoluteURL)`のような絶対URIをbase addressに渡す必要があります。
+
 ## 検証済み環境
 
 GitHub ActionsのUnity検証とCD dry-runは実装済みです。レビュー対応前のclean commit
@@ -470,6 +519,5 @@ Docker専用項目は無効になります。実UXMLテストに加え、Unity E
 このローカル候補は`--allow-dirty`で作成した開発用証拠です。公開に使うclean commitと
 最新のCI結果・成果物は[PR #56](https://github.com/rebeat-jp/UnityOpenApiCodeGen/pull/56)
 で確認し、[RELEASE.md](../RELEASE.md)の承認・検証手順に従ってください。
-IL2CPP/WebGLのPlayer互換性は未検証で、[#57](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/57)
-で追跡します。正式タグ・公開・OpenUPM初回登録は
+IL2CPP/WebGLのPlayer互換性は、上の「Player互換性（IL2CPP・WebGL）」にUnity `6000.3.2f1`での検証結果を記録しています（[#57](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/57)）。正式タグ・公開・OpenUPM初回登録は
 [#62](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/62)の別作業です。
