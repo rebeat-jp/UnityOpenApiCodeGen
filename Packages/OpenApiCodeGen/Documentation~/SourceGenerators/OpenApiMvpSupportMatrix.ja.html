@@ -645,6 +645,21 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <td>一部対応</td>
 <td><code>description</code>・<code>headers</code>・<code>content</code>・<code>links</code>・<code>x-*</code>拡張だけを認識します。<code>contents</code>などの未知項目は、成功・エラー・参照先の応答でも位置付き<code>OACG101</code>です。</td>
 </tr>
+<tr>
+<td>webhooks / callbacks / links</td>
+<td>一部対応</td>
+<td>root の<code>webhooks</code>、operation の<code>callbacks</code>、response の<code>links</code>（と<code>components.links</code>／<code>components.callbacks</code>）は受理して無視し、その要素自身の logical path（<code>/webhooks</code>、<code>/paths/~1pets/post/callbacks</code>、<code>/paths/~1pets/post/responses/201/links</code>、<code>/components/links</code>、<code>/components/callbacks</code>）で<code>OACG108</code>を報告します。client のメソッドやメンバーは生成しません。空の map は報告しません。無視した内容は<strong>解析しません</strong>。ノード自身が object であること（違えば通常のエラー）だけを確認するため、その内側の解決できない・external・未対応の<code>$ref</code>が<code>OACG102</code>や<code>OACG101</code>になることはなく、Editor もそこにある external <code>$ref</code>を収集・bundle しません。そこから参照される schema の DTO は、<code>components.schemas</code>に宣言されている場合だけ生成します（<code>components.schemas</code>は常に生成するため、callback から<code>#/components/schemas/Event</code>を参照する形は対象です）。callback や webhook の中だけに現れる inline schema と、そこでの external <code>$ref</code>だけで到達する schema は型を生成しません。</td>
+</tr>
+<tr>
+<td>components の各 section</td>
+<td>一部対応</td>
+<td><code>schemas</code>、<code>parameters</code>、<code>requestBodies</code>、<code>responses</code>、<code>headers</code>、<code>securitySchemes</code>、<code>pathItems</code>（3.1）、<code>examples</code>、<code>links</code>、<code>callbacks</code>、<code>x-*</code>を受理します。<code>examples</code>はドキュメントだけなので報告せず、<code>links</code>と<code>callbacks</code>は<code>OACG108</code>です。それ以外の section（綴り間違いなど）は従来どおり<code>OACG101</code>です。</td>
+</tr>
+<tr>
+<td>ドキュメント専用の要素</td>
+<td>対応</td>
+<td>root の<code>tags</code>・<code>externalDocs</code>、既定の<code>jsonSchemaDialect</code>、operation の<code>tags</code>・<code>externalDocs</code>、media type・parameter・header の<code>example</code>／<code>examples</code>（header の<code>example</code>は応答 header の固定値として引き続き使います）、あらゆる schema の<code>xml</code>、<code>x-*</code>拡張は、<code>description</code>と同様に黙って受理します。生成コードは変わりません。</td>
+</tr>
 </tbody></table>
 <p>status codeはASCII数字で検証します。属性付きのジェネリックclassは<code>OACG005</code>で拒否します。</p>
 <h2 id="security">Security</h2>
@@ -795,7 +810,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>string: <code>minLength</code> / <code>maxLength</code> / <code>pattern</code></td>
 <td>対応</td>
-<td>長さはUTF-16のchar数ではなくUnicodeコードポイント数で数えます（サロゲートペアは1文字）。<code>pattern</code>は部分一致（アンカーなし。固定するなら<code>^</code>・<code>$</code>）です。.NETの<code>Regex</code>を生成時に決めたモードで評価します。ECMA-262にない構文（原子グループ<code>(?&gt;</code>・インラインオプション<code>(?i)</code>・<code>\A</code> <code>\z</code> <code>\Z</code> <code>\G</code>・文字クラス減算など）を含むpattern、またはECMAScriptモードで作れないpatternは、既定の.NET意味論（<code>CultureInvariant</code>。<code>\d</code>・<code>\w</code>・<code>\s</code>がUnicode対応）で評価し、そのpatternの位置で<code>OACG108</code>を報告します。それ以外は<code>RegexOptions.ECMAScript</code>（<code>\d</code>・<code>\w</code>・<code>\s</code>・<code>\b</code>がASCII基準でECMA-262に近い）です（両オプションは併用できないためモードは1つです）。差異: <code>$</code>は.NETでは末尾の改行の前にも一致します（ECMA-262は文字列末尾だけ）。ECMAScriptモードの<code>\s</code>はASCII空白だけで、NBSPなどのUnicode空白を含むECMA-262の<code>\s</code>より狭くなります。どちらのモードでも作れないpatternは生成時に位置付き<code>OACG100</code>です。<code>Regex</code>は生成クラスの<code>static readonly</code>フィールドとして1回だけ作ります（pattern単位で共有）。<code>RegexOptions.Compiled</code>はIL2CPPなどAOT環境でILを出力できないため使いません。照合timeoutは1秒で、超えると<code>RegexMatchTimeoutException</code>を内部例外に持つ通常の検証エラー（requestは<code>ArgumentException</code>、responseは<code>JsonSerializationException</code>）です。length／patternの対象は<code>string</code>、<code>format: byte</code>（base64文字列）、<code>uuid</code>です。<code>date</code>・<code>date-time</code>のstringはrequestでは日付型として直列化されるため長さとpatternを検査しません（応答は文字列として検査します）。XML docに<code>Must be 3..50 characters.</code>のような制約文を出力します。</td>
+<td>長さはUTF-16のchar数ではなくUnicodeコードポイント数で数えます（サロゲートペアは1文字）。<code>pattern</code>は部分一致（アンカーなし。固定するなら<code>^</code>・<code>$</code>）です。.NETの<code>Regex</code>を生成時に決めたモードで評価します。ECMA-262にない構文（原子グループ<code>(?&gt;</code>・インラインオプション<code>(?i)</code>・<code>\A</code> <code>\z</code> <code>\Z</code> <code>\G</code>・文字クラス減算など）を含むpattern、またはECMAScriptモードで作れないpatternは、既定の.NET意味論（<code>CultureInvariant</code>。<code>\d</code>・<code>\w</code>・<code>\s</code>がUnicode対応）で評価し、そのpatternの位置で<code>OACG108</code>を報告します。それ以外は<code>RegexOptions.ECMAScript</code>（<code>\d</code>・<code>\w</code>・<code>\s</code>・<code>\b</code>がASCII基準でECMA-262に近い）です（両オプションは併用できないためモードは1つです）。差異: <code>$</code>は.NETでは末尾の改行の前にも一致します（ECMA-262は文字列末尾だけ）。ECMAScriptモードの<code>\s</code>はASCII空白だけで、NBSPなどのUnicode空白を含むECMA-262の<code>\s</code>より狭くなります。lookbehindと名前付きグループは.NETにもECMA-262（ES2018）にもありますが、ECMAScriptモードでは細かな挙動がedge caseで異なることがあります。どちらのモードでも作れないpatternは生成時に位置付き<code>OACG100</code>です。<code>Regex</code>は生成クラスの<code>static readonly</code>フィールドとして1回だけ作ります（pattern単位で共有）。<code>RegexOptions.Compiled</code>はIL2CPPなどAOT環境でILを出力できないため使いません。照合timeoutは1秒で、超えると<code>RegexMatchTimeoutException</code>を内部例外に持つ通常の検証エラー（requestは<code>ArgumentException</code>、responseは<code>JsonSerializationException</code>）です。length／patternの対象は<code>string</code>、<code>format: byte</code>（base64文字列）、<code>uuid</code>です。<code>date</code>・<code>date-time</code>のstringはrequestでは日付型として直列化されるため長さとpatternを検査しません（応答は文字列として検査します）。XML docに<code>Must be 3..50 characters.</code>のような制約文を出力します。</td>
 </tr>
 <tr>
 <td>number: <code>minimum</code> / <code>maximum</code> / <code>exclusiveMinimum</code> / <code>exclusiveMaximum</code> / <code>multipleOf</code></td>
