@@ -1651,7 +1651,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Directory.CreateDirectory(directory);
             string json = string.Format(
                 System.Globalization.CultureInfo.InvariantCulture,
-                "{{\n  \"name\": \"{0}\",\n  \"references\": [\"{1}\"]\n}}\n",
+                "{{\n  \"name\": \"{0}\",\n  \"references\": [\"{1}\"],\n  \"versionDefines\": [\n    {{\n      \"name\": \"jp.rhycol.openapicodegen.source-generator\",\n      \"expression\": \"0.0.0\",\n      \"define\": \"OPENAPI_CODEGEN_SOURCE_GENERATOR\"\n    }}\n  ]\n}}\n",
                 assemblyName,
                 reference);
             File.WriteAllText(

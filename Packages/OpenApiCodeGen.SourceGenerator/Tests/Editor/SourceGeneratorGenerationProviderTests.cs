@@ -799,6 +799,127 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(result.Message, Is.EqualTo("Source Generator generation failed."));
         }
 
+        [Test]
+        public void GenerateAddsTheVersionDefineToTheTargetAsmdefBeforeWritingTheDefinition()
+        {
+            string asmdefPath = WriteAsmdefWithoutDefine();
+            SourceGeneratorGenerationProvider provider = CreateProvider();
+
+            GenerationResult result = provider.Generate(CreateRequest());
+
+            Assert.That(result.IsSuccess, Is.True, result.Message);
+            string asmdef = File.ReadAllText(asmdefPath);
+            Assert.That(asmdef, Does.Contain("\"versionDefines\""));
+            Assert.That(
+                asmdef,
+                Does.Contain("\"name\": \"" + TargetAssemblyVersionDefineWriter.PackageName + "\""));
+            Assert.That(
+                asmdef,
+                Does.Contain("\"define\": \"" + TargetAssemblyVersionDefineWriter.Define + "\""));
+            Assert.That(
+                definitionImports,
+                Is.EqualTo(new[]
+                {
+                    "Assets/Clients/Example.Clients.asmdef",
+                    "Assets/Clients/PetStore/PetStoreApi.OpenApiDefinition.cs",
+                }));
+        }
+
+        [Test]
+        public void SecondGenerateDoesNotWriteTheTargetAsmdefAgain()
+        {
+            string asmdefPath = WriteAsmdefWithoutDefine();
+            SourceGeneratorGenerationProvider provider = CreateProvider();
+            GenerationResult first = provider.Generate(CreateRequest());
+            Assert.That(first.IsSuccess, Is.True, first.Message);
+            byte[] asmdefBytes = File.ReadAllBytes(asmdefPath);
+            var asmdefTimestamp = new DateTime(2006, 2, 3, 4, 5, 6, DateTimeKind.Utc);
+            File.SetLastWriteTimeUtc(asmdefPath, asmdefTimestamp);
+            definitionImports.Clear();
+
+            GenerationResult repeated = provider.Generate(CreateRequest());
+
+            Assert.That(repeated.IsSuccess, Is.True, repeated.Message);
+            Assert.That(File.ReadAllBytes(asmdefPath), Is.EqualTo(asmdefBytes));
+            Assert.That(File.GetLastWriteTimeUtc(asmdefPath), Is.EqualTo(asmdefTimestamp));
+            Assert.That(definitionImports, Is.Empty);
+        }
+
+        [Test]
+        public void GenerateFailsWithManualEntryAndWritesNothingWhenTheTargetAsmdefCannotBeUpdated()
+        {
+            string asmdefPath = Path.Combine(projectRoot, "Assets", "Clients", "Example.Clients.asmdef");
+            File.WriteAllText(
+                asmdefPath,
+                "{ \"name\": \"Example.Clients\", \"references\": [\"Unity.OpenApiCodeGen.SourceGenerator\"], \"versionDefines\": {} }",
+                new UTF8Encoding(false));
+            byte[] asmdefBytes = File.ReadAllBytes(asmdefPath);
+            SourceGeneratorGenerationProvider provider = CreateProvider();
+
+            GenerationResult result = provider.Generate(CreateRequest());
+
+            Assert.That(result.IsSuccess, Is.False);
+            Assert.That(result.Message, Does.Contain(TargetAssemblyVersionDefineWriter.Define));
+            Assert.That(result.Message, Does.Contain(TargetAssemblyVersionDefineWriter.PackageName));
+            Assert.That(File.ReadAllBytes(asmdefPath), Is.EqualTo(asmdefBytes));
+            Assert.That(
+                File.Exists(Path.Combine(outputFolder, "PetStoreApi.OpenApiDefinition.cs")),
+                Is.False);
+            Assert.That(definitionImports, Is.Empty);
+        }
+
+        [Test]
+        public async Task GenerateAsyncAddsTheVersionDefineToTheTargetAsmdef()
+        {
+            string asmdefPath = WriteAsmdefWithoutDefine();
+            SourceGeneratorGenerationProvider provider = CreateProvider();
+
+            GenerationResult result = await provider.GenerateAsync(
+                CreateRequest(),
+                CancellationToken.None);
+
+            Assert.That(result.IsSuccess, Is.True, result.Message);
+            Assert.That(
+                File.ReadAllText(asmdefPath),
+                Does.Contain("\"define\": \"" + TargetAssemblyVersionDefineWriter.Define + "\""));
+            Assert.That(definitionImports, Does.Contain("Assets/Clients/Example.Clients.asmdef"));
+        }
+
+        [Test]
+        public void FailedDefinitionPublicationLeavesTheAlreadyAddedVersionDefineInTheAsmdef()
+        {
+            // The entry is idempotent and harmless without a definition, so it is intentionally not rolled back.
+            string asmdefPath = WriteAsmdefWithoutDefine();
+            SourceGeneratorGenerationProvider provider = CreateProvider(
+                importDefinition: path =>
+                {
+                    if (path.EndsWith(".cs", StringComparison.Ordinal))
+                    {
+                        throw new IOException("Simulated definition import failure.");
+                    }
+                });
+
+            GenerationResult result = provider.Generate(CreateRequest());
+
+            Assert.That(result.IsSuccess, Is.False);
+            Assert.That(
+                File.ReadAllText(asmdefPath),
+                Does.Contain("\"define\": \"" + TargetAssemblyVersionDefineWriter.Define + "\""));
+            Assert.That(
+                File.Exists(Path.Combine(outputFolder, "PetStoreApi.OpenApiDefinition.cs")),
+                Is.False);
+        }
+
+        string WriteAsmdefWithoutDefine()
+        {
+            string asmdefPath = Path.Combine(projectRoot, "Assets", "Clients", "Example.Clients.asmdef");
+            File.WriteAllText(
+                asmdefPath,
+                "{\n  \"name\": \"Example.Clients\",\n  \"references\": [\"Unity.OpenApiCodeGen.SourceGenerator\"]\n}\n",
+                new UTF8Encoding(false));
+            return asmdefPath;
+        }
+
         SourceGeneratorGenerationProvider CreateProvider(
             Action? requestCompilation = null,
             Action<string>? importDefinition = null)
@@ -915,7 +1036,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Directory.CreateDirectory(directory);
             string json = string.Format(
                 CultureInfo.InvariantCulture,
-                "{{\n  \"name\": \"{0}\",\n  \"references\": [\"{1}\"]\n}}\n",
+                "{{\n  \"name\": \"{0}\",\n  \"references\": [\"{1}\"],\n  \"versionDefines\": [\n    {{\n      \"name\": \"jp.rhycol.openapicodegen.source-generator\",\n      \"expression\": \"0.0.0\",\n      \"define\": \"OPENAPI_CODEGEN_SOURCE_GENERATOR\"\n    }}\n  ]\n}}\n",
                 assemblyName,
                 reference);
             File.WriteAllText(

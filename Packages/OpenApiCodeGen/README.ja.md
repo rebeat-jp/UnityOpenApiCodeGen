@@ -60,6 +60,23 @@ Source Generatorが利用可能なときは有効な`NamedBuildTarget`へ
 更新時は有効なターゲットから一時的に取り除きます。
 生成型を参照するコードは、追加パッケージを外した後にコンパイルエラーになることがあります。
 
+`PlayerSettings`のスクリプトdefineはビルドターゲットごとに保存され、PlayerSettingsを上書きするBuild
+Profileは独自の値を持ちます。同期したdefineだけでは、別のビルドターゲット、Build Profile、マシン、CIで
+定義がコンパイルされません。そのため**Generate**は、出力先asmdefに`versionDefines`も追加します。
+有効なビルドターゲットやBuild Profileに関係なく`OPENAPI_CODEGEN_SOURCE_GENERATOR`が定義されます。
+
+```json
+"versionDefines": [
+  { "name": "jp.rhycol.openapicodegen.source-generator", "expression": "0.0.0", "define": "OPENAPI_CODEGEN_SOURCE_GENERATOR" }
+]
+```
+
+`name`と`define`が同じ項目がすでにあれば、そのままにします。asmdefを解析できない場合は、書き換えずに
+Generateを失敗させ、手で追加する項目を表示します。定義ファイルは`#if OPENAPI_CODEGEN_SOURCE_GENERATOR`の
+ままなので、providerをDockerに切り替えても定義はコンパイルされます。無効にするには
+`<ApiName>.OpenApiDefinition.cs`を削除してください。詳細は
+[追加パッケージの日本語README](../OpenApiCodeGen.SourceGenerator/README.ja.md)を参照してください。
+
 ## ライセンス
 
 [MIT License](LICENSE.md)で公開しています。

@@ -11,6 +11,12 @@
   "precompiledReferences": [],
   "autoReferenced": false,
   "defineConstraints": [],
-  "versionDefines": [],
+  "versionDefines": [
+    {
+      "name": "jp.rhycol.openapicodegen.source-generator",
+      "expression": "0.0.0",
+      "define": "OPENAPI_CODEGEN_SOURCE_GENERATOR"
+    }
+  ],
   "noEngineReferences": true
 }

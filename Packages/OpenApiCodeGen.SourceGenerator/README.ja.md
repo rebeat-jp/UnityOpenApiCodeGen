@@ -517,6 +517,25 @@ scalarのJSON token型を検査します。`float`／`double`は有限値に限�
 Unityが削除を適用する前にdefineを取り除きます。更新時は有効なターゲットから一時的に取り除きます。
 この定義を参照するコードは、追加パッケージを外すとコンパイルエラーになることがあります。
 
+`PlayerSettings`のスクリプトdefineはビルドターゲットごとに保存され、PlayerSettingsを上書きするBuild
+Profileは独自の値を持ちます。そのため、同期したdefineだけでは、別のビルドターゲットやBuild Profileに
+切り替えたとき、別のマシン、CIで、定義がコンパイルされません。これを防ぐため、**Generate**は定義を
+含むasmdefに`versionDefines`も追加します。有効なビルドターゲットやBuild Profileに関係なく
+`OPENAPI_CODEGEN_SOURCE_GENERATOR`が定義されます。
+
+```json
+"versionDefines": [
+  { "name": "jp.rhycol.openapicodegen.source-generator", "expression": "0.0.0", "define": "OPENAPI_CODEGEN_SOURCE_GENERATOR" }
+]
+```
+
+追加は1回だけです。`name`と`define`が同じ項目がすでにあれば、`expression`が違っていても触りません。
+asmdefのほかの項目、BOM、改行コードは保ちます。asmdefを解析できない場合は、書き換えずにGenerateを
+失敗させ、手で追加する項目を表示します。同じ形で自分で追加することもできます。
+
+定義ファイルは`#if OPENAPI_CODEGEN_SOURCE_GENERATOR`のままなので、providerをDockerに切り替えても
+定義はコンパイルされ続けます。無効にするには、`<ApiName>.OpenApiDefinition.cs`を削除してください。
+
 ## 依存関係とproviderの切り替え
 
 パッケージのanalyzer DLLは1つです。Newtonsoft.Json、System.Text.Json、Roslyn `4.3.1`、YamlDotNetは、そのDLLにもUPMアーカイブにも

@@ -684,3 +684,25 @@ this add-on removes the define from every known `NamedBuildTarget` before Unity
 applies the package transition. Updating the add-on temporarily removes it from
 the active target. Code that references generated types may then require source
 or provider changes.
+
+`PlayerSettings` scripting define symbols are stored per build target, and a Build
+Profile that overrides Player Settings keeps its own copy. The synchronized define alone
+is therefore missing after you switch to another build target or Build Profile, on another
+machine, and in CI. To avoid this, **Generate** also adds a `versionDefines` entry to the
+asmdef that contains the definition, so `OPENAPI_CODEGEN_SOURCE_GENERATOR` is defined
+whichever build target or Build Profile is active:
+
+```json
+"versionDefines": [
+  { "name": "jp.rhycol.openapicodegen.source-generator", "expression": "0.0.0", "define": "OPENAPI_CODEGEN_SOURCE_GENERATOR" }
+]
+```
+
+The entry is added once. An existing entry with the same `name` and `define` is left
+untouched, even when its `expression` differs. Other fields, the BOM and the line endings
+of the asmdef are kept. If the asmdef cannot be parsed, Generate fails without changing it
+and shows the entry to add by hand, which you can also do yourself in the same form.
+
+The definition file keeps `#if OPENAPI_CODEGEN_SOURCE_GENERATOR`, so the definition is
+still compiled after you switch the provider to Docker. To turn it off, delete the
+`<ApiName>.OpenApiDefinition.cs` file.
