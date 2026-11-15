@@ -563,9 +563,13 @@ System.Text.Jsonは`org.nuget.system.text.json` 8.0.5（UnityNuGet、netstandard
   そのため生成器は、DTO型・enumのwire converter・各DTO propertyと`<Name>Specified`・`OnSerializing`コールバックに、internalな`PreserveAttribute`を付けます
   （Unityのlinkerは名前で認識します。`link.xml`は生成assembly名を持てないため使いません）。attributeはclientごとの専用namespace（`<生成namespace>.<ApiName>_Preserve`）に宣言するので、同じnamespaceに複数のclientを生成しても重複しません（型名が衝突する場合は連番を付けます）。
   DTO・enum・unionを持たないspecでは、attributeもそのファイルも生成しません。この変更後に全セルがPassしました。
-- 対象外（未検証）: Unity `6000.0.23f1`と`2021.3`、Linux・macOS・Android・iOSのPlayer、Development Player、Managed Stripping Level Low／Medium／Disabled、
+- **Linux Standalone IL2CPPとWebGL（CI）**: 手動CI（`.github/workflows/source-generator-player.yml`）を2026-11-15に実行しました
+  （[run 43697724324](https://github.com/rebeat-jp/UnityOpenApiCodeGen/actions/runs/43697724324)。GitHub Actions `ubuntu-latest`上のGameCI `unityci/editor` Unity `6000.3.2f1`イメージ、WebGLはrunnerのChrome）。
+  Linux64 IL2CPPの8セル（Managed Stripping Minimal／High × HTTP 2種 × JSON 2種）はすべてPass、WebGLは上の表と同じ4セルがPass、WebGL × HttpClientは`OACG014`で非対応でした。
+  Unity `6000.3.2f1`のLinux IL2CPP Playerは、`-nographics`を付けて起動すると起動直後にエンジン内部で異常終了します（`UnityPlayer.so`内のSIGSEGV。Mono Playerと生成コードには無関係）。
+  そのためCIのLinux Playerは`-nographics`を付けず、`xvfb-run`の仮想ディスプレイ上で`-batchmode`だけを付けて起動しています。
+- 対象外（未検証）: Unity `6000.0.23f1`と`2021.3`、macOS・Android・iOSのPlayer、LinuxのMono Player、Development Player、Managed Stripping Level Low／Medium／Disabled、
   IL2CPPのコード生成設定とWebGLの例外サポートの既定以外、別origin（CORS）への通信、WebGLの圧縮形式、Safari／Firefox。
-  Linux Standalone IL2CPPとWebGLの手動CI（`.github/workflows/source-generator-player.yml`）は用意しましたが、まだ実行していません。
 - WebGLでUnityWebRequestを使う場合、server URLが相対（`/api`など）なら、`new Uri(Application.absoluteURL)`のような絶対URIをbase addressに渡す必要があります。
 
 ## 検証済み環境

@@ -100,7 +100,11 @@ jobs:
 
   webgl-build:
     name: WebGL build (Unity 6000.3.2f1)
-    needs: preflight
+    # Both Unity jobs share the repository-wide license concurrency group, and GitHub keeps only one pending job per
+    # group: a second pending job cancels the first. Running WebGL after Standalone (whatever its verdict) keeps at
+    # most one of them pending, so neither is cancelled by the other.
+    needs: [preflight, standalone]
+    if: ${{ !cancelled() && needs.preflight.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
     environment:
@@ -162,6 +166,7 @@ jobs:
   webgl-run:
     name: WebGL run in a headless browser
     needs: [preflight, webgl-build]
+    if: ${{ !cancelled() && needs.webgl-build.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
