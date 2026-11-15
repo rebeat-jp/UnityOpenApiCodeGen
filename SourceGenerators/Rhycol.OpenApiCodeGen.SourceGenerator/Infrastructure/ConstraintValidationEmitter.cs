@@ -936,7 +936,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 {
                     case global::Newtonsoft.Json.Linq.JTokenType.Integer:
                     case global::Newtonsoft.Json.Linq.JTokenType.Float:
-                        return __P__TryDecimal(token, out decimal number) ? number.GetHashCode() : __P__ToDouble(token).GetHashCode();
+                        // Equal compares as decimal when both fit and as double otherwise, so the hash must not depend on which one
+                        // applies. A decimal is parsed back from its text (not cast), so that equal decimals of any scale give the same
+                        // double; the double rounded to 15 significant digits is the common key.
+                        double key = __P__TryDecimal(token, out decimal number)
+                            ? double.Parse(number.ToString(global::System.Globalization.CultureInfo.InvariantCulture), global::System.Globalization.NumberStyles.Float, global::System.Globalization.CultureInfo.InvariantCulture)
+                            : __P__ToDouble(token);
+                        return (key == 0d ? 0d : key).ToString(""E14"", global::System.Globalization.CultureInfo.InvariantCulture).GetHashCode();
                     case global::Newtonsoft.Json.Linq.JTokenType.String:
                         return (((global::Newtonsoft.Json.Linq.JValue)token).Value?.ToString() ?? string.Empty).GetHashCode();
                     case global::Newtonsoft.Json.Linq.JTokenType.Boolean:

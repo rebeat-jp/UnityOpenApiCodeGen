@@ -177,9 +177,48 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         public async Task UniqueItemsFindsTheSameHugeNumberWrittenAsAnIntegerAndAsAnExponent()
         {
             // 79000000000000000000000000000 fits a decimal and 7.9e28 (a double) does not; the hash of the numbers must not
-            // depend on that. Json.NET does not report this pair (its hash has the split), so only System.Text.Json is asserted.
-            Assert.Equal("violates:uniqueItems", await Decide(SystemTextJson.Value, "readAnyList", "[79000000000000000000000000000,7.9e28]"));
-            Assert.Equal("violates:uniqueItems", await Decide(SystemTextJson.Value, "readAnyList", "[7.9e28,79000000000000000000000000000]"));
+            // depend on that, in either order, for negatives, and inside arrays and objects.
+            var differences = new List<string>();
+            foreach (string body in new[]
+            {
+                "[79000000000000000000000000000,7.9e28]", "[7.9e28,79000000000000000000000000000]",
+                "[-79000000000000000000000000000,-7.9e28]", "[-7.9e28,-79000000000000000000000000000]",
+                "[[79000000000000000000000000000],[7.9e28]]", "[{\"a\":79000000000000000000000000000},{\"a\":7.9e28}]",
+                "[{\"a\":[7.9e28]},{\"a\":[79000000000000000000000000000]}]"
+            })
+            {
+                string left = await Decide(Newtonsoft.Value, "readAnyList", body);
+                string right = await Decide(SystemTextJson.Value, "readAnyList", body);
+                if (left != "violates:uniqueItems" || right != "violates:uniqueItems")
+                {
+                    differences.Add(body + ": Newtonsoft=" + left + " SystemTextJson=" + right);
+                }
+            }
+
+            Assert.True(differences.Count == 0, string.Join(Environment.NewLine, differences));
+        }
+
+        [Fact]
+        public async Task UniqueItemsTreatsDecimalsThatDifferOnlyInScaleAsDuplicates()
+        {
+            // The same value with a different number of trailing zeros must hash the same.
+            var differences = new List<string>();
+            foreach (decimal[] value in new[]
+            {
+                new[] { 2.868980833353654999m, 2.8689808333536549990000000000m },
+                new[] { 2.8689808333536549990000000000m, 2.868980833353654999m },
+                new[] { 1m, 1.000000000000000000000000000m }
+            })
+            {
+                string left = await Decide(Newtonsoft.Value, "sendDecList", null, new List<decimal>(value));
+                string right = await Decide(SystemTextJson.Value, "sendDecList", null, new List<decimal>(value));
+                if (left != "request-violates:uniqueItems" || right != "request-violates:uniqueItems")
+                {
+                    differences.Add("sendDecList " + string.Join(",", value) + ": Newtonsoft=" + left + " SystemTextJson=" + right);
+                }
+            }
+
+            Assert.True(differences.Count == 0, string.Join(Environment.NewLine, differences));
         }
 
         [Fact]
