@@ -5,11 +5,10 @@ const path = require('path');
 const { sha256, candidateFingerprint, expectedGateVersions, requiredEvidence } = require('../validate-release-artifacts');
 const { writeChecksums } = require('../ci-evidence');
 const commit = 'a'.repeat(40);
-function fixture(ci = true, executionAttempt = '1') {
+function fixture(ci = true, executionAttempt = '1', version = '0.5.0') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'release-tests-'));
   const output = path.join(root, 'candidate'); fs.mkdirSync(output);
   const analyzer = path.join(root, 'analyzer.dll'); fs.writeFileSync(analyzer, 'deterministic analyzer');
-  const version = '0.5.0';
   const archives = [['jp.rhycol.openapicodegen', 'Packages/OpenApiCodeGen'], ['jp.rhycol.openapicodegen.source-generator', 'Packages/OpenApiCodeGen.SourceGenerator']].map(([name, packagePath]) => {
     const file = `${name}-${version}.tgz`; fs.writeFileSync(path.join(output, file), name);
     return { package: name, version, path: packagePath, file, root: 'package/', size: fs.statSync(path.join(output, file)).size, sha256: sha256(path.join(output, file)) };

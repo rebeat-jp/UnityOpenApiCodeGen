@@ -23,3 +23,41 @@
     align-self: flex-start;
     margin-top: 4px;
 }
+
+.library-readiness {
+    margin-top: 4px;
+    margin-bottom: 4px;
+    margin-left: 3px;
+    margin-right: 3px;
+}
+
+.library-readiness-hidden {
+    display: none;
+}
+
+.library-readiness-summary {
+    white-space: normal;
+}
+
+.library-readiness-summary--ready {
+    color: rgb(77, 191, 77);
+}
+
+.library-readiness-summary--blocked {
+    color: rgb(255, 77, 77);
+}
+
+.library-readiness-problems {
+    white-space: normal;
+    color: rgb(255, 77, 77);
+}
+
+.library-readiness-warnings {
+    white-space: normal;
+    color: rgb(220, 160, 40);
+}
+
+.library-readiness-link {
+    align-self: flex-start;
+    margin-top: 4px;
+}

@@ -22,7 +22,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("Content-Location")]
         [InlineData("Content-MD5")]
         [InlineData("Content-Range")]
-        [InlineData("CONTENT-TYPE")]
         [InlineData("Expires")]
         [InlineData("Last-Modified")]
         public void ContentOnlyHeaderParameterReportsSourceLocation(string name)
@@ -41,13 +40,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("aCcEpT")]
         [InlineData("Authorization")]
         [InlineData("AUTHORIZATION")]
+        [InlineData("Content-Type")]
+        [InlineData("CONTENT-TYPE")]
         public void IgnoredHeaderParameterReportsSourceLocation(string name)
         {
             Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
                 HeaderDocument(name)).RunResult.Diagnostics);
 
-            Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("ignored by OpenAPI", diagnostic.GetMessage());
+            // P3: ignored by OpenAPI, so it is a positioned OACG108 warning (not an error) and the
+            // client still compiles without the parameter.
+            Assert.Equal("OACG108", diagnostic.Id);
+            Assert.Equal(DiagnosticSeverity.Warning, diagnostic.Severity);
+            Assert.Contains("is ignored", diagnostic.GetMessage());
             Assert.Contains("/paths/~1value/get/parameters/0/name", diagnostic.GetMessage());
             Assert.Equal(TestBundleFactory.SourcePath, diagnostic.Location.GetLineSpan().Path);
         }
@@ -404,11 +408,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "{\"type\":\"string\",\"enum\":[\"a,b\",\"c\"]}",
                 "{\"type\":\"string\",\"enum\":[\"a\",\"b,c\"]}");
 
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(document)
-                .RunResult.Diagnostics);
-
-            Assert.Contains("same JSON body contract", diagnostic.GetMessage());
-            Assert.Contains("/responses/201", diagnostic.GetMessage());
+            // P4 (G23): distinct contracts get a status-keyed result wrapper instead of OACG105.
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.Contains("Status200", execution.GeneratedSource);
+            Assert.Contains("Status201", execution.GeneratedSource);
         }
 
         [Fact]
@@ -419,11 +424,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"a\":{\"type\":\"string\"}," +
                 "\"b\":{\"type\":\"string\"}}}");
 
-            Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(document)
-                .RunResult.Diagnostics);
-
-            Assert.Contains("same JSON body contract", diagnostic.GetMessage());
-            Assert.Contains("/responses/201", diagnostic.GetMessage());
+            // P4 (G23): distinct contracts get a status-keyed result wrapper instead of OACG105.
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(document);
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.Contains("Status200", execution.GeneratedSource);
+            Assert.Contains("Status201", execution.GeneratedSource);
         }
 
         private static string TwoResponseDocument(string firstSchema, string secondSchema)

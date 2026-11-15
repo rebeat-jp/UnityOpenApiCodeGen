@@ -1,0 +1,175 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Serializer core", "version": "1.0.0" },
+  "servers": [ { "url": "https://api.example.test/v1" } ],
+  "paths": {
+    "/widgets": {
+      "get": {
+        "operationId": "listWidgets",
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Widget" } } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createWidget",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Widget" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "created",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Widget" } } }
+          },
+          "400": {
+            "description": "bad",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } }
+          }
+        }
+      }
+    },
+    "/widgets/{id}": {
+      "get": {
+        "operationId": "getWidget",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" } },
+          { "name": "color", "in": "query", "schema": { "$ref": "#/components/schemas/Color" } },
+          { "name": "level", "in": "query", "schema": { "$ref": "#/components/schemas/Level" } },
+          { "name": "since", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "at", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "ticket", "in": "query", "schema": { "type": "string", "format": "uuid" } },
+          { "name": "ratio", "in": "query", "schema": { "type": "number", "format": "double" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Widget" } } }
+          },
+          "404": {
+            "description": "missing",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } }
+          }
+        }
+      }
+    },
+    "/open": {
+      "put": {
+        "operationId": "putOpen",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Open" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Open" } } }
+          }
+        }
+      }
+    },
+    "/ints": {
+      "get": {
+        "operationId": "getInts",
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "type": "integer", "format": "int32" } } } }
+          }
+        }
+      }
+    },
+    "/levels": {
+      "get": {
+        "operationId": "getLevel",
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Level" } } }
+          }
+        }
+      }
+    },
+    "/any": {
+      "get": {
+        "operationId": "getAny",
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": { "application/json": { "schema": {} } }
+          }
+        }
+      }
+    },
+    "/dates": {
+      "get": {
+        "operationId": "getDates",
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": { "application/json": { "schema": { "type": "object", "additionalProperties": { "type": "string", "format": "date" } } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Color": { "type": "string", "enum": [ "red", "green", "dark-blue" ] },
+      "Level": { "type": "integer", "enum": [ 1, 2, 3 ] },
+      "Address": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [ "city" ],
+        "properties": {
+          "city": { "type": "string" },
+          "zip": { "type": "string" }
+        }
+      },
+      "Widget": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [ "id", "name", "created" ],
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "name": { "type": "string" },
+          "count": { "type": "integer", "format": "int32" },
+          "ratio": { "type": "number", "format": "double" },
+          "flag": { "type": "boolean" },
+          "color": { "$ref": "#/components/schemas/Color" },
+          "level": { "$ref": "#/components/schemas/Level" },
+          "born": { "type": "string", "format": "date" },
+          "created": { "type": "string", "format": "date-time" },
+          "ident": { "type": "string", "format": "uuid" },
+          "blob": { "type": "string", "format": "byte" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "attrs": { "type": "object", "additionalProperties": { "type": "integer", "format": "int32" } },
+          "any": {},
+          "extra": { "type": "object" },
+          "note": { "type": [ "string", "null" ] },
+          "secret": { "type": "string", "readOnly": true },
+          "child": { "$ref": "#/components/schemas/Address" }
+        }
+      },
+      "Open": {
+        "type": "object",
+        "required": [ "kind" ],
+        "properties": {
+          "kind": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "Problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [ "code", "message" ],
+        "properties": {
+          "code": { "type": "integer", "format": "int32" },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}

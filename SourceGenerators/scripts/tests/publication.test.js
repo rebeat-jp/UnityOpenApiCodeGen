@@ -5,7 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { fixture, commit } = require('./release-fixture');
 const { publish, publicationPlan } = require('../publish-release');
-const { safeEvidenceEntries, compareRegistry } = require('../verify-openupm');
+const { safeEvidenceEntries, compareRegistry, prepare } = require('../verify-openupm');
+const { isPrerelease } = require('../release-contract');
 const { archive } = require('./tar-fixture');
 function use(t) { const f = fixture(); t.after(f.remove); fs.writeFileSync(path.join(f.output, 'verification-evidence.tar.gz'), 'verified logs'); return f; }
 class FakeGitHub {
@@ -14,19 +15,42 @@ class FakeGitHub {
   async release() { return this.savedRelease && structuredClone(this.savedRelease); }
   async releaseById() { return this.savedRelease && structuredClone(this.savedRelease); }
   async createTag(tag, sha) { this.events.push(['tag', tag, sha]); this.tag = sha; }
-  async createRelease(tag, sha) { this.events.push(['release', tag, sha]); return (this.savedRelease = { id: 1, draft: true, assets: [] }); }
+  async createRelease(tag, sha) { this.events.push(['release', tag, sha]); return (this.savedRelease = { id: 1, draft: true, prerelease: isPrerelease(tag), assets: [] }); }
   async uploadAsset(release, name, bytes) {
     if (++this.uploadCount === this.failOnUpload) throw new Error('simulated upload interruption');
     this.events.push(['upload', name]); const asset = { id: this.contents.size + 1, name }; this.savedRelease.assets.push(asset); this.contents.set(asset.id, Buffer.from(bytes)); return asset;
   }
   async downloadAsset(asset) { return this.contents.get(asset.id); }
-  async finishRelease() { this.events.push(['finish']); this.savedRelease.draft = false; }
+  async finishRelease(release, tag) { this.events.push(['finish', tag]); this.savedRelease.draft = false; return this.savedRelease; }
   async dispatchOpenUpm(tag) { this.events.push(['dispatch-tag-ref', tag]); }
 }
 test('publish creates version tag, complete immutable assets, then tag-ref OpenUPM dispatch', async t => {
   const f = use(t); const client = new FakeGitHub(); await publish(client, f.output, f.manifest);
   assert.deepEqual(client.events[0], ['tag', '0.5.0', commit]); assert.equal(client.savedRelease.assets.length, 5); assert.equal(client.savedRelease.draft, false); assert.deepEqual(client.events.at(-1), ['dispatch-tag-ref', '0.5.0']);
   const uploads = client.uploadCount; await publish(client, f.output, f.manifest); assert.equal(client.uploadCount, uploads, 'same-artifact retry must not replace assets');
+});
+test('prerelease publish creates a prerelease draft and finishes without becoming Latest', async t => {
+  const f = fixture(true, '1', '0.6.0-preview.1'); t.after(f.remove); fs.writeFileSync(path.join(f.output, 'verification-evidence.tar.gz'), 'verified logs');
+  const client = new FakeGitHub(); await publish(client, f.output, f.manifest);
+  assert.equal(client.savedRelease.prerelease, true); assert.deepEqual(client.events.find(entry => entry[0] === 'finish'), ['finish', '0.6.0-preview.1']); assert.deepEqual(client.events.at(-1), ['dispatch-tag-ref', '0.6.0-preview.1']);
+});
+test('existing Release whose prerelease flag disagrees with the version is never overwritten', async t => {
+  for (const [version, wrongFlag] of [['0.5.0', true], ['0.6.0-preview.1', false]]) {
+    const f = fixture(true, '1', version); t.after(f.remove); fs.writeFileSync(path.join(f.output, 'verification-evidence.tar.gz'), 'verified logs');
+    const client = new FakeGitHub(); client.tag = commit; client.savedRelease = { id: 1, draft: true, prerelease: wrongFlag, assets: [] };
+    await assert.rejects(publish(client, f.output, f.manifest), /prerelease flag/); assert.equal(client.events.length, 0);
+    client.savedRelease.draft = false; await assert.rejects(publish(client, f.output, f.manifest), /prerelease flag|incomplete/); assert.equal(client.events.length, 0);
+  }
+});
+test('verify-openupm prepare requires the Release prerelease flag to match the version tag', async () => {
+  const release = (prerelease, assets = []) => ({ draft: false, prerelease, assets });
+  const client = (value, tag, sha = commit) => ({ tagCommit: async () => sha, release: async () => value, downloadAsset: async () => { throw new Error('must not download'); } });
+  for (const [tag, ok, bad] of [['0.5.0', false, true], ['0.6.0-preview.1', true, false]]) {
+    await assert.rejects(prepare(client(release(bad), tag), 'unused', tag, commit), /prerelease flag matches/);
+    await assert.rejects(prepare(client(release(ok), tag), 'unused', tag, commit), /assets are incomplete/, 'matching flag passes the prerelease check');
+    await assert.rejects(prepare(client({ ...release(ok), draft: true }), 'unused', tag, commit), /prerelease flag matches/);
+  }
+  for (const tag of ['0.5.0-rc1', '0.6.0-preview', '0.6.0+build.1', '01.0.0']) await assert.rejects(prepare(client(release(false), tag), 'unused', tag, commit), /validated version tag/);
 });
 test('interrupted draft Release resumes only missing assets from the same artifact', async t => {
   const f = use(t); const client = new FakeGitHub(); client.failOnUpload = 3;
@@ -171,7 +195,7 @@ test('trusted release workflow rejects non-main code even when target contract i
 });
 test('real GitHub client honors draft HTTP API semantics and refreshes by Release ID', async t => {
   const { GitHubClient } = require('../publish-release'); const f = use(t); const originalFetch = global.fetch; t.after(() => { global.fetch = originalFetch; });
-  let tag = null; let release = null; const contents = new Map(); const routes = [];
+  let tag = null; let release = null; const contents = new Map(); const routes = []; const patches = []; const created = [];
   global.fetch = async (rawUrl, init) => {
     const url = new URL(rawUrl); const route = url.pathname.replace('/repos/owner/repo/', '') + url.search; const method = init.method; routes.push(`${method} ${route}`);
     const jsonBody = init.body && typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
@@ -180,19 +204,22 @@ test('real GitHub client honors draft HTTP API semantics and refreshes by Releas
     else if (method === 'GET' && route.startsWith('releases/tags/')) { if (!release || release.draft) status = 404; else data = release; }
     else if (method === 'GET' && route === 'releases?per_page=100&page=1') data = release ? [release] : [];
     else if (method === 'POST' && route === 'git/refs') { tag = jsonBody.sha; status = 201; data = {}; }
-    else if (method === 'POST' && route === 'releases') { release = { id: 1, tag_name: jsonBody.tag_name, draft: true, assets: [] }; status = 201; data = release; }
+    else if (method === 'POST' && route === 'releases') { created.push(jsonBody); release = { id: 1, tag_name: jsonBody.tag_name, draft: true, prerelease: jsonBody.prerelease, assets: [] }; status = 201; data = release; }
     else if (method === 'POST' && route.startsWith('releases/1/assets?name=')) { const name = url.searchParams.get('name'); const asset = { id: contents.size + 1, name }; release.assets.push(asset); contents.set(asset.id, Buffer.from(init.body)); status = 201; data = asset; }
     else if (method === 'GET' && route === 'releases/1') data = release;
     else if (method === 'GET' && /^releases\/assets\/[0-9]+$/.test(route)) binary = contents.get(Number(route.split('/').at(-1)));
-    else if (method === 'PATCH' && route === 'releases/1') { release.draft = jsonBody.draft; data = release; }
+    else if (method === 'PATCH' && route === 'releases/1') { release.draft = jsonBody.draft; patches.push(jsonBody); data = release; }
     else if (method === 'POST' && route.endsWith('/dispatches')) status = 204;
     else throw new Error(`Unexpected test API route: ${method} ${route}`);
     return { status, ok: status < 400, json: async () => structuredClone(data), arrayBuffer: async () => binary };
   };
   const client = new GitHubClient('owner/repo', 'fake-token'); await publish(client, f.output, f.manifest);
+  assert.equal(created[0].prerelease, false); assert.deepEqual(patches[0], { draft: false, make_latest: 'legacy' });
   assert.equal(release.draft, false); assert.equal(release.assets.length, 5); assert.ok(routes.includes('GET releases/1')); assert.equal(routes.some(route => route.includes('releases/tags/')), false, 'draft lifecycle must not use published-only lookup');
   const saved = structuredClone(release); release.draft = true; assert.equal((await client.release('0.5.0')).draft, true, 'retry finds draft through authenticated list');
   release = saved; const uploadCount = routes.filter(route => route.startsWith('POST releases/1/assets')).length; await publish(client, f.output, f.manifest); assert.equal(routes.filter(route => route.startsWith('POST releases/1/assets')).length, uploadCount);
+  await client.createRelease('0.6.0-preview.1', commit); assert.equal(created.at(-1).prerelease, true);
+  await client.finishRelease({ id: 1 }, '0.6.0-preview.1'); assert.deepEqual(patches.at(-1), { draft: false, make_latest: 'false' });
 });
 test('draft lookup paginates and rejects multiple Releases matching one tag', async t => {
   const { GitHubClient } = require('../publish-release'); const originalFetch = global.fetch; t.after(() => { global.fetch = originalFetch; });

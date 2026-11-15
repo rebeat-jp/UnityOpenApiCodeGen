@@ -5,7 +5,6 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using Rhycol.OpenApiCodeGen.SourceGenerator;
-using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -72,11 +71,40 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             string generatedNamespace,
             OpenApiDocumentFormat documentFormat)
         {
+            return Prepare(
+                outputFolderPath,
+                apiName,
+                generatedNamespace,
+                documentFormat,
+                OpenApiHttpTransport.HttpClient,
+                OpenApiJsonSerializer.NewtonsoftJson);
+        }
+
+        /// <summary>
+        /// Resolves the assembly that will contain the definition generated for the output folder.
+        /// </summary>
+        internal OutputTargetAssembly ResolveOutputTarget(string outputFolderPath)
+        {
+            string outputFolder = ResolveOutputFolder(outputFolderPath);
+            AsmdefInfo targetAssembly = ResolveTargetAssembly(outputFolder);
+            return new OutputTargetAssembly(targetAssembly.Name, targetAssembly.NoEngineReferences);
+        }
+
+        internal OpenApiClientDefinitionPlan Prepare(
+            string outputFolderPath,
+            string apiName,
+            string generatedNamespace,
+            OpenApiDocumentFormat documentFormat,
+            OpenApiHttpTransport httpTransport,
+            OpenApiJsonSerializer jsonSerializer)
+        {
             if (documentFormat != OpenApiDocumentFormat.Json &&
                 documentFormat != OpenApiDocumentFormat.Yaml)
             {
                 throw new ArgumentOutOfRangeException(nameof(documentFormat));
             }
+
+            ValidateLibrarySelection(httpTransport, jsonSerializer);
 
             if (!CSharpNameValidator.TryValidateIdentifier(apiName, out string apiNameFailure))
             {
@@ -139,7 +167,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     clientIdentitySha256,
                     apiName,
                     generatedNamespace,
-                    documentFormat));
+                    documentFormat,
+                    httpTransport,
+                    jsonSerializer));
 
             return new OpenApiClientDefinitionPlan(
                 specId,
@@ -170,7 +200,26 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     : ComputeFileSha256(migrationSourcePath + ".meta"),
                 !string.IsNullOrEmpty(migrationSourcePath) && File.Exists(migrationSourcePath + ".meta")
                     ? File.ReadAllBytes(migrationSourcePath + ".meta")
-                    : new byte[0]);
+                    : new byte[0],
+                httpTransport,
+                jsonSerializer);
+        }
+
+        private static void ValidateLibrarySelection(
+            OpenApiHttpTransport httpTransport,
+            OpenApiJsonSerializer jsonSerializer)
+        {
+            if (httpTransport != OpenApiHttpTransport.HttpClient &&
+                httpTransport != OpenApiHttpTransport.UnityWebRequest)
+            {
+                throw new ArgumentOutOfRangeException(nameof(httpTransport));
+            }
+
+            if (jsonSerializer != OpenApiJsonSerializer.NewtonsoftJson &&
+                jsonSerializer != OpenApiJsonSerializer.SystemTextJson)
+            {
+                throw new ArgumentOutOfRangeException(nameof(jsonSerializer));
+            }
         }
 
         internal bool Publish(OpenApiClientDefinitionPlan plan)
@@ -278,7 +327,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 plan.ClientIdentitySha256,
                 plan.ApiName,
                 plan.GeneratedNamespace,
-                documentFormat));
+                documentFormat,
+                plan.HttpTransport,
+                plan.JsonSerializer));
             return new OpenApiClientDefinitionPlan(
                 plan.SpecId,
                 plan.ClientIdentitySha256,
@@ -298,7 +349,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 plan.PreparedMigrationSourceSha256,
                 plan.PreparedMigrationSourceMetaExists,
                 plan.PreparedMigrationSourceMetaSha256,
-                plan.PreparedMigrationSourceMetaBytes);
+                plan.PreparedMigrationSourceMetaBytes,
+                plan.HttpTransport,
+                plan.JsonSerializer);
         }
 
         internal DefinitionPublication PublishTransactional(OpenApiClientDefinitionPlan plan)
@@ -747,22 +800,30 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
         private static AsmdefInfo ReadAsmdef(string asmdefPath)
         {
-            JObject document;
+            AsmdefDocument document;
             try
             {
-                document = JObject.Parse(File.ReadAllText(asmdefPath, StrictUtf8));
+                document = JsonUtility.FromJson<AsmdefDocument>(
+                    File.ReadAllText(asmdefPath, StrictUtf8));
             }
             catch (Exception exception) when (
                 exception is IOException ||
                 exception is UnauthorizedAccessException ||
-                exception is Newtonsoft.Json.JsonException)
+                exception is DecoderFallbackException ||
+                exception is ArgumentException)
             {
                 throw new InvalidOperationException(
                     "The target asmdef could not be read: " + asmdefPath,
                     exception);
             }
 
-            string name = document.Value<string>("name");
+            if (document == null)
+            {
+                throw new InvalidOperationException(
+                    "The target asmdef could not be read: " + asmdefPath);
+            }
+
+            string name = document.name;
             if (string.IsNullOrWhiteSpace(name))
             {
                 throw new InvalidOperationException(
@@ -770,14 +831,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
 
             bool referencesRuntime = false;
-            JArray references = document["references"] as JArray;
+            string[] references = document.references;
             if (references != null)
             {
-                foreach (JToken referenceToken in references)
+                foreach (string reference in references)
                 {
-                    string reference = referenceToken.Type == JTokenType.String
-                        ? referenceToken.Value<string>()
-                        : string.Empty;
                     if (string.Equals(reference, RuntimeAssemblyName, StringComparison.Ordinal) ||
                         string.Equals(
                             reference,
@@ -793,7 +851,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             return new AsmdefInfo(
                 name,
                 referencesRuntime,
-                Path.GetDirectoryName(Path.GetFullPath(asmdefPath)));
+                Path.GetDirectoryName(Path.GetFullPath(asmdefPath)),
+                document.noEngineReferences);
+        }
+
+        [Serializable]
+        private sealed class AsmdefDocument
+        {
+            public string name;
+            public string[] references;
+            public bool noEngineReferences;
         }
 
         private static ExistingDefinitionInfo InspectExistingDefinition(
@@ -883,7 +950,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 existingIdentity,
                 parsed.ApiName,
                 parsed.GeneratedNamespace,
-                parsed.DocumentFormat));
+                parsed.DocumentFormat,
+                parsed.HttpTransport,
+                parsed.JsonSerializer));
             if (!string.Equals(normalizedContent, expectedSource, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
@@ -924,6 +993,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 throw InvalidOwnedDefinitionSource(definitionPath);
             }
 
+            // Two forms are accepted. The original form ends the attribute at the document format
+            // argument; the form written for a non-default library selection continues with named
+            // arguments, one per line, in the order HttpTransport, JsonSerializer.
+
             string specId = ReadQuotedAttributeArgument(lines[attributeLine + 1], true, definitionPath);
             string apiName = ReadQuotedAttributeArgument(lines[attributeLine + 2], true, definitionPath);
             string generatedNamespace = ReadQuotedAttributeArgument(
@@ -933,15 +1006,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             const string FormatPrefix =
                 "        global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.";
             string formatLine = lines[attributeLine + 4];
+            bool hasNamedArguments = formatLine.EndsWith(",", StringComparison.Ordinal);
             if (!formatLine.StartsWith(FormatPrefix, StringComparison.Ordinal) ||
-                !formatLine.EndsWith(")]", StringComparison.Ordinal))
+                (!hasNamedArguments && !formatLine.EndsWith(")]", StringComparison.Ordinal)))
             {
                 throw InvalidOwnedDefinitionSource(definitionPath);
             }
 
             string formatName = formatLine.Substring(
                 FormatPrefix.Length,
-                formatLine.Length - FormatPrefix.Length - 2);
+                formatLine.Length - FormatPrefix.Length - (hasNamedArguments ? 1 : 2));
             OpenApiDocumentFormat documentFormat;
             if (string.Equals(formatName, "Json", StringComparison.Ordinal))
             {
@@ -954,6 +1028,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             else
             {
                 throw InvalidOwnedDefinitionSource(definitionPath);
+            }
+
+            OpenApiHttpTransport httpTransport = OpenApiHttpTransport.HttpClient;
+            OpenApiJsonSerializer jsonSerializer = OpenApiJsonSerializer.NewtonsoftJson;
+            if (hasNamedArguments)
+            {
+                ReadNamedArguments(
+                    lines,
+                    attributeLine + 5,
+                    definitionPath,
+                    out httpTransport,
+                    out jsonSerializer);
             }
 
             int namespaceLine = FindUniqueLine(
@@ -975,7 +1061,78 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 specId,
                 apiName,
                 generatedNamespace,
-                documentFormat);
+                documentFormat,
+                httpTransport,
+                jsonSerializer);
+        }
+
+        private const string HttpTransportArgumentPrefix =
+            "        HttpTransport = global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiHttpTransport.";
+        private const string JsonSerializerArgumentPrefix =
+            "        JsonSerializer = global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiJsonSerializer.";
+
+        private static void ReadNamedArguments(
+            string[] lines,
+            int firstLine,
+            string definitionPath,
+            out OpenApiHttpTransport httpTransport,
+            out OpenApiJsonSerializer jsonSerializer)
+        {
+            httpTransport = OpenApiHttpTransport.HttpClient;
+            jsonSerializer = OpenApiJsonSerializer.NewtonsoftJson;
+            bool readHttpTransport = false;
+            bool readJsonSerializer = false;
+            for (int lineIndex = firstLine; lineIndex < lines.Length; lineIndex++)
+            {
+                string line = lines[lineIndex];
+                bool isLast = line.EndsWith(")]", StringComparison.Ordinal);
+                if (!isLast && !line.EndsWith(",", StringComparison.Ordinal))
+                {
+                    throw InvalidOwnedDefinitionSource(definitionPath);
+                }
+
+                int suffixLength = isLast ? 2 : 1;
+                if (line.StartsWith(HttpTransportArgumentPrefix, StringComparison.Ordinal))
+                {
+                    string name = line.Substring(
+                        HttpTransportArgumentPrefix.Length,
+                        line.Length - HttpTransportArgumentPrefix.Length - suffixLength);
+                    if (readHttpTransport ||
+                        readJsonSerializer ||
+                        !Enum.TryParse(name, false, out httpTransport) ||
+                        !Enum.IsDefined(typeof(OpenApiHttpTransport), httpTransport))
+                    {
+                        throw InvalidOwnedDefinitionSource(definitionPath);
+                    }
+
+                    readHttpTransport = true;
+                }
+                else if (line.StartsWith(JsonSerializerArgumentPrefix, StringComparison.Ordinal))
+                {
+                    string name = line.Substring(
+                        JsonSerializerArgumentPrefix.Length,
+                        line.Length - JsonSerializerArgumentPrefix.Length - suffixLength);
+                    if (readJsonSerializer ||
+                        !Enum.TryParse(name, false, out jsonSerializer) ||
+                        !Enum.IsDefined(typeof(OpenApiJsonSerializer), jsonSerializer))
+                    {
+                        throw InvalidOwnedDefinitionSource(definitionPath);
+                    }
+
+                    readJsonSerializer = true;
+                }
+                else
+                {
+                    throw InvalidOwnedDefinitionSource(definitionPath);
+                }
+
+                if (isLast)
+                {
+                    return;
+                }
+            }
+
+            throw InvalidOwnedDefinitionSource(definitionPath);
         }
 
         private static int FindUniqueLine(
@@ -1095,8 +1252,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             string clientIdentitySha256,
             string apiName,
             string generatedNamespace,
-            OpenApiDocumentFormat documentFormat)
+            OpenApiDocumentFormat documentFormat,
+            OpenApiHttpTransport httpTransport = OpenApiHttpTransport.HttpClient,
+            OpenApiJsonSerializer jsonSerializer = OpenApiJsonSerializer.NewtonsoftJson)
         {
+            // Defaults are never written, so definitions created before the library selection
+            // existed stay byte-identical when regenerated with the default selection.
+            bool writeHttpTransport = httpTransport != OpenApiHttpTransport.HttpClient;
+            bool writeJsonSerializer = jsonSerializer != OpenApiJsonSerializer.NewtonsoftJson;
             var builder = new StringBuilder();
             builder.AppendLine(OwnedFileHeader);
             builder.Append(ClientIdentityPrefix).AppendLine(clientIdentitySha256);
@@ -1110,7 +1273,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             builder.Append("        \"").Append(EscapeStringLiteral(apiName)).AppendLine("\",");
             builder.Append("        \"").Append(EscapeStringLiteral(generatedNamespace)).AppendLine("\",");
             builder.Append("        global::Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.");
-            builder.AppendLine(documentFormat == OpenApiDocumentFormat.Yaml ? "Yaml)]" : "Json)]");
+            builder.Append(documentFormat == OpenApiDocumentFormat.Yaml ? "Yaml" : "Json");
+            if (!writeHttpTransport && !writeJsonSerializer)
+            {
+                builder.AppendLine(")]");
+            }
+            else
+            {
+                builder.AppendLine(",");
+                if (writeHttpTransport)
+                {
+                    builder.Append(HttpTransportArgumentPrefix).Append(httpTransport.ToString());
+                    builder.AppendLine(writeJsonSerializer ? "," : ")]");
+                }
+
+                if (writeJsonSerializer)
+                {
+                    builder.Append(JsonSerializerArgumentPrefix).Append(jsonSerializer.ToString());
+                    builder.AppendLine(")]");
+                }
+            }
+
             builder.Append("    public partial class ").Append(apiName).AppendLine();
             builder.AppendLine("    {");
             builder.AppendLine("    }");
@@ -1289,12 +1472,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             internal AsmdefInfo(
                 string name,
                 bool referencesSourceGeneratorRuntime,
-                string directoryPath)
+                string directoryPath,
+                bool noEngineReferences)
             {
                 Name = name;
                 ReferencesSourceGeneratorRuntime = referencesSourceGeneratorRuntime;
                 DirectoryPath = directoryPath;
+                NoEngineReferences = noEngineReferences;
             }
+
+            internal bool NoEngineReferences { get; }
 
             internal string Name { get; }
 
@@ -1370,13 +1557,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 string specId,
                 string apiName,
                 string generatedNamespace,
-                OpenApiDocumentFormat documentFormat)
+                OpenApiDocumentFormat documentFormat,
+                OpenApiHttpTransport httpTransport,
+                OpenApiJsonSerializer jsonSerializer)
             {
                 SpecId = specId;
                 ApiName = apiName;
                 GeneratedNamespace = generatedNamespace;
                 DocumentFormat = documentFormat;
+                HttpTransport = httpTransport;
+                JsonSerializer = jsonSerializer;
             }
+
+            internal OpenApiHttpTransport HttpTransport { get; }
+
+            internal OpenApiJsonSerializer JsonSerializer { get; }
 
             internal string SpecId { get; }
 
@@ -1386,6 +1581,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
             internal OpenApiDocumentFormat DocumentFormat { get; }
         }
+    }
+
+    /// <summary>The assembly that will contain a definition generated for an output folder.</summary>
+    internal sealed class OutputTargetAssembly
+    {
+        internal OutputTargetAssembly(string name, bool noEngineReferences)
+        {
+            Name = name;
+            NoEngineReferences = noEngineReferences;
+        }
+
+        internal string Name { get; }
+
+        internal bool NoEngineReferences { get; }
     }
 
     internal sealed class DefinitionPublication

@@ -10,7 +10,17 @@ package IDs and the shared version remain unchanged. See the
 
 This runbook is for maintainers updating the analyzer DLL and releasing the two
 UPM packages. Publication starts manually and defaults to **dry-run**. Both
-packages use the same stable version and tag, initially `0.5.0`.
+packages use the same version and tag. The version is either a stable
+`X.Y.Z` (for example `0.5.1`) or a prerelease `X.Y.Z-(preview|alpha|beta|rc).N`
+(for example `0.6.0-preview.1`); numbers have no leading zeros, `N` is a
+positive integer, and `+build` metadata is rejected.
+
+A prerelease is created as a GitHub **Pre-release** and published with
+`make_latest: false`, so it is not marked **Latest**; a stable release keeps
+GitHub's default (`legacy`). The workflow refuses to continue if an existing
+Release has a different `prerelease` flag, and checks the published state. The OpenUPM verification requires the same match. A stable release is
+published separately, with a version without a suffix, through the same
+verification process.
 
 | Package | Distribution |
 | --- | --- |
@@ -18,7 +28,8 @@ packages use the same stable version and tag, initially `0.5.0`.
 | `jp.rhycol.openapicodegen.source-generator` | Verified GitHub Release `.tgz` asset, distributed by OpenUPM |
 
 The analyzer DLL remains committed in the add-on for Git URL installation.
-Examples use the current `0.5.1` release tag; to try an unreleased commit, replace
+Examples use the current `0.6.0-preview.1` release tag (a prerelease; the latest
+stable release is `0.5.1`); to try an unreleased commit, replace
 that ref with the reviewed commit SHA in both Git dependencies. Candidate verification does
 not establish that a version is published.
 
@@ -84,11 +95,22 @@ does not automatically trigger the ordinary PR workflow.
 
 The current package contract is:
 
-- Base `0.5.1`, minimum Unity `2021.3`.
-- Add-on `0.5.1`, minimum Unity `6000.0`.
-- Add-on dependency on base `0.5.1` and
-  `com.unity.nuget.newtonsoft-json` `3.2.2`.
-- Package versions, dependency version, requested version, and tag match.
+- Base `0.6.0-preview.1`, minimum Unity `2021.3`.
+- Add-on `0.6.0-preview.1`, minimum Unity `6000.0`.
+- Add-on dependency on base `0.6.0-preview.1` only (`pack-release.sh` checks that the
+  dependency set is exactly the base package, in `package.json` and in
+  `packages-lock.json`). Since 0.6.0 the add-on no longer depends on
+  `com.unity.nuget.newtonsoft-json`; the project installs the libraries of the
+  selected HTTP / JSON combination itself.
+- The development project (`Packages/manifest.json`) pins
+  `com.unity.nuget.newtonsoft-json` `3.2.2` as a direct dependency, locked at
+  depth 0 in `packages-lock.json`, because it uses the default Newtonsoft.Json
+  client. `pack-release.sh` checks this too.
+- Package versions, dependency version, requested version, and tag match
+  (`pack-release.sh` compares both `package.json` versions and the base
+  dependency with the requested version). The versions in this document's
+  examples and contract list are updated together with the package versions
+  for each release.
 
 The shared pipeline checks out the exact clean SHA, runs script and .NET tests,
 checks deterministic DLL builds and committed DLL synchronization, and rejects
@@ -123,8 +145,8 @@ The final `verified-release-<run-id>-<aggregate-execution-attempt>` artifact is
 uploaded only after successful aggregation and dry-run validation. It contains:
 
 ```text
-jp.rhycol.openapicodegen-0.5.1.tgz
-jp.rhycol.openapicodegen.source-generator-0.5.1.tgz
+jp.rhycol.openapicodegen-0.6.0-preview.1.tgz
+jp.rhycol.openapicodegen.source-generator-0.6.0-preview.1.tgz
 release-manifest.json
 SHA256SUMS
 unity-gate.json
@@ -180,7 +202,7 @@ Start the manual release workflow with an exact 40-character SHA:
 
 ```sh
 gh workflow run source-generator-release.yml --ref main \
-  -f commit=REPLACE_WITH_FULL_COMMIT_SHA -f version=0.5.1 -F publish=false
+  -f commit=REPLACE_WITH_FULL_COMMIT_SHA -f version=0.6.0-preview.1 -F publish=false
 ```
 
 The default `publish=false` verifies the full candidate and executes the CD
@@ -279,8 +301,8 @@ evidence archive uses GNU tar and runs on Linux in Actions.
 1. Remove `jp.rhycol.openapicodegen.source-generator` from the Unity project
    manifest and allow Unity to remove its provider define.
 2. Keep the base package and select the Docker provider in Settings.
-3. Pin the base to the previous `0.5.0` release if its `0.5.1` contract is also
-   implicated.
+3. Pin the base to the latest stable `0.5.1` release if the `0.6.0-preview.1`
+   contract is also implicated.
 4. Regenerate affected clients and adjust code that depended on generated
    types. Record the project/package changes.
 
@@ -288,5 +310,8 @@ Initial formal publication and add-on OpenUPM registration are tracked in
 [#62](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/62), separately from
 PR #56's review fixes and dry-run verification.
 
-Never move or delete a published tag or replace a published package. Fixes use
-a new patch version, such as `0.5.1`, through the same verification process.
+Never move or delete a published tag or replace a published package. Fixes to a
+stable release use a new patch version, such as `0.5.2`, through the same
+verification process. Fixes to a prerelease raise the prerelease number and are
+republished, such as `0.6.0-preview.2`; the stable `0.6.0` is released later
+without a suffix.

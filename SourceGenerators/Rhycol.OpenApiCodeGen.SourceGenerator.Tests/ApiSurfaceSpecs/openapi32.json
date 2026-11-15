@@ -1,0 +1,134 @@
+{
+  "openapi": "3.2.0",
+  "$self": "https://example.test/specs/openapi32.json",
+  "info": { "title": "OpenAPI 3.2", "version": "1", "description": "P8: QUERY, additionalOperations, in: querystring, defaultMapping, device authorization." },
+  "servers": [ { "url": "https://api.example.test/v1", "name": "Production" } ],
+  "tags": [
+    { "name": "pets", "summary": "Pets", "kind": "nav" },
+    { "name": "search", "summary": "Search", "parent": "pets", "kind": "audience" }
+  ],
+  "security": [ { "oauth": [ "read" ] } ],
+  "paths": {
+    "/pets": {
+      "get": {
+        "operationId": "listPets",
+        "parameters": [
+          {
+            "name": "filter",
+            "in": "querystring",
+            "content": {
+              "application/x-www-form-urlencoded": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "q": { "type": "string" },
+                    "tags": { "type": "array", "items": { "type": "string" } },
+                    "limit": { "type": "integer" }
+                  }
+                },
+                "encoding": { "tags": { "style": "form", "explode": false } }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "summary": "The pets",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Pet" } } } }
+          }
+        }
+      }
+    },
+    "/pets/search": {
+      "query": {
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "$ref": "#/components/mediaTypes/PetQuery" } }
+        },
+        "responses": {
+          "200": {
+            "description": "Matches",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Pet" } } } }
+          }
+        }
+      }
+    },
+    "/pets/{petId}": {
+      "parameters": [ { "name": "petId", "in": "path", "required": true, "schema": { "type": "string" } } ],
+      "additionalOperations": {
+        "PURGE": { "operationId": "purgePet", "responses": { "204": { "description": "Purged" } } },
+        "COPY": {
+          "responses": {
+            "201": { "description": "Copied", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } } }
+          }
+        }
+      }
+    },
+    "/animals/{id}": {
+      "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+      "get": {
+        "operationId": "getAnimal",
+        "responses": {
+          "200": { "description": "An animal", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Animal" } } } }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "oauth": {
+        "type": "oauth2",
+        "oauth2MetadataUrl": "https://auth.example.test/.well-known/oauth-authorization-server",
+        "flows": {
+          "deviceAuthorization": {
+            "deviceAuthorizationUrl": "https://auth.example.test/device",
+            "tokenUrl": "https://auth.example.test/token",
+            "scopes": { "read": "Read pets" }
+          }
+        }
+      }
+    },
+    "mediaTypes": {
+      "PetQuery": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "name": { "type": "string" } }
+        }
+      }
+    },
+    "schemas": {
+      "Pet": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [ "id", "name" ],
+        "properties": { "id": { "type": "integer" }, "name": { "type": "string" } }
+      },
+      "Cat": {
+        "type": "object", "additionalProperties": false, "required": [ "kind" ],
+        "properties": { "kind": { "type": "string" }, "lives": { "type": "integer" } }
+      },
+      "Dog": {
+        "type": "object", "additionalProperties": false, "required": [ "kind" ],
+        "properties": { "kind": { "type": "string" }, "bark": { "type": "string" } }
+      },
+      "Unknown": {
+        "type": "object", "additionalProperties": false,
+        "properties": { "kind": { "type": "string" }, "note": { "type": "string" } }
+      },
+      "Animal": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/Cat" },
+          { "$ref": "#/components/schemas/Dog" },
+          { "$ref": "#/components/schemas/Unknown" }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": { "cat": "#/components/schemas/Cat", "dog": "#/components/schemas/Dog" },
+          "defaultMapping": "#/components/schemas/Unknown"
+        }
+      }
+    }
+  }
+}

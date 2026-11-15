@@ -1,0 +1,42 @@
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi ctor public (System.Net.Http.HttpClient httpClient)
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi ctor public (System.Net.Http.HttpClient httpClient, string baseUrl)
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getAnd(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getAnonymous(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getBasic(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getBearer(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getCookieKey(string? theme, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getCookieSame(string? sid, string? theme, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getDigest(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getHeaderKey(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getInherited(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getMtls(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getNone(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getOauth(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getOidc(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getOr(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getOverride(string? XApiKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getQueryKey(int? limit, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public System.Threading.Tasks.Task getTwoHeaders(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi method public static string BuildServerUrl(int index, System.Collections.Generic.IReadOnlyDictionary<string, string>? variables = null)
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi property public System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<string?>>? BearerAuthAccessTokenProvider { get; set; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi property public System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<string?>>? OauthAccessTokenProvider { get; set; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi property public System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<string?>>? OidcAccessTokenProvider { get; set; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi property public static System.Collections.Generic.IReadOnlyList<string> Servers { get; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi property public string? BasicAuthPassword { get; set; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi property public string? BasicAuthUsername { get; set; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi property public string? BearerAuthAccessToken { get; set; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi property public string? CookieKeyApiKey { get; set; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi property public string? DigestAuthCredentials { get; set; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi property public string? HeaderKeyApiKey { get; set; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi property public string? OauthAccessToken { get; set; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi property public string? OidcAccessToken { get; set; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi property public string? QueryKeyApiKey { get; set; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody)
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApiException ctor public (System.Net.HttpStatusCode statusCode, string responseBody, object? error, System.Exception? errorDeserializationException)
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApiException method public bool TryGetError<T>(out T value)
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApiException property public System.Exception? ErrorDeserializationException { get; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApiException property public System.Net.HttpStatusCode StatusCode { get; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApiException property public object? Error { get; }
+Generated.Baseline.BaselineSecurityApi.BaselineSecurityApiException property public string ResponseBody { get; }
+[Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiClientDefinitionAttribute("0123456789abcdef0123456789abcdef", "BaselineSecurityApi", "Generated.Baseline.BaselineSecurityApi", Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiDocumentFormat.Json, JsonSerializer = Rhycol.OpenApiCodeGen.SourceGenerator.OpenApiJsonSerializer.SystemTextJson)] type public class Generated.Baseline.BaselineSecurityApi.BaselineSecurityApi
+type public sealed class Generated.Baseline.BaselineSecurityApi.BaselineSecurityApiException : System.Exception

@@ -1,0 +1,109 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Security", "version": "1", "description": "P5: security schemes and requirements." },
+  "security": [ { "bearerAuth": [] } ],
+  "paths": {
+    "/header-key": {
+      "get": { "operationId": "getHeaderKey", "security": [ { "headerKey": [] } ], "responses": { "204": { "description": "ok" } } }
+    },
+    "/query-key": {
+      "get": {
+        "operationId": "getQueryKey",
+        "security": [ { "queryKey": [] } ],
+        "parameters": [ { "name": "limit", "in": "query", "schema": { "type": "integer" } } ],
+        "responses": { "204": { "description": "ok" } }
+      }
+    },
+    "/cookie-key": {
+      "get": {
+        "operationId": "getCookieKey",
+        "security": [ { "cookieKey": [] } ],
+        "parameters": [ { "name": "theme", "in": "cookie", "schema": { "type": "string" } } ],
+        "responses": { "204": { "description": "ok" } }
+      }
+    },
+    "/cookie-same": {
+      "get": {
+        "operationId": "getCookieSame",
+        "security": [ { "cookieKey": [] } ],
+        "parameters": [ { "name": "sid", "in": "cookie", "schema": { "type": "string" } }, { "name": "theme", "in": "cookie", "schema": { "type": "string" } } ],
+        "responses": { "204": { "description": "ok" } }
+      }
+    },
+    "/bearer": {
+      "get": { "operationId": "getBearer", "security": [ { "bearerAuth": [] } ], "responses": { "204": { "description": "ok" } } }
+    },
+    "/basic": {
+      "get": { "operationId": "getBasic", "security": [ { "basicAuth": [] } ], "responses": { "204": { "description": "ok" } } }
+    },
+    "/digest": {
+      "get": { "operationId": "getDigest", "security": [ { "digestAuth": [] } ], "responses": { "204": { "description": "ok" } } }
+    },
+    "/oauth": {
+      "get": { "operationId": "getOauth", "security": [ { "oauth": [ "read" ] } ], "responses": { "204": { "description": "ok" } } }
+    },
+    "/oidc": {
+      "get": { "operationId": "getOidc", "security": [ { "oidc": [ "openid" ] } ], "responses": { "204": { "description": "ok" } } }
+    },
+    "/mtls": {
+      "get": { "operationId": "getMtls", "security": [ { "mtls": [] } ], "responses": { "204": { "description": "ok" } } }
+    },
+    "/or": {
+      "get": { "operationId": "getOr", "security": [ { "headerKey": [] }, { "bearerAuth": [] } ], "responses": { "204": { "description": "ok" } } }
+    },
+    "/and": {
+      "get": {
+        "operationId": "getAnd",
+        "security": [ { "headerKey": [], "bearerAuth": [] }, { "basicAuth": [] } ],
+        "responses": { "204": { "description": "ok" } }
+      }
+    },
+    "/anonymous": {
+      "get": { "operationId": "getAnonymous", "security": [ { }, { "headerKey": [] } ], "responses": { "204": { "description": "ok" } } }
+    },
+    "/none": {
+      "get": { "operationId": "getNone", "security": [], "responses": { "204": { "description": "ok" } } }
+    },
+    "/inherited": {
+      "get": { "operationId": "getInherited", "responses": { "204": { "description": "ok" } } }
+    },
+    "/override": {
+      "get": {
+        "operationId": "getOverride",
+        "security": [ { "headerKey": [] } ],
+        "parameters": [ { "name": "X-Api-Key", "in": "header", "schema": { "type": "string" } } ],
+        "responses": { "204": { "description": "ok" } }
+      }
+    },
+    "/two-headers": {
+      "get": {
+        "operationId": "getTwoHeaders",
+        "security": [ { "headerKey": [], "queryKey": [], "cookieKey": [] } ],
+        "responses": { "204": { "description": "ok" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "headerKey": { "type": "apiKey", "in": "header", "name": "X-Api-Key", "description": "Key issued in the console." },
+      "queryKey": { "type": "apiKey", "in": "query", "name": "api key" },
+      "cookieKey": { "type": "apiKey", "in": "cookie", "name": "sid" },
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT", "description": "A JWT access token." },
+      "basicAuth": { "type": "http", "scheme": "Basic" },
+      "digestAuth": { "type": "http", "scheme": "Digest" },
+      "oauth": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://auth.example.com/authorize",
+            "tokenUrl": "https://auth.example.com/token",
+            "scopes": { "read": "Read data", "write": "Write data" }
+          },
+          "clientCredentials": { "tokenUrl": "https://auth.example.com/token", "scopes": { } }
+        }
+      },
+      "oidc": { "type": "openIdConnect", "openIdConnectUrl": "https://auth.example.com/.well-known/openid-configuration" },
+      "mtls": { "type": "mutualTLS" }
+    }
+  }
+}

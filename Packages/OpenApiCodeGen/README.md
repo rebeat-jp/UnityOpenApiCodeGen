@@ -20,17 +20,21 @@ For the Source Generator provider, add both packages to the Unity project's
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.1",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.1"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.1",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.1"
   }
 }
 ```
 
 The base package is also usable by itself with the Docker provider. The
-Source Generator add-on requires Unity 6000.0 or later and
-`com.unity.nuget.newtonsoft-json` `3.2.2`.
+Source Generator add-on requires Unity 6000.0 or later. Since 0.6.0 it does
+not install Newtonsoft.Json: install the libraries of the selected HTTP / JSON
+combination yourself (by default `com.unity.nuget.newtonsoft-json` `3.2.2`;
+`UnityWebRequest` and `System.Text.Json` are the alternatives).
 
-These examples use the `0.5.1` release tag. To try an unreleased commit, replace it
+These examples use the `0.6.0-preview.1` release tag. This is a prerelease; the
+latest stable version is `0.5.1`, which does not include the HTTP / JSON library
+selection. To try an unreleased commit, replace it
 with the same reviewed commit SHA in both Git URLs. See the
 [Source Generator README](../OpenApiCodeGen.SourceGenerator/README.md) for
 input support, references, and generated-code requirements.
@@ -43,6 +47,19 @@ input support, references, and generated-code requirements.
    the Docker provider.
 3. In `Window/OpenAPI Code Generator/Generator`, enter the document path or
    URL and an output folder under `Assets`, then press `Generate`.
+
+While the Source Generator provider is selected, **Source Generator Libraries**
+in the Settings window selects the HTTP implementation (HttpClient or
+UnityWebRequest) and the JSON serializer (Newtonsoft.Json or System.Text.Json),
+shows whether each choice is ready, and installs Newtonsoft.Json or the Unity
+Web Request module on request. The Generator window disables `Generate` with
+the reason and a link to Settings while a library of the selection is missing.
+The library state is separate from the provider's availability, so a missing
+library never removes `OPENAPI_CODEGEN_SOURCE_GENERATOR`. The library check needs the Default Output Folder Path to be set (the
+libraries are checked against that folder's assembly). The Docker provider
+UI is unchanged, also when the add-on is installed. See the
+[Source Generator README](../OpenApiCodeGen.SourceGenerator/README.md) for the
+requirements and diagnostics.
 
 To read a document from a private GitHub repository, use its
 `https://raw.githubusercontent.com/...` URL and set **GitHub Token** in the

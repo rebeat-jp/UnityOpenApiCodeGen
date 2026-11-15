@@ -2,8 +2,11 @@
 'use strict';
 const fs = require('fs');
 const { execFileSync } = require('child_process');
+// X.Y.Z or X.Y.Z-(preview|alpha|beta|rc).N (no leading zeros, N positive, no +build metadata).
+const RELEASE_VERSION_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(preview|alpha|beta|rc)\.[1-9][0-9]*)?$/;
+function isPrerelease(version) { return typeof version === 'string' && version.includes('-'); }
 function assertVersionContract(base, addon, expected) {
-  if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(base.version || '')) throw new Error('Release version must be a stable semantic version');
+  if (!RELEASE_VERSION_PATTERN.test(base.version || '')) throw new Error('Release version must be X.Y.Z or X.Y.Z-(preview|alpha|beta|rc).N');
   if (base.name !== 'jp.rhycol.openapicodegen' || addon.name !== 'jp.rhycol.openapicodegen.source-generator' || addon.version !== base.version || addon.dependencies?.[base.name] !== base.version || (expected && base.version !== expected)) throw new Error('Package versions, dependency version, or requested version mismatch');
   return base.version;
 }
@@ -18,7 +21,7 @@ function validateContract() {
     catch { throw new Error('Publication target must be contained in origin/main'); }
   }
 }
-module.exports = { assertVersionContract, validateContract };
+module.exports = { assertVersionContract, validateContract, RELEASE_VERSION_PATTERN, isPrerelease };
 if (require.main === module) {
   try { validateContract(); }
   catch (error) { console.error(error.message); process.exitCode = 1; }

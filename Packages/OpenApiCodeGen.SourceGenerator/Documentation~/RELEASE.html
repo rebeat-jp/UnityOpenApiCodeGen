@@ -14,7 +14,16 @@ package IDs and the shared version remain unchanged. See the
 <h2 id="distribution-and-prerequisites">Distribution and prerequisites</h2>
 <p>This runbook is for maintainers updating the analyzer DLL and releasing the two
 UPM packages. Publication starts manually and defaults to <strong>dry-run</strong>. Both
-packages use the same stable version and tag, initially <code>0.5.0</code>.</p>
+packages use the same version and tag. The version is either a stable
+<code>X.Y.Z</code> (for example <code>0.5.1</code>) or a prerelease <code>X.Y.Z-(preview|alpha|beta|rc).N</code>
+(for example <code>0.6.0-preview.1</code>); numbers have no leading zeros, <code>N</code> is a
+positive integer, and <code>+build</code> metadata is rejected.</p>
+<p>A prerelease is created as a GitHub <strong>Pre-release</strong> and published with
+<code>make_latest: false</code>, so it is not marked <strong>Latest</strong>; a stable release keeps
+GitHub&#39;s default (<code>legacy</code>). The workflow refuses to continue if an existing
+Release has a different <code>prerelease</code> flag, and checks the published state. The OpenUPM verification requires the same match. A stable release is
+published separately, with a version without a suffix, through the same
+verification process.</p>
 <table>
 <thead>
 <tr>
@@ -32,7 +41,8 @@ packages use the same stable version and tag, initially <code>0.5.0</code>.</p>
 </tr>
 </tbody></table>
 <p>The analyzer DLL remains committed in the add-on for Git URL installation.
-Examples use the current <code>0.5.1</code> release tag; to try an unreleased commit, replace
+Examples use the current <code>0.6.0-preview.1</code> release tag (a prerelease; the latest
+stable release is <code>0.5.1</code>); to try an unreleased commit, replace
 that ref with the reviewed commit SHA in both Git dependencies. Candidate verification does
 not establish that a version is published.</p>
 <table>
@@ -113,11 +123,22 @@ does not automatically trigger the ordinary PR workflow.</p>
 <h2 id="candidate-contract-and-evidence">Candidate contract and evidence</h2>
 <p>The current package contract is:</p>
 <ul>
-<li>Base <code>0.5.1</code>, minimum Unity <code>2021.3</code>.</li>
-<li>Add-on <code>0.5.1</code>, minimum Unity <code>6000.0</code>.</li>
-<li>Add-on dependency on base <code>0.5.1</code> and
-<code>com.unity.nuget.newtonsoft-json</code> <code>3.2.2</code>.</li>
-<li>Package versions, dependency version, requested version, and tag match.</li>
+<li>Base <code>0.6.0-preview.1</code>, minimum Unity <code>2021.3</code>.</li>
+<li>Add-on <code>0.6.0-preview.1</code>, minimum Unity <code>6000.0</code>.</li>
+<li>Add-on dependency on base <code>0.6.0-preview.1</code> only (<code>pack-release.sh</code> checks that the
+dependency set is exactly the base package, in <code>package.json</code> and in
+<code>packages-lock.json</code>). Since 0.6.0 the add-on no longer depends on
+<code>com.unity.nuget.newtonsoft-json</code>; the project installs the libraries of the
+selected HTTP / JSON combination itself.</li>
+<li>The development project (<code>Packages/manifest.json</code>) pins
+<code>com.unity.nuget.newtonsoft-json</code> <code>3.2.2</code> as a direct dependency, locked at
+depth 0 in <code>packages-lock.json</code>, because it uses the default Newtonsoft.Json
+client. <code>pack-release.sh</code> checks this too.</li>
+<li>Package versions, dependency version, requested version, and tag match
+(<code>pack-release.sh</code> compares both <code>package.json</code> versions and the base
+dependency with the requested version). The versions in this document&#39;s
+examples and contract list are updated together with the package versions
+for each release.</li>
 </ul>
 <p>The shared pipeline checks out the exact clean SHA, runs script and .NET tests,
 checks deterministic DLL builds and committed DLL synchronization, and rejects
@@ -158,8 +179,8 @@ nonzero exits, and mismatched provenance cannot pass the release gate. Unity
 jobs cannot silently repack a missing candidate.</p>
 <p>The final <code>verified-release-&lt;run-id&gt;-&lt;aggregate-execution-attempt&gt;</code> artifact is
 uploaded only after successful aggregation and dry-run validation. It contains:</p>
-<pre><code class="language-text">jp.rhycol.openapicodegen-0.5.1.tgz
-jp.rhycol.openapicodegen.source-generator-0.5.1.tgz
+<pre><code class="language-text">jp.rhycol.openapicodegen-0.6.0-preview.1.tgz
+jp.rhycol.openapicodegen.source-generator-0.6.0-preview.1.tgz
 release-manifest.json
 SHA256SUMS
 unity-gate.json
@@ -206,7 +227,7 @@ failure reasons. Arbitrary logs are not emitted as executable workflow commands.
 <h2 id="dry-run-and-publication">Dry-run and publication</h2>
 <p>Start the manual release workflow with an exact 40-character SHA:</p>
 <pre><code class="language-sh">gh workflow run source-generator-release.yml --ref main \
-  -f commit=REPLACE_WITH_FULL_COMMIT_SHA -f version=0.5.1 -F publish=false
+  -f commit=REPLACE_WITH_FULL_COMMIT_SHA -f version=0.6.0-preview.1 -F publish=false
 </code></pre>
 <p>The default <code>publish=false</code> verifies the full candidate and executes the CD
 script without remote publication. Review the workflow result and complete
@@ -295,14 +316,17 @@ evidence archive uses GNU tar and runs on Linux in Actions.</p>
 <li>Remove <code>jp.rhycol.openapicodegen.source-generator</code> from the Unity project
 manifest and allow Unity to remove its provider define.</li>
 <li>Keep the base package and select the Docker provider in Settings.</li>
-<li>Pin the base to the previous <code>0.5.0</code> release if its <code>0.5.1</code> contract is also
-implicated.</li>
+<li>Pin the base to the latest stable <code>0.5.1</code> release if the <code>0.6.0-preview.1</code>
+contract is also implicated.</li>
 <li>Regenerate affected clients and adjust code that depended on generated
 types. Record the project/package changes.</li>
 </ol>
 <p>Initial formal publication and add-on OpenUPM registration are tracked in
 <a href="https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/62">#62</a>, separately from
 PR #56&#39;s review fixes and dry-run verification.</p>
-<p>Never move or delete a published tag or replace a published package. Fixes use
-a new patch version, such as <code>0.5.1</code>, through the same verification process.</p>
+<p>Never move or delete a published tag or replace a published package. Fixes to a
+stable release use a new patch version, such as <code>0.5.2</code>, through the same
+verification process. Fixes to a prerelease raise the prerelease number and are
+republished, such as <code>0.6.0-preview.2</code>; the stable <code>0.6.0</code> is released later
+without a suffix.</p>
 </main></body></html>

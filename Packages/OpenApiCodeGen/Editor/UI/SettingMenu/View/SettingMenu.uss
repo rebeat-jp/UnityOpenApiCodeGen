@@ -49,3 +49,53 @@
     align-self: flex-start;
     margin-top: 4px;
 }
+
+.source-generator-libraries-hidden {
+    display: none;
+}
+
+.source-generator-libraries-message {
+    margin-left: 3px;
+    margin-bottom: 4px;
+    white-space: normal;
+}
+
+.source-generator-libraries-heading {
+    margin-top: 8px;
+    margin-left: 3px;
+    -unity-font-style: bold;
+}
+
+.source-generator-libraries-details {
+    margin-left: 24px;
+    margin-bottom: 4px;
+}
+
+.source-generator-libraries-status {
+    white-space: normal;
+}
+
+.source-generator-libraries-status--ready {
+    color: rgb(77, 191, 77);
+}
+
+.source-generator-libraries-status--blocked {
+    color: rgb(255, 77, 77);
+}
+
+.source-generator-libraries-guidance {
+    white-space: normal;
+    font-size: 11px;
+    opacity: 0.8;
+}
+
+.source-generator-libraries-action {
+    align-self: flex-start;
+    margin-top: 2px;
+}
+
+.source-generator-libraries-steps {
+    margin-top: 6px;
+    min-height: 200px;
+    white-space: pre;
+}

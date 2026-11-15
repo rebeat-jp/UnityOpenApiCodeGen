@@ -62,8 +62,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 multipleMediaTypes);
         }
 
+        // P4 (G23): success responses with different contracts are no longer rejected (OACG105); the
+        // operation returns a status-keyed result wrapper. Different JSON schemas inside one response
+        // (several media types) are still OACG105.
         private static void AssertInconsistent(string document, bool multipleMediaTypes)
         {
+            if (!multipleMediaTypes)
+            {
+                Phase4GeneratorExecution wrapped = Phase4GeneratorTestHarness.GenerateAndCompile(document);
+                Assert.Empty(wrapped.RunResult.Diagnostics);
+                Assert.Empty(wrapped.CompilationErrors);
+                Assert.Contains("Status200", wrapped.GeneratedSource);
+                Assert.Contains("Status201", wrapped.GeneratedSource);
+                return;
+            }
+
             Diagnostic diagnostic = Assert.Single(
                 Phase4GeneratorTestHarness.GenerateAndCompile(document).RunResult.Diagnostics);
 

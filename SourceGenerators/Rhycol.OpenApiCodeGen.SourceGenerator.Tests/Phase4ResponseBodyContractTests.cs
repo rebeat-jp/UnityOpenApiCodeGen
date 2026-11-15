@@ -203,8 +203,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             }
             else
             {
-                Assert.Contains(execution.RunResult.Diagnostics,
-                    diagnostic => diagnostic.GetMessage().Contains("same JSON body contract"));
+                // P4 (G23): different contracts (here by effective nullability) get a result wrapper, not OACG105.
+                Assert.Empty(execution.RunResult.Diagnostics);
+                Assert.Empty(execution.CompilationErrors);
+                Assert.Contains("Status201", execution.GeneratedSource);
             }
         }
 
@@ -232,9 +234,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
     ""SecondType"": { ""type"": ""object"", ""additionalProperties"": false, ""properties"": { ""id"": { ""type"": ""integer"" } } }
   } }
 }";
+            // P4 (G23): different named response types get a result wrapper (was OACG105).
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(Document);
-            Assert.Contains(execution.RunResult.Diagnostics,
-                diagnostic => diagnostic.GetMessage().Contains("same JSON body contract"));
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.Contains("Status201", execution.GeneratedSource);
         }
 
         private static string DocumentWithResponseSchema(string schema) => @"{

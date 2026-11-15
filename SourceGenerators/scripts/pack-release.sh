@@ -219,14 +219,23 @@ assertEqual(sourceGenerator.name, 'jp.rhycol.openapicodegen.source-generator', '
 assertEqual(sourceGenerator.version, expectedVersion, 'source-generator package version');
 assertEqual(sourceGenerator.unity, '6000.0', 'source-generator minimum Unity version');
 assertEqual(sourceGenerator.dependencies['jp.rhycol.openapicodegen'], expectedVersion, 'source-generator base dependency');
-assertEqual(sourceGenerator.dependencies['com.unity.nuget.newtonsoft-json'], '3.2.2', 'Newtonsoft dependency');
+// 0.6.0 removed the forced Newtonsoft.Json dependency: the project chooses its JSON serializer, and the
+// analyzer reports OACG011-OACG013 when the selected one is missing.
+assertEqual(Object.keys(sourceGenerator.dependencies).sort().join(','), 'jp.rhycol.openapicodegen', 'source-generator dependency set');
 
 const lockedSourceGenerator = lock.dependencies['jp.rhycol.openapicodegen.source-generator'];
 if (!lockedSourceGenerator || !lockedSourceGenerator.dependencies) {
   fail('packages-lock is missing the source-generator dependency record');
 }
 assertEqual(lockedSourceGenerator.dependencies['jp.rhycol.openapicodegen'], expectedVersion, 'locked source-generator base dependency');
-assertEqual(lockedSourceGenerator.dependencies['com.unity.nuget.newtonsoft-json'], '3.2.2', 'locked Newtonsoft dependency');
+assertEqual(Object.keys(lockedSourceGenerator.dependencies).sort().join(','), 'jp.rhycol.openapicodegen', 'locked source-generator dependency set');
+// The development project uses the default Newtonsoft.Json client, so it requires the package explicitly.
+const manifest = readJson(path.join(path.dirname(lockPath), 'manifest.json'));
+assertEqual(manifest.dependencies['com.unity.nuget.newtonsoft-json'], '3.2.2', 'development manifest Newtonsoft dependency');
+const lockedNewtonsoft = lock.dependencies['com.unity.nuget.newtonsoft-json'];
+if (!lockedNewtonsoft || lockedNewtonsoft.version !== '3.2.2' || lockedNewtonsoft.depth !== 0) {
+  fail('packages-lock must pin Newtonsoft.Json 3.2.2 as a direct dependency');
+}
 
 const expectedSamples = [
   ['Local JSON', 'Samples~/Local JSON'],

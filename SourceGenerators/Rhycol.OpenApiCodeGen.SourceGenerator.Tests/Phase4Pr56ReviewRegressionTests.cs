@@ -170,7 +170,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Theory]
         [InlineData("3.0.3")]
         [InlineData("3.1.0")]
-        public void StandardParameterAnnotationsAndExtensionsAreAcceptedButContentRemainsUnsupported(string version)
+        public void StandardParameterAnnotationsAndExtensionsAreAcceptedAndContentExcludesSchema(string version)
         {
             JObject parameter = Parameter("id", "query", false, "ready");
             parameter["description"] = "query state";
@@ -202,8 +202,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             parameter["content"] = new JObject();
             Diagnostic diagnostic = Assert.Single(Phase4GeneratorTestHarness.GenerateAndCompile(
                 Document(new JArray(parameter), version: version)).RunResult.Diagnostics);
-            Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("Parameter content is not supported", diagnostic.GetMessage());
+            // P3: content is supported, but not together with schema.
+            Assert.Equal("OACG100", diagnostic.Id);
+            Assert.Contains("either 'schema' or 'content', not both", diagnostic.GetMessage());
         }
 
         [Theory]

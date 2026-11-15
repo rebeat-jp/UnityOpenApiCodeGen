@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { sha256, validateRelease } = require('./validate-release-artifacts');
+const { isPrerelease } = require('./release-contract');
 
 class GitHubClient {
   constructor(repository, token) {
@@ -44,7 +45,7 @@ class GitHubClient {
   }
   releaseById(id) { return this.request('GET', `releases/${id}`); }
   createTag(tag, commit) { return this.request('POST', 'git/refs', { ref: `refs/tags/${tag}`, sha: commit }); }
-  createRelease(tag, commit) { return this.request('POST', 'releases', { tag_name: tag, target_commitish: commit, name: tag, body: `Validated UPM packages from ${commit}. Verification evidence and checksums are attached.`, draft: true, prerelease: false }); }
+  createRelease(tag, commit) { return this.request('POST', 'releases', { tag_name: tag, target_commitish: commit, name: tag, body: `Validated UPM packages from ${commit}. Verification evidence and checksums are attached.`, draft: true, prerelease: isPrerelease(tag) }); }
   downloadAsset(asset) { return this.request('GET', `releases/assets/${asset.id}`, undefined, true); }
   async uploadAsset(release, name, content) {
     const url = new URL(`https://uploads.github.com/repos/${this.repository}/releases/${release.id}/assets`); url.searchParams.set('name', name);
@@ -52,7 +53,9 @@ class GitHubClient {
     if (!response.ok) throw new Error(`GitHub asset upload ${name} returned HTTP ${response.status}`);
     return response.json();
   }
-  finishRelease(release) { return this.request('PATCH', `releases/${release.id}`, { draft: false }); }
+  // make_latest is a string enum in the GitHub REST API. A prerelease must never become Latest; a stable
+  // release keeps GitHub's default ('legacy': the newest stable by date and version) as before.
+  finishRelease(release, tag) { return this.request('PATCH', `releases/${release.id}`, { draft: false, make_latest: isPrerelease(tag) ? 'false' : 'legacy' }); }
   dispatchOpenUpm(tag) { return this.request('POST', 'actions/workflows/source-generator-openupm.yml/dispatches', { ref: tag }); }
 }
 function publicationPlan(commit, tagCommit, release, names) {
@@ -68,6 +71,8 @@ async function publish(client, output, manifest) {
   const names = ['release-manifest.json', 'SHA256SUMS', ...manifest.archives.map(archive => archive.file), 'verification-evidence.tar.gz'];
   let release = await client.release(manifest.tag);
   const plan = publicationPlan(manifest.provenance.commit, await client.tagCommit(manifest.tag), release, names);
+  const expectedPrerelease = isPrerelease(manifest.tag);
+  if (release && release.prerelease !== expectedPrerelease) throw new Error(`Existing Release prerelease flag (${release.prerelease}) does not match version ${manifest.tag}; refusing overwrite`);
   // Verify every existing asset byte-for-byte before any tag/release mutation.
   for (const asset of release?.assets || []) {
     const content = await client.downloadAsset(asset);
@@ -79,13 +84,17 @@ async function publish(client, output, manifest) {
   // Re-read uploaded assets. A successful HTTP upload alone is not release evidence.
   release = await client.releaseById(release.id);
   if (!release) throw new Error('Created Release disappeared before upload verification');
+  if (release.prerelease !== expectedPrerelease) throw new Error(`Release prerelease flag (${release.prerelease}) does not match version ${manifest.tag}`);
   publicationPlan(manifest.provenance.commit, await client.tagCommit(manifest.tag), release, names);
   if (names.some(name => !release.assets.some(asset => asset.name === name))) throw new Error('Release upload is incomplete');
   for (const asset of release.assets) {
     const content = await client.downloadAsset(asset);
     if (!content || !content.equals(fs.readFileSync(path.join(output, asset.name)))) throw new Error(`Uploaded asset differs: ${asset.name}`);
   }
-  if (release.draft) await client.finishRelease(release);
+  if (release.draft) {
+    const published = await client.finishRelease(release, manifest.tag);
+    if (!published || published.draft !== false || published.prerelease !== expectedPrerelease) throw new Error(`Published Release ${manifest.tag} has an unexpected draft or prerelease state`);
+  }
   await client.dispatchOpenUpm(manifest.tag);
   console.log(`Published immutable Release ${manifest.tag}; dispatched OpenUPM verification at tag ref.`);
 }

@@ -1,0 +1,96 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Baseline", "version": "1" },
+  "servers": [ { "url": "https://api.example.com/v1" } ],
+  "paths": {
+    "/pets": {
+      "get": {
+        "operationId": "listPets",
+        "summary": "List pets",
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "format": "int32" } },
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/PetStatus" } },
+          { "name": "X-Trace", "in": "header", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": {
+              "type": "array", "items": { "$ref": "#/components/schemas/Pet" } } } }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createPet",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } }
+          }
+        }
+      }
+    },
+    "/pets/{petId}": {
+      "get": {
+        "operationId": "getPet",
+        "parameters": [
+          { "name": "petId", "in": "path", "required": true,
+            "schema": { "type": "integer", "format": "int64" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deletePet",
+        "parameters": [
+          { "name": "petId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "204": { "description": "Deleted" } }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PetStatus": { "type": "string", "enum": ["available", "pending", "sold"] },
+      "Owner": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "email": { "type": "string" }
+        }
+      },
+      "Pet": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "name": { "type": "string" },
+          "tag": { "type": "string", "nullable": true },
+          "status": { "$ref": "#/components/schemas/PetStatus" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "score": { "type": "number", "format": "double" },
+          "weight": { "type": "number", "format": "float" },
+          "active": { "type": "boolean" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "owner": { "$ref": "#/components/schemas/Owner" },
+          "dimensions": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "width": { "type": "integer" }, "height": { "type": "integer" } }
+          }
+        }
+      }
+    }
+  }
+}

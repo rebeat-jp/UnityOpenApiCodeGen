@@ -1,0 +1,83 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Unity Source Generator Player Verification",
+    "version": "1.0.0"
+  },
+  "servers": [ { "url": "/api" } ],
+  "paths": {
+    "/gadgets/{id}": {
+      "get": {
+        "operationId": "getGadget",
+        "summary": "Get a gadget",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Gadget" } } }
+          }
+        }
+      }
+    },
+    "/gadgets": {
+      "post": {
+        "operationId": "createGadget",
+        "summary": "Create a gadget",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Gadget" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Gadget" } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Color": { "type": "string", "enum": [ "red", "green", "dark-blue" ] },
+      "Level": { "type": "integer", "enum": [ 1, 2, 3 ] },
+      "Circle": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [ "radius" ],
+        "properties": { "radius": { "type": "number", "format": "double" } }
+      },
+      "Square": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [ "side" ],
+        "properties": { "side": { "type": "integer", "format": "int32" } }
+      },
+      "Shape": {
+        "oneOf": [ { "$ref": "#/components/schemas/Circle" }, { "$ref": "#/components/schemas/Square" } ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": { "circle": "#/components/schemas/Circle", "square": "#/components/schemas/Square" }
+        }
+      },
+      "Gadget": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [ "id", "name", "color", "level", "createdAt", "shape" ],
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 16 },
+          "quantity": { "type": "integer", "format": "int32", "minimum": 0, "maximum": 100 },
+          "color": { "$ref": "#/components/schemas/Color" },
+          "level": { "$ref": "#/components/schemas/Level" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "birthday": { "type": "string", "format": "date" },
+          "scores": { "type": "object", "additionalProperties": { "type": "integer", "format": "int32" } },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "shape": { "$ref": "#/components/schemas/Shape" }
+        }
+      }
+    }
+  }
+}

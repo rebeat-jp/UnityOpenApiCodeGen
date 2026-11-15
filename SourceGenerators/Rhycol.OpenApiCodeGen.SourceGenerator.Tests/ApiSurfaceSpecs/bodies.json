@@ -1,0 +1,159 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Bodies", "version": "1", "description": "P4: request body media types, response contracts, headers and typed errors." },
+  "servers": [ { "url": "https://api.example.test/v1" } ],
+  "paths": {
+    "/pets": {
+      "post": {
+        "operationId": "createPet",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } },
+            "multipart/form-data": {
+              "schema": { "$ref": "#/components/schemas/PetForm" },
+              "encoding": {
+                "photo": { "contentType": "image/png", "headers": { "X-Part-Note": { "schema": { "type": "string", "const": "avatar" } } } },
+                "meta": { "contentType": "application/json" }
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": { "$ref": "#/components/schemas/PetFields" },
+              "encoding": { "tags": { "style": "pipeDelimited", "explode": false }, "note": { "allowReserved": true } }
+            },
+            "text/plain": { "schema": { "type": "string" } },
+            "application/octet-stream": { "schema": { "type": "string", "format": "binary" } }
+          }
+        },
+        "responses": {
+          "201": { "description": "created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } } },
+          "400": { "description": "bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "default": { "description": "error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericError" } } } }
+        }
+      }
+    },
+    "/avatar": {
+      "put": {
+        "operationId": "uploadAvatar",
+        "requestBody": { "required": false, "content": { "image/*": { "schema": { "type": "string", "format": "binary" } } } },
+        "responses": { "204": { "description": "stored" } }
+      }
+    },
+    "/file": {
+      "get": {
+        "operationId": "downloadFile",
+        "responses": { "200": { "description": "file", "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } } } }
+      }
+    },
+    "/note": {
+      "get": {
+        "operationId": "getNote",
+        "responses": { "200": { "description": "text", "content": { "text/plain": { "schema": { "type": "string" } } } } }
+      }
+    },
+    "/report": {
+      "get": {
+        "operationId": "getReport",
+        "responses": { "200": { "description": "report", "content": { "application/json": { "schema": { "type": "string" } }, "text/plain": { "schema": { "type": "string" } } } } }
+      }
+    },
+    "/status": {
+      "get": {
+        "operationId": "getStatus",
+        "responses": {
+          "200": { "description": "ok", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } } },
+          "201": { "description": "created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Created" } } } },
+          "202": { "description": "accepted" },
+          "404": { "description": "missing", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Problem" } } } }
+        }
+      }
+    },
+    "/range": {
+      "get": {
+        "operationId": "getRange",
+        "responses": {
+          "2XX": { "description": "ok", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } } },
+          "5XX": { "description": "server error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericError" } } } }
+        }
+      }
+    },
+    "/fallback": {
+      "get": {
+        "operationId": "getFallback",
+        "responses": { "default": { "description": "pet", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } } } }
+      }
+    },
+    "/silent": {
+      "get": { "operationId": "getSilent" }
+    },
+    "/headers": {
+      "get": {
+        "operationId": "getWithHeaders",
+        "responses": {
+          "200": {
+            "description": "ok",
+            "headers": {
+              "X-Rate-Limit": { "required": true, "schema": { "type": "integer" } },
+              "X-Tags": { "schema": { "type": "array", "items": { "type": "string" } } },
+              "X-Trace": { "$ref": "#/components/headers/TraceId" }
+            },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } }
+          }
+        }
+      }
+    },
+    "/optional": {
+      "post": {
+        "operationId": "postOptional",
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } } },
+        "responses": { "204": { "description": "ok" } }
+      }
+    },
+    "/redirect": {
+      "get": {
+        "operationId": "getRedirect",
+        "responses": {
+          "200": { "description": "text", "content": { "text/plain": { "schema": { "type": "string" } } } },
+          "302": { "description": "moved" }
+        }
+      }
+    }
+  },
+  "components": {
+    "headers": {
+      "TraceId": { "description": "Trace identifier.", "schema": { "type": "string" } }
+    },
+    "schemas": {
+      "Pet": { "type": "object", "additionalProperties": false, "required": ["name"], "properties": { "id": { "type": "integer" }, "name": { "type": "string" } } },
+      "Created": { "type": "object", "additionalProperties": false, "required": ["id"], "properties": { "id": { "type": "integer" } } },
+      "Problem": { "type": "object", "additionalProperties": false, "required": ["title"], "properties": { "title": { "type": "string" }, "status": { "type": "integer" } } },
+      "GenericError": { "type": "object", "additionalProperties": false, "required": ["message"], "properties": { "message": { "type": "string" } } },
+      "Meta": { "type": "object", "additionalProperties": false, "properties": { "origin": { "type": "string" } } },
+      "PetForm": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "count": { "type": "integer" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "photo": { "type": "string", "format": "binary" },
+          "attachments": { "type": "array", "items": { "type": "string", "format": "binary" } },
+          "meta": { "$ref": "#/components/schemas/Meta" }
+        }
+      },
+      "PetFields": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "attrs": { "type": "object", "additionalProperties": { "type": "integer" } },
+          "note": { "type": "string" },
+          "meta": { "$ref": "#/components/schemas/Meta" }
+        }
+      }
+    }
+  }
+}

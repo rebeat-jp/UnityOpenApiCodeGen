@@ -7,7 +7,7 @@ on:
         type: string
         required: true
       version:
-        description: Shared stable package version (for example 0.5.0)
+        description: Shared package version, stable (for example 0.5.1) or prerelease (for example 0.6.0-preview.1)
         type: string
         required: true
       publish:

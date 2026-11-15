@@ -80,7 +80,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Theory]
-        [InlineData("3.2.0", "OACG101")]
+        [InlineData("3.3.0", "OACG101")]
         [InlineData("3.1", "OACG100")]
         public void UnsupportedExternalVersionReportsExternalLocation(
             string externalVersion,

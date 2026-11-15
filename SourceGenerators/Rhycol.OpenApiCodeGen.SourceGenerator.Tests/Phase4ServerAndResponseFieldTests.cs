@@ -37,7 +37,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Phase4GeneratorTestHarness.GenerateAndCompile(Document(url)).RunResult.Diagnostics);
 
             Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("Server URL variables are not supported", diagnostic.GetMessage());
+            Assert.Contains("is not declared in the server 'variables'", diagnostic.GetMessage());
             Assert.Contains("logical path '/servers/0/url'", diagnostic.GetMessage());
         }
 

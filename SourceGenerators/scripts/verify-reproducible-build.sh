@@ -52,8 +52,10 @@ for forbidden_path in "${repository_root}" "${temporary_root}"; do
   fi
 done
 
+# A drive letter must start a token and be followed by a path segment. Short
+# "x:/" byte runs also occur inside metadata blobs and are not paths.
 if LC_ALL=C grep -E -q \
-  '(/Users/|/home/|/private/var/|/tmp/|[A-Za-z]:[/\\])' \
+  '(/Users/|/home/|/private/var/|/tmp/|(^|[^A-Za-z0-9])[A-Za-z]:[/\\][A-Za-z0-9._ -])' \
   < <(strings "${analyzer_output}"); then
   echo "Analyzer assembly contains an absolute machine-local path." >&2
   exit 1
