@@ -1215,8 +1215,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     return false;
                 }
 
-                bool firstConstrained = HasConstraintSets(first.Schema);
-                bool secondConstrained = HasConstraintSets(second.Schema);
+                // Only an AllowedValues set (what an earlier narrowing added) may differ; any other constraint
+                // (maxLength, ...) makes the declarations different types, as before.
+                int firstState = GetConstraintState(first.Schema);
+                int secondState = GetConstraintState(second.Schema);
+                if (firstState == 2 || secondState == 2)
+                {
+                    return false;
+                }
+
+                bool firstConstrained = firstState == 1;
+                bool secondConstrained = secondState == 1;
                 if (firstConstrained && !secondConstrained)
                 {
                     return true;
@@ -1365,6 +1374,44 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     // Includes a Reference that could not be resolved yet (a recursive reference).
                     return false;
             }
+        }
+
+        // 0: no constraint set, 1: only AllowedValues sets, 2: some other constraint (own or of a referenced schema).
+        private int GetConstraintState(OpenApiSemanticSchema schema)
+        {
+            int state = 0;
+            var visited = new HashSet<NormalizedSpecNodeIdentity>();
+            OpenApiSemanticSchema? current = schema;
+            while (current is not null)
+            {
+                foreach (OpenApiSemanticConstraints set in current.ConstraintSets)
+                {
+                    IReadOnlyList<OpenApiSemanticLiteral> allowed = set.AllowedValues;
+                    set.AllowedValues = Array.Empty<OpenApiSemanticLiteral>();
+                    bool otherwise = !set.IsEmpty;
+                    set.AllowedValues = allowed;
+                    if (otherwise)
+                    {
+                        return 2;
+                    }
+
+                    if (allowed.Count > 0)
+                    {
+                        state = 1;
+                    }
+                }
+
+                NormalizedSpecNodeIdentity identity = current.ReferenceIdentity;
+                if (current.Kind != OpenApiSemanticSchemaKind.Reference ||
+                    identity.IsEmpty ||
+                    !visited.Add(identity) ||
+                    !_schemas.TryGetValue(identity, out current))
+                {
+                    break;
+                }
+            }
+
+            return state;
         }
 
         private bool HasConstraintSets(OpenApiSemanticSchema schema)

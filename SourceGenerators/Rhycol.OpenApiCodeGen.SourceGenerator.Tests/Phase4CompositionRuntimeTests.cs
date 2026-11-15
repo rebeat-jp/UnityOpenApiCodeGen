@@ -579,6 +579,54 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             await AssertNarrowedValues(Generate(EchoDocument(Reversed, "3.0.3")), new[] { "alpha", "bravo" }, new[] { "charlie" });
         }
 
+        [Fact]
+        public async Task APlainDeclarationBetweenTwoNarrowingsIsRestatingTheType()
+        {
+            const string Schemas = @"
+              'Base':{'type':'object','properties':{'code':{'type':'string'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'code':{'type':'string','enum':['alpha','bravo']}}},
+                {'type':'object','properties':{'code':{'type':'string'}}},
+                {'type':'object','properties':{'code':{'type':'string','enum':['alpha']}}}]}";
+
+            await AssertNarrowedValues(Generate(EchoDocument(Schemas, "3.0.3")), new[] { "alpha" }, new[] { "bravo" });
+        }
+
+        [Theory]
+        // A constraint other than AllowedValues keeps {string, maxLength} and {string} different types, in both orders.
+        [InlineData("{'type':'string','maxLength':5}", "{'type':'string'}")]
+        [InlineData("{'type':'string'}", "{'type':'string','maxLength':5}")]
+        public void APlainDeclarationWithAnotherConstraintIsStillADifferentType(string baseCode, string partCode)
+        {
+            string schemas =
+                "'Base':{'type':'object','properties':{'code':" + baseCode + "}}," +
+                "'Body':{'allOf':[{'$ref':'#/components/schemas/Base'}," + CodePart(partCode) + "]}";
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(schemas, "3.0.3")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("different types", diagnostic.GetMessage());
+        }
+
+        [Fact]
+        public void ANarrowedPlainDeclarationThatAlsoHasAnotherConstraintIsStillADifferentTypeFromAPlainOne()
+        {
+            // {string, maxLength} narrowed by an enum carries AllowedValues and maxLength; a plain string is not the same type.
+            const string Schemas = @"
+              'Base':{'type':'object','properties':{'code':{'type':'string','maxLength':5}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'code':{'type':'string','enum':['alpha']}}},
+                {'type':'object','properties':{'code':{'type':'string'}}}]}";
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(Schemas, "3.0.3")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("different types", diagnostic.GetMessage());
+            Assert.Contains("allOf/2/properties/code", diagnostic.GetMessage());
+        }
+
         [Theory]
         [InlineData("'Base':{'type':'object','properties':{'code':{'type':'string'}}}")]
         [InlineData("'Base':{'type':'object','properties':{'code':{'$ref':'#/components/schemas/ProblemCode'}}}")]
