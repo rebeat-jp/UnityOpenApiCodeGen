@@ -92,6 +92,24 @@ the add-on temporarily removes it from the active target during the transition.
 Code that still references generated types can therefore fail to compile after
 switching providers.
 
+`PlayerSettings` scripting defines are stored per build target, and a Build Profile that
+overrides Player Settings keeps its own copy, so the synchronized define alone is missing in
+other build targets, Build Profiles, machines and CI. **Generate** therefore also adds a
+`versionDefines` entry to the output asmdef, which defines
+`OPENAPI_CODEGEN_SOURCE_GENERATOR` whichever build target or Build Profile is active:
+
+```json
+"versionDefines": [
+  { "name": "jp.rhycol.openapicodegen.source-generator", "expression": "0.0.0", "define": "OPENAPI_CODEGEN_SOURCE_GENERATOR" }
+]
+```
+
+An existing entry with the same `name` and `define` is left as it is. If the asmdef cannot
+be parsed, Generate fails without changing it and shows the entry to add by hand. The
+definition file still keeps `#if OPENAPI_CODEGEN_SOURCE_GENERATOR`, so it is compiled after you
+switch the provider to Docker as well; delete the `<ApiName>.OpenApiDefinition.cs` file to turn it
+off. See the [Source Generator README](../OpenApiCodeGen.SourceGenerator/README.md) for details.
+
 ## License
 
 This package is distributed under the [MIT License](LICENSE.md).
