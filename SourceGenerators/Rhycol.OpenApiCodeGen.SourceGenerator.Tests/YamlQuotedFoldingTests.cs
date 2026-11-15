@@ -168,6 +168,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
             Assert.Equal("YAML002", exception.DiagnosticId);
             Assert.Equal(3, exception.Line);
+            // The message names the line where the quote was opened, which is where the fix belongs.
+            Assert.Contains("the quoted YAML scalar that starts on line 2", exception.Message);
+        }
+
+        [Fact]
+        public void ADocumentMarkerInsideAQuotedScalarNamesTheLineTheQuoteStartedOn()
+        {
+            YamlParseException exception = Assert.Throws<YamlParseException>(
+                () => YamlParser.Parse("a: 1\nv: 'x\n---\n  y'\n", SourcePath));
+
+            Assert.Equal("YAML006", exception.DiagnosticId);
+            Assert.Equal(3, exception.Line);
+            Assert.Contains("the quoted YAML scalar that starts on line 2", exception.Message);
         }
 
         [Fact]

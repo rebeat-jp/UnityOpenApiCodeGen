@@ -463,7 +463,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     lineStart = cursor;
                     lineEnd = FindLineEnd(lineStart);
                     line++;
-                    ValidateQuotedContinuationLine(lineStart, lineEnd, lineIndent, quoteStartsLine);
+                    ValidateQuotedContinuationLine(lineStart, lineEnd, lineIndent, quoteStartsLine, startLine);
                     continue;
                 }
 
@@ -543,7 +543,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         }
 
         // Checks one continuation line of a quoted scalar. Blank lines are always fine.
-        private void ValidateQuotedContinuationLine(int lineStart, int lineEnd, int lineIndent, bool quoteStartsLine)
+        private void ValidateQuotedContinuationLine(
+            int lineStart,
+            int lineEnd,
+            int lineIndent,
+            bool quoteStartsLine,
+            int quoteStartLine)
         {
             int firstContent = lineStart;
             while (firstContent < lineEnd && IsWhitespace(source[firstContent])) firstContent++;
@@ -557,7 +562,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             {
                 throw CreateExceptionAt(
                     YamlDiagnosticCode.InvalidScalar,
-                    "A document marker cannot appear inside a quoted YAML scalar.",
+                    "A document marker cannot appear inside the quoted YAML scalar that starts on line " +
+                    quoteStartLine.ToString(CultureInfo.InvariantCulture) + ".",
                     line,
                     1,
                     lineStart);
@@ -574,7 +580,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             {
                 throw CreateExceptionAt(
                     YamlDiagnosticCode.InvalidIndentation,
-                    "A continuation line of a quoted YAML scalar must be indented more than its parent.",
+                    "A continuation line of the quoted YAML scalar that starts on line " +
+                    quoteStartLine.ToString(CultureInfo.InvariantCulture) +
+                    " must be indented more than its parent.",
                     line,
                     spaces + 1,
                     lineStart + spaces);

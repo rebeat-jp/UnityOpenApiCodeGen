@@ -157,11 +157,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 () => YamlLexer.Tokenize("v: 'a\n---\n  b'\n", "Assets/Specs/openapi.yaml"));
             Assert.That(marker.DiagnosticId, Is.EqualTo("YAML006"));
             Assert.That(marker.Line, Is.EqualTo(2));
+            Assert.That(marker.Message, Does.Contain("the quoted YAML scalar that starts on line 1"));
 
             YamlParseException shallow = Assert.Throws<YamlParseException>(
                 () => YamlLexer.Tokenize("v: 'a\nb'\n", "Assets/Specs/openapi.yaml"));
             Assert.That(shallow.DiagnosticId, Is.EqualTo("YAML002"));
             Assert.That(shallow.Line, Is.EqualTo(2));
+            Assert.That(shallow.Message, Does.Contain("the quoted YAML scalar that starts on line 1"));
         }
 
         [Test]
