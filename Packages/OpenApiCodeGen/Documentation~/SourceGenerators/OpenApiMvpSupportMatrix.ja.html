@@ -1977,9 +1977,13 @@ System.Text.Jsonはsetterを持たないpropertyとして<code>JsonRequired</cod
 そのため生成器は、DTO型・enumのwire converter・各DTO propertyと<code>&lt;Name&gt;Specified</code>・<code>OnSerializing</code>コールバックに、internalな<code>PreserveAttribute</code>を付けます
 （Unityのlinkerは名前で認識します。<code>link.xml</code>は生成assembly名を持てないため使いません）。attributeはclientごとの専用namespace（<code>&lt;生成namespace&gt;.&lt;ApiName&gt;_Preserve</code>）に宣言するので、同じnamespaceに複数のclientを生成しても重複しません（型名が衝突する場合は連番を付けます）。
 DTO・enum・unionを持たないspecでは、attributeもそのファイルも生成しません。この変更後に全セルがPassしました。</li>
-<li>対象外（未検証）: Unity <code>6000.0.23f1</code>と<code>2021.3</code>、Linux・macOS・Android・iOSのPlayer、Development Player、Managed Stripping Level Low／Medium／Disabled、
-IL2CPPのコード生成設定とWebGLの例外サポートの既定以外、別origin（CORS）への通信、WebGLの圧縮形式、Safari／Firefox。
-Linux Standalone IL2CPPとWebGLの手動CI（<code>.github/workflows/source-generator-player.yml</code>）は用意しましたが、まだ実行していません。</li>
+<li><strong>Linux Standalone IL2CPPとWebGL（CI）</strong>: 手動CI（<code>.github/workflows/source-generator-player.yml</code>）を2026-11-15に実行しました
+（<a href="https://github.com/rebeat-jp/UnityOpenApiCodeGen/actions/runs/43697724324">run 43697724324</a>。GitHub Actions <code>ubuntu-latest</code>上のGameCI <code>unityci/editor</code> Unity <code>6000.3.2f1</code>イメージ、WebGLはrunnerのChrome）。
+Linux64 IL2CPPの8セル（Managed Stripping Minimal／High × HTTP 2種 × JSON 2種）はすべてPass、WebGLは上の表と同じ4セルがPass、WebGL × HttpClientは<code>OACG014</code>で非対応でした。
+Unity <code>6000.3.2f1</code>のLinux IL2CPP Playerは、<code>-nographics</code>を付けて起動すると起動直後にエンジン内部で異常終了します（<code>UnityPlayer.so</code>内のSIGSEGV。Mono Playerと生成コードには無関係）。
+そのためCIのLinux Playerは<code>-nographics</code>を付けず、<code>xvfb-run</code>の仮想ディスプレイ上で<code>-batchmode</code>だけを付けて起動しています。</li>
+<li>対象外（未検証）: Unity <code>6000.0.23f1</code>と<code>2021.3</code>、macOS・Android・iOSのPlayer、LinuxのMono Player、Development Player、Managed Stripping Level Low／Medium／Disabled、
+IL2CPPのコード生成設定とWebGLの例外サポートの既定以外、別origin（CORS）への通信、WebGLの圧縮形式、Safari／Firefox。</li>
 <li>WebGLでUnityWebRequestを使う場合、server URLが相対（<code>/api</code>など）なら、<code>new Uri(Application.absoluteURL)</code>のような絶対URIをbase addressに渡す必要があります。</li>
 </ul>
 <h2 id="検証済み環境">検証済み環境</h2>
