@@ -203,14 +203,25 @@ class UnityDriver {
     this.timeoutMs = timeoutMs;
   }
 
-  // Runs one Unity batch launch. Returns { exitCode, timedOut }.
+  // Runs one Unity batch launch. Returns { exitCode, timedOut, attempts }.
+  // The Linux Editor occasionally aborts on an internal Mono assertion (corefx ToFileDescriptor while it serves its
+  // IPC pipe) a few seconds into a launch that succeeds when repeated. A launch that ends by a signal (no exit code,
+  // no timeout) is therefore repeated once; the first log is kept next to the second as <name>.attempt1.log.
   async run(logFile, extraArguments) {
-    fs.rmSync(logFile, { force: true });
     fs.mkdirSync(path.dirname(logFile), { recursive: true });
-    return runProcess(
-      this.executable,
-      ['-batchmode', '-nographics', '-projectPath', this.projectPath, ...extraArguments, '-logFile', logFile],
-      { timeoutMs: this.timeoutMs });
+    const firstAttemptLog = logFile.replace(/\.log$/, '') + '.attempt1.log';
+    fs.rmSync(firstAttemptLog, { force: true });
+    for (let attempt = 1; ; attempt++) {
+      fs.rmSync(logFile, { force: true });
+      const result = await runProcess(
+        this.executable,
+        ['-batchmode', '-nographics', '-projectPath', this.projectPath, ...extraArguments, '-logFile', logFile],
+        { timeoutMs: this.timeoutMs });
+      const crashed = result.exitCode === null && !result.timedOut && !result.error;
+      if (!crashed || attempt === 2) return { ...result, attempts: attempt };
+      if (fs.existsSync(logFile)) fs.renameSync(logFile, firstAttemptLog);
+      console.log(`[player-gate] the Unity Editor ended by a signal; repeating once (${path.basename(logFile)})`);
+    }
   }
 }
 
@@ -412,6 +423,7 @@ async function runCell(options, cell, context) {
   result.build = {
     status: build.exitCode === 0 && !build.timedOut ? 'succeeded' : (build.timedOut ? 'timed-out' : 'failed'),
     exitCode: build.exitCode,
+    attempts: build.attempts,
     seconds: buildSeconds,
     diagnostics: extractDiagnostics(buildText),
     errors: extractLogExcerpt(buildLog, [/error CS\d{4}/, /error:/i, /Build completed with a result of 'Failed'/, /Exception/], 25),
