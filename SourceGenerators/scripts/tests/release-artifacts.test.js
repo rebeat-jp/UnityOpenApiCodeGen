@@ -7,7 +7,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const { fixture, commit } = require('./release-fixture');
 const { validateRelease, validateTestXml } = require('../validate-release-artifacts');
 const { aggregate } = require('../aggregate-unity-evidence');
-const { assertVersionContract } = require('../release-contract');
+const { assertVersionContract, isPrerelease } = require('../release-contract');
 const { validateUpdate, copyAnalyzerArtifact, analyzer } = require('../update-analyzer-pr');
 const { serialFromLicense } = require('../unity-license');
 const { redact, writeGate } = require('../ci-evidence');
@@ -18,6 +18,16 @@ function mutateGate(f, version, change) {
 test('CI candidate and complete evidence validate and finalize checksums', t => {
   const f = use(t); validateRelease(f.options); f.gates(); aggregate({ ...f.options, gateMode: '--require-passed-unity-gate' });
   const result = validateRelease({ ...f.options, gateMode: '--require-passed-unity-gate' }); assert.equal(result.unityGate.status, 'passed');
+});
+test('prerelease version candidate validates and rejects a different expected version', t => {
+  const f = fixture(true, '1', '0.6.0-preview.1'); t.after(f.remove);
+  const result = validateRelease(f.options); assert.equal(result.tag, '0.6.0-preview.1'); assert.equal(result.archives[1].file, 'jp.rhycol.openapicodegen.source-generator-0.6.0-preview.1.tgz');
+  assert.throws(() => validateRelease({ ...f.options, 'expected-version': '0.6.0' }), /version/i);
+});
+test('prerelease version candidate and complete evidence validate and finalize checksums', t => {
+  const f = fixture(true, '1', '0.6.0-preview.1'); t.after(f.remove); f.gates(); aggregate({ ...f.options, gateMode: '--require-passed-unity-gate' });
+  const result = validateRelease({ ...f.options, gateMode: '--require-passed-unity-gate' });
+  assert.equal(result.unityGate.status, 'passed'); assert.equal(result.tag, '0.6.0-preview.1'); assert.equal(result.archives[0].file, 'jp.rhycol.openapicodegen-0.6.0-preview.1.tgz');
 });
 test('Unity rerun evidence retains candidate attempt and records execution attempt', t => {
   const f = fixture(true, '2'); t.after(f.remove); f.gates();
@@ -88,7 +98,11 @@ test('strict XML rejects truncated, zero-test, failed and incomplete runs', t =>
 });
 test('version and DLL update allowlists preserve public package metadata', () => {
   const base = { name: 'jp.rhycol.openapicodegen', version: '0.5.0' }; const addon = { name: 'jp.rhycol.openapicodegen.source-generator', version: '0.5.0', dependencies: { [base.name]: '0.5.0' } };
-  assert.equal(assertVersionContract(base, addon, '0.5.0'), '0.5.0'); assert.throws(() => assertVersionContract(base, { ...addon, version: '0.4.0' }), /mismatch/); assert.throws(() => assertVersionContract({ ...base, version: '0.5.0-rc1' }, addon), /stable/);
+  assert.equal(assertVersionContract(base, addon, '0.5.0'), '0.5.0'); assert.throws(() => assertVersionContract(base, { ...addon, version: '0.4.0' }), /mismatch/);
+  for (const version of ['0.6.0-preview.1', '1.2.3-rc.2', '0.6.0-alpha.10', '0.6.0-beta.3']) assert.equal(assertVersionContract({ ...base, version }, { ...addon, version, dependencies: { [base.name]: version } }, version), version);
+  for (const version of ['0.5.0-rc1', '0.6.0-preview', '0.6.0-preview.01', '0.6.0-preview.0', '0.6.0+build.1', '0.6.0-preview.1+build.1', '01.0.0', '0.6.0-dev.1', '0.6.0-']) assert.throws(() => assertVersionContract({ ...base, version }, { ...addon, version, dependencies: { [base.name]: version } }), /X\.Y\.Z/, version);
+  assert.equal(isPrerelease('0.6.0-preview.1'), true); assert.equal(isPrerelease('0.5.1'), false);
+  assert.throws(() => assertVersionContract({ ...base, version: '0.6.0-preview.1' }, { ...addon, version: '0.6.0-preview.1', dependencies: { [base.name]: '0.6.0' } }), /mismatch/);
   validateUpdate('develop', [analyzer]); validateUpdate('main', []); assert.throws(() => validateUpdate('feature/anything', []), /base/); assert.throws(() => validateUpdate('develop', [`${analyzer}.meta`]), /only/);
 });
 test('trusted analyzer copy preserves metadata and rejects linked paths', t => {

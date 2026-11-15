@@ -183,6 +183,7 @@ test('write-capable manual workflows fail unsupported refs in read-only prefligh
   assert.notEqual(run(dllPreflight, { GITHUB_REF: 'refs/heads/feature', BASE_BRANCH: 'develop' }), 0);
   const openupmPreflight = workflowStep('source-generator-openupm.yml', 'Reject unsupported workflow ref before OIDC is available');
   assert.equal(run(openupmPreflight, { GITHUB_REF_TYPE: 'tag', GITHUB_REF: 'refs/tags/0.5.0' }), 0);
+  assert.equal(run(openupmPreflight, { GITHUB_REF_TYPE: 'tag', GITHUB_REF: 'refs/tags/0.6.0-preview.1' }), 0);
   assert.notEqual(run(openupmPreflight, { GITHUB_REF_TYPE: 'branch', GITHUB_REF: 'refs/heads/main' }), 0);
 });
 test('published spec validation runs in the parent shell so gate failures are retained', () => {

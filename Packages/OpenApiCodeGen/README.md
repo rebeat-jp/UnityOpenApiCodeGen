@@ -20,8 +20,8 @@ For the Source Generator provider, add both packages to the Unity project's
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.5.1",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.5.1"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.1",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.1"
   }
 }
 ```
@@ -32,7 +32,9 @@ not install Newtonsoft.Json: install the libraries of the selected HTTP / JSON
 combination yourself (by default `com.unity.nuget.newtonsoft-json` `3.2.2`;
 `UnityWebRequest` and `System.Text.Json` are the alternatives).
 
-These examples use the `0.5.1` release tag. To try an unreleased commit, replace it
+These examples use the `0.6.0-preview.1` release tag. This is a prerelease; the
+latest stable version is `0.5.1`, which does not include the HTTP / JSON library
+selection. To try an unreleased commit, replace it
 with the same reviewed commit SHA in both Git URLs. See the
 [Source Generator README](../OpenApiCodeGen.SourceGenerator/README.md) for
 input support, references, and generated-code requirements.

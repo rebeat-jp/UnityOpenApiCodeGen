@@ -8,6 +8,7 @@ const zlib = require('zlib');
 const { isDeepStrictEqual } = require('node:util');
 const { GitHubClient } = require('./publish-release');
 const { validateRelease } = require('./validate-release-artifacts');
+const { RELEASE_VERSION_PATTERN, isPrerelease } = require('./release-contract');
 function safeEvidenceEntries(entries, types) {
   if (types.some(type => !['-', 'd'].includes(type))) throw new Error('Evidence archive contains links or special files');
   for (const entry of entries) {
@@ -15,9 +16,9 @@ function safeEvidenceEntries(entries, types) {
   }
 }
 async function prepare(client, output, tag, commit) {
-  if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(tag || '') || await client.tagCommit(tag) !== commit) throw new Error('OpenUPM workflow must target the validated version tag and commit');
+  if (!RELEASE_VERSION_PATTERN.test(tag || '') || await client.tagCommit(tag) !== commit) throw new Error('OpenUPM workflow must target the validated version tag and commit');
   const release = await client.release(tag);
-  if (!release || release.draft || release.prerelease) throw new Error('A completed stable GitHub Release is required');
+  if (!release || release.draft || release.prerelease !== isPrerelease(tag)) throw new Error('A completed GitHub Release whose prerelease flag matches the version is required');
   const names = ['release-manifest.json', 'SHA256SUMS', `jp.rhycol.openapicodegen-${tag}.tgz`, `jp.rhycol.openapicodegen.source-generator-${tag}.tgz`, 'verification-evidence.tar.gz'];
   if (release.assets.length !== names.length || names.some(name => release.assets.filter(asset => asset.name === name).length !== 1)) throw new Error('Release assets are incomplete or unexpected');
   fs.mkdirSync(output, { recursive: true });
