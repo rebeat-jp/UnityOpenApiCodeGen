@@ -85,10 +85,140 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             return true;
         }
 
+        // YAML 1.2 7.3.2: a line break in a single-quoted scalar is folded like in a double-quoted one.
         private static string DecodeSingleQuoted(string token)
         {
-            string value = token.Substring(1, token.Length - 2);
-            return value.Replace("''", "'");
+            int end = token.Length - 1;
+            var builder = new StringBuilder(token.Length - 2);
+            int keep = 0;
+            for (int index = 1; index < end; index++)
+            {
+                char character = token[index];
+                if (character == '\r' || character == '\n')
+                {
+                    index = FoldLineBreak(token, index, builder, ref keep, true, true);
+                    continue;
+                }
+
+                if (character == '\'' && index + 1 < end && token[index + 1] == '\'')
+                {
+                    index++;
+                }
+
+                builder.Append(character);
+            }
+
+            return builder.ToString();
+        }
+
+        // Folds the line break at token[index] (YAML 1.2 7.3.1): the whitespace that ends the line and the whitespace that
+        // starts the next line are dropped, one break becomes a space and k empty lines become k line feeds. Whitespace
+        // before 'keep' came from an escape and is never trimmed. An escaped break (insertSpace false) keeps the
+        // whitespace before it and adds no space. Returns the index of the last consumed character.
+        private static int FoldLineBreak(
+            string token,
+            int index,
+            StringBuilder builder,
+            ref int keep,
+            bool insertSpace,
+            bool trimTrailing)
+        {
+            if (trimTrailing)
+            {
+                while (builder.Length > keep && (builder[builder.Length - 1] == ' ' || builder[builder.Length - 1] == '\t'))
+                {
+                    builder.Length--;
+                }
+            }
+
+            int end = token.Length - 1;
+            int cursor = index;
+            int emptyLines = 0;
+            bool first = true;
+            while (true)
+            {
+                // cursor is at a line break; step over it.
+                if (token[cursor] == '\r' && cursor + 1 < end && token[cursor + 1] == '\n')
+                {
+                    cursor++;
+                }
+
+                cursor++;
+                if (!first)
+                {
+                    emptyLines++;
+                }
+
+                first = false;
+                while (cursor < end && (token[cursor] == ' ' || token[cursor] == '\t'))
+                {
+                    cursor++;
+                }
+
+                if (cursor < end && (token[cursor] == '\r' || token[cursor] == '\n'))
+                {
+                    continue;
+                }
+
+                break;
+            }
+
+            if (emptyLines > 0)
+            {
+                builder.Append('\n', emptyLines);
+            }
+            else if (insertSpace)
+            {
+                builder.Append(' ');
+            }
+
+            keep = builder.Length;
+            return cursor - 1;
+        }
+
+        // Converts an index inside a (possibly multi-line) token to the line, column and offset in the source.
+        private static void Locate(
+            string token,
+            int tokenIndex,
+            int line,
+            int column,
+            int offset,
+            out int locatedLine,
+            out int locatedColumn,
+            out int locatedOffset)
+        {
+            locatedLine = line;
+            locatedOffset = offset + tokenIndex;
+            int lineBegin = 0;
+            int limit = Math.Min(tokenIndex, token.Length);
+            for (int index = 0; index < limit; index++)
+            {
+                char character = token[index];
+                if (character == '\n' || (character == '\r' && !(index + 1 < token.Length && token[index + 1] == '\n')))
+                {
+                    locatedLine++;
+                    lineBegin = index + 1;
+                }
+            }
+
+            locatedColumn = lineBegin == 0 ? column + tokenIndex : tokenIndex - lineBegin + 1;
+        }
+
+        private static YamlParseException CreateExceptionInToken(
+            YamlDiagnosticCode code,
+            string message,
+            string sourcePath,
+            string token,
+            int tokenIndex,
+            int line,
+            int column,
+            int offset)
+        {
+            int locatedLine;
+            int locatedColumn;
+            int locatedOffset;
+            Locate(token, tokenIndex, line, column, offset, out locatedLine, out locatedColumn, out locatedOffset);
+            return CreateException(code, message, sourcePath, locatedLine, locatedColumn, locatedOffset);
         }
 
         private static void ValidateLiteralUnicode(
@@ -110,13 +240,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
                 if (char.IsSurrogate(token[index]))
                 {
-                    throw CreateException(
+                    throw CreateExceptionInToken(
                         YamlDiagnosticCode.InvalidScalar,
                         "A YAML scalar contains an unpaired Unicode surrogate.",
                         sourcePath,
+                        token,
+                        index,
                         line,
-                        column + index,
-                        offset + index);
+                        column,
+                        offset);
                 }
             }
         }
@@ -129,9 +261,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             int offset)
         {
             var builder = new StringBuilder(token.Length - 2);
+            int keep = 0;
             for (int index = 1; index < token.Length - 1; index++)
             {
                 char character = token[index];
+                if (character == '\r' || character == '\n')
+                {
+                    index = FoldLineBreak(token, index, builder, ref keep, true, true);
+                    continue;
+                }
+
                 if (character != '\\')
                 {
                     builder.Append(character);
@@ -151,6 +290,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 }
 
                 char escape = token[index];
+                if (escape == '\r' || escape == '\n')
+                {
+                    // An escaped line break joins the lines without a space.
+                    index = FoldLineBreak(token, index, builder, ref keep, false, false);
+                    continue;
+                }
+
                 switch (escape)
                 {
                     case '0': builder.Append('\0'); break;
@@ -171,39 +317,42 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     case 'L': builder.Append('\u2028'); break;
                     case 'P': builder.Append('\u2029'); break;
                     case 'x':
-                        builder.Append(ParseHexEscape(token, ref index, 2, sourcePath, line, column + escapeStart, offset + escapeStart));
+                        builder.Append(ParseHexEscape(token, ref index, 2, sourcePath, line, column, offset, escapeStart));
                         break;
                     case 'u':
                         int escapedCodeUnit = ParseHexCodePoint(
-                            token, ref index, 4, sourcePath, line, column + escapeStart, offset + escapeStart);
+                            token, ref index, 4, sourcePath, line, column, offset, escapeStart);
                         if (char.IsHighSurrogate((char)escapedCodeUnit))
                         {
                             int lowEscapeStart = index + 1;
                             if (lowEscapeStart + 1 >= token.Length - 1 ||
                                 token[lowEscapeStart] != '\\' || token[lowEscapeStart + 1] != 'u')
                             {
-                                throw CreateException(
+                                throw CreateExceptionInToken(
                                     YamlDiagnosticCode.InvalidScalar,
                                     "A high Unicode surrogate escape must be followed by a low surrogate escape.",
                                     sourcePath,
+                                    token,
+                                    escapeStart,
                                     line,
-                                    column + escapeStart,
-                                    offset + escapeStart);
+                                    column,
+                                    offset);
                             }
 
                             index = lowEscapeStart + 1;
                             int lowCodeUnit = ParseHexCodePoint(
-                                token, ref index, 4, sourcePath, line,
-                                column + lowEscapeStart, offset + lowEscapeStart);
+                                token, ref index, 4, sourcePath, line, column, offset, lowEscapeStart);
                             if (!char.IsLowSurrogate((char)lowCodeUnit))
                             {
-                                throw CreateException(
+                                throw CreateExceptionInToken(
                                     YamlDiagnosticCode.InvalidScalar,
                                     "A high Unicode surrogate escape must be followed by a low surrogate escape.",
                                     sourcePath,
+                                    token,
+                                    lowEscapeStart,
                                     line,
-                                    column + lowEscapeStart,
-                                    offset + lowEscapeStart);
+                                    column,
+                                    offset);
                             }
 
                             builder.Append((char)escapedCodeUnit);
@@ -211,13 +360,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                         }
                         else if (char.IsLowSurrogate((char)escapedCodeUnit))
                         {
-                            throw CreateException(
+                            throw CreateExceptionInToken(
                                 YamlDiagnosticCode.InvalidScalar,
                                 "A low Unicode surrogate escape must follow a high surrogate escape.",
                                 sourcePath,
+                                token,
+                                escapeStart,
                                 line,
-                                column + escapeStart,
-                                offset + escapeStart);
+                                column,
+                                offset);
                         }
                         else
                         {
@@ -227,20 +378,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                         break;
                     case 'U':
                         int codePoint = ParseHexCodePoint(
-                            token, ref index, 8, sourcePath, line, column + escapeStart, offset + escapeStart);
+                            token, ref index, 8, sourcePath, line, column, offset, escapeStart);
                         try
                         {
                             builder.Append(char.ConvertFromUtf32(codePoint));
                         }
                         catch (ArgumentOutOfRangeException)
                         {
-                            throw CreateException(
+                            throw CreateExceptionInToken(
                                 YamlDiagnosticCode.InvalidScalar,
                                 "A YAML Unicode escape is outside the Unicode scalar range.",
                                 sourcePath,
+                                token,
+                                escapeStart,
                                 line,
-                                column + escapeStart,
-                                offset + escapeStart);
+                                column,
+                                offset);
                         }
 
                         break;
@@ -253,6 +406,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                             column,
                             offset);
                 }
+
+                // Whitespace produced by an escape (\t, \ ) is content and is never trimmed at a line break.
+                keep = builder.Length;
             }
 
             return builder.ToString();
@@ -265,9 +421,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             string sourcePath,
             int line,
             int column,
-            int offset)
+            int offset,
+            int errorIndex)
         {
-            int codePoint = ParseHexCodePoint(token, ref index, digits, sourcePath, line, column, offset);
+            int codePoint = ParseHexCodePoint(token, ref index, digits, sourcePath, line, column, offset, errorIndex);
             return (char)codePoint;
         }
 
@@ -278,14 +435,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             string sourcePath,
             int line,
             int column,
-            int offset)
+            int offset,
+            int errorIndex)
         {
             if (index + digits >= token.Length)
             {
-                throw CreateException(
+                throw CreateExceptionInToken(
                     YamlDiagnosticCode.InvalidScalar,
                     "A YAML Unicode escape is incomplete.",
                     sourcePath,
+                    token,
+                    errorIndex,
                     line,
                     column,
                     offset);
@@ -298,10 +458,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 int nibble = HexValue(digit);
                 if (nibble < 0)
                 {
-                    throw CreateException(
+                    throw CreateExceptionInToken(
                         YamlDiagnosticCode.InvalidScalar,
                         "A YAML Unicode escape contains a non-hexadecimal digit.",
                         sourcePath,
+                        token,
+                        errorIndex,
                         line,
                         column,
                         offset);

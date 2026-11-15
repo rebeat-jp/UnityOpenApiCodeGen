@@ -84,7 +84,7 @@ YAML 1.2-compatible subsetです。subset外は黙ってJSONへ変換したり�
 | flow mapping / sequence | Supported | nested、multiline、source orderを保持。flow collection内のblock scalarは対象外。 |
 | mapping key | Partial | simple string keyのみ。duplicate、complex/non-string key、merge key `<<`は拒否。 |
 | comments / encoding | Supported | comments、UTF-8 BOM、LF、CRLF。BOMはtreeから除きraw hashには含めます。 |
-| quoted / plain scalar | Supported | single/double quoteとplain scalar。YAML 1.1 implicit bool/date等はstringとして保持。 |
+| quoted / plain scalar | Partial | single/double quoteとplain scalar。YAML 1.1 implicit bool/date等はstringとして保持。複数行にまたがるquoted scalarはYAML 1.2 §7.3どおりに行を畳みます（改行1つは空白、空行k個は改行k個、行末・行頭の空白は削除、double quoteの行末`\`は改行エスケープ）。制約: block文脈では空でない継続行を開始行のインデントより深くします（引用符が行頭にある場合は同じ深さも可。flow内は検査しません）。継続行の列0にある`---`/`...`、閉じ引用符がない入力（開始位置の`YAML006`）、複数行にまたがるkey（`YAML011`）、flowの外にある複数行scalarの閉じ引用符の後ろに続く内容（`YAML006`、コメントは可）は拒否します。 |
 | Unicode escapes in quoted scalars | Partial | 隣接する高位・低位の`\u`サロゲート対と有効な`\U`は非BMP文字を保持します。孤立・逆順・不一致のサロゲートescapeはBundle生成前に位置付き`YAML006`です。 |
 | JSON-compatible scalar | Supported | `null`、`true`/`false`、RFC 8259 number（integer/real）、string。 |
 | literal / folded block scalar | Partial | `|`/`>`、`+`/`-` chomping、explicit indent `1`–`9`。`>`では内側の空行1行を改行1つ、空行2行を改行2つへfoldします。末尾空行はchompingに従います。flow内は拒否。 |
