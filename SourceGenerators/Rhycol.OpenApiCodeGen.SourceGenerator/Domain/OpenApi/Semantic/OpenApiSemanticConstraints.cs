@@ -100,8 +100,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal IReadOnlyList<OpenApiSemanticLiteral> AllowedValues { get; set; } =
             Array.Empty<OpenApiSemanticLiteral>();
 
-        internal bool IsEmpty =>
-            AllowedValues.Count == 0 && !MinLength.HasValue && !MaxLength.HasValue && Pattern is null &&
+        internal bool IsEmpty => AllowedValues.Count == 0 && HasOnlyAllowedValues;
+
+        /// <summary>
+        /// True when the set holds no constraint other than <see cref="AllowedValues"/> (which may be empty).
+        /// </summary>
+        internal bool HasOnlyAllowedValues =>
+            !MinLength.HasValue && !MaxLength.HasValue && Pattern is null &&
             Minimum is null && Maximum is null && ExclusiveMinimum is null && ExclusiveMaximum is null &&
             MultipleOf is null && !MinItems.HasValue && !MaxItems.HasValue && !UniqueItems &&
             !MinProperties.HasValue && !MaxProperties.HasValue && PatternProperties.Count == 0 &&

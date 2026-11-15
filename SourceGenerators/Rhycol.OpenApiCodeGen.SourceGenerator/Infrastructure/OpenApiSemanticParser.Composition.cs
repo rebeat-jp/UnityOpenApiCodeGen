@@ -1386,16 +1386,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 foreach (OpenApiSemanticConstraints set in current.ConstraintSets)
                 {
-                    IReadOnlyList<OpenApiSemanticLiteral> allowed = set.AllowedValues;
-                    set.AllowedValues = Array.Empty<OpenApiSemanticLiteral>();
-                    bool otherwise = !set.IsEmpty;
-                    set.AllowedValues = allowed;
-                    if (otherwise)
+                    if (!set.HasOnlyAllowedValues)
                     {
                         return 2;
                     }
 
-                    if (allowed.Count > 0)
+                    if (set.AllowedValues.Count > 0)
                     {
                         state = 1;
                     }
