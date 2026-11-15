@@ -220,6 +220,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     request.GitHubToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 definitionPlan = PrepareForGraphFormat(definitionPlan, graph.Format);
+                // Define the symbol in the target asmdef so the definition compiles under every
+                // build target and Build Profile. Done before any definition file is written.
+                definitionWriter.EnsureTargetVersionDefine(request.OutputFolderPath);
                 bool definitionChanged = false;
                 NormalizedSpecCacheResult cacheResult = cacheService.PublishGraph(
                     graph,
@@ -290,6 +293,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     .GetAwaiter()
                     .GetResult();
                 definitionPlan = PrepareForGraphFormat(definitionPlan, graph.Format);
+                // Define the symbol in the target asmdef so the definition compiles under every
+                // build target and Build Profile. Done before any definition file is written.
+                definitionWriter.EnsureTargetVersionDefine(request.OutputFolderPath);
                 bool definitionChanged = false;
                 NormalizedSpecCacheResult cacheResult = cacheService.PublishGraph(
                     graph,
