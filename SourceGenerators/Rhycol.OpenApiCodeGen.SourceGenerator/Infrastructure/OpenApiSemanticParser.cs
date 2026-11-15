@@ -1144,11 +1144,33 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     continue;
                 }
 
+                if (_minorVersion == 0)
+                {
+                    // OpenAPI 3.0: the Reference Object ignores every sibling of $ref (SHALL be ignored),
+                    // so an unsupported or unknown keyword is reported as an ignored element, not an error.
+                    AddIgnoredWarning(
+                        property.Value,
+                        "Schema keyword '" + property.Name +
+                        "' next to $ref is ignored in OpenAPI 3.0.");
+                    continue;
+                }
+
                 throw Unsupported(
                     property.Value,
                     "Schema keyword '" + property.Name +
                     "' cannot be combined with $ref by the Phase 4 MVP.");
             }
+        }
+
+        /// <summary>
+        /// True for an OpenAPI 3.0 (and normalized Swagger 2.0) schema node that carries $ref. Its siblings
+        /// are ignored, so only the reference (plus nullable and annotations) takes part in parsing.
+        /// </summary>
+        private bool IsMinor30ReferenceNode(SpecNode node)
+        {
+            return _minorVersion == 0 &&
+                   node.ValueKind == SpecValueKind.Object &&
+                   node.TryGetProperty("$ref", out _);
         }
 
         private bool ParseNullable(SpecNode node)

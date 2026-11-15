@@ -397,6 +397,103 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
+        public async Task RefSiblingsAreIgnoredWithOacg108InOpenApi30AndNullableIsKept()
+        {
+            const string Schemas = @"
+              'Body':{'type':'object','additionalProperties':false,
+                'properties':{'code':{'$ref':'#/components/schemas/Code','type':'string','nullable':true}}},
+              'Code':{'type':'string','enum':['a','b']}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.4"));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
+            Assert.Contains("logical path '/components/schemas/Body/properties/code/type'", warning.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = Load(execution);
+            Assert.Equal(
+                assembly.GetType(Ns + "Code", true),
+                Nullable.GetUnderlyingType(assembly.GetType(Ns + "Body", true)!.GetProperty("Code")!.PropertyType) ??
+                assembly.GetType(Ns + "Body", true)!.GetProperty("Code")!.PropertyType);
+
+            Exchange exchange = await Echo(execution, J("{'code':null}"), J("{'code':null}"));
+            Assert.Null(ReadPath(exchange.Result!, "Code"));
+            AssertJsonEqual(J("{'code':null}"), exchange.RequestJson);
+        }
+
+        [Fact]
+        public void AnAllOfPartWithARefAndATypeIsIgnoredWithOacg108InOpenApi30()
+        {
+            const string Schemas = @"
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base','type':'string'},
+                               {'type':'object','properties':{'extra':{'type':'integer'}}}]},
+              'Base':{'type':'object','properties':{'name':{'type':'string'}}}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.3"));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Contains("logical path '/components/schemas/Body/allOf/0/type'", warning.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
+            Type body = Load(execution).GetType(Ns + "Body", true)!;
+            Assert.NotNull(body.GetProperty("Name"));
+            Assert.NotNull(body.GetProperty("Extra"));
+        }
+
+        [Fact]
+        public void ASingleElementAllOfWithARefAndATypeIsAReferenceInOpenApi30()
+        {
+            const string Schemas = @"
+              'Body':{'type':'object','additionalProperties':false,
+                'properties':{'pet':{'allOf':[{'$ref':'#/components/schemas/Item','type':'string'}]}}},
+              'Item':{'type':'object','additionalProperties':false,'properties':{'n':{'type':'integer'}}}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.3"));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Contains("logical path '/components/schemas/Body/properties/pet/allOf/0/type'", warning.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = Load(execution);
+            Assert.Equal(
+                assembly.GetType(Ns + "Item", true),
+                assembly.GetType(Ns + "Body", true)!.GetProperty("Pet")!.PropertyType);
+        }
+
+        [Fact]
+        public void ConstAndUnknownKeywordsNextToARefAreIgnoredWithOacg108InOpenApi30()
+        {
+            const string Schemas = @"
+              'Body':{'type':'object','additionalProperties':false,
+                'properties':{'item':{'$ref':'#/components/schemas/Item','const':'x','somethingNew':true,'maxLength':1,'x-note':1}}},
+              'Item':{'type':'object','additionalProperties':false,'properties':{'n':{'type':'integer'}}}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.3"));
+
+            Assert.Equal(
+                new[] { "OACG108", "OACG108", "OACG108" },
+                execution.RunResult.Diagnostics.Select(static item => item.Id).ToArray());
+            string messages = string.Join("\n", execution.RunResult.Diagnostics.Select(static item => item.GetMessage()));
+            Assert.Contains("/properties/item/const'", messages);
+            Assert.Contains("/properties/item/somethingNew'", messages);
+            Assert.Contains("/properties/item/maxLength'", messages);
+            Assert.DoesNotContain("x-note", messages);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.DoesNotContain("__OacgConstraint_", execution.GeneratedSource);
+        }
+
+        [Fact]
+        public void AnUnknownKeywordNextToARefStillFailsInOpenApi31()
+        {
+            const string Schemas = @"
+              'Body':{'type':'object','properties':{'item':{'$ref':'#/components/schemas/Item','somethingNew':true}}},
+              'Item':{'type':'object','properties':{'n':{'type':'integer'}}}";
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(Schemas, "3.1.0")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("/properties/item/somethingNew'", diagnostic.GetMessage());
+        }
+
+        [Fact]
         public void AllOfPartsWithDifferentPropertyTypesReportOacg101AtTheSecondDeclaration()
         {
             const string Schemas = @"

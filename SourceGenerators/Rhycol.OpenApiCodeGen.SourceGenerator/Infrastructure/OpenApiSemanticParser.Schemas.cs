@@ -47,7 +47,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             RequireKind(node, SpecValueKind.Object, "A schema must be an object in the Phase 4 MVP.");
-            ValidateUnsupportedSchemaKeywords(node);
+
+            // OpenAPI 3.0 ignores every sibling of $ref; ValidateReferenceSchemaSiblings reports them
+            // as OACG108 (unknown and 3.1-only keywords included) instead of rejecting the schema.
+            bool minor30Reference = IsMinor30ReferenceNode(node);
+            if (!minor30Reference)
+            {
+                ValidateUnsupportedSchemaKeywords(node);
+            }
 
             OpenApiSemanticSchema shape = ParseSchemaShape(node, suggestedName, referenceStack);
 
@@ -55,6 +62,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             // A composition has already collected the constraint sets of every part, the node included.
             bool composed = _constraintsComposed;
             _constraintsComposed = false;
+            if (minor30Reference)
+            {
+                // The constraints and not next to a 3.0 $ref were ignored with a warning.
+                return shape;
+            }
+
             if (!composed)
             {
                 shape = ApplyConstraintKeywords(node, shape);

@@ -796,6 +796,26 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             RequireKind(node, SpecValueKind.Object, "A schema must be an object in the Phase 4 MVP.");
+
+            if (IsMinor30ReferenceNode(node))
+            {
+                // OpenAPI 3.0: the siblings of $ref are ignored (OACG108), so only the target is collected.
+                TryGetReference(node, out string reference30, out SpecNode referenceNode30);
+                ValidateReferenceSchemaSiblings(node);
+                ResolvedSpecReference resolved30 = ResolveSchemaReference(reference30, referenceNode30, out _);
+                ParseResolvedReferenced(
+                    reference30,
+                    referenceNode30,
+                    referenceStack,
+                    resolved30,
+                    target =>
+                    {
+                        CollectObjectParts(target, rootName, referenceStack, composition, isRoot: false);
+                        return true;
+                    });
+                return;
+            }
+
             ValidateUnsupportedSchemaKeywords(node);
 
             // Checked first so that an invalid keyword next to a $ref is reported at the keyword itself,
@@ -804,12 +824,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
-                if (_minorVersion == 0)
-                {
-                    ValidateReferenceSchemaSiblings(node);
-                }
-
-                ResolvedSpecReference resolved = ResolveSchemaReference(reference, referenceNode, out _);
+                ResolvedSpecReference resolved =ResolveSchemaReference(reference, referenceNode, out _);
                 ParseResolvedReferenced(
                     reference,
                     referenceNode,
