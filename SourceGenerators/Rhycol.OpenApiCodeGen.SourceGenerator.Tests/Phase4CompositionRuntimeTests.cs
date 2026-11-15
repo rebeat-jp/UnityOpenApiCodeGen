@@ -559,6 +559,144 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
+        public async Task APlainDeclarationAfterANarrowingDoesNotDependOnTheOrderOfTheParts()
+        {
+            // plain, enum, plain: the third part only restates the type that the second one narrowed.
+            const string Schemas = @"
+              'Base':{'type':'object','properties':{'code':{'type':'string'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'code':{'type':'string','enum':['alpha','bravo']}}},
+                {'type':'object','properties':{'code':{'type':'string'}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas, "3.0.3"));
+            await AssertNarrowedValues(execution, new[] { "alpha", "bravo" }, new[] { "charlie" });
+
+            // enum, plain, plain written the other way round.
+            const string Reversed = @"
+              'Base':{'type':'object','properties':{'code':{'type':'string','enum':['alpha','bravo']}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'code':{'type':'string'}}},
+                {'type':'object','properties':{'code':{'type':'string'}}}]}";
+            await AssertNarrowedValues(Generate(EchoDocument(Reversed, "3.0.3")), new[] { "alpha", "bravo" }, new[] { "charlie" });
+        }
+
+        [Theory]
+        [InlineData("'Base':{'type':'object','properties':{'code':{'type':'string'}}}")]
+        [InlineData("'Base':{'type':'object','properties':{'code':{'$ref':'#/components/schemas/ProblemCode'}}}")]
+        public void NarrowingsThatLeaveNoValueInCommonReportOacg101WithoutTheValues(string baseSchema)
+        {
+            string schemas =
+                "'Body':{'allOf':[{'$ref':'#/components/schemas/Base'}," +
+                CodePart("{'type':'string','enum':['STORAGE_UNAVAILABLE']}") + "," +
+                CodePart("{'type':'string','enum':['NOT_FOUND']}") + "]}," + baseSchema + "," +
+                "'ProblemCode':{'type':'string','enum':['STORAGE_UNAVAILABLE','NOT_FOUND','BAD_REQUEST']}";
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(schemas, "3.0.4")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("no value in common", diagnostic.GetMessage());
+            Assert.Contains("logical path '/components/schemas/Body/allOf/2/properties/code'", diagnostic.GetMessage());
+            Assert.DoesNotContain("STORAGE_UNAVAILABLE", diagnostic.GetMessage());
+            Assert.DoesNotContain("NOT_FOUND", diagnostic.GetMessage());
+        }
+
+        [Theory]
+        // A plain string with a constraint next to a named enum: only enum values move.
+        [InlineData("{'$ref':'#/components/schemas/ProblemCode'}", "{'type':'string','maxLength':20}")]
+        // A plain integer is an int; a value outside the int range does not fit it.
+        [InlineData("{'type':'integer'}", "{'type':'integer','enum':[1,3000000000]}")]
+        // The format of a plain string is part of its type.
+        [InlineData("{'type':'string','format':'date'}", "{'type':'string','enum':['2020-01-01']}")]
+        public void ANarrowingThatTheKeptTypeCannotTakeReportsOacg101(string baseCode, string partCode)
+        {
+            const string Problem = "'ProblemCode':{'type':'string','enum':['STORAGE_UNAVAILABLE','NOT_FOUND']}";
+            string schemas =
+                "'Base':{'type':'object','properties':{'code':" + baseCode + "}}," +
+                "'Body':{'allOf':[{'$ref':'#/components/schemas/Base'}," + CodePart(partCode) + "]}," + Problem;
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(schemas, "3.0.3")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("different types", diagnostic.GetMessage());
+        }
+
+        [Fact]
+        public async Task AnInt64IntegerAcceptsAnEnumBeyondTheIntRange()
+        {
+            const string Schemas = @"
+              'Base':{'type':'object','properties':{'n':{'type':'integer','format':'int64'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'n':{'type':'integer','enum':[1,3000000000]}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas, "3.0.3"));
+
+            Exchange ok = await Echo(execution, J("{'n':3000000000}"), J("{'n':1}"));
+            AssertJsonEqual(J("{'n':3000000000}"), ok.RequestJson);
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Echo(execution, J("{'n':2}"), J("{'n':1}")));
+        }
+
+        [Fact]
+        public async Task ANamedIntegerEnumCanBeNarrowedToAnInlineIntegerEnum()
+        {
+            const string Schemas = @"
+              'Level':{'type':'integer','enum':[1,2,3]},
+              'Base':{'type':'object','properties':{'level':{'$ref':'#/components/schemas/Level'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'level':{'type':'integer','enum':[2,3]}}},
+                {'type':'object','properties':{'level':{'type':'integer','enum':[3]}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas, "3.0.3"));
+            Assembly assembly = Load(execution);
+
+            Assert.Equal(
+                assembly.GetType(Ns + "Level", true),
+                Nullable.GetUnderlyingType(assembly.GetType(Ns + "Body", true)!.GetProperty("Level")!.PropertyType)!);
+            Exchange ok = await Echo(execution, J("{'level':3}"), J("{'level':3}"));
+            AssertJsonEqual(J("{'level':3}"), ok.RequestJson);
+            foreach (string rejected in new[] { "1", "2" })
+            {
+                ArgumentException request = await Assert.ThrowsAnyAsync<ArgumentException>(
+                    () => Echo(execution, J("{'level':" + rejected + "}"), J("{'level':3}")));
+                Assert.Contains("$.level", request.Message);
+                Exception response = await MatrixMode.ThrowsSerializationAsync(
+                    () => Echo(execution, J("{'level':3}"), J("{'level':" + rejected + "}")));
+                Assert.Contains("$.level", response.Message);
+            }
+        }
+
+        [Fact]
+        public void TwoNamedEnumsWithTheSameValuesKeepTheFirstOne()
+        {
+            const string Schemas = @"
+              'First':{'type':'string','enum':['a1','b1']},
+              'Second':{'type':'string','enum':['b1','a1']},
+              'Base':{'type':'object','properties':{'code':{'$ref':'#/components/schemas/First'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'code':{'$ref':'#/components/schemas/Second'}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas, "3.0.3"));
+            Assembly assembly = Load(execution);
+
+            Assert.Equal(
+                assembly.GetType(Ns + "First", true),
+                Nullable.GetUnderlyingType(assembly.GetType(Ns + "Body", true)!.GetProperty("Code")!.PropertyType)!);
+            Assert.DoesNotContain("Must be one of", execution.GeneratedSource);
+        }
+
+        [Fact]
+        public void NotNextToARefIsIgnoredWithOacg108InOpenApi30()
+        {
+            const string Schemas = @"
+              'Body':{'type':'object','additionalProperties':false,
+                'properties':{'item':{'$ref':'#/components/schemas/Item','not':{'type':'string'}}}},
+              'Item':{'type':'object','additionalProperties':false,'properties':{'n':{'type':'integer'}}}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.3"));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Contains("/properties/item/not'", warning.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
+        }
+
+        [Fact]
         public void ARecursiveReferenceThatCannotBeResolvedYetIsNotNarrowed()
         {
             // The property of the base refers back to the schema that is being parsed.

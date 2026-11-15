@@ -827,6 +827,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
+        public void ASiblingOfARefInADefinitionIsIgnoredWithOacg108()
+        {
+            Phase4GeneratorExecution execution = Generate(Swagger(
+                "\"/p\":{\"get\":{" + Ok + "}}",
+                "\"X\":{\"type\":\"object\",\"properties\":{\"n\":{\"type\":\"integer\"}}}," +
+                "\"Y\":{\"type\":\"object\",\"properties\":{\"x\":{\"$ref\":\"#/definitions/X\",\"type\":\"object\"}}}"));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            AssertLogicalPath(warning, "/definitions/Y/properties/x/type");
+            Assert.Empty(execution.CompilationErrors);
+        }
+
+        [Fact]
         public void AnErrorInAFormDataParameterReportsTheParameterPath()
         {
             Diagnostic diagnostic = SingleDiagnostic(

@@ -622,6 +622,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 text = number.ToString(global::System.Globalization.CultureInfo.InvariantCulture);
             }
+            else if (integer && token.ValueKind == global::System.Text.Json.JsonValueKind.Number && token.GetRawText().IndexOfAny(new[] { '.', 'e', 'E' }) < 0)
+            {
+                // An integer beyond Int64 is no declared value.
+                text = token.GetRawText();
+            }
             else if (!integer && token.ValueKind == global::System.Text.Json.JsonValueKind.String)
             {
                 text = token.GetString() ?? """";

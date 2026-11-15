@@ -64,7 +64,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             _constraintsComposed = false;
             if (minor30Reference)
             {
-                // The constraints and not next to a 3.0 $ref were ignored with a warning.
+                // The validation keywords and `not` next to a 3.0 $ref were ignored with a warning (OACG108).
                 return shape;
             }
 

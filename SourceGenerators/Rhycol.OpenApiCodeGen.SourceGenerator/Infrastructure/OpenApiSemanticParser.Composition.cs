@@ -906,34 +906,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             RequireKind(node, SpecValueKind.Object, "A schema must be an object in the Phase 4 MVP.");
 
-            if (IsMinor30ReferenceNode(node))
+            // OpenAPI 3.0: the siblings of $ref are ignored (OACG108), so only the target is collected.
+            bool minor30Reference = IsMinor30ReferenceNode(node);
+            if (!minor30Reference)
             {
-                // OpenAPI 3.0: the siblings of $ref are ignored (OACG108), so only the target is collected.
-                TryGetReference(node, out string reference30, out SpecNode referenceNode30);
-                ValidateReferenceSchemaSiblings(node);
-                ResolvedSpecReference resolved30 = ResolveSchemaReference(reference30, referenceNode30, out _);
-                ParseResolvedReferenced(
-                    reference30,
-                    referenceNode30,
-                    referenceStack,
-                    resolved30,
-                    target =>
-                    {
-                        CollectObjectParts(target, rootName, referenceStack, composition, isRoot: false);
-                        return true;
-                    });
-                return;
+                ValidateUnsupportedSchemaKeywords(node);
+
+                // Checked first so that an invalid keyword next to a $ref is reported at the keyword itself,
+                // not inside the referenced schema.
+                ValidateObjectPartKeywords(node);
             }
-
-            ValidateUnsupportedSchemaKeywords(node);
-
-            // Checked first so that an invalid keyword next to a $ref is reported at the keyword itself,
-            // not inside the referenced schema.
-            ValidateObjectPartKeywords(node);
 
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
-                ResolvedSpecReference resolved =ResolveSchemaReference(reference, referenceNode, out _);
+                if (minor30Reference)
+                {
+                    ValidateReferenceSchemaSiblings(node);
+                }
+
+                ResolvedSpecReference resolved = ResolveSchemaReference(reference, referenceNode, out _);
                 ParseResolvedReferenced(
                     reference,
                     referenceNode,
@@ -944,6 +935,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         CollectObjectParts(target, rootName, referenceStack, composition, isRoot: false);
                         return true;
                     });
+
+                if (minor30Reference)
+                {
+                    return;
+                }
             }
 
             SpecNode? unionNode = GetProperty(node, "oneOf") ?? GetProperty(node, "anyOf");
@@ -1059,6 +1055,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         {
                             if (TryMergeNarrowedProperty(existing.Schema, schema, out OpenApiSemanticSchema narrowed))
                             {
+                                if (NarrowingLeavesNoValue(narrowed))
+                                {
+                                    throw CreateException(
+                                        OpenApiSemanticErrorKind.UnsupportedElement,
+                                        "The narrowed values of property '" + property.Name +
+                                        "' declared by the parts of an allOf composition have no value in common.",
+                                        property.Value,
+                                        new[] { existing.Location });
+                                }
+
                                 composition.Properties[property.Name] = new OpenApiSemanticProperty(
                                     property.Name,
                                     false,
@@ -1195,9 +1201,33 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (IsSchemaNullable(existing) != IsSchemaNullable(incoming) ||
                 !TryGetNarrowingSide(existing, out NarrowingSide first) ||
                 !TryGetNarrowingSide(incoming, out NarrowingSide second) ||
-                first.LiteralKind != second.LiteralKind ||
-                (first.Values is null && second.Values is null))
+                first.LiteralKind != second.LiteralKind)
             {
+                return false;
+            }
+
+            if (first.Values is null && second.Values is null)
+            {
+                // Two plain declarations differ only by what an earlier narrowing added to one of them: the
+                // one without any constraint restates the type, whatever the order of the parts.
+                if (!string.Equals(first.Effective.Format, second.Effective.Format, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                bool firstConstrained = HasConstraintSets(first.Schema);
+                bool secondConstrained = HasConstraintSets(second.Schema);
+                if (firstConstrained && !secondConstrained)
+                {
+                    return true;
+                }
+
+                if (secondConstrained && !firstConstrained)
+                {
+                    merged = incoming;
+                    return true;
+                }
+
                 return false;
             }
 
@@ -1276,6 +1306,37 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 new OpenApiSemanticConstraints { AllowedValues = narrowing.Values! }
             });
             return true;
+        }
+
+        // The intersection of the kept type and every AllowedValues set: when it is empty, the property would
+        // accept nothing, which is a contradiction in the document rather than a narrowing.
+        private bool NarrowingLeavesNoValue(OpenApiSemanticSchema merged)
+        {
+            HashSet<OpenApiSemanticLiteral>? remaining = null;
+            OpenApiSemanticSchema effective = GetEffectiveSchema(merged);
+            if (effective.Kind == OpenApiSemanticSchemaKind.Enum)
+            {
+                remaining = new HashSet<OpenApiSemanticLiteral>(effective.TypedEnumValues);
+            }
+
+            foreach (OpenApiSemanticConstraints set in merged.ConstraintSets)
+            {
+                if (set.AllowedValues.Count == 0)
+                {
+                    continue;
+                }
+
+                if (remaining is null)
+                {
+                    remaining = new HashSet<OpenApiSemanticLiteral>(set.AllowedValues);
+                }
+                else
+                {
+                    remaining.IntersectWith(set.AllowedValues);
+                }
+            }
+
+            return remaining is not null && remaining.Count == 0;
         }
 
         private bool TryGetNarrowingSide(OpenApiSemanticSchema schema, out NarrowingSide side)
