@@ -606,6 +606,52 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Generate(EchoDocument(Schemas, "3.0.3"));
         }
 
+        [Fact]
+        public async Task AnOpenApi30DocumentWithRefSiblingsNarrowedEnumsAndNullMembersGeneratesAndRoundTrips()
+        {
+            // The three shapes of rebeat-jp/api-docs GameAPI.openapi.yaml in one document: a $ref next to a
+            // type (base), the base property narrowed by an allOf part, and "X or null" written with
+            // anyOf and { nullable: true, enum: [null] }.
+            const string Schemas = @"
+              'ProblemCode':{'type':'string','enum':['STORAGE_UNAVAILABLE','NOT_FOUND']},
+              'Limit':{'type':'object','additionalProperties':false,'properties':{'n':{'type':'integer'}}},
+              'ProblemDetails':{'type':'object','required':['code'],
+                'properties':{'code':{'$ref':'#/components/schemas/ProblemCode','type':'string'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/ProblemDetails'},
+                {'type':'object','properties':{
+                  'code':{'type':'string','enum':['STORAGE_UNAVAILABLE']},
+                  'limit':{'anyOf':[{'$ref':'#/components/schemas/Limit'},
+                                    {'type':'object','nullable':true,'enum':[null]}]}}}]}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.4"));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Contains("/components/schemas/ProblemDetails/properties/code/type'", warning.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = Load(execution);
+            Type body = assembly.GetType(Ns + "Body", true)!;
+            Assert.Equal(assembly.GetType(Ns + "ProblemCode", true), body.GetProperty("Code")!.PropertyType);
+            Assert.Equal(assembly.GetType(Ns + "Limit", true), body.GetProperty("Limit")!.PropertyType);
+
+            Exchange nullLimit = await Echo(
+                execution,
+                J("{'code':'STORAGE_UNAVAILABLE','limit':null}"),
+                J("{'code':'STORAGE_UNAVAILABLE','limit':null}"));
+            Assert.Null(ReadPath(nullLimit.Result!, "Limit"));
+            AssertJsonEqual(J("{'code':'STORAGE_UNAVAILABLE','limit':null}"), nullLimit.RequestJson);
+
+            Exchange withLimit = await Echo(
+                execution,
+                J("{'code':'STORAGE_UNAVAILABLE','limit':{'n':1}}"),
+                J("{'code':'STORAGE_UNAVAILABLE','limit':{'n':2}}"));
+            Assert.Equal(2, ReadPath(withLimit.Result!, "Limit", "N"));
+
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Echo(
+                execution, J("{'code':'NOT_FOUND'}"), J("{'code':'STORAGE_UNAVAILABLE'}")));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(
+                execution, J("{'code':'STORAGE_UNAVAILABLE'}"), J("{'code':'NOT_FOUND'}")));
+        }
+
         // ---- OpenAPI 3.0 "X or null": { nullable: true, enum: [null] } ------------------------------
 
         private const string LimitSchema =
