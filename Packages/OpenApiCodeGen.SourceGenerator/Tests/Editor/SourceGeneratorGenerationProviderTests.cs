@@ -868,6 +868,48 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(definitionImports, Is.Empty);
         }
 
+        [Test]
+        public async Task GenerateAsyncAddsTheVersionDefineToTheTargetAsmdef()
+        {
+            string asmdefPath = WriteAsmdefWithoutDefine();
+            SourceGeneratorGenerationProvider provider = CreateProvider();
+
+            GenerationResult result = await provider.GenerateAsync(
+                CreateRequest(),
+                CancellationToken.None);
+
+            Assert.That(result.IsSuccess, Is.True, result.Message);
+            Assert.That(
+                File.ReadAllText(asmdefPath),
+                Does.Contain("\"define\": \"" + TargetAssemblyVersionDefineWriter.Define + "\""));
+            Assert.That(definitionImports, Does.Contain("Assets/Clients/Example.Clients.asmdef"));
+        }
+
+        [Test]
+        public void FailedDefinitionPublicationLeavesTheAlreadyAddedVersionDefineInTheAsmdef()
+        {
+            // The entry is idempotent and harmless without a definition, so it is intentionally not rolled back.
+            string asmdefPath = WriteAsmdefWithoutDefine();
+            SourceGeneratorGenerationProvider provider = CreateProvider(
+                importDefinition: path =>
+                {
+                    if (path.EndsWith(".cs", StringComparison.Ordinal))
+                    {
+                        throw new IOException("Simulated definition import failure.");
+                    }
+                });
+
+            GenerationResult result = provider.Generate(CreateRequest());
+
+            Assert.That(result.IsSuccess, Is.False);
+            Assert.That(
+                File.ReadAllText(asmdefPath),
+                Does.Contain("\"define\": \"" + TargetAssemblyVersionDefineWriter.Define + "\""));
+            Assert.That(
+                File.Exists(Path.Combine(outputFolder, "PetStoreApi.OpenApiDefinition.cs")),
+                Is.False);
+        }
+
         string WriteAsmdefWithoutDefine()
         {
             string asmdefPath = Path.Combine(projectRoot, "Assets", "Clients", "Example.Clients.asmdef");

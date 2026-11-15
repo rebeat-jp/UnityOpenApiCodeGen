@@ -200,13 +200,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     text.Substring(lastContent + 1);
             }
 
+            // A root key sits one level deep, so its indentation is the indentation unit.
             string rootKeyIndent = layout.FirstKeyOffset >= 0
                 ? LineIndent(text, layout.FirstKeyOffset)
                 : string.Empty;
-            string rootUnit = rootKeyIndent.Length != 0 ? rootKeyIndent : DefaultUnit;
             string indent = rootKeyIndent.Length != 0 ? rootKeyIndent : DefaultUnit;
             string block = "\"" + VersionDefinesKey + "\": [" + nl +
-                indent + rootUnit + Entry(indent + rootUnit, rootUnit, nl) + nl +
+                indent + indent + Entry(indent + indent, indent, nl) + nl +
                 indent + "]";
             int lastRootContent = LastNonWhitespaceBefore(text, layout.RootClose, layout.RootOpen);
             if (lastRootContent == layout.RootOpen)
@@ -277,7 +277,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
         /// <summary>
         /// Locates the offsets needed to splice the text. The grammar was already validated by
-        /// <see cref="StrictJsonSpecParser"/>, so this scan only tracks strings and nesting.
+        /// <see cref="StrictJsonSpecParser"/> (strings are terminated, brackets are balanced), so this
+        /// scan deliberately does no error handling and only tracks strings and nesting.
         /// </summary>
         private static Layout Scan(string text)
         {
@@ -309,9 +310,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                             layout.FirstKeyOffset = start;
                         }
 
-                        if (i <= text.Length &&
-                            string.Equals(
-                                text.Substring(start + 1, Math.Min(i, text.Length) - start - 1),
+                        // Raw comparison: a key written with escapes is not matched here, and the
+                        // caller then fails safely because the parser did find the property.
+                        if (string.Equals(
+                                text.Substring(start + 1, i - start - 1),
                                 VersionDefinesKey,
                                 StringComparison.Ordinal))
                         {

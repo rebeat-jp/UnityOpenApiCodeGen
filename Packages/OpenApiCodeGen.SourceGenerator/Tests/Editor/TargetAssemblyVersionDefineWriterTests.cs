@@ -182,6 +182,142 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(fileWriter.WriteCount, Is.EqualTo(0));
         }
 
+        [Test]
+        public void IgnoresAStringValueThatEqualsTheKeyName()
+        {
+            Write("{\n  \"name\": \"versionDefines\",\n  \"references\": [\"versionDefines\"]\n}\n");
+
+            Assert.That(writer.EnsureVersionDefine(asmdefPath), Is.True);
+
+            SpecObjectNode root = ParseRoot();
+            Assert.That(StringOf(root, "name"), Is.EqualTo("versionDefines"));
+            Assert.That(ArrayOf(root, "versionDefines").Items, Has.Count.EqualTo(1));
+            Assert.That(ArrayOf(root, "references").Items, Has.Count.EqualTo(1));
+        }
+
+        [Test]
+        public void IgnoresVersionDefinesInsideANestedObjectWhenTheRootHasNone()
+        {
+            Write("{\n  \"name\": \"x\",\n  \"x-nested\": { \"versionDefines\": [ { \"name\": \"a\" } ] }\n}\n");
+
+            Assert.That(writer.EnsureVersionDefine(asmdefPath), Is.True);
+
+            SpecObjectNode root = ParseRoot();
+            Assert.That(ArrayOf(root, "versionDefines").Items, Has.Count.EqualTo(1));
+            var nested = (SpecObjectNode)root.Properties[1].Value;
+            Assert.That(ArrayOf(nested, "versionDefines").Items, Has.Count.EqualTo(1));
+        }
+
+        [Test]
+        public void ChangesOnlyTheRootVersionDefinesWhenANestedOneComesFirst()
+        {
+            Write(
+                "{\n  \"x-nested\": { \"versionDefines\": [] },\n  \"name\": \"x\",\n" +
+                "  \"versionDefines\": [\n    { \"name\": \"a\", \"expression\": \"1.0.0\", \"define\": \"A\" }\n  ]\n}\n");
+
+            Assert.That(writer.EnsureVersionDefine(asmdefPath), Is.True);
+
+            SpecObjectNode root = ParseRoot();
+            Assert.That(ArrayOf(root, "versionDefines").Items, Has.Count.EqualTo(2));
+            Assert.That(ArrayOf((SpecObjectNode)root.Properties[0].Value, "versionDefines").Items, Is.Empty);
+            Assert.That(StringOf(root, "name"), Is.EqualTo("x"));
+        }
+
+        [Test]
+        public void AppendsToASingleLineVersionDefinesArray()
+        {
+            Write(
+                "{\n  \"name\": \"x\",\n" +
+                "  \"versionDefines\": [{ \"name\": \"a\", \"expression\": \"1.0.0\", \"define\": \"A\" }]\n}\n");
+
+            Assert.That(writer.EnsureVersionDefine(asmdefPath), Is.True);
+
+            SpecObjectNode root = ParseRoot();
+            SpecArrayNode array = ArrayOf(root, "versionDefines");
+            Assert.That(array.Items, Has.Count.EqualTo(2));
+            Assert.That(StringOf((SpecObjectNode)array.Items[0], "define"), Is.EqualTo("A"));
+            Assert.That(
+                StringOf((SpecObjectNode)array.Items[1], "define"),
+                Is.EqualTo(TargetAssemblyVersionDefineWriter.Define));
+            Assert.That(StringOf(root, "name"), Is.EqualTo("x"));
+        }
+
+        [Test]
+        public void FollowsTabIndentation()
+        {
+            Write("{\n\t\"name\": \"x\"\n}\n");
+
+            Assert.That(writer.EnsureVersionDefine(asmdefPath), Is.True);
+
+            Assert.That(
+                Read(),
+                Is.EqualTo(
+                    "{\n\t\"name\": \"x\",\n\t\"versionDefines\": [\n\t\t{\n\t\t\t" + EntryName +
+                    ",\n\t\t\t\"expression\": \"0.0.0\",\n\t\t\t" + EntryDefine + "\n\t\t}\n\t]\n}\n"));
+            Assert.That(ArrayOf(ParseRoot(), "versionDefines").Items, Has.Count.EqualTo(1));
+        }
+
+        [Test]
+        public void KeepsStringsThatContainEscapedQuotesAndBrackets()
+        {
+            Write(
+                "{\n  \"name\": \"a\\\"]}b\",\n  \"x-s\": \"\\\\\",\n  \"references\": [\"]}\\\"\", \"[{\"]\n}\n");
+
+            Assert.That(writer.EnsureVersionDefine(asmdefPath), Is.True);
+
+            SpecObjectNode root = ParseRoot();
+            Assert.That(StringOf(root, "name"), Is.EqualTo("a\"]}b"));
+            Assert.That(StringOf(root, "x-s"), Is.EqualTo("\\"));
+            Assert.That(ArrayOf(root, "references").Items, Has.Count.EqualTo(2));
+            Assert.That(ArrayOf(root, "versionDefines").Items, Has.Count.EqualTo(1));
+        }
+
+        [Test]
+        public void AppendsWhenVersionDefinesIsNotTheLastRootKey()
+        {
+            Write(
+                "{\n  \"versionDefines\": [\n    { \"name\": \"a\", \"expression\": \"1.0.0\", \"define\": \"A\" }\n  ],\n" +
+                "  \"name\": \"x\"\n}\n");
+
+            Assert.That(writer.EnsureVersionDefine(asmdefPath), Is.True);
+
+            SpecObjectNode root = ParseRoot();
+            Assert.That(ArrayOf(root, "versionDefines").Items, Has.Count.EqualTo(2));
+            Assert.That(StringOf(root, "name"), Is.EqualTo("x"));
+            Assert.That(root.Properties, Has.Count.EqualTo(2));
+        }
+
+        SpecObjectNode ParseRoot()
+        {
+            return (SpecObjectNode)StrictJsonSpecParser.Parse(Read(), asmdefPath);
+        }
+
+        static SpecArrayNode ArrayOf(SpecObjectNode node, string name)
+        {
+            foreach (SpecProperty property in node.Properties)
+            {
+                if (property.Name == name)
+                {
+                    return (SpecArrayNode)property.Value;
+                }
+            }
+
+            throw new AssertionException("Missing property " + name);
+        }
+
+        static string StringOf(SpecObjectNode node, string name)
+        {
+            foreach (SpecProperty property in node.Properties)
+            {
+                if (property.Name == name)
+                {
+                    return ((SpecStringNode)property.Value).Value;
+                }
+            }
+
+            throw new AssertionException("Missing property " + name);
+        }
+
         void Write(string content)
         {
             WriteBytes(new byte[0], content);
