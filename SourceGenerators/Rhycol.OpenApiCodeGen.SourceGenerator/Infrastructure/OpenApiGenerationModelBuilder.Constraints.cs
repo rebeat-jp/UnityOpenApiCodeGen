@@ -52,6 +52,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 MaxProperties = set.MaxProperties,
                 MinContains = set.MinContains,
                 MaxContains = set.MaxContains,
+                AllowedValues = set.AllowedValues,
                 DependentRequired = set.DependentRequired
                     .Select(static entry => new GeneratedDependentRequired(entry.Property, entry.Required))
                     .ToArray()

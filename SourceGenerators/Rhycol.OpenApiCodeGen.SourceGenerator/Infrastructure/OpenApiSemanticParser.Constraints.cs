@@ -532,6 +532,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             parts.Add(set.ItemsAfterPrefix is null ? string.Empty : "ia:" + GetSchemaSignature(set.ItemsAfterPrefix, active));
+            if (set.AllowedValues.Count > 0)
+            {
+                // A set of values: the order of the declaration does not change what is accepted.
+                parts.Add("av:" + string.Join(
+                    ",",
+                    set.AllowedValues
+                        .Select(static value => value.Kind.ToString() + "=" + value.RawText)
+                        .OrderBy(static value => value, StringComparer.Ordinal)));
+            }
+
             foreach (OpenApiSemanticDependentRequired entry in set.DependentRequired)
             {
                 parts.Add("dr:" + entry.Property + "=" + string.Join(",", entry.Required));

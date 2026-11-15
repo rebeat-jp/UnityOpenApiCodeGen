@@ -467,6 +467,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         .Append(Count(set.MinProperties)).Append(", ").Append(Count(set.MaxProperties)).AppendLine(");");
                 }
 
+                if (set.AllowedValues.Count > 0)
+                {
+                    source.Append(head).Append("Allowed(").Append(common).Append(", ")
+                        .Append(set.AllowedValues[0].Kind == OpenApiSemanticLiteralKind.Integer ? "true" : "false")
+                        .Append(", new string[] { ")
+                        .Append(string.Join(", ", set.AllowedValues.Select(static value =>
+                            GeneratedSourceEmitter.StringLiteral(value.RawText))))
+                        .AppendLine(" });");
+                }
+
                 foreach (GeneratedDependentRequired entry in set.DependentRequired)
                 {
                     source.Append(head).Append("Dependent(").Append(common).Append(", new string[] { ")
@@ -1084,6 +1094,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 {
                     __P__Fail(contract, path, ""dependentRequired"", ""a property that is present requires the property '"" + names[index] + ""' (required by '"" + names[0] + ""')"");
                 }
+            }
+        }
+
+        private static void __P__Allowed(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, bool integer, string[] values)
+        {
+            string text;
+            if (integer && token.Type == global::Newtonsoft.Json.Linq.JTokenType.Integer)
+            {
+                text = global::System.Convert.ToString(((global::Newtonsoft.Json.Linq.JValue)token).Value, global::System.Globalization.CultureInfo.InvariantCulture) ?? """";
+            }
+            else if (!integer && token.Type == global::Newtonsoft.Json.Linq.JTokenType.String)
+            {
+                text = (string?)token ?? """";
+            }
+            else
+            {
+                return;
+            }
+            if (global::System.Array.IndexOf(values, text) < 0)
+            {
+                __P__Fail(contract, path, ""enum"", ""the value is not one of the allowed values"");
             }
         }
 
