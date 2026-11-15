@@ -396,6 +396,102 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             AssertJsonEqual(J("{'pet':null}"), exchange.RequestJson);
         }
 
+        // ---- OpenAPI 3.0 "X or null": { nullable: true, enum: [null] } ------------------------------
+
+        private const string LimitSchema =
+            "'Limit':{'type':'object','additionalProperties':false,'properties':{'n':{'type':'integer'}}}";
+
+        [Theory]
+        [InlineData("anyOf", "{'type':'object','nullable':true,'enum':[null]}")]
+        [InlineData("oneOf", "{'type':'object','nullable':true,'enum':[null]}")]
+        [InlineData("anyOf", "{'nullable':true,'enum':[null]}")]
+        [InlineData("anyOf", "{'description':'No limit','type':'object','nullable':true,'enum':[null],'x-note':1}")]
+        public async Task ANullableNullEnumMemberMakesTheOtherMemberNullableInOpenApi30(string keyword, string nullPart)
+        {
+            string schemas =
+                "'Body':{'type':'object','additionalProperties':false,'properties':{'limit':{'" + keyword +
+                "':[{'$ref':'#/components/schemas/Limit'}," + nullPart + "]}}}," + LimitSchema;
+            Phase4GeneratorExecution execution = Generate(EchoDocument(schemas, "3.0.4"));
+            Assembly assembly = Load(execution);
+
+            Assert.Equal(
+                assembly.GetType(Ns + "Limit", true),
+                assembly.GetType(Ns + "Body", true)!.GetProperty("Limit")!.PropertyType);
+            Assert.DoesNotContain(assembly.GetTypes(), type => type.Name.StartsWith("BodyLimit", StringComparison.Ordinal));
+
+            Exchange nullExchange = await Echo(execution, J("{'limit':null}"), J("{'limit':null}"));
+            Assert.Null(ReadPath(nullExchange.Result!, "Limit"));
+            AssertJsonEqual(J("{'limit':null}"), nullExchange.RequestJson);
+
+            Exchange valueExchange = await Echo(execution, J("{'limit':{'n':3}}"), J("{'limit':{'n':4}}"));
+            Assert.Equal(4, ReadPath(valueExchange.Result!, "Limit", "N"));
+            AssertJsonEqual(J("{'limit':{'n':3}}"), valueExchange.RequestJson);
+        }
+
+        [Fact]
+        public async Task ANullableNullEnumMemberNextToTwoSchemasMakesTheUnionNullableInOpenApi30()
+        {
+            string schemas =
+                "'Body':{'type':'object','additionalProperties':false,'properties':{'pet':{'anyOf':[" +
+                "{'$ref':'#/components/schemas/Cat'},{'$ref':'#/components/schemas/Dog'}," +
+                "{'type':'object','nullable':true,'enum':[null]}]}}}," + CatDogUndeclared;
+            Phase4GeneratorExecution execution = Generate(EchoDocument(schemas, "3.0.3"));
+
+            Exchange nullExchange = await Echo(execution, J("{'pet':null}"), J("{'pet':null}"));
+            Assert.Null(ReadPath(nullExchange.Result!, "Pet"));
+            AssertJsonEqual(J("{'pet':null}"), nullExchange.RequestJson);
+
+            Exchange cat = await Echo(execution, J("{'pet':{'meow':true}}"), J("{'pet':{'meow':false}}"));
+            Assert.True(TryGet(ReadPath(cat.Result!, "Pet")!, "TryGetCat", out _));
+        }
+
+        [Fact]
+        public async Task ANullableNullEnumMemberCanBeAddedToADiscriminatedUnionInOpenApi30()
+        {
+            string schemas =
+                "'Pet':{'oneOf':[{'$ref':'#/components/schemas/Cat'},{'$ref':'#/components/schemas/Dog'}," +
+                "{'type':'object','nullable':true,'enum':[null]}]," +
+                "'discriminator':{'propertyName':'petType','mapping':{" +
+                "'cat':'#/components/schemas/Cat','dog':'#/components/schemas/Dog'}}}," +
+                "'Body':{'$ref':'#/components/schemas/Pet'}," + CatDogUndeclared;
+            Phase4GeneratorExecution execution = Generate(EchoDocument(schemas, "3.0.3"));
+
+            Exchange cat = await Echo(execution, J("{'petType':'cat','meow':true}"), J("{'petType':'cat','meow':false}"));
+            AssertJsonEqual(J("{'petType':'cat','meow':true}"), cat.RequestJson);
+            Assert.True(TryGet(cat.Result!, "TryGetCat", out _));
+            Assert.False(TryGet(cat.Result!, "TryGetDog", out _));
+        }
+
+        [Fact]
+        public void ANullOnlyEnumIsStillRejectedInOpenApi31()
+        {
+            string schemas =
+                "'Body':{'type':'object','properties':{'limit':{'anyOf':[{'$ref':'#/components/schemas/Limit'}," +
+                "{'type':'object','enum':[null]}]}}}," + LimitSchema;
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(schemas, "3.1.0")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("only null", diagnostic.GetMessage());
+        }
+
+        [Theory]
+        [InlineData("{'type':'object','nullable':true,'enum':[null],'properties':{'a':{'type':'string'}}}")]
+        [InlineData("{'type':'object','nullable':true,'enum':[null,'x']}")]
+        [InlineData("{'type':'object','enum':[null]}")]
+        public void OtherShapesOfANullOnlyEnumAreStillRejectedInOpenApi30(string nullPart)
+        {
+            string schemas =
+                "'Body':{'type':'object','properties':{'limit':{'anyOf':[{'$ref':'#/components/schemas/Limit'}," +
+                nullPart + "]}}}," + LimitSchema;
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(schemas, "3.0.3")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+        }
+
         [Fact]
         public async Task RefSiblingsAreIgnoredWithOacg108InOpenApi30AndNullableIsKept()
         {

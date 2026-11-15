@@ -207,13 +207,72 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return union;
         }
 
-        private static bool IsNullTypeSchema(SpecNode part)
+        private bool IsNullTypeSchema(SpecNode part)
         {
-            return part.ValueKind == SpecValueKind.Object &&
-                   !part.TryGetProperty("$ref", out _) &&
-                   part.TryGetProperty("type", out SpecNode type) &&
-                   type.ValueKind == SpecValueKind.String &&
-                   string.Equals(type.GetString(), "null", StringComparison.Ordinal);
+            if (part.ValueKind != SpecValueKind.Object || part.TryGetProperty("$ref", out _))
+            {
+                return false;
+            }
+
+            if (part.TryGetProperty("type", out SpecNode type) &&
+                type.ValueKind == SpecValueKind.String &&
+                string.Equals(type.GetString(), "null", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return _minorVersion == 0 && IsNullableNullEnumSchema(part);
+        }
+
+        /// <summary>
+        /// OpenAPI 3.0 spells "null" as { nullable: true, enum: [null] } (type optional): the member of
+        /// an "X or null" oneOf / anyOf. Only type, annotations and x-* may accompany the two keywords.
+        /// </summary>
+        private static bool IsNullableNullEnumSchema(SpecNode part)
+        {
+            if (!part.TryGetProperty("nullable", out SpecNode nullable) ||
+                nullable.ValueKind != SpecValueKind.True ||
+                !part.TryGetProperty("enum", out SpecNode enumNode) ||
+                enumNode.ValueKind != SpecValueKind.Array)
+            {
+                return false;
+            }
+
+            int count = 0;
+            foreach (SpecNode entry in enumNode.EnumerateArray())
+            {
+                if (entry.ValueKind != SpecValueKind.Null)
+                {
+                    return false;
+                }
+
+                count++;
+            }
+
+            if (count == 0)
+            {
+                return false;
+            }
+
+            foreach (SpecProperty property in part.EnumerateObject())
+            {
+                if (property.Name == "nullable" ||
+                    property.Name == "enum" ||
+                    AllowedReferenceSchemaSiblings.Contains(property.Name) ||
+                    property.Name.StartsWith("x-", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (property.Name == "type" && property.Value.ValueKind == SpecValueKind.String)
+                {
+                    continue;
+                }
+
+                return false;
+            }
+
+            return true;
         }
 
         private static void ValidateUnionSiblings(SpecNode node, string keyword)
