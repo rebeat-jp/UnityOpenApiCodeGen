@@ -148,7 +148,9 @@ limitations, and the IL2CPP / WebGL Player verification results (Unity
 checks .NET tests, analyzer reproducibility/synchronization, and UPM contents.
 It verifies one clean-commit candidate on Unity `2021.3.19f1`, `6000.0.23f1`,
 and `6000.3.2f1` in serial GitHub-hosted jobs, then runs the CD dry-run.
-Fork PRs receive the .NET/package checks without Unity credentials.
+Because the Unity job waits for an Environment approval, it runs only for a
+same-repository PR labelled `unity-gate`, a manual dispatch, or the release
+workflow; the CD dry-run step shares that condition. Fork PRs receive the .NET/package checks without Unity credentials.
 
 Use the successful run and its `verified-release-<run-id>-<attempt>` artifact
 for the exact commit under review. The manifest binds the candidate packages

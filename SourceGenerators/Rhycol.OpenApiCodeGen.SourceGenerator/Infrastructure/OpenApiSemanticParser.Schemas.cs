@@ -79,7 +79,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private OpenApiSemanticSchema ParseSchemaShape(
             SpecNode node,
             string suggestedName,
-            HashSet<NormalizedSpecNodeIdentity> referenceStack)
+            HashSet<NormalizedSpecNodeIdentity> referenceStack,
+            bool skipAllOf = false)
         {
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
@@ -108,8 +109,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
             }
 
-            if (node.TryGetProperty("allOf", out _))
+            if (!skipAllOf && node.TryGetProperty("allOf", out _))
             {
+                if (IsAssertionOnlyAllOf(node))
+                {
+                    // A non-object schema whose allOf parts only add validation keywords and not keeps
+                    // its own type; the parts are applied on top of the shape.
+                    return ApplyAssertionOnlyAllOf(
+                        node,
+                        suggestedName,
+                        ParseSchemaShape(node, suggestedName, referenceStack, skipAllOf: true));
+                }
+
                 return ParseAllOf(node, suggestedName, referenceStack);
             }
 

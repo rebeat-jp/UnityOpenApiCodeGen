@@ -810,6 +810,78 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return ParseObjectComposition(node, suggestedName, referenceStack);
         }
 
+        /// <summary>
+        /// True for a schema of a non-object type (string, integer, number, boolean, array) whose allOf
+        /// parts are objects that carry only annotations, vendor extensions, validation keywords and not.
+        /// Such an allOf adds assertions to the type and is not an object composition.
+        /// </summary>
+        private bool IsAssertionOnlyAllOf(SpecNode node)
+        {
+            SpecNode? allOfNode = GetProperty(node, "allOf");
+            if (allOfNode is null || allOfNode.ValueKind != SpecValueKind.Array)
+            {
+                return false;
+            }
+
+            bool nullable = false;
+            string type;
+            try
+            {
+                type = ResolveSchemaType(node, ref nullable);
+            }
+            catch (OpenApiSemanticException)
+            {
+                return false;
+            }
+
+            if (type != "string" && type != "integer" && type != "number" && type != "boolean" && type != "array")
+            {
+                return false;
+            }
+
+            int count = 0;
+            foreach (SpecNode part in allOfNode.EnumerateArray())
+            {
+                count++;
+                if (part.ValueKind != SpecValueKind.Object)
+                {
+                    return false;
+                }
+
+                foreach (SpecProperty property in part.EnumerateObject())
+                {
+                    if (!AllowedReferenceSchemaSiblings.Contains(property.Name) &&
+                        !property.Name.StartsWith("x-", StringComparison.Ordinal) &&
+                        !IsConstraintKeyword(property.Name) &&
+                        property.Name != "not")
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return count > 0;
+        }
+
+        // Applies the validation keywords and not of every allOf part to the shape of the node. The not
+        // type of each part gets its own name so that several parts cannot collide (OACG107).
+        private OpenApiSemanticSchema ApplyAssertionOnlyAllOf(
+            SpecNode node,
+            string suggestedName,
+            OpenApiSemanticSchema shape)
+        {
+            int index = 0;
+            foreach (SpecNode part in RequireProperty(node, "allOf").EnumerateArray())
+            {
+                index++;
+                ValidateUnsupportedSchemaKeywords(part);
+                shape = ApplyConstraintKeywords(part, shape);
+                shape = ApplyNotKeyword(part, suggestedName + "AllOf" + index.ToString(CultureInfo.InvariantCulture), shape);
+            }
+
+            return shape;
+        }
+
         private bool IsSingleReferenceIdiom(SpecNode node, SpecNode part)
         {
             if (part.ValueKind != SpecValueKind.Object ||

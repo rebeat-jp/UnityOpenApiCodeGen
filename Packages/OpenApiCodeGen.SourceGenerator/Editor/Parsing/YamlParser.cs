@@ -201,7 +201,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     break;
                 }
 
-                if (Current.Kind == YamlTokenKind.Dash) break;
+                if (LineStartsWithDash()) break;
                 if (!HasMappingColonOnLine(position)) break;
 
                 ParseMappingEntry(expectedIndent, depth, properties, names);
@@ -282,7 +282,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             if (!AtEnd && Current.Line == keyToken.Line && Current.Kind != YamlTokenKind.Comment &&
                 Current.Kind != YamlTokenKind.NewLine)
             {
-                value = ParseInlineNode(depth + 1);
+                value = ParseInlineNode(depth + 1, false, mappingIndent);
                 EnsureOnlyLineTrivia(keyToken.Line, YamlDiagnosticCode.InvalidMapping);
                 ConsumeLineEnd();
             }
@@ -290,8 +290,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             {
                 ConsumeLineEnd();
                 SkipTrivia();
-                if (!AtEnd && !IsDocumentMarker(Current) && CurrentIndent() > mappingIndent)
+                if (!AtEnd && !IsDocumentMarker(Current) &&
+                    (CurrentIndent() > mappingIndent || (CurrentIndent() == mappingIndent && LineStartsWithDash())))
                 {
+                    // A sequence may be written at the indentation of its parent key (YAML 1.2 8.2.3,
+                    // "indentless" sequence); only a sequence can start on that line, a key cannot.
                     value = ParseBlock(CurrentIndent(), depth + 1);
                 }
                 else
@@ -485,7 +488,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             return new SpecObjectNode(sequenceLine, first.Column, properties);
         }
 
-        private SpecNode ParseInlineNode(int depth, bool inFlow = false)
+        private SpecNode ParseInlineNode(int depth, bool inFlow = false, int mappingValueIndent = -1)
         {
             if (AtEnd)
             {
@@ -507,11 +510,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     if (!inFlow && IsMultiLineScalar(token) && !AtEnd &&
                         Current.Kind != YamlTokenKind.Comment && Current.Kind != YamlTokenKind.NewLine)
                     {
-                        // The closing quote of a multi-line scalar is not on the line of its first token, so the
+                        // The end of a multi-line scalar is not on the line of its first token, so the
                         // callers' same-line checks cannot see what follows it.
                         throw Error(
                             YamlDiagnosticCode.InvalidScalar,
-                            "Unexpected content follows a multi-line quoted YAML scalar.",
+                            "Unexpected content follows a multi-line YAML scalar.",
                             Current);
                     }
 
@@ -520,7 +523,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     position++;
                     return ParseBlockScalar(token, GetBlockScalarParentIndent(token), depth);
                 case YamlTokenKind.Anchor:
-                    return ParseAnchor(depth, inFlow);
+                    return ParseAnchor(depth, inFlow, mappingValueIndent);
                 case YamlTokenKind.Alias:
                     position++;
                     return ExpandAlias(token);
@@ -535,7 +538,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
         }
 
-        private SpecNode ParseAnchor(int depth, bool inFlow)
+        private SpecNode ParseAnchor(int depth, bool inFlow, int mappingValueIndent)
         {
             YamlToken anchorToken = Current;
             string name = anchorToken.Value.Substring(1);
@@ -563,7 +566,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             {
                 ConsumeLineEnd();
                 SkipTrivia();
-                if (AtEnd || IsDocumentMarker(Current) || CurrentIndent() <= CurrentIndentForLine(anchorToken.Line))
+                // Only the value of a mapping key may continue with an indentless sequence at the key's indentation;
+                // the anchor of a sequence item ("- &a") must still be followed by a more indented value.
+                bool indentlessSequence = !AtEnd && mappingValueIndent >= 0 &&
+                    CurrentIndent() == mappingValueIndent && LineStartsWithDash();
+                if (AtEnd || IsDocumentMarker(Current) ||
+                    (CurrentIndent() <= CurrentIndentForLine(anchorToken.Line) && !indentlessSequence))
                 {
                     anchorsInProgress.Remove(name);
                     throw Error(
@@ -1073,7 +1081,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
         }
 
-        // Only a quoted scalar can span lines; the lexer keeps its line breaks in the token value.
+        // Quoted and plain scalars can span lines; the lexer keeps their line breaks in the token value.
         private static bool IsMultiLineScalar(YamlToken token)
         {
             return token.Kind == YamlTokenKind.Scalar && token.Value.IndexOfAny(new[] { '\r', '\n' }) >= 0;
@@ -1159,6 +1167,24 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             {
                 position++;
             }
+        }
+
+        // True when the current line starts with a sequence dash. Below column 0 the line begins with an Indent
+        // token, so the dash is the token after it.
+        private bool LineStartsWithDash()
+        {
+            if (AtEnd)
+            {
+                return false;
+            }
+
+            if (Current.Kind == YamlTokenKind.Dash)
+            {
+                return true;
+            }
+
+            return Current.Kind == YamlTokenKind.Indent && position + 1 < tokens.Count &&
+                tokens[position + 1].Kind == YamlTokenKind.Dash;
         }
 
         private void ConsumeIndentToken()

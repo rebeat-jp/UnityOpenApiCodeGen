@@ -667,6 +667,511 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(exception.Offset, Is.EqualTo(8));
         }
 
+        [Test]
+        public void ParseReadsAnIndentlessSequenceFromTheIssueReproduction()
+        {
+            SpecNode root = YamlParser.Parse(
+                "openapi: 3.0.4\n" +
+                "info:\n" +
+                "  title: Example\n" +
+                "  version: 1.0.0\n" +
+                "x-example:\n" +
+                "  items:\n" +
+                "  - a\n" +
+                "  - b\n" +
+                "paths: {}\n",
+                SourcePath);
+
+            Assert.That(
+                Render(root),
+                Is.EqualTo(
+                    "{\"openapi\":\"3.0.4\",\"info\":{\"title\":\"Example\",\"version\":\"1.0.0\"}," +
+                    "\"x-example\":{\"items\":[\"a\",\"b\"]},\"paths\":{}}"));
+        }
+
+        [Test]
+        public void ParseReadsAnIndentlessSequenceUnderARootKey()
+        {
+            SpecNode root = YamlParser.Parse("tags:\n- a\n- b\nnext: 1\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"tags\":[\"a\",\"b\"],\"next\":1}"));
+        }
+
+        [Test]
+        public void ParseReadsIndentlessMappingItemsAndTheKeyThatFollows()
+        {
+            SpecObjectNode root = ParseObject(
+                "tags:\n" +
+                "- name: x\n" +
+                "  description: y\n" +
+                "- name: z\n" +
+                "paths: {}\n");
+
+            Assert.That(
+                Render(root),
+                Is.EqualTo("{\"tags\":[{\"name\":\"x\",\"description\":\"y\"},{\"name\":\"z\"}],\"paths\":{}}"));
+            SpecArrayNode tags = (SpecArrayNode)Property(root, "tags").Value;
+            Assert.That(tags.Line, Is.EqualTo(2));
+            Assert.That(tags.Column, Is.EqualTo(1));
+            Assert.That(tags.Items[0].Line, Is.EqualTo(2));
+            Assert.That(tags.Items[0].Column, Is.EqualTo(3));
+            Assert.That(Property((SpecObjectNode)tags.Items[0], "description").Line, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void ParseReadsANestedIndentlessSequenceAndTheSiblingsThatFollow()
+        {
+            SpecNode root = YamlParser.Parse(
+                "a:\n" +
+                "  b:\n" +
+                "  - 1\n" +
+                "  - 2\n" +
+                "  c: 3\n" +
+                "  d:\n" +
+                "  - x\n" +
+                "e: 4\n",
+                SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":{\"b\":[1,2],\"c\":3,\"d\":[\"x\"]},\"e\":4}"));
+        }
+
+        [Test]
+        public void ParseReadsAnIndentlessSequenceInsideACompactMappingItem()
+        {
+            SpecNode root = YamlParser.Parse(
+                "list:\n" +
+                "- name: x\n" +
+                "  tags:\n" +
+                "  - a\n" +
+                "  - b\n" +
+                "  description: y\n" +
+                "- name: z\n" +
+                "  tags:\n" +
+                "  - c\n" +
+                "other: 1\n",
+                SourcePath);
+
+            Assert.That(
+                Render(root),
+                Is.EqualTo(
+                    "{\"list\":[{\"name\":\"x\",\"tags\":[\"a\",\"b\"],\"description\":\"y\"}," +
+                    "{\"name\":\"z\",\"tags\":[\"c\"]}],\"other\":1}"));
+        }
+
+        [Test]
+        public void ParseReadsAnIndentlessSequenceInsideACompactMappingOfARootSequence()
+        {
+            SpecNode root = YamlParser.Parse(
+                "- name: x\n" +
+                "  tags:\n" +
+                "  - a\n" +
+                "- name: z\n",
+                SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("[{\"name\":\"x\",\"tags\":[\"a\"]},{\"name\":\"z\"}]"));
+        }
+
+        [Test]
+        public void ParseReadsAnIndentlessSequenceInsideAnIndentlessSequence()
+        {
+            SpecNode root = YamlParser.Parse(
+                "a:\n" +
+                "- b:\n" +
+                "  - 1\n" +
+                "  - 2\n" +
+                "  c:\n" +
+                "  - 3\n" +
+                "- d: 4\n" +
+                "z: 5\n",
+                SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":[{\"b\":[1,2],\"c\":[3]},{\"d\":4}],\"z\":5}"));
+        }
+
+        [Test]
+        public void ParseSkipsCommentsAroundTheItemsOfAnIndentlessSequence()
+        {
+            SpecNode root = YamlParser.Parse(
+                "a:\n" +
+                "# before the items\n" +
+                "- x # trailing\n" +
+                "# between the items\n" +
+                "\n" +
+                "- y\n" +
+                "b: 1\n",
+                SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":[\"x\",\"y\"],\"b\":1}"));
+        }
+
+        [Test]
+        public void ParseReadsABlockScalarItemOfAnIndentlessSequence()
+        {
+            SpecNode root = YamlParser.Parse(
+                "a:\n" +
+                "- |\n" +
+                "  text\n" +
+                "  more\n" +
+                "- b\n" +
+                "c: 1\n",
+                SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":[\"text\\nmore\\n\",\"b\"],\"c\":1}"));
+        }
+
+        [Test]
+        public void ParseReadsAnAnchoredIndentlessSequence()
+        {
+            SpecNode root = YamlParser.Parse(
+                "a: &list\n" +
+                "- 1\n" +
+                "- 2\n" +
+                "b: *list\n",
+                SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":[1,2],\"b\":[1,2]}"));
+        }
+
+        [Test]
+        public void ParseReadsAnAnchoredIndentlessSequenceInsideACompactMapping()
+        {
+            SpecNode root = YamlParser.Parse(
+                "- name: &list\n" +
+                "  - 1\n" +
+                "- other: 2\n",
+                SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("[{\"name\":[1]},{\"other\":2}]"));
+        }
+
+        [Test]
+        public void ParseReadsTheIndentedAndTheIndentlessFormsAsTheSameTree()
+        {
+            const string indentless =
+                "paths:\n" +
+                "  /pets:\n" +
+                "    get:\n" +
+                "      tags:\n" +
+                "      - pets\n" +
+                "      parameters:\n" +
+                "      - name: limit\n" +
+                "        in: query\n" +
+                "        schema:\n" +
+                "          enum:\n" +
+                "          - 1\n" +
+                "          - 2\n" +
+                "      security:\n" +
+                "      - bearer: []\n";
+            const string indented =
+                "paths:\n" +
+                "  /pets:\n" +
+                "    get:\n" +
+                "      tags:\n" +
+                "        - pets\n" +
+                "      parameters:\n" +
+                "        - name: limit\n" +
+                "          in: query\n" +
+                "          schema:\n" +
+                "            enum:\n" +
+                "              - 1\n" +
+                "              - 2\n" +
+                "      security:\n" +
+                "        - bearer: []\n";
+
+            Assert.That(Render(YamlParser.Parse(indentless, SourcePath)), Is.EqualTo(Render(YamlParser.Parse(indented, SourcePath))));
+        }
+
+        [Test]
+        public void ParseStillReadsNullForAKeyWhoseNextLineIsAnotherKey()
+        {
+            SpecNode root = YamlParser.Parse("a:\nb: 1\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":null,\"b\":1}"));
+        }
+
+        [TestCase("a: 1\n- x\n", "YAML003")]
+        [TestCase("p:\n  a:\n- x\n", "YAML003")]
+        [TestCase("a:\n- x\nb: 1\n- y\n", "YAML003")]
+        [TestCase("p:\n  a: 1\n  - x\n", "YAML002")]
+        [TestCase("p:\n  a:\n  - x\n  b: 1\n  - y\n", "YAML002")]
+        [TestCase("p:\n  a:\n  - x\n    b: 1\n", "YAML011")]
+        [TestCase("a:\n- &x\n- 1\n", "YAML004")]
+        [TestCase("a:\n  - &x\n  - 1\n", "YAML004")]
+        [TestCase("- &x\n- 1\n", "YAML004")]
+        public void ParseStillRejectsInvalidMixesOfKeysAndDashes(string source, string expectedCode)
+        {
+            AssertDiagnostic(source, expectedCode);
+        }
+
+
+        [Test]
+        public void ParsePlainMultiLineReadsATwoLineMappingValue()
+        {
+            SpecNode root = YamlParser.Parse("a: one\n  two\nb: 1\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":\"one two\",\"b\":1}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineReadsAThreeLineMappingValue()
+        {
+            SpecNode root = YamlParser.Parse("a: one\n  two\n  three\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":\"one two three\"}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineReadsAJapaneseDescriptionWrappedByAWriter()
+        {
+            SpecNode root = YamlParser.Parse("paths:\n  /x:\n    get:\n      description: 一段目の説明は長いので折り返される。上限を超えると競合\n        (409)、不足は別のエラーになる。\n      summary: 取得\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"paths\":{\"/x\":{\"get\":{\"description\":\"一段目の説明は長いので折り返される。上限を超えると競合 (409)、不足は別のエラーになる。\",\"summary\":\"取得\"}}}}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineReadsAnEmptyLineAsALineFeed()
+        {
+            SpecNode root = YamlParser.Parse("a: one\n\n  two\nb: 1\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":\"one\\ntwo\",\"b\":1}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineReadsTwoEmptyLinesAsTwoLineFeeds()
+        {
+            SpecNode root = YamlParser.Parse("a: one\n\n\n  two\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":\"one\\n\\ntwo\"}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineReadsAWrappedSequenceItem()
+        {
+            SpecNode root = YamlParser.Parse("- one\n  two\n- three\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("[\"one two\",\"three\"]"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineReadsAWrappedCompactMappingValue()
+        {
+            SpecNode root = YamlParser.Parse("- k: one\n    two\n  j: 1\n- k: x\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("[{\"k\":\"one two\",\"j\":1},{\"k\":\"x\"}]"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineReadsAWrappedValueFollowedByItsSiblingKeyAtTheParentLevel()
+        {
+            SpecNode root = YamlParser.Parse("a:\n  b: one\n    two\nc: 1\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":{\"b\":\"one two\"},\"c\":1}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineStopsAtACommentLineAfterTheWrappedValue()
+        {
+            SpecNode root = YamlParser.Parse("a: one\n  two\n# note\nb: 1\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":\"one two\",\"b\":1}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineStopsAtATrailingCommentOfTheLastLine()
+        {
+            SpecNode root = YamlParser.Parse("a: one\n  two # note\nb: 1\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":\"one two\",\"b\":1}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineTrimsTheWhitespaceAroundEveryLine()
+        {
+            SpecNode root = YamlParser.Parse("a: one  \n    two	 \n  three  \nb: 1\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":\"one two three\",\"b\":1}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineReadsAWrappedValueWithCrLfLineBreaks()
+        {
+            SpecNode root = YamlParser.Parse("a: one\r\n  two\r\n\r\n  three\r\nb: 1\r\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":\"one two\\nthree\",\"b\":1}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineReadsAWrappedValueWithAColonThatIsNotAMappingIndicator()
+        {
+            SpecNode root = YamlParser.Parse("a: see\n  http://x.example/y\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":\"see http://x.example/y\"}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineReadsAWrappedValueAfterAnAnchor()
+        {
+            SpecNode root = YamlParser.Parse("a: &x one\n  two\nb: *x\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":\"one two\",\"b\":\"one two\"}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineReadsWrappedValuesInsideIndentlessSequences()
+        {
+            SpecNode root = YamlParser.Parse("list:\n- one\n  two\n- k: x\n    y\n  j: z\n    w\nnext: 1\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"list\":[\"one two\",{\"k\":\"x y\",\"j\":\"z w\"}],\"next\":1}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineReadsAWrappedValueThatLooksLikeAScalarOfAnotherType()
+        {
+            SpecNode root = YamlParser.Parse("a: true\n  false\nb: 1\n  2\nc: null\n  x\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":\"true false\",\"b\":\"1 2\",\"c\":\"null x\"}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineKeepsTheTypeResolutionOfSingleLinePlainScalars()
+        {
+            SpecNode root = YamlParser.Parse("a: true\nb: 1\nc: null\nd: 1.5\ne: text\nf: false\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":true,\"b\":1,\"c\":null,\"d\":1.5,\"e\":\"text\",\"f\":false}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineKeepsAFlowSequenceOverSeveralLines()
+        {
+            SpecNode root = YamlParser.Parse("a: [x,\n  y]\nb: 1\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":[\"x\",\"y\"],\"b\":1}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineKeepsALineWithTheIndentationOfTheKeyAsAnEntry()
+        {
+            SpecNode root = YamlParser.Parse("a: one\nb: two\n", SourcePath);
+
+            Assert.That(Render(root), Is.EqualTo("{\"a\":\"one\",\"b\":\"two\"}"));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineARowAtTheKeyIndentationIsNotAContinuation()
+        {
+            AssertDiagnostic("a:\n  b: one\n  two\n", "YAML002");
+        }
+
+        [Test]
+        public void ParsePlainMultiLineAMappingValueInAContinuationLineIsRejected()
+        {
+            AssertDiagnostic("a: one\n  b: two\n", "YAML004");
+        }
+
+        [TestCase("a: &x one\n  b: two\n", "YAML004")]
+        [TestCase("- k: &x one\n    b: two\n", "YAML004")]
+        [TestCase("- &x one\n  b: two\n", "YAML011")]
+        public void ParsePlainMultiLineAMappingValueAfterAnAnchorIsRejectedLikeWithoutAnAnchor(string source, string expectedCode)
+        {
+            AssertDiagnostic(source, expectedCode);
+        }
+
+        [Test]
+        public void ParsePlainMultiLineAMultiLinePlainScalarCannotBeAKey()
+        {
+            AssertDiagnostic("- one\n  b: two\n", "YAML011");
+        }
+
+        [Test]
+        public void ParsePlainMultiLineACommentLineEndsThePlainScalar()
+        {
+            AssertDiagnostic("a: one\n  # note\n  two\n", "YAML002");
+        }
+
+        [Test]
+        public void ParsePlainMultiLineACompactMappingContinuationAtTheKeyIndentationIsNotAContinuation()
+        {
+            AssertDiagnostic("- k: one\n  two\n", "YAML002");
+        }
+
+        [Test]
+        public void ParsePlainMultiLineReportsTheLocationsOfTheValueAndTheFollowingKey()
+        {
+            SpecObjectNode root = ParseObject("a: one\n  two\nb: 1\n");
+            Assert.That(Property(root, "a").Value.Line, Is.EqualTo(1));
+            Assert.That(Property(root, "a").Value.Column, Is.EqualTo(4));
+            Assert.That(Property(root, "b").Value.Line, Is.EqualTo(3));
+
+            YamlParseException exception = Assert.Throws<YamlParseException>(
+                () => YamlParser.Parse("a: one\n  two: x\n", SourcePath));
+            Assert.That(exception.Line, Is.EqualTo(2));
+            Assert.That(exception.Column, Is.EqualTo(6));
+            Assert.That(exception.Offset, Is.EqualTo(12));
+        }
+
+        [Test]
+        public void ParsePlainMultiLineDoesNotContinueARootScalar()
+        {
+            Assert.Throws<YamlParseException>(() => YamlParser.Parse("one\n  two\n", SourcePath));
+        }
+
+        // A compact JSON-like text of the tree (numbers and booleans are bare, strings are quoted).
+        private static string Render(SpecNode node)
+        {
+            var builder = new System.Text.StringBuilder();
+            Render(node, builder);
+            return builder.ToString();
+        }
+
+        private static void Render(SpecNode node, System.Text.StringBuilder builder)
+        {
+            SpecObjectNode objectNode = node as SpecObjectNode;
+            if (objectNode != null)
+            {
+                builder.Append('{');
+                for (int index = 0; index < objectNode.Properties.Count; index++)
+                {
+                    if (index > 0) builder.Append(',');
+                    builder.Append('"').Append(objectNode.Properties[index].Name).Append("\":");
+                    Render(objectNode.Properties[index].Value, builder);
+                }
+
+                builder.Append('}');
+                return;
+            }
+
+            SpecArrayNode arrayNode = node as SpecArrayNode;
+            if (arrayNode != null)
+            {
+                builder.Append('[');
+                for (int index = 0; index < arrayNode.Items.Count; index++)
+                {
+                    if (index > 0) builder.Append(',');
+                    Render(arrayNode.Items[index], builder);
+                }
+
+                builder.Append(']');
+                return;
+            }
+
+            SpecStringNode stringNode = node as SpecStringNode;
+            if (stringNode != null)
+            {
+                builder.Append('"').Append(stringNode.Value.Replace("\n", "\\n")).Append('"');
+                return;
+            }
+
+            SpecNumberNode numberNode = node as SpecNumberNode;
+            if (numberNode != null)
+            {
+                builder.Append(numberNode.Value);
+                return;
+            }
+
+            SpecBooleanNode booleanNode = node as SpecBooleanNode;
+            builder.Append(booleanNode != null ? (booleanNode.Value ? "true" : "false") : "null");
+        }
+
         private static string StringValue(SpecObjectNode node, string name)
         {
             return ((SpecStringNode)Property(node, name).Value).Value;

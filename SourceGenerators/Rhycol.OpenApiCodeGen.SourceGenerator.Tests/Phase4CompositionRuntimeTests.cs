@@ -744,6 +744,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Empty(execution.CompilationErrors);
         }
 
+        [Theory]
+        [InlineData("{'type':'object','properties':{'a':{'type':'string'}}}")]
+        [InlineData("{'properties':{'a':{'type':'string'}}}")]
+        public void NotInAnObjectAllOfPartIsIgnoredWithOacg108AndGenerates(string part)
+        {
+            // Regression: only an array's assertion-only allOf is evaluated; an object part keeps ignoring `not`.
+            string schemas = "'Body':{'allOf':[" + part + ",{'not':{'required':['a']}}]}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(schemas, "3.0.3"));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
+            Assert.Contains("/components/schemas/Body/allOf/1/not'", warning.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
+            Assert.Contains("class Body", execution.GeneratedSource);
+        }
+
         [Fact]
         public void ARecursiveReferenceThatCannotBeResolvedYetIsNotNarrowed()
         {
@@ -1507,6 +1524,96 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Contains("recursive", warning.GetMessage());
             Assert.Contains("logical path '/components/schemas/Body/not'", warning.GetMessage());
             Assert.Empty(execution.CompilationErrors);
+        }
+
+        // ---- allOf parts that only add validation keywords and not to a non-object type ---------------
+
+        private const string AssertionList = @"
+              'Body':{'type':'array','minItems':2,'maxItems':2,'items':{'$ref':'#/components/schemas/Item'},
+                'allOf':[
+                  {'not':{'items':{'properties':{'kind':{'enum':['A']}}}}},
+                  {'not':{'items':{'properties':{'kind':{'enum':['B']}}}}}]},
+              'Item':{'type':'object','properties':{'kind':{'type':'string','enum':['A','B']}}}";
+
+        [Fact]
+        public async Task AllOfOfOnlyNotPartsKeepsTheArrayTypeAndRejectsMatchingResponses()
+        {
+            Phase4GeneratorExecution execution = Generate(EchoDocument(AssertionList, "3.0.4"));
+            const string TwoItems = "[{\"kind\":\"A\"},{\"kind\":\"B\"}]";
+
+            Type returned = Load(execution).GetType(Ns + "Phase4Api", true)!.GetMethod("echo")!.ReturnType.GetGenericArguments()[0];
+            Assert.True(returned.IsGenericType);
+            Assert.Equal(typeof(List<>), returned.GetGenericTypeDefinition());
+
+            Exchange ok = await Echo(execution, TwoItems, "[{\"kind\":\"A\"},{\"kind\":\"B\"}]");
+            Assert.NotNull(ok.Result);
+            // Every element has kind A: the first not schema matches.
+            await MatrixMode.ThrowsSerializationAsync(() =>
+                Echo(execution, TwoItems, "[{\"kind\":\"A\"},{\"kind\":\"A\"}]"));
+            await MatrixMode.ThrowsSerializationAsync(() =>
+                Echo(execution, TwoItems, "[{\"kind\":\"B\"},{\"kind\":\"B\"}]"));
+            // The constraints of the node still apply.
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, TwoItems, "[{\"kind\":\"A\"}]"));
+            await MatrixMode.ThrowsSerializationAsync(() =>
+                Echo(execution, TwoItems, "[{\"kind\":\"A\"},{\"kind\":\"B\"},{\"kind\":\"A\"}]"));
+        }
+
+        [Fact]
+        public void AllOfPartConstraintsOfAStringApplyOnTopOfTheType()
+        {
+            const string Schemas = @"'Body':{'type':'string','allOf':[{'minLength':2,'description':'d','x-a':1}]}";
+
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas));
+
+            Assert.Equal(
+                typeof(string),
+                Load(execution).GetType(Ns + "Phase4Api", true)!.GetMethod("echo")!.ReturnType.GetGenericArguments()[0]);
+        }
+
+        [Fact]
+        public void AllOfPartNotThatCannotBeEvaluatedReportsOacg108AtThePart()
+        {
+            const string Schemas = @"
+              'Body':{'type':'array','items':{'type':'string'},'allOf':[{'not':{'required':['x']}}]}";
+
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.4"));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
+            Assert.Contains("logical path '/components/schemas/Body/allOf/0/not'", warning.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
+        }
+
+        [Theory]
+        [InlineData("{'items':{'type':'string'}}")]
+        [InlineData("{'type':'array'}")]
+        public void AllOfPartOfAnArrayThatDeclaresTheShapeStillReportsOacg101(string part)
+        {
+            string schemas = "'Body':{'type':'array','items':{'type':'string'},'allOf':[" + part + "]}";
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(schemas, "3.0.4")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("logical path '/components/schemas/Body/type'", diagnostic.GetMessage());
+        }
+
+        [Fact]
+        public async Task AssertionOnlyAllOfListCanBeReferencedFromOneOfAndAnAnnotatedReference()
+        {
+            const string Schemas = @"
+              'Body':{'type':'object','additionalProperties':false,'properties':{
+                  'a':{'oneOf':[{'$ref':'#/components/schemas/List'},{'type':'null'}]},
+                  'b':{'allOf':[{'$ref':'#/components/schemas/List'}],'description':'annotated'}}},
+              'List':{'type':'array','minItems':1,'items':{'type':'string'},
+                'allOf':[{'not':{'items':{'const':'bad'}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas, "3.1.0"));
+
+            await Echo(execution, J("{'a':['x'],'b':['y']}"), J("{'a':['x'],'b':['y']}"));
+            await Echo(execution, J("{'a':null}"), J("{'a':null}"));
+            await MatrixMode.ThrowsSerializationAsync(() =>
+                Echo(execution, J("{'a':null}"), J("{'b':['bad']}")));
         }
 
         // ---- diagnostics for out of scope and invalid composition -----------------------------------
