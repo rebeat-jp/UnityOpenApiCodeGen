@@ -71,7 +71,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             ValidateAssertionKeywords(node);
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
-                OpenApiSemanticAssertion target = MapAssertionTarget(reference, referenceNode, allOfPart);
+                // OpenAPI 3.1: a $ref next to keywords that give a shape is an allOf of the target and the siblings (the parser reads it so).
+                bool siblingsMakeAllOf = _minorVersion == 1 && HasStructuralReferenceSiblings(node);
+                OpenApiSemanticAssertion target = MapAssertionTarget(reference, referenceNode, allOfPart || siblingsMakeAllOf);
                 if (_minorVersion == 0)
                 {
                     // OpenAPI 3.0: the siblings are ignored, except those the parser keeps (nullable, readOnly, writeOnly).
@@ -138,10 +140,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private OpenApiSemanticAssertion MapAssertionTarget(string reference, SpecNode referenceNode, bool allOfPart = false)
         {
             ResolvedSpecReference resolved = ResolveReference(reference, referenceNode);
-            // Only a base with a discriminator differs when it is the part of an allOf; the other schemas share one node.
-            bool leaveOutAlternatives = allOfPart && HasDiscriminatedAlternatives(resolved.Node);
+            // A schema as the part of an allOf is another node than the schema used elsewhere: a base with a discriminator leaves its
+            // alternatives out there, and a $ref alias would only show that at the end of its chain. The key is the use, not the schema.
             Dictionary<NormalizedSpecNodeIdentity, OpenApiSemanticAssertion> targets =
-                leaveOutAlternatives ? _assertionBaseTargets : _assertionTargets;
+                allOfPart ? _assertionBaseTargets : _assertionTargets;
             if (targets.TryGetValue(resolved.Identity, out OpenApiSemanticAssertion? existing))
             {
                 return existing;
@@ -169,7 +171,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     if (TryGetReference(resolved.Node, out string innerReference, out SpecNode innerReferenceNode))
                     {
                         // A $ref whose target is a $ref: 3.0 keeps nullable, readOnly and writeOnly, 3.1 keeps every sibling.
-                        OpenApiSemanticAssertion inner = MapAssertionTarget(innerReference, innerReferenceNode, allOfPart);
+                        OpenApiSemanticAssertion inner = MapAssertionTarget(
+                            innerReference,
+                            innerReferenceNode,
+                            allOfPart || (_minorVersion == 1 && HasStructuralReferenceSiblings(resolved.Node)));
                         if (_minorVersion == 1)
                         {
                             target.Reference = inner;
@@ -314,7 +319,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             SpecNode? notNode = GetProperty(node, "not");
             if (notNode is not null)
             {
-                result.Not = MapAssertion(notNode);
+                try
+                {
+                    result.Not = MapAssertion(notNode);
+                }
+                catch (OpenApiSemanticException exception) when (exception.Kind == OpenApiSemanticErrorKind.UnsupportedElement)
+                {
+                    // The typed path ignores such a not (OACG108); so does the assertion. The same text at the same place is one warning.
+                    AddIgnoredWarning(
+                        notNode,
+                        "The not schema uses an element that is not supported (" + exception.Message + ") and was ignored.");
+                }
             }
 
             if (_minorVersion == 1)

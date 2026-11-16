@@ -420,7 +420,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("3.0.3", "{\"const\":5}", "const")]
         [InlineData("3.0.3", "{\"properties\":{\"x\":{\"patternProperties\":{}}}}", "patternProperties")]
         [InlineData("3.1.0", "{\"if\":{\"required\":[\"a\"]},\"then\":{\"required\":[\"b\"]}}", "if")]
-        [InlineData("3.1.0", "{\"not\":{\"unevaluatedItems\":false}}", "unevaluatedItems")]
+        [InlineData("3.1.0", "{\"properties\":{\"x\":{\"unevaluatedItems\":false}}}", "unevaluatedItems")]
         [InlineData("3.1.0", "{\"somethingUnknown\":1}", "somethingUnknown")]
         public void AKeywordThatIsNotEvaluatedIsRejectedLikeTheTypedPathDoes(string version, string fragment, string keyword)
         {
@@ -429,6 +429,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
             Assert.Equal(OpenApiSemanticErrorKind.UnsupportedElement, exception.Kind);
             Assert.Contains("'" + keyword + "'", exception.Message);
+        }
+
+        [Fact]
+        public void ANotWithAnUnsupportedKeywordIsDroppedWithAWarningInsteadOfFailing()
+        {
+            OpenApiSemanticAssertion mapped = Map(
+                Document("3.1.0", "{\"type\":\"string\",\"not\":{\"if\":{\"required\":[\"a\"]}}}"),
+                static root => Member(root, "x-a"));
+
+            Assert.Null(mapped.Not);
+            Assert.Equal(OpenApiSemanticAssertionTypes.String, mapped.Types);
         }
 
         [Fact]

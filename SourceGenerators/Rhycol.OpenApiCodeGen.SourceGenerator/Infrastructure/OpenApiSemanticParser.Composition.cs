@@ -1020,10 +1020,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             // JSON Schema: additionalProperties applies to the properties of its own schema only, so a closed part rejects the properties
             // that the other parts declare. The typed shape is the union (it accepts them), the assertion decides: no value that
             // has such a property is valid, which is worth a warning.
-            foreach ((SpecNode closedNode, HashSet<string> ownNames) in composition.ClosedParts)
+            foreach ((SpecNode closedNode, HashSet<string> ownNames, IReadOnlyList<string> patterns) in composition.ClosedParts)
             {
                 string[] foreign = composition.Properties.Keys
-                    .Where(name => !ownNames.Contains(name))
+                    .Where(name => !ownNames.Contains(name) && !MatchesAnyPattern(patterns, name))
                     .OrderBy(static name => name, StringComparer.Ordinal)
                     .ToArray();
                 if (foreign.Length == 0)
@@ -1077,6 +1077,30 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return composition.NeedsAssertion
                 ? composed.WithAssertions(new[] { CreateWholeAssertion(node) })
                 : composed;
+        }
+
+        // Generation time only (the warning); a pattern the regular expression engine cannot read matches nothing here.
+        private static bool MatchesAnyPattern(IReadOnlyList<string> patterns, string name)
+        {
+            foreach (string pattern in patterns)
+            {
+                try
+                {
+                    if (System.Text.RegularExpressions.Regex.IsMatch(
+                            name, pattern, System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1)))
+                    {
+                        return true;
+                    }
+                }
+                catch (ArgumentException)
+                {
+                }
+                catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
+                {
+                }
+            }
+
+            return false;
         }
 
         private void CollectObjectParts(
@@ -1360,7 +1384,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     }
                 }
 
-                composition.ClosedParts.Add((additionalNode, ownNames));
+                // 3.1: a name that a patternProperties of the closed part matches is not an additional property of it.
+                var patterns = new List<string>();
+                SpecNode? patternsNode = _minorVersion == 1 ? GetProperty(node, "patternProperties") : null;
+                if (patternsNode is not null && patternsNode.ValueKind == SpecValueKind.Object)
+                {
+                    foreach (SpecProperty pattern in patternsNode.EnumerateObject())
+                    {
+                        patterns.Add(pattern.Name);
+                    }
+                }
+
+                composition.ClosedParts.Add((additionalNode, ownNames, patterns));
             }
             else if (additionalNode.ValueKind == SpecValueKind.Object)
             {
@@ -1702,8 +1737,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             internal bool Closed { get; set; }
 
             /// <summary>The parts with additionalProperties: false (the node of the keyword) and the names their own properties declare.</summary>
-            internal List<(SpecNode Node, HashSet<string> OwnNames)> ClosedParts { get; } =
-                new List<(SpecNode Node, HashSet<string> OwnNames)>();
+            internal List<(SpecNode Node, HashSet<string> OwnNames, IReadOnlyList<string> Patterns)> ClosedParts { get; } =
+                new List<(SpecNode Node, HashSet<string> OwnNames, IReadOnlyList<string> Patterns)>();
 
             /// <summary>
             /// True when the flattened shape is only an upper bound of the valid values (a lossy merge of same-named properties,

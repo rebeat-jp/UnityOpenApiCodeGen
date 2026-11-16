@@ -385,6 +385,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         // of the target (a oneOf that no member matches null, an enum without null, ...) are not run on it. Without
                         // nullable on the reference, the target decides what null means.
                         named = named.WithNullSkipsAssertions(schema.Nullable);
+                        IReadOnlyList<string> referencedRoots = Array.Empty<string>();
                         foreach (OpenApiSemanticSchema notSchema in referencedSchema.NotSchemas)
                         {
                             named = named.WithNot(ResolveType(notSchema));
@@ -395,20 +396,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         {
                             named = named.WithConstraints(ConvertConstraintSets(referencedSchema.ConstraintSets))
                                 .WithAssertions(AssertionRootsOf(referencedSchema));
+                            referencedRoots = AssertionRootsOf(referencedSchema);
                         }
                         else if (referencedSchema.Kind == OpenApiSemanticSchemaKind.Union)
                         {
                             // A union that has assertions (an allOf next to its oneOf / anyOf) carries them on the type.
                             named = named.WithAssertions(AssertionRootsOf(referencedSchema));
+                            referencedRoots = AssertionRootsOf(referencedSchema);
                         }
 
-                        return named;
+                        // Only these roots are kept off a null; the roots that the reference itself gets later (ResolveType) are not.
+                        return schema.Nullable ? named.WithNullSkippedRoots(referencedRoots) : named;
                     }
 
                     GeneratedTypeModel resolvedType = ResolveType(referencedSchema);
-                    return resolvedType
+                    GeneratedTypeModel nullableReference = resolvedType
                         .WithNullable(resolvedType.Nullable || schema.Nullable || referencedSchema.Nullable)
                         .WithNullSkipsAssertions(resolvedType.NullSkipsAssertions || schema.Nullable);
+                    // What the referenced schema asserts is skipped on null when this reference is nullable.
+                    return schema.Nullable ? nullableReference.WithNullSkippedRoots(resolvedType.AssertionRoots) : nullableReference;
                 case OpenApiSemanticSchemaKind.Object:
                 case OpenApiSemanticSchemaKind.Enum:
                 case OpenApiSemanticSchemaKind.Union:

@@ -88,7 +88,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// </summary>
         internal IReadOnlyList<string> NullAssertionRootsOf(GeneratedTypeModel type)
         {
-            return type.NullSkipsAssertions ? System.Array.Empty<string>() : AssertionRootsOf(type);
+            if (!type.NullSkipsAssertions)
+            {
+                return AssertionRootsOf(type);
+            }
+
+            // Only the roots of the referenced schema are skipped (its DTO roots are never in type.AssertionRoots, so they are all
+            // skipped); the roots of the reference itself still judge null.
+            return type.AssertionRoots.Where(root => !type.NullSkippedRoots.Contains(root)).ToArray();
         }
 
         /// <summary>The entry method of a root of the assertion graph (see <see cref="AssertionEmitter"/>).</summary>
