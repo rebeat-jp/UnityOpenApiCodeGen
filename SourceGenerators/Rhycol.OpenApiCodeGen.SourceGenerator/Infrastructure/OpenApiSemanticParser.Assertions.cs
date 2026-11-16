@@ -58,18 +58,54 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 OpenApiSemanticAssertion target = MapAssertionTarget(reference, referenceNode);
                 if (_minorVersion == 0)
                 {
-                    // OpenAPI 3.0 ignores every sibling of $ref.
-                    return target;
+                    // OpenAPI 3.0: the siblings are ignored, except those the parser keeps (nullable, readOnly, writeOnly).
+                    return WrapReference30(node, target);
                 }
 
                 var withSiblings = new OpenApiSemanticAssertion { Reference = target };
                 FillAssertion(withSiblings, node);
-                return withSiblings.HasNoOwnKeyword ? target : withSiblings;
+                return withSiblings.HasNoOwnKeyword && !withSiblings.ReadOnly && !withSiblings.WriteOnly
+                    ? target
+                    : withSiblings;
             }
 
             var result = new OpenApiSemanticAssertion();
             FillAssertion(result, node);
             return result;
+        }
+
+        // {$ref, nullable, readOnly, writeOnly} of OpenAPI 3.0, the same siblings that ParseSchema accepts next to $ref.
+        // nullable: true makes the schema "null or the target".
+        private OpenApiSemanticAssertion WrapReference30(SpecNode node, OpenApiSemanticAssertion target)
+        {
+            bool readOnly = GetOptionalBoolean(node, "readOnly") ?? false;
+            bool writeOnly = GetOptionalBoolean(node, "writeOnly") ?? false;
+            bool nullable = ParseNullable(node);
+            if (!readOnly && !writeOnly && !nullable)
+            {
+                return target;
+            }
+
+            var wrapper = new OpenApiSemanticAssertion { ReadOnly = readOnly, WriteOnly = writeOnly };
+            ApplyReference30(wrapper, target, nullable);
+            return wrapper;
+        }
+
+        private static void ApplyReference30(OpenApiSemanticAssertion wrapper, OpenApiSemanticAssertion target, bool nullable)
+        {
+            if (nullable)
+            {
+                wrapper.AnyOf = new[]
+                {
+                    new OpenApiSemanticAssertion { Types = OpenApiSemanticAssertionTypes.Null },
+                    target
+                };
+                wrapper.AnnotationTarget = target;
+            }
+            else
+            {
+                wrapper.Reference = target;
+            }
         }
 
         private OpenApiSemanticAssertion MapAssertionTarget(string reference, SpecNode referenceNode)
@@ -99,11 +135,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     RequireKind(resolved.Node, SpecValueKind.Object, "A schema must be an object.");
                     if (TryGetReference(resolved.Node, out string innerReference, out SpecNode innerReferenceNode))
                     {
-                        // A $ref whose target is a $ref: the 3.0 siblings are ignored; 3.1 keeps them.
-                        target.Reference = MapAssertionTarget(innerReference, innerReferenceNode);
+                        // A $ref whose target is a $ref: 3.0 keeps nullable, readOnly and writeOnly, 3.1 keeps every sibling.
+                        OpenApiSemanticAssertion inner = MapAssertionTarget(innerReference, innerReferenceNode);
                         if (_minorVersion == 1)
                         {
+                            target.Reference = inner;
                             FillAssertion(target, resolved.Node);
+                        }
+                        else
+                        {
+                            target.ReadOnly = GetOptionalBoolean(resolved.Node, "readOnly") ?? false;
+                            target.WriteOnly = GetOptionalBoolean(resolved.Node, "writeOnly") ?? false;
+                            ApplyReference30(target, inner, ParseNullable(resolved.Node));
                         }
                     }
                     else

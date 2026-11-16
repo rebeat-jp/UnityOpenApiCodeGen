@@ -249,6 +249,62 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Empty(builder.Build().Nodes);
         }
 
+        // ---- a schema that can never be evaluated -----------------------------------------------------------
+
+        [Theory]
+        [InlineData("{'type':'object','not':{'$ref':'#/components/schemas/A'}}")]
+        [InlineData("{'anyOf':[{'$ref':'#/components/schemas/A'},{'type':'string'}]}")]
+        [InlineData("{'oneOf':[{'type':'string'},{'$ref':'#/components/schemas/A'}]}")]
+        [InlineData("{'allOf':[{'$ref':'#/components/schemas/A'}]}")]
+        public void ASchemaThatRequiresItselfWithoutGoingIntoTheValueIsRejected(string schemaA)
+        {
+            SpecNode root = TestBundleFactory.ReadRoot(
+                ("{'openapi':'3.0.3','info':{'title':'t','version':'1'},'paths':{},'components':{'schemas':{'A':" + schemaA + "}}}").Replace('\'', '"'));
+            OpenApiSemanticParser mapper = OpenApiSemanticParser.CreateAssertionMapper(root);
+            var builder = new GeneratedAssertionGraphBuilder();
+            builder.AddRoot("A", mapper.MapAssertion(Member(root, "components", "schemas", "A")));
+
+            GeneratedAssertionCycleException exception = Assert.Throws<GeneratedAssertionCycleException>(builder.Build);
+            Assert.Equal("A", exception.SchemaName);
+        }
+
+        [Fact]
+        public void ARecursionThatGoesIntoTheValueIsAccepted()
+        {
+            SpecNode root = TestBundleFactory.ReadRoot(
+                ("{'openapi':'3.0.3','info':{'title':'t','version':'1'},'paths':{},'components':{'schemas':{'A':" +
+                 "{'type':'object','properties':{'next':{'anyOf':[{'$ref':'#/components/schemas/A'},{'type':'null'}]}},'not':{'required':['stop']}}}}}").Replace('\'', '"'));
+            OpenApiSemanticParser mapper = OpenApiSemanticParser.CreateAssertionMapper(root);
+            var builder = new GeneratedAssertionGraphBuilder();
+            builder.AddRoot("A", mapper.MapAssertion(Member(root, "components", "schemas", "A")));
+
+            Assert.NotEmpty(builder.Build().Nodes);
+        }
+
+        [Fact]
+        public void ACommentOfAComponentNameCannotLeaveTheLine()
+        {
+            SpecNode root = TestBundleFactory.ReadRoot(
+                "{\"openapi\":\"3.0.3\",\"info\":{\"title\":\"t\",\"version\":\"1\"},\"paths\":{},\"x-a\":{\"$ref\":\"#/components/schemas/N\"}," +
+                "\"components\":{\"schemas\":{\"N\":{\"type\":\"string\"}}}}");
+            OpenApiSemanticParser mapper = OpenApiSemanticParser.CreateAssertionMapper(root);
+            OpenApiSemanticAssertion mapped = mapper.MapAssertion(Member(root, "x-a"));
+            mapped.Name = "N\u2028x\u0085y\nz\rw";
+            var builder = new GeneratedAssertionGraphBuilder();
+            builder.AddRoot("A", mapped);
+            var model = new OpenApiGenerationModel("Api", "Ns", "http://x", Array.Empty<GeneratedDtoModel>(),
+                Array.Empty<GeneratedEnumModel>(), Array.Empty<GeneratedOperationModel>(), Array.Empty<GeneratedTypeNameCollision>());
+            var constraints = new ConstraintValidationEmitter(model, JsonSerializerProfile.Newtonsoft);
+            var source = new StringBuilder();
+
+            new AssertionEmitter(constraints, JsonSerializerProfile.Newtonsoft, builder.Build()).AppendMembers(source);
+
+            string line = source.ToString().Split('\n').Single(static text => text.Contains("The schema that a $ref points to"));
+            Assert.DoesNotContain('\u2028', line);
+            Assert.DoesNotContain('\u0085', line);
+            Assert.DoesNotContain('\r', line);
+        }
+
         // ---- the semantic model is unchanged -----------------------------------------------------------------
 
         [Fact]

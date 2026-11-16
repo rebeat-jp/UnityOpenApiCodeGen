@@ -183,8 +183,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
     {
         private readonly List<GeneratedAssertionNode?> _nodes = new List<GeneratedAssertionNode?>();
         private readonly Dictionary<string, int> _nodeKeys = new Dictionary<string, int>(StringComparer.Ordinal);
-        private readonly Dictionary<OpenApiSemanticAssertion, int> _targets =
-            new Dictionary<OpenApiSemanticAssertion, int>();
+        private readonly Dictionary<(OpenApiSemanticAssertion Target, string Flags), int> _targets =
+            new Dictionary<(OpenApiSemanticAssertion Target, string Flags), int>();
+        private static readonly IReadOnlyDictionary<string, (bool ReadOnly, bool WriteOnly)> NoFlags =
+            new Dictionary<string, (bool ReadOnly, bool WriteOnly)>();
         private readonly List<string> _literals = new List<string>();
         private readonly Dictionary<string, int> _literalIds = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly List<GeneratedAssertionRoot> _roots = new List<GeneratedAssertionRoot>();
@@ -209,32 +211,80 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         internal GeneratedAssertionGraph Build()
         {
-            return new GeneratedAssertionGraph(
-                _nodes.Select(static node => node ?? throw new InvalidOperationException("An assertion node was not completed.")).ToArray(),
-                _literals.ToArray(),
-                _roots.ToArray());
+            GeneratedAssertionNode[] nodes = _nodes
+                .Select(static node => node ?? throw new InvalidOperationException("An assertion node was not completed."))
+                .ToArray();
+            RejectCyclesWithoutData(nodes);
+            return new GeneratedAssertionGraph(nodes, _literals.ToArray(), _roots.ToArray());
+        }
+
+        // A method that calls itself without going down into the value (allOf / anyOf / oneOf / not on the same value)
+        // would never return. Going into a member, an element or a property name always consumes data.
+        private static void RejectCyclesWithoutData(GeneratedAssertionNode[] nodes)
+        {
+            var state = new int[nodes.Length];
+            for (int start = 0; start < nodes.Length; start++)
+            {
+                if (state[start] == 0)
+                {
+                    visit(start);
+                }
+            }
+
+            void visit(int id)
+            {
+                state[id] = 1;
+                GeneratedAssertionNode node = nodes[id];
+                foreach (int next in node.AllOf.Concat(node.AnyOf).Concat(node.OneOf).Concat(new[] { node.HasNot ? node.NotChild : -1 }))
+                {
+                    if (next < 0)
+                    {
+                        continue;
+                    }
+
+                    if (state[next] == 1)
+                    {
+                        throw new GeneratedAssertionCycleException(
+                            nodes[next].Name.Length > 0 ? nodes[next].Name : "#" + next.ToString(CultureInfo.InvariantCulture));
+                    }
+
+                    if (state[next] == 0)
+                    {
+                        visit(next);
+                    }
+                }
+
+                state[id] = 2;
+            }
         }
 
         private int Convert(OpenApiSemanticAssertion assertion)
         {
+            return Convert(assertion, NoFlags);
+        }
+
+        // inherited: the readOnly / writeOnly property names that the containing object declares in other parts (allOf, $ref).
+        private int Convert(OpenApiSemanticAssertion assertion, IReadOnlyDictionary<string, (bool ReadOnly, bool WriteOnly)> inherited)
+        {
             if (assertion.Name.Length > 0)
             {
-                if (_targets.TryGetValue(assertion, out int existing))
+                var targetKey = (assertion, FlagSignature(inherited));
+                if (_targets.TryGetValue(targetKey, out int existing))
                 {
                     return existing;
                 }
 
                 int id = _nodes.Count;
                 _nodes.Add(null);
-                _targets.Add(assertion, id);
+                _targets.Add(targetKey, id);
                 var node = new GeneratedAssertionNode(id) { Name = assertion.Name };
-                Fill(node, assertion);
+                Fill(node, assertion, inherited);
                 _nodes[id] = node;
                 return id;
             }
 
             var candidate = new GeneratedAssertionNode(-1);
-            Fill(candidate, assertion);
+            Fill(candidate, assertion, inherited);
             string key = Key(candidate);
             if (key.Length == 0)
             {
@@ -254,8 +304,65 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return index;
         }
 
-        private void Fill(GeneratedAssertionNode node, OpenApiSemanticAssertion assertion)
+        private static string FlagSignature(IReadOnlyDictionary<string, (bool ReadOnly, bool WriteOnly)> flags)
         {
+            return string.Concat(flags
+                .OrderBy(static entry => entry.Key, StringComparer.Ordinal)
+                .Select(static entry => entry.Key.Length.ToString(CultureInfo.InvariantCulture) + ":" + entry.Key +
+                                        (entry.Value.ReadOnly ? "R" : "-") + (entry.Value.WriteOnly ? "W" : "-")));
+        }
+
+        // The flags of the properties that a schema declares, also in its allOf parts and the schema it references.
+        private static void CollectFlags(
+            OpenApiSemanticAssertion assertion,
+            Dictionary<string, (bool ReadOnly, bool WriteOnly)> into,
+            HashSet<OpenApiSemanticAssertion> visited)
+        {
+            if (!visited.Add(assertion))
+            {
+                return;
+            }
+
+            foreach (OpenApiSemanticAssertionProperty property in assertion.Properties)
+            {
+                bool readOnly = property.ReadOnly;
+                bool writeOnly = property.WriteOnly;
+                if (into.TryGetValue(property.Name, out (bool ReadOnly, bool WriteOnly) known))
+                {
+                    readOnly |= known.ReadOnly;
+                    writeOnly |= known.WriteOnly;
+                }
+
+                if (readOnly || writeOnly)
+                {
+                    into[property.Name] = (readOnly, writeOnly);
+                }
+            }
+
+            foreach (OpenApiSemanticAssertion part in assertion.AllOf)
+            {
+                CollectFlags(part, into, visited);
+            }
+
+            if (assertion.Reference is not null)
+            {
+                CollectFlags(assertion.Reference, into, visited);
+            }
+        }
+
+        private void Fill(
+            GeneratedAssertionNode node,
+            OpenApiSemanticAssertion assertion,
+            IReadOnlyDictionary<string, (bool ReadOnly, bool WriteOnly)> inherited)
+        {
+            var effective = new Dictionary<string, (bool ReadOnly, bool WriteOnly)>();
+            foreach (KeyValuePair<string, (bool ReadOnly, bool WriteOnly)> entry in inherited)
+            {
+                effective[entry.Key] = entry.Value;
+            }
+
+            CollectFlags(assertion, effective, new HashSet<OpenApiSemanticAssertion>());
+
             if (assertion.AlwaysFalse)
             {
                 node.AlwaysFalse = true;
@@ -306,10 +413,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             var required = new List<GeneratedAssertionRequired>();
             foreach (string name in assertion.Required)
             {
-                OpenApiSemanticAssertionProperty? declared = assertion.Properties.FirstOrDefault(
-                    property => string.Equals(property.Name, name, StringComparison.Ordinal));
-                bool skipInRequest = declared is not null && declared.ReadOnly;
-                bool skipInResponse = declared is not null && declared.WriteOnly;
+                effective.TryGetValue(name, out (bool ReadOnly, bool WriteOnly) flags);
+                bool skipInRequest = flags.ReadOnly;
+                bool skipInResponse = flags.WriteOnly;
                 if (!(skipInRequest && skipInResponse))
                 {
                     required.Add(new GeneratedAssertionRequired(name, skipInRequest, skipInResponse));
@@ -366,12 +472,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             var allOf = new List<int>();
             if (assertion.Reference is not null)
             {
-                allOf.Add(Convert(assertion.Reference));
+                allOf.Add(Convert(assertion.Reference, effective));
             }
 
             foreach (OpenApiSemanticAssertion part in assertion.AllOf)
             {
-                int child = Convert(part);
+                int child = Convert(part, effective);
                 if (child >= 0)
                 {
                     allOf.Add(child);
@@ -381,7 +487,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             node.AllOf = allOf;
             if (assertion.AnyOf.Count > 0)
             {
-                int[] members2 = assertion.AnyOf.Select(Convert).ToArray();
+                int[] members2 = assertion.AnyOf.Select(member => Convert(member, effective)).ToArray();
                 // A member that accepts everything makes anyOf hold.
                 node.AnyOf = members2.Contains(-1) ? Array.Empty<int>() : members2;
             }
@@ -389,7 +495,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (assertion.OneOf.Count > 0)
             {
                 node.HasOneOf = true;
-                node.OneOf = assertion.OneOf.Select(Convert).ToArray();
+                node.OneOf = assertion.OneOf.Select(member => Convert(member, effective)).ToArray();
             }
 
             if (assertion.Not is not null)
@@ -558,5 +664,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             part("not", node.HasNot ? node.NotChild.ToString(CultureInfo.InvariantCulture) + "#" : null);
             return key.ToString();
         }
+    }
+
+    /// <summary>A schema that, through allOf / anyOf / oneOf / not / $ref alone, requires itself to hold for the same value.</summary>
+    internal sealed class GeneratedAssertionCycleException : InvalidOperationException
+    {
+        internal GeneratedAssertionCycleException(string schemaName)
+            : base("The schema '" + schemaName + "' refers to itself without going into the value; it can never be evaluated.")
+        {
+            SchemaName = schemaName;
+        }
+
+        internal string SchemaName { get; }
     }
 }

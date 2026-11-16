@@ -180,6 +180,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// </summary>
         internal OpenApiSemanticAssertion? Reference { get; set; }
 
+        /// <summary>
+        /// The node whose readOnly / writeOnly this node inherits without also requiring it to hold (a 3.0 schema
+        /// {$ref, nullable: true} is "null or the target", so the target is no <see cref="Reference"/>).
+        /// </summary>
+        internal OpenApiSemanticAssertion? AnnotationTarget { get; set; }
+
         /// <summary>The boolean schema false (OpenAPI 3.1): no value is valid.</summary>
         internal bool AlwaysFalse { get; set; }
 
@@ -203,7 +209,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     return true;
                 }
 
-                current = current.Reference;
+                current = current.Reference ?? current.AnnotationTarget;
             }
 
             return false;

@@ -26,6 +26,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
     /// exception of the contract: "request" an ArgumentException (with the parameter name), otherwise the JSON
     /// exception of the serializer, with the message "The {contract} value at {path} violates {keyword}: {detail}.".
     /// Each keyword applies to the JSON types it is defined for only (properties to objects, minLength to strings).
+    /// Pass a token that was read with DateParseHandling.None (Newtonsoft.Json): a string that looks like a date
+    /// must stay a string token, otherwise its format check is skipped.
     /// </summary>
     internal sealed partial class AssertionEmitter
     {
@@ -50,7 +52,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// <summary>The bool method of a root: <c>(token, bool request, ref failure)</c>.</summary>
         internal string MatchMethodName(string root) => _prefix + "AssertMatches_" + root;
 
-        /// <summary>The entry of a root: <c>(token, string path, string contract, string? parameterName)</c>, throws.</summary>
+        /// <summary>
+        /// The entry of a root: <c>(token, string path, string contract, string? parameterName)</c>, throws. The token must
+        /// be read with DateParseHandling.None (Newtonsoft.Json), so that date-like strings stay strings.
+        /// </summary>
         internal string AssertMethodName(string root) => _prefix + "AssertRoot_" + root;
 
         /// <summary>The type of the failure information.</summary>
@@ -154,7 +159,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (node.Name.Length > 0)
             {
                 source.Append("        // The schema that a $ref points to: ")
-                    .AppendLine(node.Name.Replace('\r', ' ').Replace('\n', ' '));
+                    .AppendLine(SafeComment(node.Name));
             }
 
             source.Append("        private static bool ").Append(NodeMethodName(node.Id)).Append('(').Append(_token)
@@ -167,6 +172,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             source.AppendLine("        }");
+        }
+
+        // Anything that ends a line in C# (CR, LF, U+0085, U+2028, U+2029) and control characters become spaces.
+        private static string SafeComment(string text)
+        {
+            var result = new StringBuilder(text.Length);
+            foreach (char character in text)
+            {
+                result.Append(char.IsControl(character) || character == '\u2028' || character == '\u2029' ? ' ' : character);
+            }
+
+            return result.ToString();
         }
 
         private static string Count(long? value)
@@ -543,12 +560,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         Line("        {");
                         for (int position = 0; position < node.PrefixItems.Count; position++)
                         {
+                            Line("            case " + position.ToString(CultureInfo.InvariantCulture) + ":");
                             if (node.PrefixItems[position] < 0)
                             {
+                                // The position accepts everything; items does not apply to it.
+                                Line("                break;");
                                 continue;
                             }
 
-                            Line("            case " + position.ToString(CultureInfo.InvariantCulture) + ":");
                             Line("                if (!" + Call(node.PrefixItems[position], "item", "failure") + ")");
                             Line("                {");
                             Line("                    return " + _p + "AAt(ref failure, " + segment + ");");
