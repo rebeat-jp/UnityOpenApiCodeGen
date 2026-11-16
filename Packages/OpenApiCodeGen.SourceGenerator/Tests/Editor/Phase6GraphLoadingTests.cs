@@ -652,7 +652,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 IReadOnlyDictionary<string, string> childHeaders = server.RequestHeadersFor("/child.json");
                 Assert.That(rootHeaders["Accept"], Does.Contain("application/json"));
                 Assert.That(rootHeaders["Accept"], Does.Contain("application/yaml"));
-                Assert.That(rootHeaders["User-Agent"], Does.Contain("UnityOpenApiCodeGen/0.6.0-preview.1"));
+                Assert.That(rootHeaders["User-Agent"], Does.Contain("UnityOpenApiCodeGen/0.6.0-preview.2"));
                 Assert.That(childHeaders.ContainsKey("Cookie"), Is.False);
             }
         }
