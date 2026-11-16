@@ -103,11 +103,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private OpenApiSemanticSchema ParseUnion(
             SpecNode node,
             string suggestedName,
-            HashSet<NormalizedSpecNodeIdentity> referenceStack)
+            HashSet<NormalizedSpecNodeIdentity> referenceStack,
+            bool allOfAsAssertion = false)
         {
             SpecNode? oneOfNode = GetProperty(node, "oneOf");
             SpecNode? anyOfNode = GetProperty(node, "anyOf");
-            if (node.TryGetProperty("allOf", out SpecNode allOfNode))
+            if (!allOfAsAssertion && node.TryGetProperty("allOf", out SpecNode allOfNode))
             {
                 throw Unsupported(
                     allOfNode,
@@ -125,7 +126,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string keyword = isOneOf ? "oneOf" : "anyOf";
             SpecNode listNode = (oneOfNode ?? anyOfNode)!;
             RequireKind(listNode, SpecValueKind.Array, "The schema '" + keyword + "' field must be an array.");
-            ValidateUnionSiblings(node, keyword);
+            ValidateUnionSiblings(node, keyword, allOfAsAssertion);
             SpecNode[] parts = listNode.EnumerateArray().ToArray();
             if (parts.Length == 0)
             {
@@ -160,9 +161,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 // [X, null] (or a single candidate) is not a union: it is X, possibly nullable. It
                 // is an alias, so it shares the alias stack and a cycle through it stays an error.
                 OpenApiSemanticSchema single = ParseSchema(memberNodes[0], suggestedName, referenceStack);
-                return single
+                OpenApiSemanticSchema alias = single
                     .WithNullable(single.Nullable || nullable)
                     .WithAnnotations(MergeAnnotations(annotations, single.Annotations));
+                return allOfAsAssertion ? alias.WithAssertions(new[] { CreateWholeAssertion(node) }) : alias;
             }
 
             // Members are a container boundary: the union wrapper is a named type, so a member
@@ -199,7 +201,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 annotations: annotations,
                 unionMembers: members,
                 discriminator: discriminator,
-                unionIsOneOf: isOneOf);
+                unionIsOneOf: isOneOf,
+                assertions: allOfAsAssertion ? new[] { CreateWholeAssertion(node) } : null);
             if (discriminator is not null)
             {
                 _discriminatedUnions.Add(union);
@@ -276,11 +279,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return true;
         }
 
-        private static void ValidateUnionSiblings(SpecNode node, string keyword)
+        private static void ValidateUnionSiblings(SpecNode node, string keyword, bool allowAllOf)
         {
             foreach (SpecProperty property in node.EnumerateObject())
             {
                 if (UnionAllowedSiblings.Contains(property.Name) ||
+                    (allowAllOf && property.Name == "allOf") ||
                     property.Name.StartsWith("x-", StringComparison.Ordinal))
                 {
                     continue;
@@ -902,6 +906,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return true;
         }
 
+        /// <summary>
+        /// allOf next to oneOf / anyOf in one schema. The allOf fixes the shape first: when it gives the schema a shape of its
+        /// own (properties, a closed or typed object) the type is that shape and the alternatives only select valid values
+        /// (the rule of a node that owns its shape). When the allOf adds no shape (only constraints, or nothing), the schema is
+        /// the union of the alternatives and the allOf is asserted. Either way the whole schema is asserted as written.
+        /// </summary>
+        private OpenApiSemanticSchema ParseAllOfWithAlternatives(
+            SpecNode node,
+            string suggestedName,
+            HashSet<NormalizedSpecNodeIdentity> referenceStack)
+        {
+            OpenApiSemanticSchema composed = ParseObjectComposition(node, suggestedName, referenceStack);
+            if (composed.Kind == OpenApiSemanticSchemaKind.Object || composed.Kind == OpenApiSemanticSchemaKind.Map)
+            {
+                return composed;
+            }
+
+            _constraintsComposed = false;
+            return ParseUnion(node, suggestedName, referenceStack, allOfAsAssertion: true);
+        }
+
         private OpenApiSemanticSchema ParseObjectComposition(
             SpecNode node,
             string suggestedName,
@@ -912,15 +937,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             var composition = new ObjectComposition();
             CollectObjectParts(node, suggestedName, referenceStack, composition, isRoot: true);
 
+            // A required name that no part declares is valid JSON Schema: an open object can carry it as an additional
+            // member, a closed one can never satisfy it. The typed model has no property for it; the assertion decides.
             string? missing = composition.Required.Keys
                 .Where(name => !composition.Properties.ContainsKey(name))
                 .OrderBy(static name => name, StringComparer.Ordinal)
                 .FirstOrDefault();
             if (missing is not null)
             {
-                throw Invalid(
-                    composition.Required[missing],
-                    "Required property '" + missing + "' is not declared in any allOf part.");
+                composition.NeedsAssertion = true;
+                if (composition.Closed)
+                {
+                    AddIgnoredWarning(
+                        composition.Required[missing],
+                        "Property '" + missing + "' is required but no allOf part declares it and the object is closed " +
+                        "(additionalProperties: false), so no value is valid.");
+                }
             }
 
             var properties = new List<OpenApiSemanticProperty>();
@@ -956,7 +988,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiSemanticSchema composed = CreateObjectShape(
                 node, suggestedName, string.Empty, nullable, annotations, properties, mode, valueSchema);
             _constraintsComposed = true;
-            return composed.WithConstraintSets(composition.ConstraintSets);
+            composed = composed.WithConstraintSets(composition.ConstraintSets);
+
+            // Every part is judged as written (JSON Schema semantics) wherever the typed shape is only an upper bound.
+            return composition.NeedsAssertion
+                ? composed.WithAssertions(new[] { CreateWholeAssertion(node) })
+                : composed;
         }
 
         private void CollectObjectParts(
@@ -1014,14 +1051,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
             }
 
+            // oneOf / anyOf of a part (or next to the allOf) are not distributed over the parents: the shape is the
+            // flattened properties, and the alternatives are judged by the assertion. A base schema with a
+            // discriminator is the exception (see below).
             SpecNode? unionNode = GetProperty(node, "oneOf") ?? GetProperty(node, "anyOf");
-            if (unionNode is not null &&
-                (isRoot || GetProperty(node, "discriminator") is null))
+            if (unionNode is not null && (isRoot || GetProperty(node, "discriminator") is null))
             {
-                throw Unsupported(
-                    unionNode,
-                    "oneOf and anyOf cannot be combined with allOf by the Phase 4 MVP. " +
-                    "(A schema with a discriminator is accepted as the base of an allOf subtype.)");
+                composition.NeedsAssertion = true;
             }
 
             // A base schema with a discriminator keeps its oneOf / anyOf for itself: a subtype that
@@ -1041,10 +1077,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
             }
 
-            SpecNode? notNode = GetProperty(node, "not");
-            if (!isRoot && notNode is not null)
+            // not inside a part: the assertion evaluates it (the root's own not is applied by ParseSchema).
+            if (!isRoot && GetProperty(node, "not") is not null)
             {
-                AddIgnoredWarning(notNode, "not inside an allOf part is not evaluated and was ignored.");
+                composition.NeedsAssertion = true;
             }
 
             CollectOwnObjectKeywords(node, rootName, composition);
@@ -1121,13 +1157,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     if (composition.Properties.TryGetValue(property.Name, out OpenApiSemanticProperty? existing))
                     {
                         // Every part has to hold: the assertions of both declarations stack on whichever type is kept.
-                        OpenApiSemanticSchema[] assertionOwners = { existing.Schema, schema };
-                        if (assertionOwners.Any(static owner => owner.Assertions.Count > 0))
+                        OpenApiSemanticSchema plainExisting = existing.Schema.WithoutAssertions();
+                        OpenApiSemanticSchema plainIncoming = schema.WithoutAssertions();
+                        OpenApiSemanticAssertion[] all = existing.Schema.Assertions.Concat(schema.Assertions).ToArray();
+                        if (all.Length > 0)
                         {
-                            OpenApiSemanticSchema plainExisting = existing.Schema.WithoutAssertions();
-                            OpenApiSemanticSchema plainIncoming = schema.WithoutAssertions();
-                            IEnumerable<OpenApiSemanticAssertion> all =
-                                existing.Schema.Assertions.Concat(schema.Assertions);
                             if (string.Equals(
                                     GetSchemaSignature(plainExisting),
                                     GetSchemaSignature(plainIncoming),
@@ -1149,12 +1183,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                                 continue;
                             }
                         }
-
-                        if (!string.Equals(
-                                GetSchemaSignature(existing.Schema),
-                                GetSchemaSignature(schema),
-                                StringComparison.Ordinal))
+                        else
                         {
+                            if (string.Equals(
+                                    GetSchemaSignature(existing.Schema),
+                                    GetSchemaSignature(schema),
+                                    StringComparison.Ordinal))
+                            {
+                                continue;
+                            }
+
                             if (TryMergeNarrowedProperty(existing.Schema, schema, out OpenApiSemanticSchema narrowed))
                             {
                                 if (NarrowingLeavesNoValue(narrowed))
@@ -1174,15 +1212,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                                     ReferenceEquals(narrowed, existing.Schema) ? existing.Location : location);
                                 continue;
                             }
-
-                            throw CreateException(
-                                OpenApiSemanticErrorKind.UnsupportedElement,
-                                "Property '" + property.Name +
-                                "' is declared with different types by the parts of an allOf composition.",
-                                property.Value,
-                                new[] { existing.Location });
                         }
 
+                        // Anything else: the declarations are combined into one type that is an upper bound of the values
+                        // that satisfy both; the assertion of the composition judges the values.
+                        OpenApiSemanticSchema merged = MergeDeclarations(
+                            plainExisting,
+                            plainIncoming,
+                            property.Value,
+                            rootName + ToPascalFragment(property.Name),
+                            0);
+                        composition.NeedsAssertion = true;
+                        composition.Properties[property.Name] = new OpenApiSemanticProperty(
+                            property.Name,
+                            false,
+                            merged.WithAssertions(all),
+                            ReferenceEquals(merged, plainIncoming) ? location : existing.Location);
                         continue;
                     }
 
@@ -1562,6 +1607,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 new List<OpenApiSemanticConstraints>();
 
             internal bool Closed { get; set; }
+
+            /// <summary>
+            /// True when the flattened shape is only an upper bound of the valid values (a lossy merge of same-named properties,
+            /// a oneOf / anyOf / not of a part, a required name nobody declares): the whole schema is asserted as written.
+            /// </summary>
+            internal bool NeedsAssertion { get; set; }
 
             internal OpenApiSemanticSchema? TypedValue { get; set; }
 

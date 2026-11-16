@@ -552,22 +552,36 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 : Clone(Nullable, Annotations, NotSchemas, ConstraintSets, Assertions.Concat(added).ToArray());
         }
 
+        /// <summary>The same schema with another item schema (an array whose items were merged).</summary>
+        internal OpenApiSemanticSchema WithItemSchema(OpenApiSemanticSchema itemSchema)
+        {
+            return Clone(Nullable, Annotations, NotSchemas, ConstraintSets, Assertions, null, itemSchema);
+        }
+
+        /// <summary>The same schema with another format (a conflicting format falls back to the base type).</summary>
+        internal OpenApiSemanticSchema WithFormat(string format)
+        {
+            return Clone(Nullable, Annotations, NotSchemas, ConstraintSets, Assertions, null, null, format);
+        }
+
         private OpenApiSemanticSchema Clone(
             bool nullable,
             OpenApiSemanticAnnotations annotations,
             IReadOnlyList<OpenApiSemanticSchema> notSchemas,
             IReadOnlyList<OpenApiSemanticConstraints> constraintSets,
             IReadOnlyList<OpenApiSemanticAssertion> assertions,
-            IReadOnlyList<OpenApiSemanticProperty>? properties = null)
+            IReadOnlyList<OpenApiSemanticProperty>? properties = null,
+            OpenApiSemanticSchema? itemSchema = null,
+            string? format = null)
         {
             return new OpenApiSemanticSchema(
                 Kind,
                 SuggestedName,
-                Format,
+                format ?? Format,
                 nullable,
                 ReferenceName,
                 properties ?? Properties,
-                ItemSchema,
+                itemSchema ?? ItemSchema,
                 EnumValues,
                 Location,
                 Identity,

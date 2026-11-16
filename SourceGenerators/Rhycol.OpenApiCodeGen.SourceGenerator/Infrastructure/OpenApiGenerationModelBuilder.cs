@@ -392,6 +392,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                             named = named.WithConstraints(ConvertConstraintSets(referencedSchema.ConstraintSets))
                                 .WithAssertions(AssertionRootsOf(referencedSchema));
                         }
+                        else if (referencedSchema.Kind == OpenApiSemanticSchemaKind.Union)
+                        {
+                            // A union that has assertions (an allOf next to its oneOf / anyOf) carries them on the type.
+                            named = named.WithAssertions(AssertionRootsOf(referencedSchema));
+                        }
 
                         return named;
                     }

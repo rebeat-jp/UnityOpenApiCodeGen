@@ -51,9 +51,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             if (schema.Assertions.Count == 0 ||
                 schema.Kind == OpenApiSemanticSchemaKind.Object ||
-                schema.Kind == OpenApiSemanticSchemaKind.Union ||
-                type.Kind == GeneratedTypeKind.File ||
-                type.Kind == GeneratedTypeKind.Union)
+                type.Kind == GeneratedTypeKind.File)
             {
                 return type;
             }

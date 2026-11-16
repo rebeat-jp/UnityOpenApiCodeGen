@@ -114,11 +114,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [MemberData(nameof(P3Names))]
         public Task P3TargetBehavior(string name) => AssertTargetBehavior(name);
 
-        [Theory(Skip = "P4: allOf narrowing of same-named properties")]
+        [Theory]
         [MemberData(nameof(P4Names))]
         public Task P4TargetBehavior(string name) => AssertTargetBehavior(name);
 
-        [Theory(Skip = "P5: oneOf/anyOf inside allOf parts and next to allOf")]
+        [Theory]
         [MemberData(nameof(P5Names))]
         public Task P5TargetBehavior(string name) => AssertTargetBehavior(name);
 

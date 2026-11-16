@@ -442,6 +442,20 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             };
         }
 
+        /// <summary>
+        /// The whole schema as written (allOf parts, oneOf / anyOf, not, required, ...). Used where the typed shape is only
+        /// an upper bound of the valid values. A wrapper, so that the shared node of a $ref keeps its own origin.
+        /// </summary>
+        private OpenApiSemanticAssertion CreateWholeAssertion(SpecNode node)
+        {
+            return new OpenApiSemanticAssertion
+            {
+                AllOf = new[] { MapAssertion(node) },
+                Origin = AssertionOrigin(node, "whole"),
+                Location = CreateLocation(node)
+            };
+        }
+
         private OpenApiSemanticAssertion CreateNotAssertion(SpecNode node, SpecNode notNode)
         {
             return new OpenApiSemanticAssertion

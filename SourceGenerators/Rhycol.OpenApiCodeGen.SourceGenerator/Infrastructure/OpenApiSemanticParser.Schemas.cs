@@ -107,6 +107,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         .WithAssertions(new[] { CreateAlternativesAssertion(node) });
                 }
 
+                if (node.TryGetProperty("allOf", out _) && GetProperty(node, "discriminator") is null)
+                {
+                    return ParseAllOfWithAlternatives(node, suggestedName, referenceStack);
+                }
+
                 return ParseUnion(node, suggestedName, referenceStack);
             }
 
@@ -498,15 +503,24 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 .Where(value => !propertyNames.Contains(value))
                 .OrderBy(static value => value, StringComparer.Ordinal)
                 .ToArray();
-            if (missingRequiredProperties.Length > 0)
+            OpenApiSemanticSchema shape = CreateObjectShape(
+                node, suggestedName, format, nullable, annotations, properties, mode, valueSchema);
+            if (missingRequiredProperties.Length == 0)
             {
-                string missingProperty = missingRequiredProperties[0];
-                throw Invalid(
-                    requiredLocations[missingProperty],
-                    "Required property '" + missingProperty + "' is not declared in schema properties.");
+                return shape;
             }
 
-            return CreateObjectShape(node, suggestedName, format, nullable, annotations, properties, mode, valueSchema);
+            // A required name that properties does not declare is valid JSON Schema: an open object can carry it as an
+            // additional member, a closed one can never satisfy it. The type cannot say so; the assertion does.
+            if (mode == OpenApiSemanticAdditionalProperties.Closed)
+            {
+                AddIgnoredWarning(
+                    requiredLocations[missingRequiredProperties[0]],
+                    "Property '" + missingRequiredProperties[0] + "' is required but not declared in properties and the " +
+                    "object is closed (additionalProperties: false), so no value is valid.");
+            }
+
+            return shape.WithAssertions(new[] { CreateWholeAssertion(node) });
         }
 
         /// <summary>
