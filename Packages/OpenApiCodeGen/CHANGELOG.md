@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.6.0-preview.3] - 2026-11-16
+
+### Changed
+
+- No code changes in the base package; it is released together with the Source Generator add-on `0.6.0-preview.3`. The bundled Support Matrix and release documentation are updated with the add-on's changes (JSON Schema evaluation of `oneOf` / `anyOf` / `allOf` / `not`, indentless YAML sequences and multi-line plain scalars).
+
 ## [0.6.0-preview.2] - 2026-11-16
 
 ### Changed
