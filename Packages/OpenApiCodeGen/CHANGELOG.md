@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.6.0-preview.2] - 2026-11-16
+
+### Changed
+
+- No code changes in the base package; it is released together with the Source Generator add-on `0.6.0-preview.2`. The README explains the `versionDefines` entry that the add-on's **Generate** now adds to the output asmdef so that `OPENAPI_CODEGEN_SOURCE_GENERATOR` is defined in every build target and Build Profile. The bundled Support Matrix is updated with the add-on's fixes.
+
 ## [0.6.0-preview.1] - 2026-11-15
 
 ### Added

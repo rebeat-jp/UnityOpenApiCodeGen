@@ -211,7 +211,7 @@
       "depth": 0,
       "source": "embedded",
       "dependencies": {
-        "jp.rhycol.openapicodegen": "0.6.0-preview.1"
+        "jp.rhycol.openapicodegen": "0.6.0-preview.2"
       }
     },
     "jp.rhycol.openapicodegen.source-generator.phase0": {
