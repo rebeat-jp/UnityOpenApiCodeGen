@@ -239,7 +239,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
 
             YamlToken keyToken = tokens[keyStart];
-            if (keyToken.Kind != YamlTokenKind.Scalar || keyToken.Value.StartsWith("?", StringComparison.Ordinal))
+            if (keyToken.Kind != YamlTokenKind.Scalar || keyToken.Value.StartsWith("?", StringComparison.Ordinal) ||
+                IsMultiLineScalar(keyToken))
             {
                 throw Error(
                     YamlDiagnosticCode.ComplexKey,
@@ -503,6 +504,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             {
                 case YamlTokenKind.Scalar:
                     position++;
+                    if (!inFlow && IsMultiLineScalar(token) && !AtEnd &&
+                        Current.Kind != YamlTokenKind.Comment && Current.Kind != YamlTokenKind.NewLine)
+                    {
+                        // The closing quote of a multi-line scalar is not on the line of its first token, so the
+                        // callers' same-line checks cannot see what follows it.
+                        throw Error(
+                            YamlDiagnosticCode.InvalidScalar,
+                            "Unexpected content follows a multi-line quoted YAML scalar.",
+                            Current);
+                    }
+
                     return YamlScalarResolver.Resolve(token.Value, sourcePath, token.Line, token.Column, token.Offset);
                 case YamlTokenKind.BlockScalarHeader:
                     position++;
@@ -752,7 +764,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             while (true)
             {
                 YamlToken keyToken = Current;
-                if (keyToken.Kind != YamlTokenKind.Scalar || keyToken.Value.StartsWith("?", StringComparison.Ordinal))
+                if (keyToken.Kind != YamlTokenKind.Scalar || keyToken.Value.StartsWith("?", StringComparison.Ordinal) ||
+                    IsMultiLineScalar(keyToken))
                 {
                     throw Error(
                         YamlDiagnosticCode.ComplexKey,
@@ -1058,6 +1071,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             {
                 throw Error(code, "Unexpected content follows the YAML value.", Current);
             }
+        }
+
+        // Only a quoted scalar can span lines; the lexer keeps its line breaks in the token value.
+        private static bool IsMultiLineScalar(YamlToken token)
+        {
+            return token.Kind == YamlTokenKind.Scalar && token.Value.IndexOfAny(new[] { '\r', '\n' }) >= 0;
         }
 
         private static bool IsFlowSeparator(YamlToken token)

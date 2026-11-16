@@ -129,6 +129,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal IReadOnlyList<GeneratedDependentRequired> DependentRequired { get; set; } =
             Array.Empty<GeneratedDependentRequired>();
 
+        /// <summary>The wire values the value is restricted to (empty: unrestricted).</summary>
+        internal IReadOnlyList<OpenApiSemanticLiteral> AllowedValues { get; set; } =
+            Array.Empty<OpenApiSemanticLiteral>();
+
         /// <summary>The types of the sub-schemas (contains, propertyNames, patternProperties, prefixItems).</summary>
         internal IEnumerable<GeneratedTypeModel> SubTypes()
         {
@@ -178,7 +182,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                    Equals(Contains, other.Contains) &&
                    PrefixItems.SequenceEqual(other.PrefixItems) &&
                    Equals(ItemsAfterPrefix, other.ItemsAfterPrefix) &&
-                   DependentRequired.SequenceEqual(other.DependentRequired);
+                   DependentRequired.SequenceEqual(other.DependentRequired) &&
+                   AllowedValues.SequenceEqual(other.AllowedValues);
         }
 
         public override bool Equals(object? obj)
@@ -200,6 +205,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 hashCode = (hashCode * 397) ^ MinProperties.GetHashCode();
                 hashCode = (hashCode * 397) ^ PatternProperties.Count;
                 hashCode = (hashCode * 397) ^ PrefixItems.Count;
+                foreach (OpenApiSemanticLiteral value in AllowedValues)
+                {
+                    hashCode = (hashCode * 397) ^ value.GetHashCode();
+                }
+
                 return hashCode;
             }
         }

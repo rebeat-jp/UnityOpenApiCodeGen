@@ -467,6 +467,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         .Append(Count(set.MinProperties)).Append(", ").Append(Count(set.MaxProperties)).AppendLine(");");
                 }
 
+                if (set.AllowedValues.Count > 0)
+                {
+                    source.Append(head).Append("Allowed(").Append(common).Append(", ")
+                        .Append(set.AllowedValues[0].Kind == OpenApiSemanticLiteralKind.Integer ? "true" : "false")
+                        .Append(", new string[] { ")
+                        .Append(string.Join(", ", set.AllowedValues.Select(static value =>
+                            GeneratedSourceEmitter.StringLiteral(value.RawText))))
+                        .AppendLine(" });");
+                }
+
                 foreach (GeneratedDependentRequired entry in set.DependentRequired)
                 {
                     source.Append(head).Append("Dependent(").Append(common).Append(", new string[] { ")
@@ -936,7 +946,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 {
                     case global::Newtonsoft.Json.Linq.JTokenType.Integer:
                     case global::Newtonsoft.Json.Linq.JTokenType.Float:
-                        return __P__TryDecimal(token, out decimal number) ? number.GetHashCode() : __P__ToDouble(token).GetHashCode();
+                        // Equal compares as decimal when both fit and as double otherwise, so the hash must not depend on which one
+                        // applies. A decimal is parsed back from its text (not cast), so that equal decimals of any scale give the same
+                        // double; the double rounded to 15 significant digits is the common key.
+                        double key = __P__TryDecimal(token, out decimal number)
+                            ? double.Parse(number.ToString(global::System.Globalization.CultureInfo.InvariantCulture), global::System.Globalization.NumberStyles.Float, global::System.Globalization.CultureInfo.InvariantCulture)
+                            : __P__ToDouble(token);
+                        return (key == 0d ? 0d : key).ToString(""E14"", global::System.Globalization.CultureInfo.InvariantCulture).GetHashCode();
                     case global::Newtonsoft.Json.Linq.JTokenType.String:
                         return (((global::Newtonsoft.Json.Linq.JValue)token).Value?.ToString() ?? string.Empty).GetHashCode();
                     case global::Newtonsoft.Json.Linq.JTokenType.Boolean:
@@ -1078,6 +1094,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 {
                     __P__Fail(contract, path, ""dependentRequired"", ""a property that is present requires the property '"" + names[index] + ""' (required by '"" + names[0] + ""')"");
                 }
+            }
+        }
+
+        private static void __P__Allowed(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, bool integer, string[] values)
+        {
+            string text;
+            if (integer && token.Type == global::Newtonsoft.Json.Linq.JTokenType.Integer)
+            {
+                text = global::System.Convert.ToString(((global::Newtonsoft.Json.Linq.JValue)token).Value, global::System.Globalization.CultureInfo.InvariantCulture) ?? """";
+            }
+            else if (!integer && token.Type == global::Newtonsoft.Json.Linq.JTokenType.String)
+            {
+                text = (string?)token ?? """";
+            }
+            else
+            {
+                return;
+            }
+            if (global::System.Array.IndexOf(values, text) < 0)
+            {
+                __P__Fail(contract, path, ""enum"", ""the value is not one of the allowed values"");
             }
         }
 

@@ -217,11 +217,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     contentStart);
             }
 
-            ScanContent(contentStart, lineEnd, lineStart, indent);
+            ScanContent(contentStart, ref lineEnd, ref lineStart, indent);
             ConsumeLineEnd(lineEnd, lineStart);
         }
 
-        private void ScanContent(int contentStart, int lineEnd, int lineStart, int indent)
+        private void ScanContent(int contentStart, ref int lineEnd, ref int lineStart, int indent)
         {
             int cursor = contentStart;
             while (cursor < lineEnd)
@@ -261,7 +261,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
                 if (current == '\'' || current == '"')
                 {
-                    cursor = ScanQuoted(cursor, lineEnd, lineStart);
+                    cursor = ScanQuoted(cursor, ref lineEnd, ref lineStart, indent, cursor == contentStart);
                     continue;
                 }
 
@@ -435,12 +435,38 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             }
         }
 
-        private int ScanQuoted(int start, int lineEnd, int lineStart)
+        // A quoted scalar may continue over several lines. The token starts at the opening quote and ends at the
+        // closing quote (its Line/Column/Offset are the opening quote's); lineStart/lineEnd/line are advanced to the
+        // line that holds the closing quote so that the caller keeps scanning that line.
+        private int ScanQuoted(int start, ref int lineEnd, ref int lineStart, int lineIndent, bool quoteStartsLine)
         {
             char quote = source[start];
+            int startLine = line;
+            int startColumn = start - lineStart + 1;
             int cursor = start + 1;
-            while (cursor < lineEnd)
+            while (true)
             {
+                if (cursor >= lineEnd)
+                {
+                    if (lineEnd >= source.Length)
+                    {
+                        throw CreateExceptionAt(
+                            YamlDiagnosticCode.InvalidScalar,
+                            "A quoted YAML scalar is not terminated.",
+                            startLine,
+                            startColumn,
+                            start);
+                    }
+
+                    // Continue on the next physical line.
+                    cursor = lineEnd + GetNewlineLength(lineEnd);
+                    lineStart = cursor;
+                    lineEnd = FindLineEnd(lineStart);
+                    line++;
+                    ValidateQuotedContinuationLine(lineStart, lineEnd, lineIndent, quoteStartsLine, startLine);
+                    continue;
+                }
+
                 if (source[cursor] == quote)
                 {
                     cursor++;
@@ -454,23 +480,36 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                         YamlTokenKind.Scalar,
                         source.Substring(start, cursor - start),
                         start,
-                        line,
-                        start - lineStart + 1,
+                        startLine,
+                        startColumn,
                         cursor - start);
+                    if (line != startLine)
+                    {
+                        // AddToken only tracks tokens that start on the current line.
+                        hasLastLineToken = true;
+                        lastLineTokenKind = YamlTokenKind.Scalar;
+                    }
+
                     return cursor;
                 }
 
                 if (quote == '"' && source[cursor] == '\\')
                 {
                     cursor++;
-                    if (cursor >= lineEnd)
+                    if (cursor >= source.Length)
                     {
                         throw CreateExceptionAt(
                             YamlDiagnosticCode.InvalidScalar,
                             "A double-quoted YAML escape sequence is incomplete.",
-                            line,
-                            start - lineStart + 1,
+                            startLine,
+                            startColumn,
                             start);
+                    }
+
+                    if (cursor >= lineEnd)
+                    {
+                        // An escaped line break; the next loop turn moves to the next line.
+                        continue;
                     }
 
                     if (source[cursor] == 'u')
@@ -483,8 +522,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                                 throw CreateExceptionAt(
                                     YamlDiagnosticCode.InvalidScalar,
                                     "A YAML Unicode escape must contain four hexadecimal digits.",
-                                    line,
-                                    start - lineStart + 1,
+                                    startLine,
+                                    startColumn,
                                     start);
                             }
 
@@ -501,13 +540,53 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
                 cursor++;
             }
+        }
 
-            throw CreateExceptionAt(
-                YamlDiagnosticCode.InvalidScalar,
-                "A quoted YAML scalar is not terminated.",
-                line,
-                start - lineStart + 1,
-                start);
+        // Checks one continuation line of a quoted scalar. Blank lines are always fine.
+        private void ValidateQuotedContinuationLine(
+            int lineStart,
+            int lineEnd,
+            int lineIndent,
+            bool quoteStartsLine,
+            int quoteStartLine)
+        {
+            int firstContent = lineStart;
+            while (firstContent < lineEnd && IsWhitespace(source[firstContent])) firstContent++;
+            if (firstContent >= lineEnd)
+            {
+                return;
+            }
+
+            if (firstContent == lineStart &&
+                (IsDocumentMarker(lineStart, lineEnd, "---") || IsDocumentMarker(lineStart, lineEnd, "...")))
+            {
+                throw CreateExceptionAt(
+                    YamlDiagnosticCode.InvalidScalar,
+                    "A document marker cannot appear inside the quoted YAML scalar that starts on line " +
+                    quoteStartLine.ToString(CultureInfo.InvariantCulture) + ".",
+                    line,
+                    1,
+                    lineStart);
+            }
+
+            if (flowFrames.Count != 0)
+            {
+                return;
+            }
+
+            int spaces = 0;
+            while (lineStart + spaces < lineEnd && source[lineStart + spaces] == ' ') spaces++;
+            if (spaces < lineIndent || (spaces == lineIndent && !quoteStartsLine))
+            {
+                throw CreateExceptionAt(
+                    YamlDiagnosticCode.InvalidIndentation,
+                    "A continuation line of the quoted YAML scalar that starts on line " +
+                    quoteStartLine.ToString(CultureInfo.InvariantCulture) +
+                    " must be indented more than its parent.",
+                    line,
+                    spaces + 1,
+                    lineStart + spaces);
+            }
         }
 
         private void ScanTrailingComment(int start, int lineEnd, int lineStart)

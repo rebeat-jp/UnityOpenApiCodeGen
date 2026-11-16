@@ -931,14 +931,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void ARefWithAConstraintSiblingIsStillRejectedInOpenApi30()
+        public void ARefWithAConstraintSiblingIsIgnoredWithOacg108InOpenApi30()
         {
-            Diagnostic diagnostic = GetOnlyDiagnostic(
+            // OpenAPI 3.0 ignores every sibling of $ref: the constraint is reported (OACG108) and not applied.
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(
                 "{\"openapi\":\"3.0.3\",\"info\":{\"title\":\"x\",\"version\":\"1\"},\"paths\":{},\"components\":{\"schemas\":{" +
                 "\"Name\":{\"type\":\"string\"},\"Payload\":{\"$ref\":\"#/components/schemas/Name\",\"maxLength\":4}}}}");
 
-            Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("/components/schemas/Payload/maxLength'", diagnostic.GetMessage());
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
+            Assert.Contains("/components/schemas/Payload/maxLength'", warning.GetMessage());
+            Assert.DoesNotContain("__OacgConstraint_", execution.GeneratedSource);
         }
 
         [Fact]
