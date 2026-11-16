@@ -379,9 +379,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             bool unionIsOneOf = true,
             IReadOnlyList<OpenApiSemanticSchema>? notSchemas = null,
             string contentMediaType = "",
-            IReadOnlyList<OpenApiSemanticConstraints>? constraintSets = null)
+            IReadOnlyList<OpenApiSemanticConstraints>? constraintSets = null,
+            IReadOnlyList<OpenApiSemanticAssertion>? assertions = null)
         {
             ConstraintSets = constraintSets ?? Array.Empty<OpenApiSemanticConstraints>();
+            Assertions = assertions ?? Array.Empty<OpenApiSemanticAssertion>();
             ContentMediaType = contentMediaType ?? string.Empty;
             Discriminator = discriminator;
             UnionIsOneOf = unionIsOneOf;
@@ -499,6 +501,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// </summary>
         internal IReadOnlyList<OpenApiSemanticConstraints> ConstraintSets { get; }
 
+        /// <summary>
+        /// Assertion trees (JSON Schema semantics, see <see cref="OpenApiSemanticAssertion"/>) that must all hold. Like
+        /// <see cref="ConstraintSets"/> and <see cref="NotSchemas"/> they never change the generated type; they
+        /// carry the shapes the type cannot express. Empty until the parser starts to fill them.
+        /// </summary>
+        internal IReadOnlyList<OpenApiSemanticAssertion> Assertions { get; }
+
         internal OpenApiSemanticSchema WithNullable(bool nullable)
         {
             return nullable == Nullable ? this : Clone(nullable, Annotations, NotSchemas, ConstraintSets);
@@ -550,7 +559,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 UnionIsOneOf,
                 notSchemas,
                 ContentMediaType,
-                constraintSets);
+                constraintSets,
+                Assertions);
         }
 
         internal OpenApiSourceLocation Location { get; }
