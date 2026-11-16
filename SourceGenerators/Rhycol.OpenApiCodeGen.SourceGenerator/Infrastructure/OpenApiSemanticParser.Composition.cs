@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 namespace Rhycol.OpenApiCodeGen.SourceGenerator
@@ -207,13 +208,72 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return union;
         }
 
-        private static bool IsNullTypeSchema(SpecNode part)
+        private bool IsNullTypeSchema(SpecNode part)
         {
-            return part.ValueKind == SpecValueKind.Object &&
-                   !part.TryGetProperty("$ref", out _) &&
-                   part.TryGetProperty("type", out SpecNode type) &&
-                   type.ValueKind == SpecValueKind.String &&
-                   string.Equals(type.GetString(), "null", StringComparison.Ordinal);
+            if (part.ValueKind != SpecValueKind.Object || part.TryGetProperty("$ref", out _))
+            {
+                return false;
+            }
+
+            if (part.TryGetProperty("type", out SpecNode type) &&
+                type.ValueKind == SpecValueKind.String &&
+                string.Equals(type.GetString(), "null", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return _minorVersion == 0 && IsNullableNullEnumSchema(part);
+        }
+
+        /// <summary>
+        /// OpenAPI 3.0 spells "null" as { nullable: true, enum: [null] } (type optional): the member of
+        /// an "X or null" oneOf / anyOf. Only type, annotations and x-* may accompany the two keywords.
+        /// </summary>
+        private static bool IsNullableNullEnumSchema(SpecNode part)
+        {
+            if (!part.TryGetProperty("nullable", out SpecNode nullable) ||
+                nullable.ValueKind != SpecValueKind.True ||
+                !part.TryGetProperty("enum", out SpecNode enumNode) ||
+                enumNode.ValueKind != SpecValueKind.Array)
+            {
+                return false;
+            }
+
+            int count = 0;
+            foreach (SpecNode entry in enumNode.EnumerateArray())
+            {
+                if (entry.ValueKind != SpecValueKind.Null)
+                {
+                    return false;
+                }
+
+                count++;
+            }
+
+            if (count == 0)
+            {
+                return false;
+            }
+
+            foreach (SpecProperty property in part.EnumerateObject())
+            {
+                if (property.Name == "nullable" ||
+                    property.Name == "enum" ||
+                    AllowedReferenceSchemaSiblings.Contains(property.Name) ||
+                    property.Name.StartsWith("x-", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (property.Name == "type" && property.Value.ValueKind == SpecValueKind.String)
+                {
+                    continue;
+                }
+
+                return false;
+            }
+
+            return true;
         }
 
         private static void ValidateUnionSiblings(SpecNode node, string keyword)
@@ -409,8 +469,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             foreach (OpenApiSemanticSchema union in _discriminatedUnions)
             {
-                foreach (OpenApiSemanticSchema member in union.UnionMembers)
+                for (int index = 0; index < union.UnionMembers.Count; index++)
                 {
+                    OpenApiSemanticSchema member = union.UnionMembers[index];
                     OpenApiSemanticSchema effective = GetEffectiveSchema(member);
                     if (effective.Kind != OpenApiSemanticSchemaKind.Object)
                     {
@@ -419,6 +480,54 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                             "The member '" + member.ReferenceName +
                             "' of a discriminated union must be an object schema with declared properties.",
                             member.Location,
+                            Array.Empty<OpenApiSourceLocation>());
+                    }
+
+                    ValidateDiscriminatorValuesAreAllowed(union, index, member, effective);
+                }
+            }
+        }
+
+        /// <summary>
+        /// An allOf part may narrow the discriminator property to a subset of values (AllowedValues).
+        /// The mapping values of the member are what the generated DTO writes and the union dispatches on,
+        /// so each of them has to satisfy every narrowing. The message does not name the value.
+        /// </summary>
+        private static void ValidateDiscriminatorValuesAreAllowed(
+            OpenApiSemanticSchema union,
+            int index,
+            OpenApiSemanticSchema member,
+            OpenApiSemanticSchema effective)
+        {
+            if (union.Discriminator is null || index >= union.Discriminator.MemberValues.Count)
+            {
+                return;
+            }
+
+            OpenApiSemanticProperty? property = effective.Properties.FirstOrDefault(candidate =>
+                string.Equals(candidate.WireName, union.Discriminator.PropertyName, StringComparison.Ordinal));
+            if (property is null)
+            {
+                return;
+            }
+
+            foreach (OpenApiSemanticConstraints set in property.Schema.ConstraintSets)
+            {
+                if (set.AllowedValues.Count == 0)
+                {
+                    continue;
+                }
+
+                foreach (string value in union.Discriminator.MemberValues[index])
+                {
+                    if (!set.AllowedValues.Any(allowed => string.Equals(allowed.RawText, value, StringComparison.Ordinal)))
+                    {
+                        throw new OpenApiSemanticException(
+                            OpenApiSemanticErrorKind.UnsupportedElement,
+                            "A discriminator mapping value of the member '" + member.ReferenceName +
+                            "' is not allowed by the narrowed values of the discriminator property '" +
+                            union.Discriminator.PropertyName + "' (declared by an allOf part).",
+                            property.Location,
                             Array.Empty<OpenApiSourceLocation>());
                     }
                 }
@@ -796,15 +905,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             RequireKind(node, SpecValueKind.Object, "A schema must be an object in the Phase 4 MVP.");
-            ValidateUnsupportedSchemaKeywords(node);
 
-            // Checked first so that an invalid keyword next to a $ref is reported at the keyword itself,
-            // not inside the referenced schema.
-            ValidateObjectPartKeywords(node);
+            // OpenAPI 3.0: the siblings of $ref are ignored (OACG108), so only the target is collected.
+            bool minor30Reference = IsMinor30ReferenceNode(node);
+            if (!minor30Reference)
+            {
+                ValidateUnsupportedSchemaKeywords(node);
+
+                // Checked first so that an invalid keyword next to a $ref is reported at the keyword itself,
+                // not inside the referenced schema.
+                ValidateObjectPartKeywords(node);
+            }
 
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
-                if (_minorVersion == 0)
+                if (minor30Reference)
                 {
                     ValidateReferenceSchemaSiblings(node);
                 }
@@ -820,6 +935,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         CollectObjectParts(target, rootName, referenceStack, composition, isRoot: false);
                         return true;
                     });
+
+                if (minor30Reference)
+                {
+                    return;
+                }
             }
 
             SpecNode? unionNode = GetProperty(node, "oneOf") ?? GetProperty(node, "anyOf");
@@ -933,6 +1053,26 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                                 GetSchemaSignature(schema),
                                 StringComparison.Ordinal))
                         {
+                            if (TryMergeNarrowedProperty(existing.Schema, schema, out OpenApiSemanticSchema narrowed))
+                            {
+                                if (NarrowingLeavesNoValue(narrowed))
+                                {
+                                    throw CreateException(
+                                        OpenApiSemanticErrorKind.UnsupportedElement,
+                                        "The narrowed values of property '" + property.Name +
+                                        "' declared by the parts of an allOf composition have no value in common.",
+                                        property.Value,
+                                        new[] { existing.Location });
+                                }
+
+                                composition.Properties[property.Name] = new OpenApiSemanticProperty(
+                                    property.Name,
+                                    false,
+                                    narrowed,
+                                    ReferenceEquals(narrowed, existing.Schema) ? existing.Location : location);
+                                continue;
+                            }
+
                             throw CreateException(
                                 OpenApiSemanticErrorKind.UnsupportedElement,
                                 "Property '" + property.Name +
@@ -1009,6 +1149,303 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 throw Invalid(additionalNode, "The additionalProperties field must be a boolean or a schema object.");
             }
+        }
+
+        // ---- narrowing a property in an allOf part -------------------------------------------------
+
+        private readonly struct NarrowingSide
+        {
+            internal NarrowingSide(
+                OpenApiSemanticSchema schema,
+                OpenApiSemanticSchema effective,
+                OpenApiSemanticLiteralKind literalKind,
+                IReadOnlyList<OpenApiSemanticLiteral>? values,
+                bool named)
+            {
+                Schema = schema;
+                Effective = effective;
+                LiteralKind = literalKind;
+                Values = values;
+                Named = named;
+            }
+
+            internal OpenApiSemanticSchema Schema { get; }
+
+            internal OpenApiSemanticSchema Effective { get; }
+
+            internal OpenApiSemanticLiteralKind LiteralKind { get; }
+
+            /// <summary>The enum values; null for a plain string / integer (every value of the type).</summary>
+            internal IReadOnlyList<OpenApiSemanticLiteral>? Values { get; }
+
+            /// <summary>True when the side refers to a component schema ($ref), false for an inline schema.</summary>
+            internal bool Named { get; }
+        }
+
+        /// <summary>
+        /// Two allOf parts declare the same property with different shapes. When one declaration is a
+        /// narrowing of the other (a string / integer enum, an inline enum next to a named enum, or an
+        /// enum next to a plain string / integer of the same base type) the property keeps the wider
+        /// type and the enum values of the narrower declaration are added as an AllowedValues constraint
+        /// set. Several narrowings stack as separate sets, so every one of them has to hold. Only the
+        /// enum values move: any other constraint on the narrowing side, a nullable mismatch, a
+        /// different base type, a value outside the kept type and an unresolved (recursive) reference
+        /// are not merged.
+        /// </summary>
+        private bool TryMergeNarrowedProperty(
+            OpenApiSemanticSchema existing,
+            OpenApiSemanticSchema incoming,
+            out OpenApiSemanticSchema merged)
+        {
+            merged = existing;
+            if (IsSchemaNullable(existing) != IsSchemaNullable(incoming) ||
+                !TryGetNarrowingSide(existing, out NarrowingSide first) ||
+                !TryGetNarrowingSide(incoming, out NarrowingSide second) ||
+                first.LiteralKind != second.LiteralKind)
+            {
+                return false;
+            }
+
+            if (first.Values is null && second.Values is null)
+            {
+                // Two plain declarations differ only by what an earlier narrowing added to one of them: the
+                // one without any constraint restates the type, whatever the order of the parts.
+                if (!string.Equals(first.Effective.Format, second.Effective.Format, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                // Only an AllowedValues set (what an earlier narrowing added) may differ; any other constraint
+                // (maxLength, ...) makes the declarations different types, as before.
+                int firstState = GetConstraintState(first.Schema);
+                int secondState = GetConstraintState(second.Schema);
+                if (firstState == 2 || secondState == 2)
+                {
+                    return false;
+                }
+
+                bool firstConstrained = firstState == 1;
+                bool secondConstrained = secondState == 1;
+                if (firstConstrained && !secondConstrained)
+                {
+                    return true;
+                }
+
+                if (secondConstrained && !firstConstrained)
+                {
+                    merged = incoming;
+                    return true;
+                }
+
+                return false;
+            }
+
+            NarrowingSide kept;
+            NarrowingSide narrowing;
+            if (first.Values is null || second.Values is null)
+            {
+                NarrowingSide plain = first.Values is null ? first : second;
+                NarrowingSide enumSide = first.Values is null ? second : first;
+                if (HasConstraintSets(plain.Schema) && enumSide.Named)
+                {
+                    return false;
+                }
+
+                if (enumSide.Named)
+                {
+                    // A named enum already is the narrowest type; the plain string / integer adds nothing.
+                    merged = enumSide.Schema;
+                    return true;
+                }
+
+                kept = plain;
+                narrowing = enumSide;
+                if (!InlineEnumFitsPlainType(plain, enumSide))
+                {
+                    return false;
+                }
+            }
+            else if (first.Named != second.Named)
+            {
+                kept = first.Named ? first : second;
+                narrowing = first.Named ? second : first;
+            }
+            else if (IsSubsetOf(second.Values, first.Values))
+            {
+                // Equal value sets keep the declaration that came first.
+                kept = first;
+                narrowing = second;
+            }
+            else if (IsSubsetOf(first.Values, second.Values))
+            {
+                kept = second;
+                narrowing = first;
+            }
+            else
+            {
+                return false;
+            }
+
+            // Every value of the narrowing side is compared with the kept type's own value set (not with
+            // an earlier narrowing), so a chain of narrowings stays a set of independent constraints.
+            if (HasConstraintSets(narrowing.Schema) ||
+                (kept.Values is not null && !IsSubsetOf(narrowing.Values!, kept.Values)))
+            {
+                return false;
+            }
+
+            merged = kept.Schema;
+            if (kept.Values is not null && IsSubsetOf(kept.Values, narrowing.Values!))
+            {
+                return true;
+            }
+
+            foreach (OpenApiSemanticConstraints set in kept.Schema.ConstraintSets)
+            {
+                if (set.AllowedValues.Count > 0 &&
+                    IsSubsetOf(set.AllowedValues, narrowing.Values!) &&
+                    IsSubsetOf(narrowing.Values!, set.AllowedValues))
+                {
+                    return true;
+                }
+            }
+
+            merged = kept.Schema.WithConstraintSets(new[]
+            {
+                new OpenApiSemanticConstraints { AllowedValues = narrowing.Values! }
+            });
+            return true;
+        }
+
+        // The intersection of the kept type and every AllowedValues set: when it is empty, the property would
+        // accept nothing, which is a contradiction in the document rather than a narrowing.
+        private bool NarrowingLeavesNoValue(OpenApiSemanticSchema merged)
+        {
+            HashSet<OpenApiSemanticLiteral>? remaining = null;
+            OpenApiSemanticSchema effective = GetEffectiveSchema(merged);
+            if (effective.Kind == OpenApiSemanticSchemaKind.Enum)
+            {
+                remaining = new HashSet<OpenApiSemanticLiteral>(effective.TypedEnumValues);
+            }
+
+            foreach (OpenApiSemanticConstraints set in merged.ConstraintSets)
+            {
+                if (set.AllowedValues.Count == 0)
+                {
+                    continue;
+                }
+
+                if (remaining is null)
+                {
+                    remaining = new HashSet<OpenApiSemanticLiteral>(set.AllowedValues);
+                }
+                else
+                {
+                    remaining.IntersectWith(set.AllowedValues);
+                }
+            }
+
+            return remaining is not null && remaining.Count == 0;
+        }
+
+        private bool TryGetNarrowingSide(OpenApiSemanticSchema schema, out NarrowingSide side)
+        {
+            side = default;
+            OpenApiSemanticSchema effective = GetEffectiveSchema(schema);
+            bool named = schema.Kind == OpenApiSemanticSchemaKind.Reference;
+            switch (effective.Kind)
+            {
+                case OpenApiSemanticSchemaKind.Enum:
+                    IReadOnlyList<OpenApiSemanticLiteral> values = effective.TypedEnumValues;
+                    if (values.Count == 0 || values.Any(value => value.Kind != values[0].Kind))
+                    {
+                        return false;
+                    }
+
+                    side = new NarrowingSide(schema, effective, values[0].Kind, values, named);
+                    return true;
+                case OpenApiSemanticSchemaKind.String:
+                    side = new NarrowingSide(schema, effective, OpenApiSemanticLiteralKind.String, null, named);
+                    return true;
+                case OpenApiSemanticSchemaKind.Integer:
+                    side = new NarrowingSide(schema, effective, OpenApiSemanticLiteralKind.Integer, null, named);
+                    return true;
+                default:
+                    // Includes a Reference that could not be resolved yet (a recursive reference).
+                    return false;
+            }
+        }
+
+        // 0: no constraint set, 1: only AllowedValues sets, 2: some other constraint (own or of a referenced schema).
+        private int GetConstraintState(OpenApiSemanticSchema schema)
+        {
+            int state = 0;
+            var visited = new HashSet<NormalizedSpecNodeIdentity>();
+            OpenApiSemanticSchema? current = schema;
+            while (current is not null)
+            {
+                foreach (OpenApiSemanticConstraints set in current.ConstraintSets)
+                {
+                    if (!set.HasOnlyAllowedValues)
+                    {
+                        return 2;
+                    }
+
+                    if (set.AllowedValues.Count > 0)
+                    {
+                        state = 1;
+                    }
+                }
+
+                NormalizedSpecNodeIdentity identity = current.ReferenceIdentity;
+                if (current.Kind != OpenApiSemanticSchemaKind.Reference ||
+                    identity.IsEmpty ||
+                    !visited.Add(identity) ||
+                    !_schemas.TryGetValue(identity, out current))
+                {
+                    break;
+                }
+            }
+
+            return state;
+        }
+
+        private bool HasConstraintSets(OpenApiSemanticSchema schema)
+        {
+            return GetConstraintChainSignature(schema, new HashSet<NormalizedSpecNodeIdentity>()).Length > 0;
+        }
+
+        // The values are checked against the plain type that stays: its string format, or the width of its
+        // integer type (int32 unless the format says int64).
+        private static bool InlineEnumFitsPlainType(NarrowingSide plain, NarrowingSide enumSide)
+        {
+            if (plain.LiteralKind == OpenApiSemanticLiteralKind.String)
+            {
+                return string.Equals(plain.Effective.Format, enumSide.Effective.Format, StringComparison.Ordinal);
+            }
+
+            if (string.Equals(plain.Effective.Format, "int64", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            foreach (OpenApiSemanticLiteral value in enumSide.Values!)
+            {
+                if (!int.TryParse(value.RawText, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsSubsetOf(
+            IReadOnlyList<OpenApiSemanticLiteral> candidate,
+            IReadOnlyList<OpenApiSemanticLiteral> superset)
+        {
+            var set = new HashSet<OpenApiSemanticLiteral>(superset);
+            return candidate.All(set.Contains);
         }
 
         private sealed class ObjectComposition

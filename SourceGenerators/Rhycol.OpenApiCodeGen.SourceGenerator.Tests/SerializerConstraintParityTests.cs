@@ -324,6 +324,61 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Empty(differences);
         }
 
+        // ---- AllowedValues (an allOf part narrowing an enum) ---------------------------------------------
+
+        private static string NarrowedOperation(string name)
+        {
+            return "\"/read/" + name + "\":{\"get\":{\"operationId\":\"read" + name + "\",\"responses\":{\"200\":{\"description\":\"ok\"," +
+                   "\"content\":{\"application/json\":{\"schema\":{\"$ref\":\"#/components/schemas/" + name + "\"}}}}}}}";
+        }
+
+        private static readonly string NarrowedSpec =
+            "{\"openapi\":\"3.0.3\",\"info\":{\"title\":\"N\",\"version\":\"1\"},\"servers\":[{\"url\":\"https://api.example.com\"}],\"paths\":{" +
+            NarrowedOperation("Body") + "," + NarrowedOperation("Plain") + "}," +
+            "\"components\":{\"schemas\":{" +
+            "\"ProblemCode\":{\"type\":\"string\",\"enum\":[\"alpha\",\"bravo\",\"charlie\"]}," +
+            "\"Level\":{\"type\":\"integer\",\"enum\":[1,2,3]}," +
+            "\"Base\":{\"type\":\"object\",\"properties\":{\"code\":{\"$ref\":\"#/components/schemas/ProblemCode\"},\"level\":{\"$ref\":\"#/components/schemas/Level\"}}}," +
+            "\"Body\":{\"allOf\":[{\"$ref\":\"#/components/schemas/Base\"},{\"type\":\"object\",\"properties\":{" +
+            "\"code\":{\"type\":\"string\",\"enum\":[\"alpha\"]},\"level\":{\"type\":\"integer\",\"enum\":[2,3]}}}]}," +
+            "\"PlainBase\":{\"type\":\"object\",\"properties\":{\"n\":{\"type\":\"integer\"},\"s\":{\"type\":\"string\"}}}," +
+            "\"Plain\":{\"allOf\":[{\"$ref\":\"#/components/schemas/PlainBase\"},{\"type\":\"object\",\"properties\":{" +
+            "\"n\":{\"type\":\"integer\",\"enum\":[1]},\"s\":{\"type\":\"string\",\"enum\":[\"x\"]}}}]}}}}";
+
+        [Theory]
+        [InlineData("Body", "{\"code\":\"alpha\",\"level\":2}", "ok")]
+        [InlineData("Body", "{\"code\":\"alpha\",\"level\":3}", "ok")]
+        [InlineData("Body", "{\"code\":\"bravo\",\"level\":2}", "violates:enum")]
+        [InlineData("Body", "{\"code\":\"alpha\",\"level\":1}", "violates:enum")]
+        [InlineData("Body", "{\"code\":\"ALPHA\",\"level\":2}", null)]
+        [InlineData("Body", "{\"code\":\"alpha\",\"level\":2.0}", null)]
+        [InlineData("Body", "{\"code\":\"alpha\",\"level\":-1}", null)]
+        [InlineData("Body", "{\"code\":\"alpha\",\"level\":18446744073709551615}", null)]
+        [InlineData("Body", "{\"code\":\"alpha\",\"level\":9223372036854775808}", null)]
+        [InlineData("Body", "{\"code\":1,\"level\":2}", null)]
+        [InlineData("Plain", "{\"n\":1,\"s\":\"x\"}", "ok")]
+        [InlineData("Plain", "{\"n\":2,\"s\":\"x\"}", "violates:enum")]
+        [InlineData("Plain", "{\"n\":1,\"s\":\"y\"}", "violates:enum")]
+        [InlineData("Plain", "{\"n\":1.0,\"s\":\"x\"}", null)]
+        [InlineData("Plain", "{\"n\":1e0,\"s\":\"x\"}", null)]
+        [InlineData("Plain", "{\"n\":18446744073709551615,\"s\":\"x\"}", "violates:enum")]
+        [InlineData("Plain", "{\"n\":9223372036854775808,\"s\":\"x\"}", "violates:enum")]
+        [InlineData("Plain", "{\"n\":\"1\",\"s\":\"x\"}", null)]
+        public async Task AllowedValuesAgreeForStringsAndIntegers(string schema, string body, string? expected)
+        {
+            Assembly newtonsoft = SerializerMatrixHarness.CompileText("allowed-parity", NarrowedSpec, SerializerMatrixHarness.NewtonsoftJson);
+            Assembly systemTextJson = SerializerMatrixHarness.CompileText("allowed-parity", NarrowedSpec, SerializerMatrixHarness.SystemTextJson);
+
+            string left = await Decide(newtonsoft, "read" + schema, body);
+            string right = await Decide(systemTextJson, "read" + schema, body);
+
+            Assert.True(left == right, "Newtonsoft=" + left + " SystemTextJson=" + right);
+            if (expected is not null)
+            {
+                Assert.Equal(expected, left);
+            }
+        }
+
         [Fact]
         public async Task TheDifferentialHarnessSeesDecisionsAtAll()
         {

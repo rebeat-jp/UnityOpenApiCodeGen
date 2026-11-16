@@ -396,6 +396,641 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             AssertJsonEqual(J("{'pet':null}"), exchange.RequestJson);
         }
 
+        // ---- allOf part narrowing a property to a subset of an enum ----------------------------------
+
+        private const string ProblemSchemas = @"
+          'ProblemCode':{'type':'string','enum':['STORAGE_UNAVAILABLE','NOT_FOUND','BAD_REQUEST']},
+          'ProblemDetails':{'type':'object','required':['code'],'properties':{'code':{'$ref':'#/components/schemas/ProblemCode'}}}";
+
+        private static string NarrowedBody(params string[] parts)
+        {
+            return "'Body':{'allOf':[{'$ref':'#/components/schemas/ProblemDetails'}," + string.Join(",", parts) + "]},";
+        }
+
+        private static string CodePart(string codeSchema)
+        {
+            return "{'type':'object','properties':{'code':" + codeSchema + "}}";
+        }
+
+        private static async Task AssertNarrowedValues(
+            Phase4GeneratorExecution execution, string[] allowed, string[] rejected)
+        {
+            foreach (string value in allowed)
+            {
+                string json = J("{'code':'" + value + "'}");
+                Exchange exchange = await Echo(execution, json, json);
+                AssertJsonEqual(json, exchange.RequestJson);
+            }
+
+            foreach (string value in rejected)
+            {
+                string json = J("{'code':'" + value + "'}");
+                ArgumentException request = await Assert.ThrowsAnyAsync<ArgumentException>(
+                    () => Echo(execution, json, J("{'code':'" + allowed[0] + "'}")));
+                Assert.Contains("request", request.Message);
+                Assert.Contains("$.code", request.Message);
+                Assert.DoesNotContain(value, request.Message);
+
+                Exception response = await MatrixMode.ThrowsSerializationAsync(
+                    () => Echo(execution, J("{'code':'" + allowed[0] + "'}"), json));
+                Assert.Contains("$.code", response.Message);
+                Assert.DoesNotContain(value, response.Message);
+            }
+        }
+
+        [Fact]
+        public async Task AnInlineEnumNarrowsANamedEnumPropertyOfTheBaseToItsValues()
+        {
+            string schemas = NarrowedBody(CodePart("{'type':'string','enum':['STORAGE_UNAVAILABLE']}")) + ProblemSchemas;
+            Phase4GeneratorExecution execution = Generate(EchoDocument(schemas, "3.0.4"));
+            Assembly assembly = Load(execution);
+
+            Assert.Equal(
+                assembly.GetType(Ns + "ProblemCode", true),
+                assembly.GetType(Ns + "Body", true)!.GetProperty("Code")!.PropertyType);
+            Assert.DoesNotContain(assembly.GetTypes(), type => type.Name == "BodyCode");
+            Assert.Contains("Must be one of: STORAGE_UNAVAILABLE.", execution.GeneratedSource);
+
+            await AssertNarrowedValues(execution, new[] { "STORAGE_UNAVAILABLE" }, new[] { "NOT_FOUND", "BAD_REQUEST" });
+        }
+
+        [Fact]
+        public async Task ANamedEnumWrittenFirstAndNarrowedLaterKeepsTheNamedType()
+        {
+            // The narrowing part comes first, the base (with the named enum) after it.
+            string schemas =
+                "'Body':{'allOf':[" + CodePart("{'type':'string','enum':['NOT_FOUND','BAD_REQUEST']}") +
+                ",{'$ref':'#/components/schemas/ProblemDetails'}]}," + ProblemSchemas;
+            Phase4GeneratorExecution execution = Generate(EchoDocument(schemas, "3.0.4"));
+            Assembly assembly = Load(execution);
+
+            Assert.Equal(
+                assembly.GetType(Ns + "ProblemCode", true),
+                assembly.GetType(Ns + "Body", true)!.GetProperty("Code")!.PropertyType);
+            await AssertNarrowedValues(execution, new[] { "NOT_FOUND", "BAD_REQUEST" }, new[] { "STORAGE_UNAVAILABLE" });
+        }
+
+        [Fact]
+        public async Task AStringEnumNarrowsAPlainStringProperty()
+        {
+            const string Schemas = @"
+              'Base':{'type':'object','properties':{'code':{'type':'string'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'code':{'type':'string','enum':['alpha','bravo']}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas, "3.0.3"));
+
+            Assert.Equal(
+                typeof(string),
+                Load(execution).GetType(Ns + "Body", true)!.GetProperty("Code")!.PropertyType);
+            await AssertNarrowedValues(execution, new[] { "alpha", "bravo" }, new[] { "charlie" });
+        }
+
+        [Fact]
+        public async Task AnIntegerEnumNarrowsAPlainIntegerProperty()
+        {
+            const string Schemas = @"
+              'Base':{'type':'object','properties':{'level':{'type':'integer'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'level':{'type':'integer','enum':[1,2]}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas, "3.0.3"));
+
+            Exchange ok = await Echo(execution, J("{'level':2}"), J("{'level':1}"));
+            AssertJsonEqual(J("{'level':2}"), ok.RequestJson);
+            ArgumentException request = await Assert.ThrowsAnyAsync<ArgumentException>(
+                () => Echo(execution, J("{'level':3}"), J("{'level':1}")));
+            Assert.Contains("$.level", request.Message);
+            Exception response = await MatrixMode.ThrowsSerializationAsync(
+                () => Echo(execution, J("{'level':1}"), J("{'level':3}")));
+            Assert.Contains("$.level", response.Message);
+        }
+
+        [Fact]
+        public async Task TwoInlineEnumsKeepTheWiderOneAndConstrainToTheNarrowerOne()
+        {
+            const string Schemas = @"
+              'Base':{'type':'object','properties':{'code':{'type':'string','enum':['alpha','bravo','charlie']}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'code':{'type':'string','enum':['bravo']}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas, "3.0.3"));
+
+            await AssertNarrowedValues(execution, new[] { "bravo" }, new[] { "alpha", "charlie" });
+        }
+
+        [Fact]
+        public async Task SeveralNarrowingsStackAndEveryOneOfThemHolds()
+        {
+            string schemas = NarrowedBody(
+                CodePart("{'type':'string','enum':['STORAGE_UNAVAILABLE','NOT_FOUND']}"),
+                CodePart("{'type':'string','enum':['NOT_FOUND','BAD_REQUEST']}")) + ProblemSchemas;
+            Phase4GeneratorExecution execution = Generate(EchoDocument(schemas, "3.0.4"));
+
+            await AssertNarrowedValues(execution, new[] { "NOT_FOUND" }, new[] { "STORAGE_UNAVAILABLE", "BAD_REQUEST" });
+        }
+
+        [Fact]
+        public async Task TheSameNarrowingDeclaredByTwoPartsIsOneNarrowing()
+        {
+            string schemas = NarrowedBody(
+                CodePart("{'type':'string','enum':['NOT_FOUND']}"),
+                CodePart("{'type':'string','enum':['NOT_FOUND']}")) + ProblemSchemas;
+            Phase4GeneratorExecution execution = Generate(EchoDocument(schemas, "3.0.4"));
+
+            Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(
+                execution.GeneratedSource, "Must be one of: NOT_FOUND").Count);
+            await AssertNarrowedValues(execution, new[] { "NOT_FOUND" }, new[] { "BAD_REQUEST" });
+        }
+
+        [Theory]
+        [InlineData("{'type':'string','enum':['STORAGE_UNAVAILABLE','UNKNOWN']}")]
+        [InlineData("{'type':'integer','enum':[1]}")]
+        [InlineData("{'type':'string','nullable':true,'enum':['NOT_FOUND']}")]
+        [InlineData("{'type':'string','enum':['NOT_FOUND'],'maxLength':20}")]
+        [InlineData("{'type':'boolean'}")]
+        public void ADeclarationThatIsNotANarrowingStillReportsOacg101(string codeSchema)
+        {
+            string schemas = NarrowedBody(CodePart(codeSchema)) + ProblemSchemas;
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(schemas, "3.0.4")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("different types", diagnostic.GetMessage());
+            Assert.Contains("logical path '/components/schemas/Body/allOf/1/properties/code'", diagnostic.GetMessage());
+        }
+
+        [Fact]
+        public async Task APlainDeclarationAfterANarrowingDoesNotDependOnTheOrderOfTheParts()
+        {
+            // plain, enum, plain: the third part only restates the type that the second one narrowed.
+            const string Schemas = @"
+              'Base':{'type':'object','properties':{'code':{'type':'string'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'code':{'type':'string','enum':['alpha','bravo']}}},
+                {'type':'object','properties':{'code':{'type':'string'}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas, "3.0.3"));
+            await AssertNarrowedValues(execution, new[] { "alpha", "bravo" }, new[] { "charlie" });
+
+            // enum, plain, plain written the other way round.
+            const string Reversed = @"
+              'Base':{'type':'object','properties':{'code':{'type':'string','enum':['alpha','bravo']}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'code':{'type':'string'}}},
+                {'type':'object','properties':{'code':{'type':'string'}}}]}";
+            await AssertNarrowedValues(Generate(EchoDocument(Reversed, "3.0.3")), new[] { "alpha", "bravo" }, new[] { "charlie" });
+        }
+
+        [Fact]
+        public async Task APlainDeclarationBetweenTwoNarrowingsIsRestatingTheType()
+        {
+            const string Schemas = @"
+              'Base':{'type':'object','properties':{'code':{'type':'string'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'code':{'type':'string','enum':['alpha','bravo']}}},
+                {'type':'object','properties':{'code':{'type':'string'}}},
+                {'type':'object','properties':{'code':{'type':'string','enum':['alpha']}}}]}";
+
+            await AssertNarrowedValues(Generate(EchoDocument(Schemas, "3.0.3")), new[] { "alpha" }, new[] { "bravo" });
+        }
+
+        [Theory]
+        // A constraint other than AllowedValues keeps {string, maxLength} and {string} different types, in both orders.
+        [InlineData("{'type':'string','maxLength':5}", "{'type':'string'}")]
+        [InlineData("{'type':'string'}", "{'type':'string','maxLength':5}")]
+        public void APlainDeclarationWithAnotherConstraintIsStillADifferentType(string baseCode, string partCode)
+        {
+            string schemas =
+                "'Base':{'type':'object','properties':{'code':" + baseCode + "}}," +
+                "'Body':{'allOf':[{'$ref':'#/components/schemas/Base'}," + CodePart(partCode) + "]}";
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(schemas, "3.0.3")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("different types", diagnostic.GetMessage());
+        }
+
+        [Fact]
+        public void ANarrowedPlainDeclarationThatAlsoHasAnotherConstraintIsStillADifferentTypeFromAPlainOne()
+        {
+            // {string, maxLength} narrowed by an enum carries AllowedValues and maxLength; a plain string is not the same type.
+            const string Schemas = @"
+              'Base':{'type':'object','properties':{'code':{'type':'string','maxLength':5}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'code':{'type':'string','enum':['alpha']}}},
+                {'type':'object','properties':{'code':{'type':'string'}}}]}";
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(Schemas, "3.0.3")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("different types", diagnostic.GetMessage());
+            Assert.Contains("allOf/2/properties/code", diagnostic.GetMessage());
+        }
+
+        [Theory]
+        [InlineData("'Base':{'type':'object','properties':{'code':{'type':'string'}}}")]
+        [InlineData("'Base':{'type':'object','properties':{'code':{'$ref':'#/components/schemas/ProblemCode'}}}")]
+        public void NarrowingsThatLeaveNoValueInCommonReportOacg101WithoutTheValues(string baseSchema)
+        {
+            string schemas =
+                "'Body':{'allOf':[{'$ref':'#/components/schemas/Base'}," +
+                CodePart("{'type':'string','enum':['STORAGE_UNAVAILABLE']}") + "," +
+                CodePart("{'type':'string','enum':['NOT_FOUND']}") + "]}," + baseSchema + "," +
+                "'ProblemCode':{'type':'string','enum':['STORAGE_UNAVAILABLE','NOT_FOUND','BAD_REQUEST']}";
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(schemas, "3.0.4")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("no value in common", diagnostic.GetMessage());
+            Assert.Contains("logical path '/components/schemas/Body/allOf/2/properties/code'", diagnostic.GetMessage());
+            Assert.DoesNotContain("STORAGE_UNAVAILABLE", diagnostic.GetMessage());
+            Assert.DoesNotContain("NOT_FOUND", diagnostic.GetMessage());
+        }
+
+        [Theory]
+        // A plain string with a constraint next to a named enum: only enum values move.
+        [InlineData("{'$ref':'#/components/schemas/ProblemCode'}", "{'type':'string','maxLength':20}")]
+        // A plain integer is an int; a value outside the int range does not fit it.
+        [InlineData("{'type':'integer'}", "{'type':'integer','enum':[1,3000000000]}")]
+        // The format of a plain string is part of its type.
+        [InlineData("{'type':'string','format':'date'}", "{'type':'string','enum':['2020-01-01']}")]
+        public void ANarrowingThatTheKeptTypeCannotTakeReportsOacg101(string baseCode, string partCode)
+        {
+            const string Problem = "'ProblemCode':{'type':'string','enum':['STORAGE_UNAVAILABLE','NOT_FOUND']}";
+            string schemas =
+                "'Base':{'type':'object','properties':{'code':" + baseCode + "}}," +
+                "'Body':{'allOf':[{'$ref':'#/components/schemas/Base'}," + CodePart(partCode) + "]}," + Problem;
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(schemas, "3.0.3")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("different types", diagnostic.GetMessage());
+        }
+
+        [Fact]
+        public async Task AnInt64IntegerAcceptsAnEnumBeyondTheIntRange()
+        {
+            const string Schemas = @"
+              'Base':{'type':'object','properties':{'n':{'type':'integer','format':'int64'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'n':{'type':'integer','enum':[1,3000000000]}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas, "3.0.3"));
+
+            Exchange ok = await Echo(execution, J("{'n':3000000000}"), J("{'n':1}"));
+            AssertJsonEqual(J("{'n':3000000000}"), ok.RequestJson);
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Echo(execution, J("{'n':2}"), J("{'n':1}")));
+        }
+
+        [Fact]
+        public async Task ANamedIntegerEnumCanBeNarrowedToAnInlineIntegerEnum()
+        {
+            const string Schemas = @"
+              'Level':{'type':'integer','enum':[1,2,3]},
+              'Base':{'type':'object','properties':{'level':{'$ref':'#/components/schemas/Level'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'level':{'type':'integer','enum':[2,3]}}},
+                {'type':'object','properties':{'level':{'type':'integer','enum':[3]}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas, "3.0.3"));
+            Assembly assembly = Load(execution);
+
+            Assert.Equal(
+                assembly.GetType(Ns + "Level", true),
+                Nullable.GetUnderlyingType(assembly.GetType(Ns + "Body", true)!.GetProperty("Level")!.PropertyType)!);
+            Exchange ok = await Echo(execution, J("{'level':3}"), J("{'level':3}"));
+            AssertJsonEqual(J("{'level':3}"), ok.RequestJson);
+            foreach (string rejected in new[] { "1", "2" })
+            {
+                ArgumentException request = await Assert.ThrowsAnyAsync<ArgumentException>(
+                    () => Echo(execution, J("{'level':" + rejected + "}"), J("{'level':3}")));
+                Assert.Contains("$.level", request.Message);
+                Exception response = await MatrixMode.ThrowsSerializationAsync(
+                    () => Echo(execution, J("{'level':3}"), J("{'level':" + rejected + "}")));
+                Assert.Contains("$.level", response.Message);
+            }
+        }
+
+        [Fact]
+        public void TwoNamedEnumsWithTheSameValuesKeepTheFirstOne()
+        {
+            const string Schemas = @"
+              'First':{'type':'string','enum':['a1','b1']},
+              'Second':{'type':'string','enum':['b1','a1']},
+              'Base':{'type':'object','properties':{'code':{'$ref':'#/components/schemas/First'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'code':{'$ref':'#/components/schemas/Second'}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas, "3.0.3"));
+            Assembly assembly = Load(execution);
+
+            Assert.Equal(
+                assembly.GetType(Ns + "First", true),
+                Nullable.GetUnderlyingType(assembly.GetType(Ns + "Body", true)!.GetProperty("Code")!.PropertyType)!);
+            Assert.DoesNotContain("Must be one of", execution.GeneratedSource);
+        }
+
+        [Fact]
+        public void NotNextToARefIsIgnoredWithOacg108InOpenApi30()
+        {
+            const string Schemas = @"
+              'Body':{'type':'object','additionalProperties':false,
+                'properties':{'item':{'$ref':'#/components/schemas/Item','not':{'type':'string'}}}},
+              'Item':{'type':'object','additionalProperties':false,'properties':{'n':{'type':'integer'}}}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.3"));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Contains("/properties/item/not'", warning.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
+        }
+
+        [Fact]
+        public void ARecursiveReferenceThatCannotBeResolvedYetIsNotNarrowed()
+        {
+            // The property of the base refers back to the schema that is being parsed.
+            const string Schemas = @"
+              'Base':{'type':'object','properties':{'next':{'$ref':'#/components/schemas/Body'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                {'type':'object','properties':{'next':{'type':'string','enum':['alpha']}}}]}";
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(Schemas, "3.0.3")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("different types", diagnostic.GetMessage());
+        }
+
+        [Fact]
+        public void ADiscriminatorMappingValueOutsideTheNarrowedValuesReportsOacg101()
+        {
+            const string Schemas = @"
+              'Animal':{'type':'object','required':['kind'],'properties':{'kind':{'type':'string'}},
+                'discriminator':{'propertyName':'kind','mapping':{'cat':'#/components/schemas/Cat'}}},
+              'Cat':{'allOf':[{'$ref':'#/components/schemas/Animal'},
+                {'type':'object','properties':{'kind':{'type':'string','enum':['feline']}}}]},
+              'Body':{'$ref':'#/components/schemas/Animal'}";
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(Schemas, "3.0.3")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("discriminator", diagnostic.GetMessage());
+            Assert.Contains("logical path '/components/schemas/Cat/allOf/1/properties/kind'", diagnostic.GetMessage());
+            Assert.DoesNotContain("feline", diagnostic.GetMessage());
+        }
+
+        [Fact]
+        public void ADiscriminatorMappingValueInsideTheNarrowedValuesIsAccepted()
+        {
+            const string Schemas = @"
+              'Animal':{'type':'object','required':['kind'],'properties':{'kind':{'type':'string'}},
+                'discriminator':{'propertyName':'kind','mapping':{'cat':'#/components/schemas/Cat'}}},
+              'Cat':{'allOf':[{'$ref':'#/components/schemas/Animal'},
+                {'type':'object','properties':{'kind':{'type':'string','enum':['cat','lion']}}}]},
+              'Body':{'$ref':'#/components/schemas/Animal'}";
+
+            Generate(EchoDocument(Schemas, "3.0.3"));
+        }
+
+        [Fact]
+        public async Task AnOpenApi30DocumentWithRefSiblingsNarrowedEnumsAndNullMembersGeneratesAndRoundTrips()
+        {
+            // The three shapes of rebeat-jp/api-docs GameAPI.openapi.yaml in one document: a $ref next to a
+            // type (base), the base property narrowed by an allOf part, and "X or null" written with
+            // anyOf and { nullable: true, enum: [null] }.
+            const string Schemas = @"
+              'ProblemCode':{'type':'string','enum':['STORAGE_UNAVAILABLE','NOT_FOUND']},
+              'Limit':{'type':'object','additionalProperties':false,'properties':{'n':{'type':'integer'}}},
+              'ProblemDetails':{'type':'object','required':['code'],
+                'properties':{'code':{'$ref':'#/components/schemas/ProblemCode','type':'string'}}},
+              'Body':{'allOf':[{'$ref':'#/components/schemas/ProblemDetails'},
+                {'type':'object','properties':{
+                  'code':{'type':'string','enum':['STORAGE_UNAVAILABLE']},
+                  'limit':{'anyOf':[{'$ref':'#/components/schemas/Limit'},
+                                    {'type':'object','nullable':true,'enum':[null]}]}}}]}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.4"));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Contains("/components/schemas/ProblemDetails/properties/code/type'", warning.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = Load(execution);
+            Type body = assembly.GetType(Ns + "Body", true)!;
+            Assert.Equal(assembly.GetType(Ns + "ProblemCode", true), body.GetProperty("Code")!.PropertyType);
+            Assert.Equal(assembly.GetType(Ns + "Limit", true), body.GetProperty("Limit")!.PropertyType);
+
+            Exchange nullLimit = await Echo(
+                execution,
+                J("{'code':'STORAGE_UNAVAILABLE','limit':null}"),
+                J("{'code':'STORAGE_UNAVAILABLE','limit':null}"));
+            Assert.Null(ReadPath(nullLimit.Result!, "Limit"));
+            AssertJsonEqual(J("{'code':'STORAGE_UNAVAILABLE','limit':null}"), nullLimit.RequestJson);
+
+            Exchange withLimit = await Echo(
+                execution,
+                J("{'code':'STORAGE_UNAVAILABLE','limit':{'n':1}}"),
+                J("{'code':'STORAGE_UNAVAILABLE','limit':{'n':2}}"));
+            Assert.Equal(2, ReadPath(withLimit.Result!, "Limit", "N"));
+
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Echo(
+                execution, J("{'code':'NOT_FOUND'}"), J("{'code':'STORAGE_UNAVAILABLE'}")));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(
+                execution, J("{'code':'STORAGE_UNAVAILABLE'}"), J("{'code':'NOT_FOUND'}")));
+        }
+
+        // ---- OpenAPI 3.0 "X or null": { nullable: true, enum: [null] } ------------------------------
+
+        private const string LimitSchema =
+            "'Limit':{'type':'object','additionalProperties':false,'properties':{'n':{'type':'integer'}}}";
+
+        [Theory]
+        [InlineData("anyOf", "{'type':'object','nullable':true,'enum':[null]}")]
+        [InlineData("oneOf", "{'type':'object','nullable':true,'enum':[null]}")]
+        [InlineData("anyOf", "{'nullable':true,'enum':[null]}")]
+        [InlineData("anyOf", "{'description':'No limit','type':'object','nullable':true,'enum':[null],'x-note':1}")]
+        public async Task ANullableNullEnumMemberMakesTheOtherMemberNullableInOpenApi30(string keyword, string nullPart)
+        {
+            string schemas =
+                "'Body':{'type':'object','additionalProperties':false,'properties':{'limit':{'" + keyword +
+                "':[{'$ref':'#/components/schemas/Limit'}," + nullPart + "]}}}," + LimitSchema;
+            Phase4GeneratorExecution execution = Generate(EchoDocument(schemas, "3.0.4"));
+            Assembly assembly = Load(execution);
+
+            Assert.Equal(
+                assembly.GetType(Ns + "Limit", true),
+                assembly.GetType(Ns + "Body", true)!.GetProperty("Limit")!.PropertyType);
+            Assert.DoesNotContain(assembly.GetTypes(), type => type.Name.StartsWith("BodyLimit", StringComparison.Ordinal));
+
+            Exchange nullExchange = await Echo(execution, J("{'limit':null}"), J("{'limit':null}"));
+            Assert.Null(ReadPath(nullExchange.Result!, "Limit"));
+            AssertJsonEqual(J("{'limit':null}"), nullExchange.RequestJson);
+
+            Exchange valueExchange = await Echo(execution, J("{'limit':{'n':3}}"), J("{'limit':{'n':4}}"));
+            Assert.Equal(4, ReadPath(valueExchange.Result!, "Limit", "N"));
+            AssertJsonEqual(J("{'limit':{'n':3}}"), valueExchange.RequestJson);
+        }
+
+        [Fact]
+        public async Task ANullableNullEnumMemberNextToTwoSchemasMakesTheUnionNullableInOpenApi30()
+        {
+            string schemas =
+                "'Body':{'type':'object','additionalProperties':false,'properties':{'pet':{'anyOf':[" +
+                "{'$ref':'#/components/schemas/Cat'},{'$ref':'#/components/schemas/Dog'}," +
+                "{'type':'object','nullable':true,'enum':[null]}]}}}," + CatDogUndeclared;
+            Phase4GeneratorExecution execution = Generate(EchoDocument(schemas, "3.0.3"));
+
+            Exchange nullExchange = await Echo(execution, J("{'pet':null}"), J("{'pet':null}"));
+            Assert.Null(ReadPath(nullExchange.Result!, "Pet"));
+            AssertJsonEqual(J("{'pet':null}"), nullExchange.RequestJson);
+
+            Exchange cat = await Echo(execution, J("{'pet':{'meow':true}}"), J("{'pet':{'meow':false}}"));
+            Assert.True(TryGet(ReadPath(cat.Result!, "Pet")!, "TryGetCat", out _));
+        }
+
+        [Fact]
+        public async Task ANullableNullEnumMemberCanBeAddedToADiscriminatedUnionInOpenApi30()
+        {
+            string schemas =
+                "'Pet':{'oneOf':[{'$ref':'#/components/schemas/Cat'},{'$ref':'#/components/schemas/Dog'}," +
+                "{'type':'object','nullable':true,'enum':[null]}]," +
+                "'discriminator':{'propertyName':'petType','mapping':{" +
+                "'cat':'#/components/schemas/Cat','dog':'#/components/schemas/Dog'}}}," +
+                "'Body':{'$ref':'#/components/schemas/Pet'}," + CatDogUndeclared;
+            Phase4GeneratorExecution execution = Generate(EchoDocument(schemas, "3.0.3"));
+
+            Exchange cat = await Echo(execution, J("{'petType':'cat','meow':true}"), J("{'petType':'cat','meow':false}"));
+            AssertJsonEqual(J("{'petType':'cat','meow':true}"), cat.RequestJson);
+            Assert.True(TryGet(cat.Result!, "TryGetCat", out _));
+            Assert.False(TryGet(cat.Result!, "TryGetDog", out _));
+        }
+
+        [Fact]
+        public void ANullOnlyEnumIsStillRejectedInOpenApi31()
+        {
+            string schemas =
+                "'Body':{'type':'object','properties':{'limit':{'anyOf':[{'$ref':'#/components/schemas/Limit'}," +
+                "{'type':'object','enum':[null]}]}}}," + LimitSchema;
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(schemas, "3.1.0")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("only null", diagnostic.GetMessage());
+        }
+
+        [Theory]
+        [InlineData("{'type':'object','nullable':true,'enum':[null],'properties':{'a':{'type':'string'}}}")]
+        [InlineData("{'type':'object','nullable':true,'enum':[null,'x']}")]
+        [InlineData("{'type':'object','enum':[null]}")]
+        public void OtherShapesOfANullOnlyEnumAreStillRejectedInOpenApi30(string nullPart)
+        {
+            string schemas =
+                "'Body':{'type':'object','properties':{'limit':{'anyOf':[{'$ref':'#/components/schemas/Limit'}," +
+                nullPart + "]}}}," + LimitSchema;
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(schemas, "3.0.3")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+        }
+
+        [Fact]
+        public async Task RefSiblingsAreIgnoredWithOacg108InOpenApi30AndNullableIsKept()
+        {
+            const string Schemas = @"
+              'Body':{'type':'object','additionalProperties':false,
+                'properties':{'code':{'$ref':'#/components/schemas/Code','type':'string','nullable':true}}},
+              'Code':{'type':'string','enum':['a','b']}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.4"));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
+            Assert.Contains("logical path '/components/schemas/Body/properties/code/type'", warning.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = Load(execution);
+            Assert.Equal(
+                assembly.GetType(Ns + "Code", true),
+                Nullable.GetUnderlyingType(assembly.GetType(Ns + "Body", true)!.GetProperty("Code")!.PropertyType) ??
+                assembly.GetType(Ns + "Body", true)!.GetProperty("Code")!.PropertyType);
+
+            Exchange exchange = await Echo(execution, J("{'code':null}"), J("{'code':null}"));
+            Assert.Null(ReadPath(exchange.Result!, "Code"));
+            AssertJsonEqual(J("{'code':null}"), exchange.RequestJson);
+        }
+
+        [Fact]
+        public void AnAllOfPartWithARefAndATypeIsIgnoredWithOacg108InOpenApi30()
+        {
+            const string Schemas = @"
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base','type':'string'},
+                               {'type':'object','properties':{'extra':{'type':'integer'}}}]},
+              'Base':{'type':'object','properties':{'name':{'type':'string'}}}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.3"));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Contains("logical path '/components/schemas/Body/allOf/0/type'", warning.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
+            Type body = Load(execution).GetType(Ns + "Body", true)!;
+            Assert.NotNull(body.GetProperty("Name"));
+            Assert.NotNull(body.GetProperty("Extra"));
+        }
+
+        [Fact]
+        public void ASingleElementAllOfWithARefAndATypeIsAReferenceInOpenApi30()
+        {
+            const string Schemas = @"
+              'Body':{'type':'object','additionalProperties':false,
+                'properties':{'pet':{'allOf':[{'$ref':'#/components/schemas/Item','type':'string'}]}}},
+              'Item':{'type':'object','additionalProperties':false,'properties':{'n':{'type':'integer'}}}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.3"));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Contains("logical path '/components/schemas/Body/properties/pet/allOf/0/type'", warning.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
+            Assembly assembly = Load(execution);
+            Assert.Equal(
+                assembly.GetType(Ns + "Item", true),
+                assembly.GetType(Ns + "Body", true)!.GetProperty("Pet")!.PropertyType);
+        }
+
+        [Fact]
+        public void ConstAndUnknownKeywordsNextToARefAreIgnoredWithOacg108InOpenApi30()
+        {
+            const string Schemas = @"
+              'Body':{'type':'object','additionalProperties':false,
+                'properties':{'item':{'$ref':'#/components/schemas/Item','const':'x','somethingNew':true,'maxLength':1,'x-note':1}}},
+              'Item':{'type':'object','additionalProperties':false,'properties':{'n':{'type':'integer'}}}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.3"));
+
+            Assert.Equal(
+                new[] { "OACG108", "OACG108", "OACG108" },
+                execution.RunResult.Diagnostics.Select(static item => item.Id).ToArray());
+            string messages = string.Join("\n", execution.RunResult.Diagnostics.Select(static item => item.GetMessage()));
+            Assert.Contains("/properties/item/const'", messages);
+            Assert.Contains("/properties/item/somethingNew'", messages);
+            Assert.Contains("/properties/item/maxLength'", messages);
+            Assert.DoesNotContain("x-note", messages);
+            Assert.Empty(execution.CompilationErrors);
+            Assert.DoesNotContain("__OacgConstraint_", execution.GeneratedSource);
+        }
+
+        [Fact]
+        public void AnUnknownKeywordNextToARefStillFailsInOpenApi31()
+        {
+            const string Schemas = @"
+              'Body':{'type':'object','properties':{'item':{'$ref':'#/components/schemas/Item','somethingNew':true}}},
+              'Item':{'type':'object','properties':{'n':{'type':'integer'}}}";
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
+                EchoDocument(Schemas, "3.1.0")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("/properties/item/somethingNew'", diagnostic.GetMessage());
+        }
+
         [Fact]
         public void AllOfPartsWithDifferentPropertyTypesReportOacg101AtTheSecondDeclaration()
         {

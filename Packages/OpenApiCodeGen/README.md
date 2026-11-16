@@ -20,8 +20,8 @@ For the Source Generator provider, add both packages to the Unity project's
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.1",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.1"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.2",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.2"
   }
 }
 ```
@@ -32,7 +32,7 @@ not install Newtonsoft.Json: install the libraries of the selected HTTP / JSON
 combination yourself (by default `com.unity.nuget.newtonsoft-json` `3.2.2`;
 `UnityWebRequest` and `System.Text.Json` are the alternatives).
 
-These examples use the `0.6.0-preview.1` release tag. This is a prerelease; the
+These examples use the `0.6.0-preview.2` release tag. This is a prerelease; the
 latest stable version is `0.5.1`, which does not include the HTTP / JSON library
 selection. To try an unreleased commit, replace it
 with the same reviewed commit SHA in both Git URLs. See the
@@ -91,6 +91,24 @@ applies the package transition, including targets that are not active. Updating
 the add-on temporarily removes it from the active target during the transition.
 Code that still references generated types can therefore fail to compile after
 switching providers.
+
+`PlayerSettings` scripting defines are stored per build target, and a Build Profile that
+overrides Player Settings keeps its own copy, so the synchronized define alone is missing in
+other build targets, Build Profiles, machines and CI. **Generate** therefore also adds a
+`versionDefines` entry to the output asmdef, which defines
+`OPENAPI_CODEGEN_SOURCE_GENERATOR` whichever build target or Build Profile is active:
+
+```json
+"versionDefines": [
+  { "name": "jp.rhycol.openapicodegen.source-generator", "expression": "0.0.0", "define": "OPENAPI_CODEGEN_SOURCE_GENERATOR" }
+]
+```
+
+An existing entry with the same `name` and `define` is left as it is. If the asmdef cannot
+be parsed, Generate fails without changing it and shows the entry to add by hand. The
+definition file still keeps `#if OPENAPI_CODEGEN_SOURCE_GENERATOR`, so it is compiled after you
+switch the provider to Docker as well; delete the `<ApiName>.OpenApiDefinition.cs` file to turn it
+off. See the [Source Generator README](../OpenApiCodeGen.SourceGenerator/README.md) for details.
 
 ## License
 

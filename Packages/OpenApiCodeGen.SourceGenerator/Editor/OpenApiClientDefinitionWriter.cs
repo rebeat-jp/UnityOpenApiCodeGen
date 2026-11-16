@@ -25,6 +25,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         private readonly string projectRoot;
         private readonly IAtomicFileWriter fileWriter;
         private readonly Action<string> importAsset;
+        private readonly TargetAssemblyVersionDefineWriter versionDefineWriter;
 
         internal OpenApiClientDefinitionWriter(
             string projectRoot,
@@ -39,6 +40,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
             this.projectRoot = Path.GetFullPath(projectRoot);
             this.fileWriter = fileWriter ?? throw new ArgumentNullException(nameof(fileWriter));
             this.importAsset = importAsset ?? throw new ArgumentNullException(nameof(importAsset));
+            versionDefineWriter = new TargetAssemblyVersionDefineWriter(this.fileWriter);
         }
 
         internal static OpenApiClientDefinitionWriter CreateForCurrentProject()
@@ -87,7 +89,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
         {
             string outputFolder = ResolveOutputFolder(outputFolderPath);
             AsmdefInfo targetAssembly = ResolveTargetAssembly(outputFolder);
-            return new OutputTargetAssembly(targetAssembly.Name, targetAssembly.NoEngineReferences);
+            return new OutputTargetAssembly(
+                targetAssembly.Name,
+                targetAssembly.NoEngineReferences,
+                targetAssembly.AsmdefPath);
+        }
+
+        /// <summary>
+        /// Adds the versionDefines entry for OPENAPI_CODEGEN_SOURCE_GENERATOR to the asmdef that contains
+        /// the definition, and imports the asmdef when it changed. Returns true when the asmdef was written.
+        /// </summary>
+        internal bool EnsureTargetVersionDefine(string outputFolderPath)
+        {
+            string outputFolder = ResolveOutputFolder(outputFolderPath);
+            AsmdefInfo targetAssembly = ResolveTargetAssembly(outputFolder);
+            if (!versionDefineWriter.EnsureVersionDefine(targetAssembly.AsmdefPath))
+            {
+                return false;
+            }
+
+            importAsset(ToAssetPath(targetAssembly.AsmdefPath));
+            return true;
         }
 
         internal OpenApiClientDefinitionPlan Prepare(
@@ -852,7 +874,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 name,
                 referencesRuntime,
                 Path.GetDirectoryName(Path.GetFullPath(asmdefPath)),
-                document.noEngineReferences);
+                document.noEngineReferences,
+                Path.GetFullPath(asmdefPath));
         }
 
         [Serializable]
@@ -1473,15 +1496,19 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 string name,
                 bool referencesSourceGeneratorRuntime,
                 string directoryPath,
-                bool noEngineReferences)
+                bool noEngineReferences,
+                string asmdefPath)
             {
                 Name = name;
                 ReferencesSourceGeneratorRuntime = referencesSourceGeneratorRuntime;
                 DirectoryPath = directoryPath;
                 NoEngineReferences = noEngineReferences;
+                AsmdefPath = asmdefPath;
             }
 
             internal bool NoEngineReferences { get; }
+
+            internal string AsmdefPath { get; }
 
             internal string Name { get; }
 
@@ -1586,11 +1613,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
     /// <summary>The assembly that will contain a definition generated for an output folder.</summary>
     internal sealed class OutputTargetAssembly
     {
-        internal OutputTargetAssembly(string name, bool noEngineReferences)
+        internal OutputTargetAssembly(string name, bool noEngineReferences, string asmdefPath)
         {
             Name = name;
             NoEngineReferences = noEngineReferences;
+            AsmdefPath = asmdefPath;
         }
+
+        /// <summary>The absolute path of the asmdef file that declares the assembly.</summary>
+        internal string AsmdefPath { get; }
 
         internal string Name { get; }
 

@@ -615,6 +615,32 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
+        private static void __P__Allowed(global::System.Text.Json.JsonElement token, string path, string contract, bool integer, string[] values)
+        {
+            string text;
+            if (integer && token.ValueKind == global::System.Text.Json.JsonValueKind.Number && token.TryGetInt64(out long number))
+            {
+                text = number.ToString(global::System.Globalization.CultureInfo.InvariantCulture);
+            }
+            else if (integer && token.ValueKind == global::System.Text.Json.JsonValueKind.Number && token.GetRawText().IndexOfAny(new[] { '.', 'e', 'E' }) < 0)
+            {
+                // An integer beyond Int64 is no declared value.
+                text = token.GetRawText();
+            }
+            else if (!integer && token.ValueKind == global::System.Text.Json.JsonValueKind.String)
+            {
+                text = token.GetString() ?? """";
+            }
+            else
+            {
+                return;
+            }
+            if (global::System.Array.IndexOf(values, text) < 0)
+            {
+                __P__Fail(contract, path, ""enum"", ""the value is not one of the allowed values"");
+            }
+        }
+
         private static bool __P__NameMatches(global::System.Text.RegularExpressions.Regex regex, string name, string contract, string path, string pattern)
         {
             try

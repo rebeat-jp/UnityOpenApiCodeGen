@@ -203,14 +203,25 @@ class UnityDriver {
     this.timeoutMs = timeoutMs;
   }
 
-  // Runs one Unity batch launch. Returns { exitCode, timedOut }.
+  // Runs one Unity batch launch. Returns { exitCode, timedOut, attempts }.
+  // The Linux Editor occasionally aborts on an internal Mono assertion (corefx ToFileDescriptor while it serves its
+  // IPC pipe) a few seconds into a launch that succeeds when repeated. A launch that ends by a signal (no exit code,
+  // no timeout) is therefore repeated once; the first log is kept next to the second as <name>.attempt1.log.
   async run(logFile, extraArguments) {
-    fs.rmSync(logFile, { force: true });
     fs.mkdirSync(path.dirname(logFile), { recursive: true });
-    return runProcess(
-      this.executable,
-      ['-batchmode', '-nographics', '-projectPath', this.projectPath, ...extraArguments, '-logFile', logFile],
-      { timeoutMs: this.timeoutMs });
+    const firstAttemptLog = logFile.replace(/\.log$/, '') + '.attempt1.log';
+    fs.rmSync(firstAttemptLog, { force: true });
+    for (let attempt = 1; ; attempt++) {
+      fs.rmSync(logFile, { force: true });
+      const result = await runProcess(
+        this.executable,
+        ['-batchmode', '-nographics', '-projectPath', this.projectPath, ...extraArguments, '-logFile', logFile],
+        { timeoutMs: this.timeoutMs });
+      const crashed = result.exitCode === null && !result.timedOut && !result.error;
+      if (!crashed || attempt === 2) return { ...result, attempts: attempt };
+      if (fs.existsSync(logFile)) fs.renameSync(logFile, firstAttemptLog);
+      console.log(`[player-gate] the Unity Editor ended by a signal; repeating once (${path.basename(logFile)})`);
+    }
   }
 }
 
@@ -297,6 +308,29 @@ function findBrowser() {
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   ].filter(Boolean);
   return candidates.find(candidate => fs.existsSync(candidate)) || null;
+}
+
+function findXvfbRun() {
+  return [process.env.PV_XVFB_RUN, '/usr/bin/xvfb-run', '/usr/local/bin/xvfb-run']
+    .filter(Boolean)
+    .find(candidate => fs.existsSync(candidate)) || null;
+}
+
+// Unity 6000.3.2f1 Linux IL2CPP Players run with -nographics crash shortly after start (SIGSEGV in UnityPlayer.so:
+// strcasecmp on a null string from the player loop), before the probe can report; the same build runs normally with
+// -batchmode on a virtual display, and Mono Players are unaffected. Linux Players therefore run under xvfb-run
+// without -nographics. Other platforms keep -nographics.
+function standaloneLaunch(executable, playerArguments) {
+  if (process.platform !== 'linux') {
+    return { command: executable, args: ['-batchmode', '-nographics', ...playerArguments], launcher: 'direct' };
+  }
+  const xvfbRun = findXvfbRun();
+  if (!xvfbRun) return null;
+  return {
+    command: xvfbRun,
+    args: ['-a', '-s', '-screen 0 1280x720x24', executable, '-batchmode', ...playerArguments],
+    launcher: 'xvfb-run',
+  };
 }
 
 function extractDiagnostics(buildLog) {
@@ -389,6 +423,7 @@ async function runCell(options, cell, context) {
   result.build = {
     status: build.exitCode === 0 && !build.timedOut ? 'succeeded' : (build.timedOut ? 'timed-out' : 'failed'),
     exitCode: build.exitCode,
+    attempts: build.attempts,
     seconds: buildSeconds,
     diagnostics: extractDiagnostics(buildText),
     errors: extractLogExcerpt(buildLog, [/error CS\d{4}/, /error:/i, /Build completed with a result of 'Failed'/, /Exception/], 25),
@@ -479,21 +514,28 @@ async function runStandalone(cell, context, result, buildDirectory, cellDirector
     result.run = { status: 'not-run', reason: `the player executable is missing: ${executable}` };
     return ['fail', result.run.reason];
   }
-  const server = await startServer();
   const reportPath = path.join(cellDirectory, 'player-report.json');
   const playerLog = path.join(cellDirectory, 'player.log');
+  const server = await startServer();
+  const launch = standaloneLaunch(
+    executable, ['-logFile', playerLog, '-pvServer', server.origin, '-pvReport', reportPath]);
+  if (!launch) {
+    await server.close();
+    result.run = { status: 'not-run', reason: 'Linux Players run under xvfb-run; install xvfb or set PV_XVFB_RUN' };
+    return ['fail', result.run.reason];
+  }
   const startedAt = Date.now();
   const run = await runProcess(
-    executable,
-    ['-batchmode', '-nographics', '-logFile', playerLog, '-pvServer', server.origin, '-pvReport', reportPath],
-    { timeoutMs: context.runTimeoutMs, env: sanitizedEnvironment() });
+    launch.command, launch.args, { timeoutMs: context.runTimeoutMs, env: sanitizedEnvironment() });
   const seconds = Math.round((Date.now() - startedAt) / 1000);
   await server.close();
   let report = null;
   if (fs.existsSync(reportPath)) {
     try { report = JSON.parse(fs.readFileSync(reportPath, 'utf8')); } catch (error) { /* reported below */ }
   }
-  result.run = { status: run.timedOut ? 'timed-out' : 'finished', exitCode: run.exitCode, seconds, report };
+  result.run = {
+    status: run.timedOut ? 'timed-out' : 'finished', launcher: launch.launcher, exitCode: run.exitCode, seconds, report,
+  };
   result.server = summarizeServer(server.state);
   const problems = evaluate(cell, result, result.server, report);
   if (run.timedOut) problems.unshift('the Player timed out');

@@ -468,6 +468,210 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(((SpecNumberNode)Property(value, "b").Value).Value, Is.EqualTo("2"));
         }
 
+        [Test]
+        public void ParseReadsAMultiLineSingleQuotedDescription()
+        {
+            SpecObjectNode root = ParseObject(
+                "info:\n" +
+                "  title: Example\n" +
+                "  version: 1.0.0\n" +
+                "  description: 'first line\n" +
+                "    second line'\n");
+
+            SpecObjectNode info = (SpecObjectNode)Property(root, "info").Value;
+            Assert.That(StringValue(info, "description"), Is.EqualTo("first line second line"));
+            Assert.That(StringValue(info, "version"), Is.EqualTo("1.0.0"));
+        }
+
+        [Test]
+        public void ParseFoldsDoubleQuotedLinesLikeYamlExample75()
+        {
+            SpecObjectNode root = ParseObject(
+                "v: \"folded \n" +
+                "  to a space,\t\n" +
+                " \n" +
+                "  to a line feed, or \t\\\n" +
+                "  \\ \tnon-content\"\n");
+
+            Assert.That(
+                StringValue(root, "v"),
+                Is.EqualTo("folded to a space,\nto a line feed, or \t \tnon-content"));
+        }
+
+        [Test]
+        public void ParseFoldsSingleQuotedLinesLikeYamlExample79AsARootScalar()
+        {
+            SpecNode root = YamlParser.Parse("' 1st non-empty\n\n 2nd non-empty \n 3rd non-empty '\n", SourcePath);
+
+            Assert.That(((SpecStringNode)root).Value, Is.EqualTo(" 1st non-empty\n2nd non-empty 3rd non-empty "));
+        }
+
+        [TestCase("v: ' 1st non-empty\n\n  2nd non-empty \n  \t3rd non-empty '\n")]
+        [TestCase("v: ' 1st non-empty\r\n\r\n  2nd non-empty \r\n  \t3rd non-empty '\r\n")]
+        [TestCase("v: ' 1st non-empty\r\r  2nd non-empty \r  \t3rd non-empty '\r")]
+        public void ParseFoldsSingleQuotedLinesForEveryLineBreakStyle(string source)
+        {
+            Assert.That(
+                StringValue(ParseObject(source), "v"),
+                Is.EqualTo(" 1st non-empty\n2nd non-empty 3rd non-empty "));
+        }
+
+        [TestCase("v: 'it''s\n  ok'\n", "it's ok")]
+        [TestCase("v: 'a''\n  b'\n", "a' b")]
+        [TestCase("v: 'a\n\n\n  b'\n", "a\n\nb")]
+        [TestCase("v: 'a  \n   b'\n", "a b")]
+        [TestCase("v: 'a\n  '\n", "a ")]
+        [TestCase("v: \"a\\\n  b\"\n", "ab")]
+        [TestCase("v: \"a\\\\\n  b\"\n", "a\\ b")]
+        [TestCase("v: \"a\\t\n  b\"\n", "a\t b")]
+        [TestCase("v: \"a\\ \n  b\"\n", "a  b")]
+        [TestCase("v: \"a\\\n\n  b\"\n", "a\nb")]
+        public void ParseFoldsQuotedLineBreaks(string source, string expected)
+        {
+            Assert.That(StringValue(ParseObject(source), "v"), Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void ParseKeepsLinesOfNodesAfterAMultiLineScalar()
+        {
+            SpecObjectNode root = ParseObject("a: 'x\r\n  y'\r\nb: 1\r\nc: \"p\r\n  q\"\r\nd: 2\r\n");
+
+            Assert.That(StringValue(root, "a"), Is.EqualTo("x y"));
+            Assert.That(StringValue(root, "c"), Is.EqualTo("p q"));
+            Assert.That(Property(root, "a").Value.Column, Is.EqualTo(4));
+            Assert.That(Property(root, "b").Line, Is.EqualTo(3));
+            Assert.That(Property(root, "c").Line, Is.EqualTo(4));
+            Assert.That(Property(root, "d").Line, Is.EqualTo(6));
+        }
+
+        [Test]
+        public void ParseReadsMultiLineQuotedScalarsInFlowCollectionsAndSequences()
+        {
+            SpecObjectNode root = ParseObject(
+                "flow: [ 'a\nb', \"c\n  d\" ]\n" +
+                "seq:\n" +
+                "  - 'e\n    f'\n" +
+                "  - g\n" +
+                "map: { k: 'h\n  i' }\n" +
+                "same:\n  'j\n  k'\n");
+
+            SpecArrayNode flow = (SpecArrayNode)Property(root, "flow").Value;
+            Assert.That(((SpecStringNode)flow.Items[0]).Value, Is.EqualTo("a b"));
+            Assert.That(((SpecStringNode)flow.Items[1]).Value, Is.EqualTo("c d"));
+            SpecArrayNode seq = (SpecArrayNode)Property(root, "seq").Value;
+            Assert.That(((SpecStringNode)seq.Items[0]).Value, Is.EqualTo("e f"));
+            Assert.That(((SpecStringNode)seq.Items[1]).Value, Is.EqualTo("g"));
+            Assert.That(StringValue((SpecObjectNode)Property(root, "map").Value, "k"), Is.EqualTo("h i"));
+            Assert.That(StringValue(root, "same"), Is.EqualTo("j k"));
+        }
+
+        [Test]
+        public void ParseReportsAnUnterminatedQuoteAtItsStart()
+        {
+            YamlParseException exception = Assert.Throws<YamlParseException>(
+                () => YamlParser.Parse("v: 'a\n  b\n", SourcePath));
+
+            Assert.That(exception.DiagnosticId, Is.EqualTo("YAML006"));
+            Assert.That(exception.Line, Is.EqualTo(1));
+            Assert.That(exception.Column, Is.EqualTo(4));
+            Assert.That(exception.Offset, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void ParseReportsAMissingClosingQuoteBeforeTheNextKeyOnThatLine()
+        {
+            YamlParseException exception = Assert.Throws<YamlParseException>(
+                () => YamlParser.Parse("a:\n  size: \"5\n  next: 1\n", SourcePath));
+
+            Assert.That(exception.DiagnosticId, Is.EqualTo("YAML002"));
+            Assert.That(exception.Line, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void ParseStillReadsAPlainScalarWithAQuoteInTheMiddle()
+        {
+            SpecObjectNode root = ParseObject("size: 5\"\nnext: it's\n");
+
+            Assert.That(StringValue(root, "size"), Is.EqualTo("5\""));
+            Assert.That(StringValue(root, "next"), Is.EqualTo("it's"));
+        }
+
+        [TestCase("v: 'a\n---\n  b'\n")]
+        [TestCase("v: 'a\n...\n  b'\n")]
+        [TestCase("v: \"a\n--- \n  b\"\n")]
+        public void ParseRejectsADocumentMarkerInsideAQuotedScalar(string source)
+        {
+            YamlParseException exception = Assert.Throws<YamlParseException>(
+                () => YamlParser.Parse(source, SourcePath));
+
+            Assert.That(exception.DiagnosticId, Is.EqualTo("YAML006"));
+            Assert.That(exception.Line, Is.EqualTo(2));
+            Assert.That(exception.Column, Is.EqualTo(1));
+        }
+
+        [TestCase("v: 'a\nb'\n")]
+        [TestCase("m:\n  k: 'a\n  b'\n")]
+        [TestCase("- 'a\nb'\n")]
+        public void ParseRejectsAContinuationLineThatIsNotIndentedDeeper(string source)
+        {
+            AssertDiagnostic(source, "YAML002");
+        }
+
+        [Test]
+        public void ParseDoesNotCheckTheIndentOfBlankContinuationLines()
+        {
+            Assert.That(StringValue(ParseObject("v: 'a\n\n  b'\n"), "v"), Is.EqualTo("a\nb"));
+            Assert.That(StringValue(ParseObject("v: 'a\n \n  b'\n"), "v"), Is.EqualTo("a\nb"));
+        }
+
+        [TestCase("v: 'a\n  b' title: X\n")]
+        [TestCase("v: 'a\n  b' # comment\nw: 'c\n  d' x\n")]
+        [TestCase("v: \"a\n  b\" \"c\"\n")]
+        [TestCase("- 'a\n  b' title\n")]
+        public void ParseRejectsContentAfterTheClosingQuoteOfAMultiLineScalar(string source)
+        {
+            YamlParseException exception = Assert.Throws<YamlParseException>(
+                () => YamlParser.Parse(source, SourcePath));
+
+            Assert.That(exception.DiagnosticId, Is.EqualTo("YAML006"));
+            Assert.That(exception.Line, Is.GreaterThanOrEqualTo(2));
+        }
+
+        [Test]
+        public void ParseAllowsACommentAfterTheClosingQuoteOfAMultiLineScalar()
+        {
+            SpecObjectNode root = ParseObject("v: 'a\n  b' # comment\nw: 1\n");
+
+            Assert.That(StringValue(root, "v"), Is.EqualTo("a b"));
+            Assert.That(Property(root, "w").Line, Is.EqualTo(3));
+        }
+
+        [TestCase("'a\n  b': 1\n")]
+        [TestCase("\"a\n  b\": 1\n")]
+        [TestCase("- 'a\n  b': 1\n")]
+        [TestCase("v: {'a\n  b': 1}\n")]
+        public void ParseRejectsAKeyThatSpansLines(string source)
+        {
+            AssertDiagnostic(source, "YAML011");
+        }
+
+        [Test]
+        public void ParsePointsAtTheRightLineForAnErrorInsideAMultiLineToken()
+        {
+            YamlParseException exception = Assert.Throws<YamlParseException>(
+                () => YamlParser.Parse("v: \"a\n  \\xZZ\"\n", SourcePath));
+
+            Assert.That(exception.DiagnosticId, Is.EqualTo("YAML006"));
+            Assert.That(exception.Line, Is.EqualTo(2));
+            Assert.That(exception.Column, Is.EqualTo(3));
+            Assert.That(exception.Offset, Is.EqualTo(8));
+        }
+
+        private static string StringValue(SpecObjectNode node, string name)
+        {
+            return ((SpecStringNode)Property(node, name).Value).Value;
+        }
+
         private static SpecObjectNode ParseObject(string source)
         {
             return (SpecObjectNode)YamlParser.Parse(source, SourcePath);

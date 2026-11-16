@@ -28,12 +28,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         private static readonly string Spec =
             "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"D\",\"version\":\"1\"},\"servers\":[{\"url\":\"https://api.example.com\"}],\"paths\":{" +
             Operation("Dec", "Dec") + "," + Operation("DecStep", "DecStep") + "," + Operation("DecList", "DecList") + "," +
-            Operation("AnyList", "AnyList") + "," + Operation("DoubleList", "DoubleList") +
+            Operation("AnyList", "AnyList") + "," + Operation("DoubleList", "DoubleList") + "," + Operation("FloatList", "FloatList") +
             "},\"components\":{\"schemas\":{" +
             "\"Dec\":{\"type\":\"number\",\"format\":\"decimal\",\"maximum\":0.1234567890123454,\"minimum\":-0.1234567890123454}," +
             "\"DecStep\":{\"type\":\"number\",\"format\":\"decimal\",\"multipleOf\":0.0000000000000001}," +
             "\"DecList\":{\"type\":\"array\",\"items\":{\"type\":\"number\",\"format\":\"decimal\"},\"uniqueItems\":true}," +
             "\"DoubleList\":{\"type\":\"array\",\"items\":{\"type\":\"number\"},\"uniqueItems\":true}," +
+            "\"FloatList\":{\"type\":\"array\",\"items\":{\"type\":\"number\",\"format\":\"float\"},\"uniqueItems\":true}," +
             "\"AnyList\":{\"type\":\"array\",\"items\":{},\"uniqueItems\":true}}}}";
 
         private static readonly Lazy<Assembly> Newtonsoft = new Lazy<Assembly>(
@@ -177,9 +178,136 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         public async Task UniqueItemsFindsTheSameHugeNumberWrittenAsAnIntegerAndAsAnExponent()
         {
             // 79000000000000000000000000000 fits a decimal and 7.9e28 (a double) does not; the hash of the numbers must not
-            // depend on that. Json.NET does not report this pair (its hash has the split), so only System.Text.Json is asserted.
-            Assert.Equal("violates:uniqueItems", await Decide(SystemTextJson.Value, "readAnyList", "[79000000000000000000000000000,7.9e28]"));
-            Assert.Equal("violates:uniqueItems", await Decide(SystemTextJson.Value, "readAnyList", "[7.9e28,79000000000000000000000000000]"));
+            // depend on that, in either order, for negatives, and inside arrays and objects.
+            var differences = new List<string>();
+            foreach (string body in new[]
+            {
+                "[79000000000000000000000000000,7.9e28]", "[7.9e28,79000000000000000000000000000]",
+                "[-79000000000000000000000000000,-7.9e28]", "[-7.9e28,-79000000000000000000000000000]",
+                "[[79000000000000000000000000000],[7.9e28]]", "[{\"a\":79000000000000000000000000000},{\"a\":7.9e28}]",
+                "[{\"a\":[7.9e28]},{\"a\":[79000000000000000000000000000]}]"
+            })
+            {
+                string left = await Decide(Newtonsoft.Value, "readAnyList", body);
+                string right = await Decide(SystemTextJson.Value, "readAnyList", body);
+                if (left != "violates:uniqueItems" || right != "violates:uniqueItems")
+                {
+                    differences.Add(body + ": Newtonsoft=" + left + " SystemTextJson=" + right);
+                }
+            }
+
+            Assert.True(differences.Count == 0, string.Join(Environment.NewLine, differences));
+        }
+
+        [Fact]
+        public async Task UniqueItemsTreatsDecimalsThatDifferOnlyInScaleAsDuplicates()
+        {
+            // The same value with a different number of trailing zeros must hash the same.
+            var differences = new List<string>();
+            foreach (decimal[] value in new[]
+            {
+                new[] { 2.868980833353654999m, 2.8689808333536549990000000000m },
+                new[] { 2.8689808333536549990000000000m, 2.868980833353654999m },
+                new[] { 1m, 1.000000000000000000000000000m }
+            })
+            {
+                string left = await Decide(Newtonsoft.Value, "sendDecList", null, new List<decimal>(value));
+                string right = await Decide(SystemTextJson.Value, "sendDecList", null, new List<decimal>(value));
+                if (left != "request-violates:uniqueItems" || right != "request-violates:uniqueItems")
+                {
+                    differences.Add("sendDecList " + string.Join(",", value) + ": Newtonsoft=" + left + " SystemTextJson=" + right);
+                }
+            }
+
+            Assert.True(differences.Count == 0, string.Join(Environment.NewLine, differences));
+        }
+
+        [Fact]
+        public async Task UniqueItemsFindsZeroAndNegativeZeroAndAnIntegerAndItsDecimalSpelling()
+        {
+            var differences = new List<string>();
+            foreach (string body in new[] { "[0,-0.0]", "[-0.0,0]", "[1,1.0]", "[1.0,1]", "[0.0,-0]" })
+            {
+                string left = await Decide(Newtonsoft.Value, "readAnyList", body);
+                string right = await Decide(SystemTextJson.Value, "readAnyList", body);
+                if (left != "violates:uniqueItems" || right != "violates:uniqueItems")
+                {
+                    differences.Add("readAnyList " + body + ": Newtonsoft=" + left + " SystemTextJson=" + right);
+                }
+
+                string[] elements = body.Trim('[', ']').Split(',');
+                string typedLeft = await Decide(
+                    Newtonsoft.Value, "sendAnyList", null, AnyList(Newtonsoft.Value, SerializerMatrixHarness.NewtonsoftJson, elements));
+                string typedRight = await Decide(
+                    SystemTextJson.Value, "sendAnyList", null, AnyList(SystemTextJson.Value, SerializerMatrixHarness.SystemTextJson, elements));
+                if (typedLeft != "request-violates:uniqueItems" || typedRight != "request-violates:uniqueItems")
+                {
+                    differences.Add("sendAnyList " + body + ": Newtonsoft=" + typedLeft + " SystemTextJson=" + typedRight);
+                }
+            }
+
+            Assert.True(differences.Count == 0, string.Join(Environment.NewLine, differences));
+        }
+
+        [Fact]
+        public async Task UniqueItemsFindsAFloatAndTheDoubleThatHasTheSameValue()
+        {
+            // A typed float is a float inside the Newtonsoft.Json token (JValue) and a plain number in
+            // System.Text.Json; both must agree with the double of the same text.
+            var differences = new List<string>();
+            foreach (float value in new[] { 0.1f, 0.5f, 1.1f, 3.25f })
+            {
+                string text = value.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+                var newtonsoftMixed = new List<Newtonsoft.Json.Linq.JToken>
+                {
+                    new Newtonsoft.Json.Linq.JValue(value),
+                    new Newtonsoft.Json.Linq.JValue(double.Parse(text, System.Globalization.CultureInfo.InvariantCulture))
+                };
+                string mixed = await Decide(Newtonsoft.Value, "sendAnyList", null, newtonsoftMixed);
+                string mixedReverse = await Decide(
+                    Newtonsoft.Value, "sendAnyList", null, Enumerable.Reverse(newtonsoftMixed).ToList());
+                string stj = await Decide(
+                    SystemTextJson.Value, "sendAnyList", null, AnyList(SystemTextJson.Value, SerializerMatrixHarness.SystemTextJson, text, text));
+                string response = await Decide(SystemTextJson.Value, "readAnyList", "[" + text + "," + text + "]");
+                foreach (string decision in new[] { mixed, mixedReverse, stj })
+                {
+                    if (decision != "request-violates:uniqueItems")
+                    {
+                        differences.Add("float " + text + ": " + mixed + " / " + mixedReverse + " / " + stj);
+                    }
+                }
+
+                if (response != "violates:uniqueItems")
+                {
+                    differences.Add("readAnyList " + text + ": " + response);
+                }
+
+                // The typed list of floats.
+                string typedLeft = await Decide(Newtonsoft.Value, "sendFloatList", null, new List<float> { value, value });
+                string typedRight = await Decide(SystemTextJson.Value, "sendFloatList", null, new List<float> { value, value });
+                string distinctLeft = await Decide(Newtonsoft.Value, "sendFloatList", null, new List<float> { value, value + 1f });
+                string distinctRight = await Decide(SystemTextJson.Value, "sendFloatList", null, new List<float> { value, value + 1f });
+                if (typedLeft != "request-violates:uniqueItems" || typedRight != "request-violates:uniqueItems" ||
+                    distinctLeft != "ok" || distinctRight != "ok")
+                {
+                    differences.Add("sendFloatList " + text + ": " + typedLeft + " / " + typedRight + " / " + distinctLeft + " / " + distinctRight);
+                }
+            }
+
+            Assert.True(differences.Count == 0, string.Join(Environment.NewLine, differences));
+        }
+
+        // The List of JToken / JsonElement that the sendAnyList parameter declares.
+        private static System.Collections.IList AnyList(Assembly api, string serializer, params string[] jsons)
+        {
+            MethodInfo method = Phase4WireHarness.ClientType(api).GetMethod("sendAnyList")!;
+            var list = (System.Collections.IList)Activator.CreateInstance(method.GetParameters()[0].ParameterType)!;
+            foreach (string json in jsons)
+            {
+                list.Add(SerializerMatrixHarness.MakeAny(serializer, json));
+            }
+
+            return list;
         }
 
         [Fact]

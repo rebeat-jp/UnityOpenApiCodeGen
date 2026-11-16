@@ -12,8 +12,8 @@ Source Generator方式では、Unityプロジェクトの`Packages/manifest.json
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.1",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.1"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.2",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.2"
   }
 }
 ```
@@ -21,7 +21,7 @@ Source Generator方式では、Unityプロジェクトの`Packages/manifest.json
 Docker方式には基本パッケージだけを使用できます。追加パッケージにはUnity 6000.0以降が必要です。
 0.6.0から追加パッケージはNewtonsoft.Jsonを導入しません。選んだHTTP／JSONの組み合わせのライブラリは利用者が導入します
 （既定は`com.unity.nuget.newtonsoft-json` `3.2.2`。代替は`UnityWebRequest`と`System.Text.Json`です）。
-例は`0.6.0-preview.1`のリリースタグを使います。これはプレリリース版です。最新の安定版は`0.5.1`で、HTTP／JSONライブラリの
+例は`0.6.0-preview.2`のリリースタグを使います。これはプレリリース版です。最新の安定版は`0.5.1`で、HTTP／JSONライブラリの
 選択は含まれません。
 未リリースのコミットを試す場合は、両URLのタグ部分を同じ検証済みコミットSHAへ置き換えてください。
 
@@ -59,6 +59,23 @@ Source Generatorが利用可能なときは有効な`NamedBuildTarget`へ
 すべての既知`NamedBuildTarget`から、Unityが削除を適用する前にdefineを取り除きます。
 更新時は有効なターゲットから一時的に取り除きます。
 生成型を参照するコードは、追加パッケージを外した後にコンパイルエラーになることがあります。
+
+`PlayerSettings`のスクリプトdefineはビルドターゲットごとに保存され、PlayerSettingsを上書きするBuild
+Profileは独自の値を持ちます。同期したdefineだけでは、別のビルドターゲット、Build Profile、マシン、CIで
+定義がコンパイルされません。そのため**Generate**は、出力先asmdefに`versionDefines`も追加します。
+有効なビルドターゲットやBuild Profileに関係なく`OPENAPI_CODEGEN_SOURCE_GENERATOR`が定義されます。
+
+```json
+"versionDefines": [
+  { "name": "jp.rhycol.openapicodegen.source-generator", "expression": "0.0.0", "define": "OPENAPI_CODEGEN_SOURCE_GENERATOR" }
+]
+```
+
+`name`と`define`が同じ項目がすでにあれば、そのままにします。asmdefを解析できない場合は、書き換えずに
+Generateを失敗させ、手で追加する項目を表示します。定義ファイルは`#if OPENAPI_CODEGEN_SOURCE_GENERATOR`の
+ままなので、providerをDockerに切り替えても定義はコンパイルされます。無効にするには
+`<ApiName>.OpenApiDefinition.cs`を削除してください。詳細は
+[追加パッケージの日本語README](../OpenApiCodeGen.SourceGenerator/README.ja.md)を参照してください。
 
 ## ライセンス
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0-preview.2] - 2026-11-16
+
+### Fixed
+
+- `OPENAPI_CODEGEN_SOURCE_GENERATOR` is no longer missing in other build targets, Build Profiles, machines and CI ([#94](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/94)). The define was only written to the `PlayerSettings` of the active build target or Build Profile, so the definition file was compiled out elsewhere and code using the generated types failed to compile. **Generate** now also adds a `versionDefines` entry for this package to the output asmdef before it writes the definition file. The asmdef is edited in place (unknown fields, the BOM and line endings are kept); an existing entry with the same `name` and `define` is left alone, and an asmdef that cannot be parsed is not changed: Generate fails and shows the entry to add by hand. The `#if` in the definition file and the `PlayerSettings` synchronization are unchanged.
+- Read single and double quoted YAML scalars that span several lines (valid YAML 1.2, for example a multi-line `info.description`) instead of stopping the whole spec with `YAML006` ([#90](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/90)). Lines are folded as YAML 1.2 7.3 specifies. An unclosed scalar, a document marker in column 0 of a continuation line, or a continuation line in block context that is not indented deeper than its parent is still an error, and the message names the line where the quoted scalar starts.
+- OpenAPI 3.0: accept "X or null" written as a `oneOf` / `anyOf` member `{ nullable: true, enum: [null] }` (with an optional `type`), which used to stop generation with "An enum that contains only null is not supported" ([#92](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/92)). One remaining member becomes a nullable `X`, several become a nullable union, as with the OpenAPI 3.1 `type: null` member.
+- Merge an `allOf` part that redeclares a base property as a narrower enum (for example an inline `enum: [STORAGE_UNAVAILABLE]` over a `$ref` to a named string enum) instead of reporting "declared with different types" (`OACG101`) ([#93](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/93)). The wider type is kept and the values of the narrower side are validated as a new allowed-values constraint in both serializers, for requests and responses; several narrowings intersect, in any part order. A nullable or base type mismatch, a value outside the kept type, other constraints on the narrowing side, and narrowings with no value in common still report `OACG101`.
+- The Newtonsoft.Json emitter now reports a `uniqueItems` violation for equal numbers written differently (for example `79000000000000000000000000000` and `7.9e28`, `0` and `-0.0`, `1` and `1.0`), as the System.Text.Json emitter already did ([#87](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/87)).
+
+### Changed
+
+- OpenAPI 3.0 (and normalized Swagger 2.0): keywords next to a schema `$ref` are ignored as the specification requires, with an `OACG108` warning at their path, instead of reporting `OACG101` ([#91](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/91)). Annotations, `x-*` and `nullable` stay allowed, and validation keywords and `not` next to the `$ref` are no longer applied. OpenAPI 3.1 and parameter / response Reference Objects are unchanged.
+- Specs that narrow an enum through `allOf` (above) now generate, and the generated validation code gains an allowed-values check for those properties.
+
 ## [0.6.0-preview.1] - 2026-11-15
 
 ### Breaking changes

@@ -20,14 +20,14 @@ Source Generatorを使う場合は、Unityプロジェクトの`Packages/manifes
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.1",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.1"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.2",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.2"
   }
 }
 ```
 
-例は`0.6.0-preview.1`のリリースタグを使います。これはプレリリース版です。最新の安定版は`0.5.1`で、HTTP／JSONライブラリの
-選択は含まれません。未リリースのコミットを試す場合は、両URLの`0.6.0-preview.1`を同じ検証済みコミットSHAへ
+例は`0.6.0-preview.2`のリリースタグを使います。これはプレリリース版です。最新の安定版は`0.5.1`で、HTTP／JSONライブラリの
+選択は含まれません。未リリースのコミットを試す場合は、両URLの`0.6.0-preview.2`を同じ検証済みコミットSHAへ
 置き換えてください。基本パッケージだけを導入してDocker方式を使うこともできます。
 
 0.6.0から、Source Generatorパッケージは`com.unity.nuget.newtonsoft-json`に依存しません。追加パッケージを入れても

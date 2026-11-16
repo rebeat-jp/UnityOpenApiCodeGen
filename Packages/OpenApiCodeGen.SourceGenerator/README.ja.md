@@ -12,14 +12,14 @@ Unity 6000.0以降のプロジェクトの`Packages/manifest.json`に両パッ�
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.1",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.1"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.2",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.2"
   }
 }
 ```
 
 追加パッケージには、選んだHTTP／JSONの組み合わせのライブラリが必要です（[HTTPとJSONのライブラリを選ぶ](#httpとjsonのライブラリを選ぶ)を参照）。
-0.6.0から追加パッケージは`com.unity.nuget.newtonsoft-json`を導入しません。例は`0.6.0-preview.1`のリリースタグを使います。これはプレリリース版です。最新の安定版は`0.5.1`で、HTTP／JSONライブラリの
+0.6.0から追加パッケージは`com.unity.nuget.newtonsoft-json`を導入しません。例は`0.6.0-preview.2`のリリースタグを使います。これはプレリリース版です。最新の安定版は`0.5.1`で、HTTP／JSONライブラリの
 選択は含まれません。
 未リリースのコミットを試す場合は、両URLのタグ部分を同じ検証済みコミットSHAへ置き換えてください。
 
@@ -516,6 +516,25 @@ scalarのJSON token型を検査します。`float`／`double`は有限値に限�
 この追加パッケージの削除時には、現在有効でないものも含むすべての既知ターゲットから
 Unityが削除を適用する前にdefineを取り除きます。更新時は有効なターゲットから一時的に取り除きます。
 この定義を参照するコードは、追加パッケージを外すとコンパイルエラーになることがあります。
+
+`PlayerSettings`のスクリプトdefineはビルドターゲットごとに保存され、PlayerSettingsを上書きするBuild
+Profileは独自の値を持ちます。そのため、同期したdefineだけでは、別のビルドターゲットやBuild Profileに
+切り替えたとき、別のマシン、CIで、定義がコンパイルされません。これを防ぐため、**Generate**は定義を
+含むasmdefに`versionDefines`も追加します。有効なビルドターゲットやBuild Profileに関係なく
+`OPENAPI_CODEGEN_SOURCE_GENERATOR`が定義されます。
+
+```json
+"versionDefines": [
+  { "name": "jp.rhycol.openapicodegen.source-generator", "expression": "0.0.0", "define": "OPENAPI_CODEGEN_SOURCE_GENERATOR" }
+]
+```
+
+追加は1回だけです。`name`と`define`が同じ項目がすでにあれば、`expression`が違っていても触りません。
+asmdefのほかの項目、BOM、改行コードは保ちます。asmdefを解析できない場合は、書き換えずにGenerateを
+失敗させ、手で追加する項目を表示します。同じ形で自分で追加することもできます。
+
+定義ファイルは`#if OPENAPI_CODEGEN_SOURCE_GENERATOR`のままなので、providerをDockerに切り替えても
+定義はコンパイルされ続けます。無効にするには、`<ApiName>.OpenApiDefinition.cs`を削除してください。
 
 ## 依存関係とproviderの切り替え
 

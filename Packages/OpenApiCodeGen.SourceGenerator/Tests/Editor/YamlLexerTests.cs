@@ -92,6 +92,88 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.That(quote.DiagnosticId, Is.EqualTo("YAML006"));
         }
 
+        [Test]
+        public void TokenizeKeepsAMultiLineQuotedScalarInOneToken()
+        {
+            const string source = "a: 'x\r\n  y'\r\nb: \"p\n  q\" # c\nc:\n  - 'r\n    s'\n";
+            IReadOnlyList<YamlToken> tokens = YamlLexer.Tokenize(source, "Assets/Specs/openapi.yaml");
+
+            YamlToken first = tokens[2];
+            Assert.That(first.Kind, Is.EqualTo(YamlTokenKind.Scalar));
+            Assert.That(first.Value, Is.EqualTo("'x\r\n  y'"));
+            Assert.That(first.Line, Is.EqualTo(1));
+            Assert.That(first.Column, Is.EqualTo(4));
+            Assert.That(first.Offset, Is.EqualTo(3));
+            Assert.That(first.Length, Is.EqualTo(first.Value.Length));
+
+            YamlToken newLine = tokens[3];
+            Assert.That(newLine.Kind, Is.EqualTo(YamlTokenKind.NewLine));
+            Assert.That(newLine.Line, Is.EqualTo(2));
+            Assert.That(newLine.Column, Is.EqualTo(5));
+
+            int previousEnd = -1;
+            for (int index = 0; index < tokens.Count; index++)
+            {
+                YamlToken token = tokens[index];
+                Assert.That(token.Offset, Is.GreaterThanOrEqualTo(previousEnd), token.ToString());
+                previousEnd = token.Offset + token.Length;
+            }
+
+            Assert.That(tokens[tokens.Count - 1].Offset, Is.EqualTo(source.Length));
+        }
+
+        [Test]
+        public void TokenizeNumbersLinesAfterAMultiLineScalar()
+        {
+            IReadOnlyList<YamlToken> tokens = YamlLexer.Tokenize("a: 'x\n  y'\nb: 1\n", "Assets/Specs/openapi.yaml");
+
+            Assert.That(FindToken(tokens, YamlTokenKind.Scalar, "b").Span.Start.Line, Is.EqualTo(3));
+            Assert.That(FindToken(tokens, YamlTokenKind.Scalar, "b").Span.Start.Column, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void TokenizeReportsAnUnterminatedQuoteAtItsStart()
+        {
+            YamlParseException exception = Assert.Throws<YamlParseException>(
+                () => YamlLexer.Tokenize("v: 'a\n  b\n", "Assets/Specs/openapi.yaml"));
+
+            Assert.That(exception.DiagnosticId, Is.EqualTo("YAML006"));
+            Assert.That(exception.Line, Is.EqualTo(1));
+            Assert.That(exception.Column, Is.EqualTo(4));
+        }
+
+        [Test]
+        public void TokenizeAcceptsADoubleQuotedEscapedLineBreak()
+        {
+            IReadOnlyList<YamlToken> tokens = YamlLexer.Tokenize("v: \"a\\\n  b\"\n", "Assets/Specs/openapi.yaml");
+
+            Assert.That(FindToken(tokens, YamlTokenKind.Scalar, "\"a\\\n  b\""), Is.Not.Null);
+        }
+
+        [Test]
+        public void TokenizeRejectsADocumentMarkerAndAShallowContinuationLine()
+        {
+            YamlParseException marker = Assert.Throws<YamlParseException>(
+                () => YamlLexer.Tokenize("v: 'a\n---\n  b'\n", "Assets/Specs/openapi.yaml"));
+            Assert.That(marker.DiagnosticId, Is.EqualTo("YAML006"));
+            Assert.That(marker.Line, Is.EqualTo(2));
+            Assert.That(marker.Message, Does.Contain("the quoted YAML scalar that starts on line 1"));
+
+            YamlParseException shallow = Assert.Throws<YamlParseException>(
+                () => YamlLexer.Tokenize("v: 'a\nb'\n", "Assets/Specs/openapi.yaml"));
+            Assert.That(shallow.DiagnosticId, Is.EqualTo("YAML002"));
+            Assert.That(shallow.Line, Is.EqualTo(2));
+            Assert.That(shallow.Message, Does.Contain("the quoted YAML scalar that starts on line 1"));
+        }
+
+        [Test]
+        public void TokenizeDoesNotCheckContinuationIndentInsideFlowCollections()
+        {
+            IReadOnlyList<YamlToken> tokens = YamlLexer.Tokenize("v: ['a\nb']\n", "Assets/Specs/openapi.yaml");
+
+            Assert.That(FindToken(tokens, YamlTokenKind.Scalar, "'a\nb'"), Is.Not.Null);
+        }
+
         private static YamlToken FindToken(
             IReadOnlyList<YamlToken> tokens,
             YamlTokenKind kind,

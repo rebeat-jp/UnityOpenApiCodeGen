@@ -4,11 +4,11 @@
   "files": [
     {
       "path": "RELEASE.html",
-      "sha256": "0b6dca83822326ed05c617a8b37f5d6d9f6927ca9575b51404cce411d0e5824f"
+      "sha256": "037dd04652396ce6c0f95131b0c44decdbc2bc6cc235e6064d686d38a1d1448e"
     },
     {
       "path": "RELEASE.md",
-      "sha256": "c599044c5a6d2f22049466744c715436ebfc85d0cd2d269bbf32863b0d58191f"
+      "sha256": "d1a6e2e1f21822919918abeef02986685b6d6a6e2b3d50962c277804154f41a8"
     },
     {
       "path": "SourceGenerators/BuildTools/CI/unity-images.json",
@@ -28,19 +28,19 @@
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.html",
-      "sha256": "39c5624b90cd7c318c46d6f41e8f156be9df9bf903975c67047a83da475d3ff6"
+      "sha256": "5c07d0633e8b46e8ace0ffb7933f1d15706fc6c5171fed999912bff18ec8046f"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.ja.html",
-      "sha256": "6b130eb6814614ea37dd7b8804402d0675b935de000f1c9e0b3a86f032ae957e"
+      "sha256": "1f43deb5d73bf23ad7f1cdffa315d42e77c2fd42a7b6a54064bb7d0300b772c3"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.ja.md",
-      "sha256": "0ec04067c9f00777df2e9e913728be0a24850ea16ab86673dd2cf94e0eea248c"
+      "sha256": "10a32f2f085aa8e701495d836602f13ac11bb53e6faa4e23da56382332160ed6"
     },
     {
       "path": "SourceGenerators/OpenApiMvpSupportMatrix.md",
-      "sha256": "0092726302f1988a35c4a74ec202cfb81b08c3f7c722ae2f5c6650603990bbdc"
+      "sha256": "06b38fc3ffd8b044adc5026fd9d72659068ab37eca15a0ead4b207abc086b581"
     },
     {
       "path": "SourceGenerators/OpenUPM/jp.rhycol.openapicodegen.source-generator.yml",

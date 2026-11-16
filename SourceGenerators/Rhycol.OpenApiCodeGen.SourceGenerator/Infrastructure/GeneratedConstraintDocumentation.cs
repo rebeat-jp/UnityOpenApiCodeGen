@@ -79,6 +79,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     lines.Add("Items are validated by position (prefixItems).");
                 }
 
+                if (set.AllowedValues.Count > 0)
+                {
+                    lines.Add("Must be one of: " + string.Join(", ", set.AllowedValues.Select(static value => value.RawText)) + ".");
+                }
+
                 foreach (GeneratedDependentRequired entry in set.DependentRequired)
                 {
                     lines.Add("When " + entry.Property + " is present, " + string.Join(", ", entry.Required) +

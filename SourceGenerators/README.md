@@ -80,14 +80,14 @@ absolute path非混入、tracked DLL同期、UPM内のDLL数・RoslynAnalyzer me
 SourceGenerators/scripts/verify.sh
 ```
 
-`0.6.0-preview.1` release candidateのtarballとchecksumは次で生成します。registry publish、tag作成、release
+`0.6.0-preview.2` release candidateのtarballとchecksumは次で生成します。registry publish、tag作成、release
 公開は行いません。
 
 ```sh
 SourceGenerators/scripts/pack-release.sh
 ```
 
-出力先は`artifacts/upm/0.6.0-preview.1/`で、base/add-onのtarball、`release-manifest.json`、
+出力先は`artifacts/upm/0.6.0-preview.2/`で、base/add-onのtarball、`release-manifest.json`、
 `SHA256SUMS`を含みます。manifestのUnity gateは検証完了まで`not-run`です。
 Nodeはルートの`.node-version`、npmは`11.19.0`を使用します。clean treeが必要で、
 開発中だけ`--allow-dirty`を指定できます。dirty候補のcommitは`null`になり、公開には使えません。
