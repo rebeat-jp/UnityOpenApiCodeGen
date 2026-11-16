@@ -48,9 +48,44 @@ test('CI and release callers inherit Secrets while fork Unity gates remain disab
     assert.match(verify, /uses: \.\/\.github\/workflows\/source-generator-verify\.yml/);
     assert.match(verify, /\n    secrets: inherit\n/);
   }
-  assert.match(workflow('source-generator-ci.yml'), /unity: .*github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
   assert.match(workflow('source-generator-verify.yml'), /if: inputs\.unity && .*github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
   assert.match(workflow('source-generator-verify.yml'), /environment:\n      name: UNITY_LICENSE/);
+});
+function ciUnityGate() {
+  const line = workflow('source-generator-ci.yml').split('\n').find(value => /^      unity: \$\{\{ .* \}\}$/.test(value));
+  assert.ok(line, 'the CI verify call must pass an inline unity expression');
+  const expression = line.match(/^      unity: \$\{\{ (.*) \}\}$/)[1];
+  // The expression is evaluated with a JavaScript translation of the few GitHub Actions constructs it may use,
+  // so every context combination is checked rather than the wording of the line.
+  const script = expression
+    .replace(/contains\(github\.event\.pull_request\.labels\.\*\.name, '([^']+)'\)/g, (_, label) => `labels.includes('${label}')`)
+    .replace(/github\.event\.pull_request\.head\.repo\.full_name/g, 'headRepository')
+    .replace(/github\.event\.action/g, 'action')
+    .replace(/github\.event\.label\.name/g, 'label')
+    .replace(/github\.event_name/g, 'eventName')
+    .replace(/github\.repository/g, 'repository')
+    .replace(/(?<![=!])==(?!=)/g, '===').replace(/!=(?!=)/g, '!==');
+  assert.doesNotMatch(script, /github\./, 'unexpected context in the unity expression');
+  return (eventName, { headRepository = 'owner/repo', labels = [], action = 'synchronize', label = '' } = {}) =>
+    new Function('eventName', 'headRepository', 'labels', 'repository', 'action', 'label', `return (${script});`)(eventName, headRepository, labels, 'owner/repo', action, label);
+}
+test('CI runs the Unity job only for manual dispatch or a same-repository PR labelled unity-gate', () => {
+  const ci = workflow('source-generator-ci.yml');
+  assert.match(ci, /\n  pull_request:\n(?:    #[^\n]*\n)*    types: \[opened, synchronize, reopened, labeled\]\n/);
+  const gate = ciUnityGate();
+  assert.equal(gate('workflow_dispatch'), true, 'manual dispatch (bot DLL PR, main SHA) keeps the Unity job');
+  assert.equal(gate('push'), false, 'develop and main pushes skip the Unity job');
+  assert.equal(gate('pull_request'), false, 'a PR without the label skips the Unity job');
+  assert.equal(gate('pull_request', { labels: ['bug'] }), false);
+  assert.equal(gate('pull_request', { labels: ['bug', 'unity-gate'] }), true, 'the unity-gate label enables the Unity job');
+  assert.equal(gate('pull_request', { headRepository: 'fork/repo', labels: ['unity-gate'] }), false, 'fork PRs never get the Unity job');
+  assert.equal(gate('schedule'), false);
+  assert.equal(gate('pull_request', { action: 'labeled', label: 'unity-gate', labels: ['unity-gate'] }), true, 'adding unity-gate itself starts Unity');
+  assert.equal(gate('pull_request', { action: 'labeled', label: 'bug', labels: ['bug', 'unity-gate'] }), false, 'another label on a unity-gate PR does not re-run Unity');
+  assert.equal(gate('pull_request', { action: 'labeled', label: 'bug', labels: ['bug'] }), false);
+  assert.equal(gate('pull_request', { action: 'synchronize', labels: ['unity-gate'] }), true, 'a new commit on a labelled PR runs Unity');
+  assert.equal(gate('pull_request', { action: 'reopened', labels: ['unity-gate'] }), true);
+  assert.equal(gate('pull_request', { action: 'labeled', label: 'unity-gate', headRepository: 'fork/repo', labels: ['unity-gate'] }), false);
 });
 test('manual CI gates both explicit SHA and selected ref on main ancestry before reusable verification', t => {
   const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'manual-ci-boundary-'));

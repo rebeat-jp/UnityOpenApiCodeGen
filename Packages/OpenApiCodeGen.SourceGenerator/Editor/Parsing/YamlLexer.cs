@@ -415,6 +415,25 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                         startPlain);
                 }
 
+                int continuedLine = line;
+                int continuedLineStart = lineStart;
+                int continuedLineEnd = lineEnd;
+                int continuedEnd = -1;
+                if (tokenKind == YamlTokenKind.Scalar && cursor >= lineEnd &&
+                    TryScanPlainContinuation(
+                        startPlain,
+                        valueEnd,
+                        lineStart,
+                        lineEnd,
+                        indent,
+                        ref continuedLine,
+                        ref continuedLineStart,
+                        ref continuedLineEnd,
+                        ref continuedEnd))
+                {
+                    value = source.Substring(startPlain, continuedEnd - startPlain);
+                }
+
                 AddToken(
                     tokenKind,
                     value,
@@ -422,6 +441,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                     line,
                     startPlain - lineStart + 1,
                     value.Length);
+                if (continuedEnd >= 0)
+                {
+                    // AddToken only tracks tokens that start on the current line.
+                    hasLastLineToken = true;
+                    lastLineTokenKind = YamlTokenKind.Scalar;
+                    line = continuedLine;
+                    lineStart = continuedLineStart;
+                    lineEnd = continuedLineEnd;
+                    cursor = continuedEnd;
+                }
+
                 if (tokenKind == YamlTokenKind.BlockScalarHeader)
                 {
                     blockScalarPending = true;
@@ -433,6 +463,143 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                         : blockScalarParentIndent + explicitIndent;
                 }
             }
+        }
+
+        // A plain scalar in block context may continue on the following lines (YAML 1.2 7.3.3): every continuation
+        // line must be indented more than the parent node, and it is folded like the lines of a quoted scalar. Only
+        // the plain scalar that is the value after a block ':' or '-' continues; in a flow collection nothing changes.
+        // On success endOffset is the end of the last content line, and the line variables describe that line.
+        private bool TryScanPlainContinuation(
+            int start,
+            int valueEnd,
+            int firstLineStart,
+            int firstLineEnd,
+            int lineIndent,
+            ref int endLine,
+            ref int endLineStart,
+            ref int endLineEnd,
+            ref int endOffset)
+        {
+            if (flowFrames.Count != 0 || !hasLastLineToken)
+            {
+                return false;
+            }
+
+            // The value of a mapping key, also when an anchor sits between the colon and the text (key: &a text).
+            bool afterColon = lastLineTokenKind == YamlTokenKind.Colon ||
+                              (lastLineTokenKind == YamlTokenKind.Anchor && lineHasBlockMappingColon);
+            if (!afterColon && lastLineTokenKind != YamlTokenKind.Dash && lastLineTokenKind != YamlTokenKind.Anchor)
+            {
+                return false;
+            }
+
+            if (!lineHasBlockMappingColon && lineSequenceDashCount == 0)
+            {
+                return false;
+            }
+
+            // The parent is the mapping that holds the key (its key column) or, without a key, the last dash.
+            int cursor = firstLineStart + lineIndent;
+            int lastDashColumn = -1;
+            while (cursor < firstLineEnd && source[cursor] == '-' &&
+                   (cursor + 1 == firstLineEnd || IsWhitespace(source[cursor + 1])))
+            {
+                lastDashColumn = cursor - firstLineStart;
+                cursor++;
+                while (cursor < firstLineEnd && IsWhitespace(source[cursor])) cursor++;
+            }
+
+            int parentIndent = lineHasBlockMappingColon ? cursor - firstLineStart : lastDashColumn;
+            if (parentIndent < 0)
+            {
+                return false;
+            }
+
+            bool extended = false;
+            int scalarEnd = valueEnd;
+            int currentLine = line;
+            int currentEnd = firstLineEnd;
+            int probeLine = line;
+            int probeEnd = firstLineEnd;
+            while (probeEnd < source.Length)
+            {
+                int nextStart = probeEnd + GetNewlineLength(probeEnd);
+                int nextEnd = FindLineEnd(nextStart);
+                probeLine++;
+                probeEnd = nextEnd;
+                int content = nextStart;
+                while (content < nextEnd && IsWhitespace(source[content])) content++;
+                if (content >= nextEnd)
+                {
+                    // A blank line is kept only when a continuation line follows it.
+                    continue;
+                }
+
+                int spaces = 0;
+                while (nextStart + spaces < nextEnd && source[nextStart + spaces] == ' ') spaces++;
+                if (spaces <= parentIndent || source[content] == '#' ||
+                    (source[content] == '-' && (content + 1 == nextEnd || IsWhitespace(source[content + 1]))))
+                {
+                    break;
+                }
+
+                int contentEnd = nextEnd;
+                bool endsWithComment = false;
+                for (int at = content; at < nextEnd; at++)
+                {
+                    char character = source[at];
+                    if (character == '#' && IsWhitespace(source[at - 1]))
+                    {
+                        contentEnd = at;
+                        endsWithComment = true;
+                        break;
+                    }
+
+                    if (character == ':' && (at + 1 == nextEnd || IsWhitespace(source[at + 1])))
+                    {
+                        // The text of a multi-line plain scalar cannot contain ': '. After a dash the whole text would
+                        // be a multi-line implicit key, which is not supported either.
+                        int errorLine = probeLine;
+                        if (afterColon)
+                        {
+                            throw CreateExceptionAt(
+                                YamlDiagnosticCode.InvalidMapping,
+                                "A mapping value is not allowed in the continuation line of a multi-line plain scalar.",
+                                errorLine,
+                                at - nextStart + 1,
+                                at);
+                        }
+
+                        throw CreateExceptionAt(
+                            YamlDiagnosticCode.ComplexKey,
+                            "Only simple string YAML mapping keys are supported.",
+                            line,
+                            start - firstLineStart + 1,
+                            start);
+                    }
+                }
+
+                while (contentEnd > content && IsWhitespace(source[contentEnd - 1])) contentEnd--;
+                scalarEnd = contentEnd;
+                currentLine = probeLine;
+                currentEnd = nextEnd;
+                endLineStart = nextStart;
+                extended = true;
+                if (endsWithComment)
+                {
+                    break;
+                }
+            }
+
+            if (!extended)
+            {
+                return false;
+            }
+
+            endLine = currentLine;
+            endLineEnd = currentEnd;
+            endOffset = scalarEnd;
+            return true;
         }
 
         // A quoted scalar may continue over several lines. The token starts at the opening quote and ends at the

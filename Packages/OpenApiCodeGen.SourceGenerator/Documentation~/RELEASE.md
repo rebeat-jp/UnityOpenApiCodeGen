@@ -35,15 +35,17 @@ not establish that a version is published.
 
 | Workflow | Entry point | Result |
 | --- | --- | --- |
-| `source-generator-ci.yml` | PR, main/develop push, manual SHA from `main`, trusted DLL PR dispatch from `main` | .NET/package checks, Unity evidence, CD dry-run |
+| `source-generator-ci.yml` | PR, main/develop push, manual SHA from `main`, trusted DLL PR dispatch from `main` | .NET/package checks always; Unity evidence only for manual dispatch or a same-repository PR labelled `unity-gate` |
 | `source-generator-verify.yml` | Reused by CI and release | One candidate shared by all Unity versions |
 | `source-generator-update-dll.yml` | Manual, workflow ref `main` | DLL-only PR against `develop` or `main` |
 | `source-generator-release.yml` | Manual `main` commit/version/publish | Dry-run, or immutable tag and Release |
 | `source-generator-openupm.yml` | Explicit dispatch at release **tag** | Base publication, add-on publication, registry byte comparison |
 
 Manual workflows become available after their definitions reach the default
-branch. Before that merge, a same-repository PR exercises the shared pipeline
-and the actual `publish-release.js` script with `PUBLISH=false`.
+branch. Before that merge, a same-repository PR labelled `unity-gate` (or a manual
+dispatch) exercises the shared pipeline and the actual `publish-release.js`
+script with `PUBLISH=false`; that step sits behind the Unity gate and is skipped
+when the Unity job is off.
 
 Unity runs on GitHub-hosted Linux in GameCI containers. The three Linux/amd64
 image digests are pinned in
@@ -63,8 +65,40 @@ return logs stay in the disposable container. Test logs/XML are redacted before
 being written to the artifact directory.
 
 All three editors run serially in one job. A repository-wide concurrency group
-also prevents overlapping Unity jobs across CI and release workflows. Fork PRs
-run .NET/package checks without the Unity job or its Secrets.
+also prevents overlapping Unity jobs across CI and release workflows.
+
+### When the Unity job runs
+
+Every Unity job waits for an Environment approval, so `source-generator-ci.yml`
+starts it only on request:
+
+| Trigger | Unity job |
+| --- | --- |
+| Same-repository PR labelled `unity-gate` | Runs (the label can be added at any time; adding it starts a new run) |
+| PR without the label | Skipped; the .NET/package checks still run |
+| Fork PR | Never runs, with or without the label; no Secrets reach it |
+| Push to `main` or `develop` | Skipped |
+| Manual `source-generator-ci.yml` dispatch (SHA from `main`, trusted DLL PR dispatch) | Runs |
+| `source-generator-release.yml` (dry-run and publication) | Runs |
+
+The CI workflow reacts to the PR actions `opened`, `synchronize`, `reopened`
+and `labeled`. Any label added to a PR starts the .NET/package checks again,
+but a `labeled` event enables the Unity job only when the label just added is
+`unity-gate`: adding another label to a PR that already has `unity-gate` skips
+the Unity job (no new approval request). New commits (`synchronize`) and
+`reopened` on a PR that carries `unity-gate` run it again. Create the label once:
+
+```sh
+gh label create unity-gate --repo rebeat-jp/UnityOpenApiCodeGen \
+  --description "Run the Unity verification job (needs Environment approval)" \
+  --color 1D76DB
+```
+
+A PR that changes only code the generator reads can usually skip the Unity job
+until release. Add the label when a PR touches Unity-facing behavior
+(editor code, package layout, the committed DLL) and Unity evidence is wanted
+before merging. The release workflow always runs the Unity gate regardless of
+earlier PR labels, so an unlabelled merge never reaches a release unverified.
 
 ## Update the committed DLL
 
@@ -213,6 +247,13 @@ Both manual CI dispatch and release dry-run must run from `main`. Ordinary
 manual CI and release dry-runs select a commit in `origin/main` history. The
 DLL update workflow has the separately validated bot PR path described above;
 use normal PR CI to verify other unmerged changes.
+
+The recommended release path is: merge the release PR into `main` (the Unity
+job is optional on the PR), then start `source-generator-release.yml` from
+`main` with `-F publish=true` and approve the Unity Environment once for that
+run. Publication only starts after the verify job, including the Unity gate,
+has passed on the exact commit, so a separate dry-run is optional; use one
+when the release procedure or workflows themselves changed.
 
 For publication, complete the add-on's
 [initial OpenUPM registration](SourceGenerators/OpenUPM/README.md), then start

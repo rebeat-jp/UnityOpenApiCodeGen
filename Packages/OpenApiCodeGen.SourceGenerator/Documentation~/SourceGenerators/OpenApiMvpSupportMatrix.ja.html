@@ -179,7 +179,7 @@ YAML 1.2-compatible subsetです。subset外は黙ってJSONへ変換したり�
 <tbody><tr>
 <td>block mapping / sequence</td>
 <td>対応</td>
-<td>indentationを使うmapping・sequence、nested/compact composition。compact continuationは2-space step。indentless sequenceと任意幅のcompact indentationは対象外。tabsはindentationに使用不可。</td>
+<td>indentationを使うmapping・sequence、nested/compact composition。compact continuationは2-space step。block mappingの値のsequenceは親keyと同じ字下げ（indentless sequence、YAML 1.2 §8.2.3）でも読めます。任意幅のcompact indentationは対象外。tabsはindentationに使用不可。</td>
 </tr>
 <tr>
 <td>flow mapping / sequence</td>
@@ -199,7 +199,7 @@ YAML 1.2-compatible subsetです。subset外は黙ってJSONへ変換したり�
 <tr>
 <td>quoted / plain scalar</td>
 <td>一部対応</td>
-<td>single/double quoteとplain scalar。YAML 1.1 implicit bool/date等はstringとして保持。複数行にまたがるquoted scalarはYAML 1.2 §7.3どおりに行を畳みます（改行1つは空白、空行k個は改行k個、行末・行頭の空白は削除、double quoteの行末<code>\</code>は改行エスケープ）。制約: block文脈では空でない継続行を開始行のインデントより深くします（引用符が行頭にある場合は同じ深さも可。flow内は検査しません）。継続行の列0にある<code>---</code>/<code>...</code>、閉じ引用符がない入力（開始位置の<code>YAML006</code>）、複数行にまたがるkey（<code>YAML011</code>）、flowの外にある複数行scalarの閉じ引用符の後ろに続く内容（<code>YAML006</code>、コメントは可）は拒否します。</td>
+<td>single/double quoteとplain scalar。YAML 1.1 implicit bool/date等はstringとして保持。複数行にまたがるquoted scalarはYAML 1.2 §7.3どおりに行を畳みます（改行1つは空白、空行k個は改行k個、行末・行頭の空白は削除、double quoteの行末<code>\</code>は改行エスケープ）。block文脈の複数行plain scalar（<code>key: text</code>・<code>- text</code>・<code>- k: text</code>の値を、親より深い字下げの次行へ折り返す形。PyYAMLが長い行で出力します）も§7.3.3どおり同じ規則で畳みます（コメント行・<code> #</code>・<code>- </code>で始まる行・親と同じ字下げの行で終わり、継続行の<code>: </code>は<code>YAML004</code>（<code>- text</code>の後ろは複数行keyとして<code>YAML011</code>）で拒否）。畳んだ値は常にstringです。flow内の複数行plainは従来どおりの挙動で、対象外です。制約: block文脈では空でない継続行を開始行のインデントより深くします（引用符が行頭にある場合は同じ深さも可。flow内は検査しません）。継続行の列0にある<code>---</code>/<code>...</code>、閉じ引用符がない入力（開始位置の<code>YAML006</code>）、複数行にまたがるkey（<code>YAML011</code>）、flowの外にある複数行scalarの閉じ引用符の後ろに続く内容（<code>YAML006</code>、コメントは可）は拒否します。</td>
 </tr>
 <tr>
 <td>引用付きscalarのUnicode escape</td>
@@ -857,7 +857,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td><code>allOf</code></td>
 <td>一部対応</td>
-<td>各partの<code>properties</code>・<code>required</code>・<code>additionalProperties</code>を1つのsealed DTOへ平坦化します（<code>$ref</code>先は再帰的に展開し、入れ子の<code>allOf</code>も可）。<code>required</code>は和集合です。<strong>closednessは合成後に評価</strong>します。どれか1つのpart（または3.1の<code>$ref</code>siblings）が<code>additionalProperties: false</code>ならDTO全体をclosedにし、許可するpropertyは全partのpropertiesの和集合です（partごとの<code>false</code>を単純合算して、他のpartのpropertyを拒否することはしません）。<code>additionalProperties</code>がschemaのpartがあればtyped open（複数あれば同じschemaが必要）、それ以外はopen objectです。同名propertyの型がpart間で異なれば<code>OACG101</code>（2つ目の宣言の位置、1つ目はadditional location）、同じ型なら統合します。例外として、片方がもう片方のstring／integer enumへの絞り込みなら統合します。名前付きenum（<code>$ref</code>）を優先して残し（名前付き同士・inline同士は値が広い側、同じなら先に宣言した側。plainなstring／integerとinline enumならplainな型）、絞り込んだ側のenum値だけを<code>AllowedValues</code>の制約として積みます（複数の絞り込みはすべて満たす値だけ）。request・responseとも実行時に検査し、失敗メッセージに値は含めません。nullableの食い違い、基本型（stringとintegerなど）の違い、残した型の値の部分集合でない値、enum値以外の制約を伴う絞り込み、解決できない再帰参照は従来どおり<code>OACG101</code>です。discriminatorのpropertyを絞り込み、mappingの値が<code>AllowedValues</code>を満たさない場合も<code>OACG101</code>です。複数の絞り込みの共通部分が空（何も受け付けないproperty）になる場合も、値を含めない<code>OACG101</code>にします。絞り込みを積んだ後に制約のない同じ型の宣言が来ても、partの順序によらず統合します。partが<code>object</code>以外の<code>type</code>・<code>items</code>・<code>enum</code>・<code>const</code>を持つ場合、partが<code>oneOf</code>／<code>anyOf</code>を持つ場合（discriminator付きのbaseを除く）は<code>OACG101</code>、どのpartも宣言しない<code>required</code>は<code>OACG100</code>、<code>allOf</code>の循環は<code>OACG103</code>です。part内の<code>not</code>は<code>OACG108</code>で無視します。<code>allOf: [ {$ref} ]</code>の1要素に<code>description</code>・<code>nullable</code>などの注釈だけを併記する定番の形は、新しい型を作らない参照です（nullableも保持）。</td>
+<td>各partの<code>properties</code>・<code>required</code>・<code>additionalProperties</code>を1つのsealed DTOへ平坦化します（<code>$ref</code>先は再帰的に展開し、入れ子の<code>allOf</code>も可）。<code>required</code>は和集合です。<strong>closednessは合成後に評価</strong>します。どれか1つのpart（または3.1の<code>$ref</code>siblings）が<code>additionalProperties: false</code>ならDTO全体をclosedにし、許可するpropertyは全partのpropertiesの和集合です（partごとの<code>false</code>を単純合算して、他のpartのpropertyを拒否することはしません）。<code>additionalProperties</code>がschemaのpartがあればtyped open（複数あれば同じschemaが必要）、それ以外はopen objectです。同名propertyの型がpart間で異なれば<code>OACG101</code>（2つ目の宣言の位置、1つ目はadditional location）、同じ型なら統合します。例外として、片方がもう片方のstring／integer enumへの絞り込みなら統合します。名前付きenum（<code>$ref</code>）を優先して残し（名前付き同士・inline同士は値が広い側、同じなら先に宣言した側。plainなstring／integerとinline enumならplainな型）、絞り込んだ側のenum値だけを<code>AllowedValues</code>の制約として積みます（複数の絞り込みはすべて満たす値だけ）。request・responseとも実行時に検査し、失敗メッセージに値は含めません。nullableの食い違い、基本型（stringとintegerなど）の違い、残した型の値の部分集合でない値、enum値以外の制約を伴う絞り込み、解決できない再帰参照は従来どおり<code>OACG101</code>です。discriminatorのpropertyを絞り込み、mappingの値が<code>AllowedValues</code>を満たさない場合も<code>OACG101</code>です。複数の絞り込みの共通部分が空（何も受け付けないproperty）になる場合も、値を含めない<code>OACG101</code>にします。絞り込みを積んだ後に制約のない同じ型の宣言が来ても、partの順序によらず統合します。partが<code>object</code>以外の<code>type</code>・<code>items</code>・<code>enum</code>・<code>const</code>を持つ場合、partが<code>oneOf</code>／<code>anyOf</code>を持つ場合（discriminator付きのbaseを除く）は<code>OACG101</code>、どのpartも宣言しない<code>required</code>は<code>OACG100</code>、<code>allOf</code>の循環は<code>OACG103</code>です。part内の<code>not</code>は<code>OACG108</code>で無視します。<code>allOf: [ {$ref} ]</code>の1要素に<code>description</code>・<code>nullable</code>などの注釈だけを併記する定番の形は、新しい型を作らない参照です（nullableも保持）。 string／integer／number／boolean／arrayなどobject以外の型のschemaで、全partが注釈・<code>x-*</code>・検証キーワード・<code>not</code>だけなら、object合成にせず元の型を保ち、各partの検証キーワードと<code>not</code>をそのschemaへ積みます（位置は<code>/allOf/N/…</code>。<code>not</code>の型名は<code>&lt;Schema&gt;AllOf&lt;N&gt;Not…</code>です）。partが<code>type</code>・<code>items</code>・<code>properties</code>・<code>$ref</code>などを持てば従来どおり<code>OACG101</code>です。object合成のpart内の<code>not</code>は従来どおり<code>OACG108</code>で無視します。</td>
 </tr>
 <tr>
 <td><code>oneOf</code> / <code>anyOf</code> + discriminator</td>
@@ -877,7 +877,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td><code>not</code></td>
 <td>一部対応</td>
-<td>成功応答の検査だけで評価し（<code>not</code>のschemaに一致した値を<code>JsonSerializationException</code>で拒否）、生成する型は変えません。schema・property・<code>$ref</code>先のどこの<code>not</code>も対象で、一致は構造検査（型、enum値、const、DTOの形）で決めます。<code>required</code>だけのような形を持たない<code>not</code>、boolean schema、再帰する<code>not</code>、未対応の要素を含む<code>not</code>は、全値を拒否してしまうか判定できないため<code>OACG108</code>で無視します。requestでは評価しません。</td>
+<td>成功応答の検査だけで評価し（<code>not</code>のschemaに一致した値を<code>JsonSerializationException</code>で拒否）、生成する型は変えません。schema・property・<code>$ref</code>先のどこの<code>not</code>も対象で、一致は構造検査（型、enum値、const、DTOの形）で決めます。<code>required</code>だけのような形を持たない<code>not</code>、boolean schema、再帰する<code>not</code>、未対応の要素を含む<code>not</code>は、全値を拒否してしまうか判定できないため<code>OACG108</code>で無視します。requestでは評価しません。 object以外の型のschemaで、<code>allOf</code>のpartに書いた<code>not</code>は、そのschemaの<code>not</code>と同様に評価します（<code>allOf</code>の行を参照）。object合成のpart内の<code>not</code>は<code>OACG108</code>で無視します。</td>
 </tr>
 <tr>
 <td>readOnly / writeOnly</td>

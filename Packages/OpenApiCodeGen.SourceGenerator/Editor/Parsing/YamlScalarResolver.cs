@@ -41,6 +41,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
                 return new SpecStringNode(line, column, DecodeDoubleQuoted(token, sourcePath, line, column, offset));
             }
 
+            if (token.IndexOfAny(new[] { '\r', '\n' }) >= 0)
+            {
+                // A plain scalar over several lines (YAML 1.2 7.3.3). The folded text holds a space or a line feed
+                // between two words, so the core schema cannot read it as null, a boolean or a number.
+                return new SpecStringNode(line, column, FoldPlain(token));
+            }
+
             if (string.Equals(token, "null", StringComparison.Ordinal))
             {
                 return new SpecNullNode(line, column);
@@ -83,6 +90,63 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Editor
 
             value = stringNode.Value;
             return true;
+        }
+
+        // YAML 1.2 7.3.3: the whitespace around every line is dropped, one line break becomes a space and k empty
+        // lines become k line feeds. The lexer ends the token at the last content character.
+        private static string FoldPlain(string token)
+        {
+            var builder = new StringBuilder(token.Length);
+            int index = 0;
+            while (index < token.Length)
+            {
+                int lineEnd = index;
+                while (lineEnd < token.Length && token[lineEnd] != '\r' && token[lineEnd] != '\n') lineEnd++;
+                int begin = index;
+                int end = lineEnd;
+                while (begin < end && (token[begin] == ' ' || token[begin] == '\t')) begin++;
+                while (end > begin && (token[end - 1] == ' ' || token[end - 1] == '\t')) end--;
+                builder.Append(token, begin, end - begin);
+
+                if (lineEnd >= token.Length)
+                {
+                    break;
+                }
+
+                // Step over this break, then count the empty lines up to the next content line.
+                int cursor = lineEnd;
+                int breaks = 0;
+                while (cursor < token.Length)
+                {
+                    int probe = cursor;
+                    if (token[probe] == '\r' && probe + 1 < token.Length && token[probe + 1] == '\n') probe++;
+                    probe++;
+                    breaks++;
+                    int next = probe;
+                    while (next < token.Length && (token[next] == ' ' || token[next] == '\t')) next++;
+                    if (next < token.Length && (token[next] == '\r' || token[next] == '\n'))
+                    {
+                        cursor = next;
+                        continue;
+                    }
+
+                    cursor = probe;
+                    break;
+                }
+
+                if (breaks == 1)
+                {
+                    builder.Append(' ');
+                }
+                else
+                {
+                    builder.Append('\n', breaks - 1);
+                }
+
+                index = cursor;
+            }
+
+            return builder.ToString();
         }
 
         // YAML 1.2 7.3.2: a line break in a single-quoted scalar is folded like in a double-quoted one.
