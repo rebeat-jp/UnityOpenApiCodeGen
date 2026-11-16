@@ -1305,7 +1305,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 source.AppendLine("        {");
                 source.AppendLine("            if (token.Type == global::Newtonsoft.Json.Linq.JTokenType.Null)");
                 source.AppendLine("            {");
-                source.AppendLine("                if (nullable) return;");
+                IReadOnlyList<string> nullRoots = _constraints.NullAssertionRootsOf(type);
+                if (nullRoots.Count == 0)
+                {
+                    source.AppendLine("                if (nullable) return;");
+                }
+                else
+                {
+                    source.AppendLine("                if (nullable)");
+                    source.AppendLine("                {");
+                    _constraints.AppendAssertionCalls(
+                        source, "                    ", nullRoots, "token", "path", "\"response\"", normalizeToken: false);
+                    source.AppendLine("                    return;");
+                    source.AppendLine("                }");
+                }
+
                 source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-nullable response value was null at \" + path + \".\");");
                 source.AppendLine("            }");
 
@@ -1363,7 +1377,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
                 else if (type.Kind == GeneratedTypeKind.Union && _unions.TryGetValue(type.Name, out GeneratedUnionModel? union))
                 {
-                    AppendUnionChecks(source, union);
+                    AppendUnionChecks(source, union, union.AssertsAlternatives && type.AssertionRoots.Count > 0);
                 }
                 else if (type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
                 {
@@ -1471,13 +1485,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
                 // Validation keywords (minLength, pattern, ...). A DTO keeps its sets in its model.
                 IReadOnlyList<GeneratedConstraints> constraintSets = type.ConstraintSets;
+                IReadOnlyList<string> assertionRoots = type.AssertionRoots;
                 if (type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? constrainedDto))
                 {
                     constraintSets = type.ConstraintSets.Concat(constrainedDto.ConstraintSets).ToArray();
+                    assertionRoots = type.AssertionRoots.Concat(constrainedDto.AssertionRoots).ToArray();
                 }
 
                 _constraints.AppendOwnChecks(
                     source, "            ", constraintSets, "token", "path", "\"response\"", contractScope: true);
+                // The response token is read with DateParseHandling.None (Newtonsoft.Json): strings stay strings.
+                _constraints.AppendAssertionCalls(
+                    source, "            ", assertionRoots, "token", "path", "\"response\"", normalizeToken: false);
                 AppendNotChecks(source, type);
                 source.AppendLine("        }");
             }
@@ -1508,7 +1527,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 source.AppendLine("            }");
             }
 
-            private void AppendUnionChecks(StringBuilder source, GeneratedUnionModel union)
+            private void AppendUnionChecks(StringBuilder source, GeneratedUnionModel union, bool asserted)
             {
                 if (union.DiscriminatorPropertyName is string discriminatorName)
                 {
@@ -1569,13 +1588,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 int memberIndex = 0;
                 foreach (GeneratedUnionMemberModel member in union.Members)
                 {
-                    source.Append("            bool unionMatched").Append(memberIndex++).AppendLine(" = false;");
+                    if (!(union.IsOneOf && asserted))
+                    {
+                        source.Append("            bool unionMatched").Append(memberIndex).AppendLine(" = false;");
+                    }
+
+                    memberIndex++;
                     source.AppendLine("            try");
                     source.AppendLine("            {");
                     source.Append("                ").Append(MethodName(member.Type))
                         .Append("(token, path, ").Append(member.Type.Nullable ? "true" : "false")
                         .AppendLine(", json, lineStarts, new global::System.Collections.Generic.List<global::System.Tuple<int, int, string>>());");
-                    source.Append("                unionMatched").Append(memberIndex - 1).AppendLine(" = true;");
+                    if (!(union.IsOneOf && asserted))
+                    {
+                        source.Append("                unionMatched").Append(memberIndex - 1).AppendLine(" = true;");
+                    }
+
                     source.AppendLine("                unionMatches++;");
                     source.AppendLine("            }");
                     source.Append("            catch (global::System.Exception exception) when (").Append(_prefix).AppendLine("IsTrialFailure(exception))");
@@ -1583,7 +1611,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     source.AppendLine("            }");
                 }
 
-                if (union.IsOneOf)
+                if (union.IsOneOf && asserted)
+                {
+                    // The assertion of the union counts the matches by JSON Schema (exactly one). The trials only have to find
+                    // a candidate; the overlap of open candidates is no longer tolerated.
+                    source.AppendLine("            if (unionMatches == 0)");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"The response value must match exactly one oneOf schema at \" + path + \" but matched 0.\");");
+                }
+                else if (union.IsOneOf)
                 {
                     // Open candidates overlap easily. Tie-break: keep the candidates that declare every
                     // property of the value (as if they were closed); still not exactly one is an error.

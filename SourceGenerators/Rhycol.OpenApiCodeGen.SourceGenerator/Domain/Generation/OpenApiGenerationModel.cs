@@ -18,8 +18,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<GeneratedUnionModel>? unions = null,
             IReadOnlyList<OpenApiSemanticServer>? servers = null,
             string? fileParameterTypeName = null,
-            IReadOnlyList<GeneratedSecuritySchemeModel>? securitySchemes = null)
+            IReadOnlyList<GeneratedSecuritySchemeModel>? securitySchemes = null,
+            GeneratedAssertionGraph? assertionGraph = null)
         {
+            AssertionGraph = assertionGraph;
             SecuritySchemes = securitySchemes ?? Array.Empty<GeneratedSecuritySchemeModel>();
             FileParameterTypeName = fileParameterTypeName;
             Unions = unions ?? Array.Empty<GeneratedUnionModel>();
@@ -33,6 +35,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             Operations = operations;
             TypeNameCollisions = typeNameCollisions;
         }
+
+        /// <summary>The assertions (JSON Schema semantics) that types and DTOs refer to by root name; null when there are none.</summary>
+        internal GeneratedAssertionGraph? AssertionGraph { get; }
 
         /// <summary>Security schemes of the document; each adds credential properties to the client.</summary>
         internal IReadOnlyList<GeneratedSecuritySchemeModel> SecuritySchemes { get; }
@@ -90,9 +95,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiSemanticAnnotations? annotations = null,
             string? extensionDataName = null,
             GeneratedTypeModel? extensionDataValueType = null,
-            IReadOnlyList<GeneratedConstraints>? constraintSets = null)
+            IReadOnlyList<GeneratedConstraints>? constraintSets = null,
+            IReadOnlyList<string>? assertionRoots = null)
         {
             ConstraintSets = constraintSets ?? Array.Empty<GeneratedConstraints>();
+            AssertionRoots = assertionRoots ?? Array.Empty<string>();
             Name = name;
             Properties = properties;
             Annotations = annotations ?? OpenApiSemanticAnnotations.Empty;
@@ -119,6 +126,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// dependentRequired, ...). They are checked at run time and never change the class.
         /// </summary>
         internal IReadOnlyList<GeneratedConstraints> ConstraintSets { get; }
+
+        /// <summary>Names of the roots of <see cref="OpenApiGenerationModel.AssertionGraph"/> that the whole object must satisfy.</summary>
+        internal IReadOnlyList<string> AssertionRoots { get; }
 
         internal OpenApiSemanticAnnotations Annotations { get; }
 
@@ -231,8 +241,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string? discriminatorPropertyName,
             IReadOnlyList<GeneratedUnionMemberModel> members,
             OpenApiSemanticAnnotations? annotations = null,
-            int defaultMemberIndex = -1)
+            int defaultMemberIndex = -1,
+            bool assertsAlternatives = false)
         {
+            AssertsAlternatives = assertsAlternatives;
             DefaultMemberIndex = defaultMemberIndex;
             Name = name;
             IsOneOf = isOneOf;
@@ -244,6 +256,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal string Name { get; }
 
         internal bool IsOneOf { get; }
+
+        /// <summary>
+        /// True when the union carries its own assertion that counts the members (oneOf: exactly one, anyOf: at least one). The
+        /// contract then only has to find a member; without it (a base that its members extend) the contract keeps its tie-break.
+        /// </summary>
+        internal bool AssertsAlternatives { get; }
 
         /// <summary>Null when the union has no discriminator.</summary>
         internal string? DiscriminatorPropertyName { get; }
@@ -500,9 +518,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             IReadOnlyList<GeneratedTypeModel>? unionMembers = null,
             OpenApiSemanticLiteral? constValue = null,
             IReadOnlyList<GeneratedTypeModel>? notTypes = null,
-            IReadOnlyList<GeneratedConstraints>? constraintSets = null)
+            IReadOnlyList<GeneratedConstraints>? constraintSets = null,
+            IReadOnlyList<string>? assertionRoots = null,
+            bool nullSkipsAssertions = false,
+            IReadOnlyList<string>? nullSkippedRoots = null)
         {
             ConstraintSets = constraintSets ?? Array.Empty<GeneratedConstraints>();
+            AssertionRoots = assertionRoots ?? Array.Empty<string>();
+            NullSkipsAssertions = nullSkipsAssertions;
+            NullSkippedRoots = nullSkippedRoots ?? Array.Empty<string>();
             NotTypes = notTypes ?? Array.Empty<GeneratedTypeModel>();
             ConstValue = constValue;
             Kind = kind;
@@ -538,11 +562,56 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// </summary>
         internal IReadOnlyList<GeneratedConstraints> ConstraintSets { get; }
 
+        /// <summary>
+        /// Names of the roots of <see cref="OpenApiGenerationModel.AssertionGraph"/> that a value of this type must
+        /// satisfy (shapes the type cannot express: a oneOf next to properties, an enum of booleans, not, ...).
+        /// Part of the type identity because the checks are generated per type.
+        /// </summary>
+        internal IReadOnlyList<string> AssertionRoots { get; }
+
+        /// <summary>
+        /// True when the type is a nullable reference ({$ref, nullable: true}, allOf: [ {$ref} ] with nullable, [X, null]): null is
+        /// valid whatever the assertions of the referenced schema say, so they are not run on null.
+        /// </summary>
+        internal bool NullSkipsAssertions { get; }
+
+        /// <summary>
+        /// The roots among <see cref="AssertionRoots"/> that come from the referenced schema (a union or an enum): they are the ones
+        /// that <see cref="NullSkipsAssertions"/> keeps off a null. The other roots (the reference's own, or those a merge of allOf
+        /// parts added) are judged on null as well.
+        /// </summary>
+        internal IReadOnlyList<string> NullSkippedRoots { get; }
+
+        internal GeneratedTypeModel WithNullSkippedRoots(IReadOnlyList<string> roots)
+        {
+            return new GeneratedTypeModel(
+                Kind, Nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes, ConstraintSets, AssertionRoots,
+                NullSkipsAssertions, roots);
+        }
+
+        internal GeneratedTypeModel WithNullSkipsAssertions(bool value)
+        {
+            return value == NullSkipsAssertions
+                ? this
+                : new GeneratedTypeModel(
+                    Kind, Nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes, ConstraintSets, AssertionRoots, value, value ? NullSkippedRoots : null);
+        }
+
+        internal GeneratedTypeModel WithAssertions(IReadOnlyList<string> roots)
+        {
+            return roots.Count == 0
+                ? this
+                : new GeneratedTypeModel(
+                    Kind, Nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes, ConstraintSets,
+                    AssertionRoots.Concat(roots.Where(root => !AssertionRoots.Contains(root))).ToArray(),
+                    NullSkipsAssertions, NullSkippedRoots);
+        }
+
         internal GeneratedTypeModel WithNot(GeneratedTypeModel notType)
         {
             return new GeneratedTypeModel(
                 Kind, Nullable, Name, ItemType, ValueType, UnionMembers, ConstValue,
-                NotTypes.Concat(new[] { notType }).ToArray(), ConstraintSets);
+                NotTypes.Concat(new[] { notType }).ToArray(), ConstraintSets, AssertionRoots, NullSkipsAssertions, NullSkippedRoots);
         }
 
         internal GeneratedTypeModel WithConstraints(IReadOnlyList<GeneratedConstraints> constraintSets)
@@ -551,7 +620,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 ? this
                 : new GeneratedTypeModel(
                     Kind, Nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes,
-                    ConstraintSets.Concat(constraintSets).ToArray());
+                    ConstraintSets.Concat(constraintSets).ToArray(), AssertionRoots, NullSkipsAssertions, NullSkippedRoots);
         }
 
         internal GeneratedTypeKind Kind { get; }
@@ -566,14 +635,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             return nullable == Nullable
                 ? this
-                : new GeneratedTypeModel(Kind, nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes, ConstraintSets);
+                : new GeneratedTypeModel(Kind, nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes, ConstraintSets, AssertionRoots, NullSkipsAssertions, NullSkippedRoots);
         }
 
         internal GeneratedTypeModel WithConst(OpenApiSemanticLiteral? constValue)
         {
             return System.Nullable.Equals(constValue, ConstValue)
                 ? this
-                : new GeneratedTypeModel(Kind, Nullable, Name, ItemType, ValueType, UnionMembers, constValue, NotTypes, ConstraintSets);
+                : new GeneratedTypeModel(Kind, Nullable, Name, ItemType, ValueType, UnionMembers, constValue, NotTypes, ConstraintSets, AssertionRoots, NullSkipsAssertions, NullSkippedRoots);
         }
 
         /// <summary>
@@ -599,12 +668,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return other is not null &&
                    Kind == other.Kind &&
                    Nullable == other.Nullable &&
+                   NullSkipsAssertions == other.NullSkipsAssertions &&
+                   NullSkippedRoots.SequenceEqual(other.NullSkippedRoots, StringComparer.Ordinal) &&
                    string.Equals(Name, other.Name, StringComparison.Ordinal) &&
                    Equals(ItemType, other.ItemType) &&
                    Equals(ValueType, other.ValueType) &&
                    System.Nullable.Equals(ConstValue, other.ConstValue) &&
                    NotTypes.SequenceEqual(other.NotTypes) &&
                    ConstraintSets.SequenceEqual(other.ConstraintSets) &&
+                   AssertionRoots.SequenceEqual(other.AssertionRoots, StringComparer.Ordinal) &&
                    UnionMembers.SequenceEqual(other.UnionMembers);
         }
 
@@ -619,6 +691,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 int hashCode = (int)Kind;
                 hashCode = (hashCode * 397) ^ Nullable.GetHashCode();
+                hashCode = (hashCode * 397) ^ NullSkipsAssertions.GetHashCode();
                 hashCode = (hashCode * 397) ^ StringComparer.Ordinal.GetHashCode(Name);
                 hashCode = (hashCode * 397) ^ (ItemType?.GetHashCode() ?? 0);
                 hashCode = (hashCode * 397) ^ (ValueType?.GetHashCode() ?? 0);
@@ -636,6 +709,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 foreach (GeneratedConstraints set in ConstraintSets)
                 {
                     hashCode = (hashCode * 397) ^ set.GetHashCode();
+                }
+
+                foreach (string root in AssertionRoots)
+                {
+                    hashCode = (hashCode * 397) ^ StringComparer.Ordinal.GetHashCode(root);
                 }
 
                 return hashCode;

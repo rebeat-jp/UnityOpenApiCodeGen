@@ -42,6 +42,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private readonly List<(string Field, string Pattern, bool EcmaScript)> _regexes =
             new List<(string Field, string Pattern, bool EcmaScript)>();
         private readonly JsonSerializerProfile _json;
+        private readonly GeneratedAssertionGraph? _assertionGraph;
         private bool _helpersNeeded;
 
         internal ConstraintValidationEmitter(OpenApiGenerationModel model)
@@ -53,6 +54,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             _dtos = model.Dtos.ToDictionary(static dto => dto.Name, StringComparer.Ordinal);
             _json = json ?? throw new ArgumentNullException(nameof(json));
+            _assertionGraph = model.AssertionGraph;
             _prefix = HttpClientParameterSerializationEmitter.CreatePrefix(model, "__OacgConstraint_");
         }
 
@@ -69,6 +71,74 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal string? JsonOptionsName { get; set; }
 
         private string ActionTypeName => _json.IsSystemTextJson ? SystemTextJsonActionType : NewtonsoftActionType;
+
+        // ---- shared with the assertion emitter ------------------------------------------------------
+
+        /// <summary>The assertion roots of a type, including those of the DTO it names.</summary>
+        internal IReadOnlyList<string> AssertionRootsOf(GeneratedTypeModel type)
+        {
+            return type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto)
+                ? type.AssertionRoots.Concat(dto.AssertionRoots).ToArray()
+                : type.AssertionRoots;
+        }
+
+        /// <summary>
+        /// The assertion roots that run on a JSON null. A type that a reference made nullable runs none: null is valid there, whatever
+        /// the referenced schema asserts (see <see cref="GeneratedTypeModel.NullSkipsAssertions"/>).
+        /// </summary>
+        internal IReadOnlyList<string> NullAssertionRootsOf(GeneratedTypeModel type)
+        {
+            if (!type.NullSkipsAssertions)
+            {
+                return AssertionRootsOf(type);
+            }
+
+            // Only the roots of the referenced schema are skipped (its DTO roots are never in type.AssertionRoots, so they are all
+            // skipped); the roots of the reference itself still judge null.
+            return type.AssertionRoots.Where(root => !type.NullSkippedRoots.Contains(root)).ToArray();
+        }
+
+        /// <summary>The entry method of a root of the assertion graph (see <see cref="AssertionEmitter"/>).</summary>
+        internal string AssertionEntryName(string root) => _prefix + "AssertRoot_" + root;
+
+        /// <summary>
+        /// Writes the calls of the assertion entries of <paramref name="roots"/> for the token. A token that was made from a
+        /// typed value (Newtonsoft.Json) is written and read again first, so that dates and other values that became a
+        /// non-string token are the strings of the wire; a response token already is read that way.
+        /// </summary>
+        internal void AppendAssertionCalls(
+            StringBuilder source,
+            string indent,
+            IReadOnlyList<string> roots,
+            string token,
+            string path,
+            string contract,
+            bool normalizeToken)
+        {
+            foreach (string root in roots)
+            {
+                _helpersNeeded = true;
+                source.Append(indent).Append(AssertionEntryName(root)).Append('(')
+                    .Append(normalizeToken && !_json.IsSystemTextJson ? _prefix + "ANormalize(" + token + ")" : token)
+                    .Append(", ").Append(path).Append(", ").Append(contract).AppendLine(", null);");
+            }
+        }
+
+        /// <summary>Name prefix of the generated helpers and fields (the assertion emitter adds its members next to them).</summary>
+        internal string HelperPrefix => _prefix;
+
+        /// <summary>The static Regex field of a pattern (created once, see <see cref="AppendHelpers"/>); also makes the helpers be written.</summary>
+        internal string RegexField(string pattern, bool ecmaScript)
+        {
+            _helpersNeeded = true;
+            return GetRegexField(pattern, ecmaScript);
+        }
+
+        /// <summary>Makes <see cref="AppendHelpers"/> write the helpers even when no constraint check was emitted.</summary>
+        internal void RequireHelpers()
+        {
+            _helpersNeeded = true;
+        }
 
         // ---- reachability --------------------------------------------------------------------------
 
@@ -93,7 +163,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 return false;
             }
 
-            if (type.ConstraintSets.Count > 0)
+            if (type.ConstraintSets.Count > 0 || type.AssertionRoots.Count > 0)
             {
                 return true;
             }
@@ -110,7 +180,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         return false;
                     }
 
-                    return dto.ConstraintSets.Count > 0 ||
+                    return dto.ConstraintSets.Count > 0 || dto.AssertionRoots.Count > 0 ||
                            dto.Properties.Any(property =>
                                !property.Annotations.ReadOnly && Reaches(property.Type, visitedDtos)) ||
                            (dto.ExtensionDataValueType is not null && Reaches(dto.ExtensionDataValueType, visitedDtos));
@@ -305,6 +375,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        {");
             source.AppendLine("            if (token.Type == global::Newtonsoft.Json.Linq.JTokenType.Null)");
             source.AppendLine("            {");
+            // JSON Schema decides whether null is valid (a nullable enum that does not list null, a oneOf that no member matches).
+            AppendAssertionCalls(source, "                ", NullAssertionRootsOf(type), "token", "path", "contract", normalizeToken: true);
             source.AppendLine("                return;");
             source.AppendLine("            }");
 
@@ -317,6 +389,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             AppendOwnChecks(source, "            ", own, "token", "path", "contract", contractScope: false);
+            AppendAssertionCalls(
+                source, "            ", dto is null ? type.AssertionRoots : type.AssertionRoots.Concat(dto.AssertionRoots).ToArray(),
+                "token", "path", "contract", normalizeToken: true);
             switch (type.Kind)
             {
                 case GeneratedTypeKind.Array:
@@ -600,6 +675,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// <summary>Writes the static helpers and the regular expression fields; call after every other member.</summary>
         internal void AppendHelpers(StringBuilder source)
         {
+            if (_assertionGraph is not null && _assertionGraph.Roots.Count > 0)
+            {
+                // Writes the assertion methods (and registers their regular expression fields, which follow).
+                new AssertionEmitter(this, _json, _assertionGraph).AppendMembers(source);
+            }
+
             if (!_helpersNeeded)
             {
                 return;
@@ -743,22 +824,30 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return count;
         }
 
-        private static void __P__String(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, long minLength, long maxLength, global::System.Text.RegularExpressions.Regex? regex, string pattern)
+        // The bool core reports the violated keyword and a detail; __P__String throws it (the checks of a type) and the assertion methods record it.
+        private static bool __P__StringCore(global::Newtonsoft.Json.Linq.JToken token, long minLength, long maxLength, global::System.Text.RegularExpressions.Regex? regex, string pattern, out string keyword, out string detail, out global::System.Exception? inner)
         {
+            keyword = string.Empty;
+            detail = string.Empty;
+            inner = null;
             if (!__P__TryString(token, out string value))
             {
-                return;
+                return true;
             }
             if (minLength >= 0 || maxLength >= 0)
             {
                 long length = __P__Length(value);
                 if (minLength >= 0 && length < minLength)
                 {
-                    __P__Fail(contract, path, ""minLength"", ""the length "" + __P__Text(length) + "" is less than "" + __P__Text(minLength));
+                    keyword = ""minLength"";
+                    detail = ""the length "" + __P__Text(length) + "" is less than "" + __P__Text(minLength);
+                    return false;
                 }
                 if (maxLength >= 0 && length > maxLength)
                 {
-                    __P__Fail(contract, path, ""maxLength"", ""the length "" + __P__Text(length) + "" is greater than "" + __P__Text(maxLength));
+                    keyword = ""maxLength"";
+                    detail = ""the length "" + __P__Text(length) + "" is greater than "" + __P__Text(maxLength);
+                    return false;
                 }
             }
             if (regex != null)
@@ -770,13 +859,26 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
                 catch (global::System.Text.RegularExpressions.RegexMatchTimeoutException exception)
                 {
-                    __P__Fail(contract, path, ""pattern"", ""matching the pattern '"" + pattern + ""' timed out"", exception);
-                    return;
+                    keyword = ""pattern"";
+                    detail = ""matching the pattern '"" + pattern + ""' timed out"";
+                    inner = exception;
+                    return false;
                 }
                 if (!matched)
                 {
-                    __P__Fail(contract, path, ""pattern"", ""the value does not match the pattern '"" + pattern + ""'"");
+                    keyword = ""pattern"";
+                    detail = ""the value does not match the pattern '"" + pattern + ""'"";
+                    return false;
                 }
+            }
+            return true;
+        }
+
+        private static void __P__String(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, long minLength, long maxLength, global::System.Text.RegularExpressions.Regex? regex, string pattern)
+        {
+            if (!__P__StringCore(token, minLength, maxLength, regex, pattern, out string keyword, out string detail, out global::System.Exception? inner))
+            {
+                __P__Fail(contract, path, keyword, detail, inner);
             }
         }
 
@@ -848,47 +950,78 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return __P__ToDouble(token).CompareTo((double)limit);
         }
 
-        private static void __P__Bound(string path, string contract, int comparison, bool lower, bool exclusive, string limit)
+        private static bool __P__BoundCore(int comparison, bool lower, bool exclusive, string limit, out string keyword, out string detail)
         {
             bool violated = lower ? (exclusive ? comparison <= 0 : comparison < 0) : (exclusive ? comparison >= 0 : comparison > 0);
+            keyword = string.Empty;
+            detail = string.Empty;
             if (!violated)
             {
-                return;
+                return true;
             }
-            string keyword = lower ? (exclusive ? ""exclusiveMinimum"" : ""minimum"") : (exclusive ? ""exclusiveMaximum"" : ""maximum"");
+            keyword = lower ? (exclusive ? ""exclusiveMinimum"" : ""minimum"") : (exclusive ? ""exclusiveMaximum"" : ""maximum"");
             string relation = lower ? (exclusive ? ""greater than "" : ""at least "") : (exclusive ? ""less than "" : ""at most "");
-            __P__Fail(contract, path, keyword, ""the value must be "" + relation + limit);
+            detail = ""the value must be "" + relation + limit;
+            return false;
+        }
+
+        private static bool __P__MinCore(global::Newtonsoft.Json.Linq.JToken token, decimal limit, bool exclusive, out string keyword, out string detail)
+        {
+            keyword = string.Empty;
+            detail = string.Empty;
+            return !__P__IsNumber(token) || __P__BoundCore(__P__Compare(token, limit), true, exclusive, limit.ToString(global::System.Globalization.CultureInfo.InvariantCulture), out keyword, out detail);
+        }
+
+        private static bool __P__MinCore(global::Newtonsoft.Json.Linq.JToken token, double limit, bool exclusive, out string keyword, out string detail)
+        {
+            keyword = string.Empty;
+            detail = string.Empty;
+            return !__P__IsNumber(token) || __P__BoundCore(__P__ToDouble(token).CompareTo(limit), true, exclusive, limit.ToString(""R"", global::System.Globalization.CultureInfo.InvariantCulture), out keyword, out detail);
+        }
+
+        private static bool __P__MaxCore(global::Newtonsoft.Json.Linq.JToken token, decimal limit, bool exclusive, out string keyword, out string detail)
+        {
+            keyword = string.Empty;
+            detail = string.Empty;
+            return !__P__IsNumber(token) || __P__BoundCore(__P__Compare(token, limit), false, exclusive, limit.ToString(global::System.Globalization.CultureInfo.InvariantCulture), out keyword, out detail);
+        }
+
+        private static bool __P__MaxCore(global::Newtonsoft.Json.Linq.JToken token, double limit, bool exclusive, out string keyword, out string detail)
+        {
+            keyword = string.Empty;
+            detail = string.Empty;
+            return !__P__IsNumber(token) || __P__BoundCore(__P__ToDouble(token).CompareTo(limit), false, exclusive, limit.ToString(""R"", global::System.Globalization.CultureInfo.InvariantCulture), out keyword, out detail);
         }
 
         private static void __P__Min(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, decimal limit, bool exclusive)
         {
-            if (__P__IsNumber(token))
+            if (!__P__MinCore(token, limit, exclusive, out string keyword, out string detail))
             {
-                __P__Bound(path, contract, __P__Compare(token, limit), true, exclusive, limit.ToString(global::System.Globalization.CultureInfo.InvariantCulture));
+                __P__Fail(contract, path, keyword, detail);
             }
         }
 
         private static void __P__Min(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, double limit, bool exclusive)
         {
-            if (__P__IsNumber(token))
+            if (!__P__MinCore(token, limit, exclusive, out string keyword, out string detail))
             {
-                __P__Bound(path, contract, __P__ToDouble(token).CompareTo(limit), true, exclusive, limit.ToString(""R"", global::System.Globalization.CultureInfo.InvariantCulture));
+                __P__Fail(contract, path, keyword, detail);
             }
         }
 
         private static void __P__Max(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, decimal limit, bool exclusive)
         {
-            if (__P__IsNumber(token))
+            if (!__P__MaxCore(token, limit, exclusive, out string keyword, out string detail))
             {
-                __P__Bound(path, contract, __P__Compare(token, limit), false, exclusive, limit.ToString(global::System.Globalization.CultureInfo.InvariantCulture));
+                __P__Fail(contract, path, keyword, detail);
             }
         }
 
         private static void __P__Max(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, double limit, bool exclusive)
         {
-            if (__P__IsNumber(token))
+            if (!__P__MaxCore(token, limit, exclusive, out string keyword, out string detail))
             {
-                __P__Bound(path, contract, __P__ToDouble(token).CompareTo(limit), false, exclusive, limit.ToString(""R"", global::System.Globalization.CultureInfo.InvariantCulture));
+                __P__Fail(contract, path, keyword, detail);
             }
         }
 
@@ -902,11 +1035,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return global::System.Math.Abs(quotient - global::System.Math.Round(quotient)) <= 1e-9 * global::System.Math.Max(1d, global::System.Math.Abs(quotient));
         }
 
-        private static void __P__Multiple(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, decimal divisor)
+        private static bool __P__MultipleCore(global::Newtonsoft.Json.Linq.JToken token, decimal divisor, out string keyword, out string detail)
         {
+            keyword = string.Empty;
+            detail = string.Empty;
             if (!__P__IsNumber(token))
             {
-                return;
+                return true;
             }
             bool multiple;
             if (__P__TryDecimal(token, out decimal value))
@@ -926,15 +1061,38 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
             if (!multiple)
             {
-                __P__Fail(contract, path, ""multipleOf"", ""the value is not a multiple of "" + divisor.ToString(global::System.Globalization.CultureInfo.InvariantCulture));
+                keyword = ""multipleOf"";
+                detail = ""the value is not a multiple of "" + divisor.ToString(global::System.Globalization.CultureInfo.InvariantCulture);
+            }
+            return multiple;
+        }
+
+        private static bool __P__MultipleCore(global::Newtonsoft.Json.Linq.JToken token, double divisor, out string keyword, out string detail)
+        {
+            keyword = string.Empty;
+            detail = string.Empty;
+            if (!__P__IsNumber(token) || __P__NearInteger(__P__ToDouble(token) / divisor))
+            {
+                return true;
+            }
+            keyword = ""multipleOf"";
+            detail = ""the value is not a multiple of "" + divisor.ToString(""R"", global::System.Globalization.CultureInfo.InvariantCulture);
+            return false;
+        }
+
+        private static void __P__Multiple(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, decimal divisor)
+        {
+            if (!__P__MultipleCore(token, divisor, out string keyword, out string detail))
+            {
+                __P__Fail(contract, path, keyword, detail);
             }
         }
 
         private static void __P__Multiple(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, double divisor)
         {
-            if (__P__IsNumber(token) && !__P__NearInteger(__P__ToDouble(token) / divisor))
+            if (!__P__MultipleCore(token, divisor, out string keyword, out string detail))
             {
-                __P__Fail(contract, path, ""multipleOf"", ""the value is not a multiple of "" + divisor.ToString(""R"", global::System.Globalization.CultureInfo.InvariantCulture));
+                __P__Fail(contract, path, keyword, detail);
             }
         }
 
@@ -1026,23 +1184,29 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return global::Newtonsoft.Json.Linq.JToken.DeepEquals(left, right);
         }
 
-        private static void __P__Array(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, long minItems, long maxItems, bool unique)
+        private static bool __P__ArrayCore(global::Newtonsoft.Json.Linq.JToken token, long minItems, long maxItems, bool unique, out string keyword, out string detail)
         {
+            keyword = string.Empty;
+            detail = string.Empty;
             if (!(token is global::Newtonsoft.Json.Linq.JArray array))
             {
-                return;
+                return true;
             }
             if (minItems >= 0 && array.Count < minItems)
             {
-                __P__Fail(contract, path, ""minItems"", ""the array has "" + __P__Text(array.Count) + "" items, fewer than "" + __P__Text(minItems));
+                keyword = ""minItems"";
+                detail = ""the array has "" + __P__Text(array.Count) + "" items, fewer than "" + __P__Text(minItems);
+                return false;
             }
             if (maxItems >= 0 && array.Count > maxItems)
             {
-                __P__Fail(contract, path, ""maxItems"", ""the array has "" + __P__Text(array.Count) + "" items, more than "" + __P__Text(maxItems));
+                keyword = ""maxItems"";
+                detail = ""the array has "" + __P__Text(array.Count) + "" items, more than "" + __P__Text(maxItems);
+                return false;
             }
             if (!unique)
             {
-                return;
+                return true;
             }
             // Items are compared as JSON values (1 equals 1.0, object members in any order); hashing keeps it linear for distinct items.
             var buckets = new global::System.Collections.Generic.Dictionary<int, global::System.Collections.Generic.List<int>>();
@@ -1058,42 +1222,80 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 {
                     if (__P__Equal(array[other], array[index]))
                     {
-                        __P__Fail(contract, path, ""uniqueItems"", ""the items at index "" + __P__Text(other) + "" and "" + __P__Text(index) + "" are equal"");
-                        return;
+                        keyword = ""uniqueItems"";
+                        detail = ""the items at index "" + __P__Text(other) + "" and "" + __P__Text(index) + "" are equal"";
+                        return false;
                     }
                 }
                 bucket.Add(index);
             }
+            return true;
+        }
+
+        private static void __P__Array(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, long minItems, long maxItems, bool unique)
+        {
+            if (!__P__ArrayCore(token, minItems, maxItems, unique, out string keyword, out string detail))
+            {
+                __P__Fail(contract, path, keyword, detail);
+            }
+        }
+
+        private static bool __P__PropertiesCore(global::Newtonsoft.Json.Linq.JToken token, long minProperties, long maxProperties, out string keyword, out string detail)
+        {
+            keyword = string.Empty;
+            detail = string.Empty;
+            if (!(token is global::Newtonsoft.Json.Linq.JObject objectToken))
+            {
+                return true;
+            }
+            if (minProperties >= 0 && objectToken.Count < minProperties)
+            {
+                keyword = ""minProperties"";
+                detail = ""the object has "" + __P__Text(objectToken.Count) + "" properties, fewer than "" + __P__Text(minProperties);
+                return false;
+            }
+            if (maxProperties >= 0 && objectToken.Count > maxProperties)
+            {
+                keyword = ""maxProperties"";
+                detail = ""the object has "" + __P__Text(objectToken.Count) + "" properties, more than "" + __P__Text(maxProperties);
+                return false;
+            }
+            return true;
         }
 
         private static void __P__Properties(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, long minProperties, long maxProperties)
         {
-            if (!(token is global::Newtonsoft.Json.Linq.JObject objectToken))
+            if (!__P__PropertiesCore(token, minProperties, maxProperties, out string keyword, out string detail))
             {
-                return;
-            }
-            if (minProperties >= 0 && objectToken.Count < minProperties)
-            {
-                __P__Fail(contract, path, ""minProperties"", ""the object has "" + __P__Text(objectToken.Count) + "" properties, fewer than "" + __P__Text(minProperties));
-            }
-            if (maxProperties >= 0 && objectToken.Count > maxProperties)
-            {
-                __P__Fail(contract, path, ""maxProperties"", ""the object has "" + __P__Text(objectToken.Count) + "" properties, more than "" + __P__Text(maxProperties));
+                __P__Fail(contract, path, keyword, detail);
             }
         }
 
-        private static void __P__Dependent(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, string[] names)
+        private static bool __P__DependentCore(global::Newtonsoft.Json.Linq.JToken token, string[] names, out string keyword, out string detail)
         {
+            keyword = string.Empty;
+            detail = string.Empty;
             if (!(token is global::Newtonsoft.Json.Linq.JObject objectToken) || objectToken.Property(names[0]) == null)
             {
-                return;
+                return true;
             }
             for (int index = 1; index < names.Length; index++)
             {
                 if (objectToken.Property(names[index]) == null)
                 {
-                    __P__Fail(contract, path, ""dependentRequired"", ""a property that is present requires the property '"" + names[index] + ""' (required by '"" + names[0] + ""')"");
+                    keyword = ""dependentRequired"";
+                    detail = ""a property that is present requires the property '"" + names[index] + ""' (required by '"" + names[0] + ""')"";
+                    return false;
                 }
+            }
+            return true;
+        }
+
+        private static void __P__Dependent(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, string[] names)
+        {
+            if (!__P__DependentCore(token, names, out string keyword, out string detail))
+            {
+                __P__Fail(contract, path, keyword, detail);
             }
         }
 

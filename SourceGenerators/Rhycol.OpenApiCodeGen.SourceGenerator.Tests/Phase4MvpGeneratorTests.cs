@@ -359,8 +359,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void RequiredPropertyMustBeDeclaredInProperties()
+        public void RequiredPropertyThatAClosedObjectDoesNotDeclareWarnsAndGenerates()
         {
+            // Rewritten for P4: it was OACG100. JSON Schema accepts the schema; no value of a closed object can satisfy it.
             const string Document = @"{
   ""openapi"": ""3.1.0"",
   ""info"": { ""title"": ""Required"", ""version"": ""1"" },
@@ -375,11 +376,32 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(Document);
             Diagnostic diagnostic = Assert.Single(execution.RunResult.Diagnostics);
 
-            Assert.Equal("OACG100", diagnostic.Id);
-            Assert.Contains("Required property 'missing' is not declared", diagnostic.GetMessage());
+            Assert.Equal("OACG108", diagnostic.Id);
+            Assert.Contains("Property 'missing' is required but not declared", diagnostic.GetMessage());
             Assert.Contains(
                 "logical path '/components/schemas/Payload/required/0'",
                 diagnostic.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
+        }
+
+        [Fact]
+        public void RequiredPropertyThatAnOpenObjectDoesNotDeclareIsAcceptedWithoutDiagnostic()
+        {
+            const string Document = @"{
+  ""openapi"": ""3.1.0"",
+  ""info"": { ""title"": ""Required"", ""version"": ""1"" },
+  ""paths"": {},
+  ""components"": { ""schemas"": { ""Payload"": {
+    ""type"": ""object"",
+    ""required"": [""missing""],
+    ""properties"": { ""present"": { ""type"": ""string"" } }
+  } } }
+}";
+
+            Phase4GeneratorExecution execution = Phase4GeneratorTestHarness.GenerateAndCompile(Document);
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
         }
 
         [Fact]
