@@ -41,7 +41,7 @@ verification process.</p>
 </tr>
 </tbody></table>
 <p>The analyzer DLL remains committed in the add-on for Git URL installation.
-Examples use the current <code>0.6.0-preview.2</code> release tag (a prerelease; the latest
+Examples use the current <code>0.6.0-preview.3</code> release tag (a prerelease; the latest
 stable release is <code>0.5.1</code>); to try an unreleased commit, replace
 that ref with the reviewed commit SHA in both Git dependencies. Candidate verification does
 not establish that a version is published.</p>
@@ -56,7 +56,7 @@ not establish that a version is published.</p>
 <tbody><tr>
 <td><code>source-generator-ci.yml</code></td>
 <td>PR, main/develop push, manual SHA from <code>main</code>, trusted DLL PR dispatch from <code>main</code></td>
-<td>.NET/package checks, Unity evidence, CD dry-run</td>
+<td>.NET/package checks always; Unity evidence only for manual dispatch or a same-repository PR labelled <code>unity-gate</code></td>
 </tr>
 <tr>
 <td><code>source-generator-verify.yml</code></td>
@@ -80,8 +80,10 @@ not establish that a version is published.</p>
 </tr>
 </tbody></table>
 <p>Manual workflows become available after their definitions reach the default
-branch. Before that merge, a same-repository PR exercises the shared pipeline
-and the actual <code>publish-release.js</code> script with <code>PUBLISH=false</code>.</p>
+branch. Before that merge, a same-repository PR labelled <code>unity-gate</code> (or a manual
+dispatch) exercises the shared pipeline and the actual <code>publish-release.js</code>
+script with <code>PUBLISH=false</code>; that step sits behind the Unity gate and is skipped
+when the Unity job is off.</p>
 <p>Unity runs on GitHub-hosted Linux in GameCI containers. The three Linux/amd64
 image digests are pinned in
 <a href="SourceGenerators/BuildTools/CI/unity-images.json"><code>unity-images.json</code></a>.
@@ -99,8 +101,57 @@ the serial through the GameCI activation procedure. Activation and license
 return logs stay in the disposable container. Test logs/XML are redacted before
 being written to the artifact directory.</p>
 <p>All three editors run serially in one job. A repository-wide concurrency group
-also prevents overlapping Unity jobs across CI and release workflows. Fork PRs
-run .NET/package checks without the Unity job or its Secrets.</p>
+also prevents overlapping Unity jobs across CI and release workflows.</p>
+<h3 id="when-the-unity-job-runs">When the Unity job runs</h3>
+<p>Every Unity job waits for an Environment approval, so <code>source-generator-ci.yml</code>
+starts it only on request:</p>
+<table>
+<thead>
+<tr>
+<th>Trigger</th>
+<th>Unity job</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Same-repository PR labelled <code>unity-gate</code></td>
+<td>Runs (the label can be added at any time; adding it starts a new run)</td>
+</tr>
+<tr>
+<td>PR without the label</td>
+<td>Skipped; the .NET/package checks still run</td>
+</tr>
+<tr>
+<td>Fork PR</td>
+<td>Never runs, with or without the label; no Secrets reach it</td>
+</tr>
+<tr>
+<td>Push to <code>main</code> or <code>develop</code></td>
+<td>Skipped</td>
+</tr>
+<tr>
+<td>Manual <code>source-generator-ci.yml</code> dispatch (SHA from <code>main</code>, trusted DLL PR dispatch)</td>
+<td>Runs</td>
+</tr>
+<tr>
+<td><code>source-generator-release.yml</code> (dry-run and publication)</td>
+<td>Runs</td>
+</tr>
+</tbody></table>
+<p>The CI workflow reacts to the PR actions <code>opened</code>, <code>synchronize</code>, <code>reopened</code>
+and <code>labeled</code>. Any label added to a PR starts the .NET/package checks again,
+but a <code>labeled</code> event enables the Unity job only when the label just added is
+<code>unity-gate</code>: adding another label to a PR that already has <code>unity-gate</code> skips
+the Unity job (no new approval request). New commits (<code>synchronize</code>) and
+<code>reopened</code> on a PR that carries <code>unity-gate</code> run it again. Create the label once:</p>
+<pre><code class="language-sh">gh label create unity-gate --repo rebeat-jp/UnityOpenApiCodeGen \
+  --description &quot;Run the Unity verification job (needs Environment approval)&quot; \
+  --color 1D76DB
+</code></pre>
+<p>A PR that changes only code the generator reads can usually skip the Unity job
+until release. Add the label when a PR touches Unity-facing behavior
+(editor code, package layout, the committed DLL) and Unity evidence is wanted
+before merging. The release workflow always runs the Unity gate regardless of
+earlier PR labels, so an unlabelled merge never reaches a release unverified.</p>
 <h2 id="update-the-committed-dll">Update the committed DLL</h2>
 <p>After source changes reach the selected base branch, start:</p>
 <pre><code class="language-sh">gh workflow run source-generator-update-dll.yml --ref main \
@@ -123,9 +174,9 @@ does not automatically trigger the ordinary PR workflow.</p>
 <h2 id="candidate-contract-and-evidence">Candidate contract and evidence</h2>
 <p>The current package contract is:</p>
 <ul>
-<li>Base <code>0.6.0-preview.2</code>, minimum Unity <code>2021.3</code>.</li>
-<li>Add-on <code>0.6.0-preview.2</code>, minimum Unity <code>6000.0</code>.</li>
-<li>Add-on dependency on base <code>0.6.0-preview.2</code> only (<code>pack-release.sh</code> checks that the
+<li>Base <code>0.6.0-preview.3</code>, minimum Unity <code>2021.3</code>.</li>
+<li>Add-on <code>0.6.0-preview.3</code>, minimum Unity <code>6000.0</code>.</li>
+<li>Add-on dependency on base <code>0.6.0-preview.3</code> only (<code>pack-release.sh</code> checks that the
 dependency set is exactly the base package, in <code>package.json</code> and in
 <code>packages-lock.json</code>). Since 0.6.0 the add-on no longer depends on
 <code>com.unity.nuget.newtonsoft-json</code>; the project installs the libraries of the
@@ -179,8 +230,8 @@ nonzero exits, and mismatched provenance cannot pass the release gate. Unity
 jobs cannot silently repack a missing candidate.</p>
 <p>The final <code>verified-release-&lt;run-id&gt;-&lt;aggregate-execution-attempt&gt;</code> artifact is
 uploaded only after successful aggregation and dry-run validation. It contains:</p>
-<pre><code class="language-text">jp.rhycol.openapicodegen-0.6.0-preview.2.tgz
-jp.rhycol.openapicodegen.source-generator-0.6.0-preview.2.tgz
+<pre><code class="language-text">jp.rhycol.openapicodegen-0.6.0-preview.3.tgz
+jp.rhycol.openapicodegen.source-generator-0.6.0-preview.3.tgz
 release-manifest.json
 SHA256SUMS
 unity-gate.json
@@ -227,7 +278,7 @@ failure reasons. Arbitrary logs are not emitted as executable workflow commands.
 <h2 id="dry-run-and-publication">Dry-run and publication</h2>
 <p>Start the manual release workflow with an exact 40-character SHA:</p>
 <pre><code class="language-sh">gh workflow run source-generator-release.yml --ref main \
-  -f commit=REPLACE_WITH_FULL_COMMIT_SHA -f version=0.6.0-preview.2 -F publish=false
+  -f commit=REPLACE_WITH_FULL_COMMIT_SHA -f version=0.6.0-preview.3 -F publish=false
 </code></pre>
 <p>The default <code>publish=false</code> verifies the full candidate and executes the CD
 script without remote publication. Review the workflow result and complete
@@ -237,6 +288,12 @@ Both manual CI dispatch and release dry-run must run from <code>main</code>. Ord
 manual CI and release dry-runs select a commit in <code>origin/main</code> history. The
 DLL update workflow has the separately validated bot PR path described above;
 use normal PR CI to verify other unmerged changes.</p>
+<p>The recommended release path is: merge the release PR into <code>main</code> (the Unity
+job is optional on the PR), then start <code>source-generator-release.yml</code> from
+<code>main</code> with <code>-F publish=true</code> and approve the Unity Environment once for that
+run. Publication only starts after the verify job, including the Unity gate,
+has passed on the exact commit, so a separate dry-run is optional; use one
+when the release procedure or workflows themselves changed.</p>
 <p>For publication, complete the add-on&#39;s
 <a href="SourceGenerators/OpenUPM/README.html">initial OpenUPM registration</a>, then start
 the same workflow from <code>main</code> with <code>-F publish=true</code>. The trusted workflow
@@ -316,7 +373,7 @@ evidence archive uses GNU tar and runs on Linux in Actions.</p>
 <li>Remove <code>jp.rhycol.openapicodegen.source-generator</code> from the Unity project
 manifest and allow Unity to remove its provider define.</li>
 <li>Keep the base package and select the Docker provider in Settings.</li>
-<li>Pin the base to the latest stable <code>0.5.1</code> release if the <code>0.6.0-preview.2</code>
+<li>Pin the base to the latest stable <code>0.5.1</code> release if the <code>0.6.0-preview.3</code>
 contract is also implicated.</li>
 <li>Regenerate affected clients and adjust code that depended on generated
 types. Record the project/package changes.</li>

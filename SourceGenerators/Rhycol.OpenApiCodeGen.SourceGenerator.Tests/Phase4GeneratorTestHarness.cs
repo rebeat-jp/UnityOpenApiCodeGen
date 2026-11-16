@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
@@ -154,6 +155,17 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 .ToArray();
         }
 
+        // A file reference is opened (and memory-mapped) once per path and shared by every compilation. Roslyn
+        // references are immutable and safe to share across concurrent compilations; opening the whole framework
+        // again for each of the thousands of compilations made the test host grow to tens of gigabytes.
+        private static readonly ConcurrentDictionary<string, MetadataReference> FileReferences =
+            new ConcurrentDictionary<string, MetadataReference>(StringComparer.OrdinalIgnoreCase);
+
+        internal static MetadataReference FileReference(string path)
+        {
+            return FileReferences.GetOrAdd(path, static value => MetadataReference.CreateFromFile(value));
+        }
+
         private static IEnumerable<MetadataReference> GetMetadataReferences(
             Phase4CompilationOptions options)
         {
@@ -192,7 +204,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             var references = new List<MetadataReference>(
                 paths.Where(path => !string.IsNullOrWhiteSpace(path) &&
                                     !excludedFileNames.Contains(Path.GetFileName(path)))
-                    .Select(static path => (MetadataReference)MetadataReference.CreateFromFile(path)));
+                    .Select(static path => FileReference(path)));
             if (options.NewtonsoftStubVersion is not null)
             {
                 references.Add(CreateStubReference(

@@ -40,7 +40,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         public void NullableDifferenceRemainsIncompatible(bool multipleMediaTypes)
         {
             const string First = "{\"type\":\"string\",\"enum\":[\"a\",\"b\"]}";
-            const string Second = "{\"type\":\"string\",\"nullable\":true,\"enum\":[\"b\",\"a\"]}";
+            const string Second = "{\"type\":\"string\",\"nullable\":true,\"enum\":[\"b\",\"a\",null]}";
 
             AssertInconsistent(
                 CreateDocument(multipleMediaTypes, First, Second, version: "3.0.3"),

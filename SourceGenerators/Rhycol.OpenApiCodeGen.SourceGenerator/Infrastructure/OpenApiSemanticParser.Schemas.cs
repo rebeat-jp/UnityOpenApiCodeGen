@@ -79,7 +79,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private OpenApiSemanticSchema ParseSchemaShape(
             SpecNode node,
             string suggestedName,
-            HashSet<NormalizedSpecNodeIdentity> referenceStack)
+            HashSet<NormalizedSpecNodeIdentity> referenceStack,
+            bool skipAllOf = false,
+            bool skipUnion = false,
+            bool skipEnum = false)
         {
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
@@ -92,8 +95,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 return ParseReferenceSchema(node, suggestedName, referenceStack, reference, referenceNode);
             }
 
-            if (HasUnionKeyword(node))
+            if (!skipUnion && HasUnionKeyword(node))
             {
+                if (OwnsShape(node))
+                {
+                    // The node has a shape of its own (properties, items, additionalProperties schema): its type is that
+                    // shape and the oneOf / anyOf next to it only select the valid values, so they are assertions.
+                    OpenApiSemanticSchema owned = ParseSchemaShape(
+                        node, suggestedName, referenceStack, skipAllOf, skipUnion: true, skipEnum: skipEnum);
+                    return LiftAlternativeProperties(node, owned, suggestedName)
+                        .WithAssertions(new[] { CreateAlternativesAssertion(node) });
+                }
+
+                if (node.TryGetProperty("allOf", out _) && GetProperty(node, "discriminator") is null)
+                {
+                    return ParseAllOfWithAlternatives(node, suggestedName, referenceStack);
+                }
+
                 return ParseUnion(node, suggestedName, referenceStack);
             }
 
@@ -108,8 +126,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
             }
 
-            if (node.TryGetProperty("allOf", out _))
+            if (!skipAllOf && node.TryGetProperty("allOf", out _))
             {
+                if (IsAssertionOnlyAllOf(node))
+                {
+                    // A non-object schema whose allOf parts only add validation keywords and not keeps
+                    // its own type; the parts are applied on top of the shape.
+                    return ApplyAssertionOnlyAllOf(
+                        node,
+                        suggestedName,
+                        ParseSchemaShape(node, suggestedName, referenceStack, skipAllOf: true));
+                }
+
                 return ParseAllOf(node, suggestedName, referenceStack);
             }
 
@@ -119,7 +147,23 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiSemanticAnnotations annotations = ParseAnnotations(node, allowConst: true);
 
             SpecNode? enumNode = GetProperty(node, "enum");
-            if (enumNode is not null)
+            if (enumNode is not null && !skipEnum && IsAssertionOnlyEnum(enumNode, type))
+            {
+                // No C# enum can hold these values: the type is the base type of the schema and the values are asserted.
+                OpenApiSemanticSchema baseSchema = ParseSchemaShape(
+                    node, suggestedName, referenceStack, skipAllOf, skipUnion, skipEnum: true);
+                if (!baseSchema.Nullable && enumNode.EnumerateArray().Any(static value => value.ValueKind == SpecValueKind.Null))
+                {
+                    AddIgnoredWarning(
+                        enumNode,
+                        "The enum lists null, but the schema is not nullable, so null can never be a valid value.");
+                }
+
+                WarnNullableEnumWithoutNull(enumNode, baseSchema.Nullable);
+                return baseSchema.WithAssertions(new[] { CreateEnumAssertion(node, enumNode) });
+            }
+
+            if (enumNode is not null && !skipEnum)
             {
                 if (annotations.Const.HasValue)
                 {
@@ -129,7 +173,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     annotations = WithoutConst(annotations);
                 }
 
-                return ParseEnumSchema(node, enumNode, type, suggestedName, format, nullable, annotations);
+                OpenApiSemanticSchema enumSchema =
+                    ParseEnumSchema(node, enumNode, type, suggestedName, format, nullable, annotations);
+                // OpenAPI 3.0.3: nullable adds null to the type, but the enum still has to list it. The C# type stays nullable (an
+                // upper bound); the assertion rejects null.
+                return WarnNullableEnumWithoutNull(enumNode, nullable)
+                    ? enumSchema.WithAssertions(new[] { CreateEnumAssertion(node, enumNode) })
+                    : enumSchema;
             }
 
             string? declaredContentMediaType = type == "string" && GetProperty(node, "contentEncoding") is null
@@ -210,6 +260,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 default:
                     throw Unsupported(node, "Unsupported schema type: '" + type + "'.");
             }
+        }
+
+        // OpenAPI 3.0: nullable: true next to an enum that does not list null does not make null valid. True when it warned.
+        private bool WarnNullableEnumWithoutNull(SpecNode enumNode, bool nullable)
+        {
+            if (_minorVersion != 0 || !nullable || enumNode.ValueKind != SpecValueKind.Array ||
+                enumNode.EnumerateArray().Any(static value => value.ValueKind == SpecValueKind.Null))
+            {
+                return false;
+            }
+
+            AddIgnoredWarning(
+                enumNode,
+                "The schema is nullable but its enum does not list null, so null is not a valid value unless you add null to the enum.");
+            return true;
         }
 
         private OpenApiSemanticSchema ParseBooleanSchema(SpecNode node, string suggestedName)
@@ -460,15 +525,24 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 .Where(value => !propertyNames.Contains(value))
                 .OrderBy(static value => value, StringComparer.Ordinal)
                 .ToArray();
-            if (missingRequiredProperties.Length > 0)
+            OpenApiSemanticSchema shape = CreateObjectShape(
+                node, suggestedName, format, nullable, annotations, properties, mode, valueSchema);
+            if (missingRequiredProperties.Length == 0)
             {
-                string missingProperty = missingRequiredProperties[0];
-                throw Invalid(
-                    requiredLocations[missingProperty],
-                    "Required property '" + missingProperty + "' is not declared in schema properties.");
+                return shape;
             }
 
-            return CreateObjectShape(node, suggestedName, format, nullable, annotations, properties, mode, valueSchema);
+            // A required name that properties does not declare is valid JSON Schema: an open object can carry it as an
+            // additional member, a closed one can never satisfy it. The type cannot say so; the assertion does.
+            if (mode == OpenApiSemanticAdditionalProperties.Closed)
+            {
+                AddIgnoredWarning(
+                    requiredLocations[missingRequiredProperties[0]],
+                    "Property '" + missingRequiredProperties[0] + "' is required but not declared in properties and the " +
+                    "object is closed (additionalProperties: false), so no value is valid.");
+            }
+
+            return shape.WithAssertions(new[] { CreateWholeAssertion(node) });
         }
 
         /// <summary>
@@ -530,6 +604,47 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 annotations: annotations,
                 valueSchema: valueSchema,
                 additionalProperties: mode);
+        }
+
+        // properties, items or an additionalProperties schema: the node describes a shape itself.
+        private static bool OwnsShape(SpecNode node)
+        {
+            if (node.TryGetProperty("discriminator", out _) || node.TryGetProperty("allOf", out _))
+            {
+                return false;
+            }
+
+            return node.TryGetProperty("properties", out _) ||
+                   node.TryGetProperty("items", out _) ||
+                   (node.TryGetProperty("additionalProperties", out SpecNode additional) &&
+                    additional.ValueKind == SpecValueKind.Object);
+        }
+
+        // An enum that a generated C# enum cannot represent: only null, booleans, numbers, objects, arrays or a mixture.
+        private static bool IsAssertionOnlyEnum(SpecNode enumNode, string type)
+        {
+            if (enumNode.ValueKind != SpecValueKind.Array)
+            {
+                return false;
+            }
+
+            SpecNode[] values = enumNode.EnumerateArray().Where(static value => value.ValueKind != SpecValueKind.Null).ToArray();
+            if (enumNode.EnumerateArray().Any() && values.Length == 0)
+            {
+                return true;
+            }
+
+            switch (type)
+            {
+                case "string":
+                case "integer":
+                    return false;
+                case AnyType:
+                    return !(values.All(static value => value.ValueKind == SpecValueKind.String) ||
+                             values.All(static value => value.ValueKind == SpecValueKind.Number && value.IsInteger));
+                default:
+                    return true;
+            }
         }
 
         private OpenApiSemanticSchema ParseEnumSchema(

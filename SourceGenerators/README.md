@@ -80,14 +80,14 @@ absolute path非混入、tracked DLL同期、UPM内のDLL数・RoslynAnalyzer me
 SourceGenerators/scripts/verify.sh
 ```
 
-`0.6.0-preview.2` release candidateのtarballとchecksumは次で生成します。registry publish、tag作成、release
+`0.6.0-preview.3` release candidateのtarballとchecksumは次で生成します。registry publish、tag作成、release
 公開は行いません。
 
 ```sh
 SourceGenerators/scripts/pack-release.sh
 ```
 
-出力先は`artifacts/upm/0.6.0-preview.2/`で、base/add-onのtarball、`release-manifest.json`、
+出力先は`artifacts/upm/0.6.0-preview.3/`で、base/add-onのtarball、`release-manifest.json`、
 `SHA256SUMS`を含みます。manifestのUnity gateは検証完了まで`not-run`です。
 Nodeはルートの`.node-version`、npmは`11.19.0`を使用します。clean treeが必要で、
 開発中だけ`--allow-dirty`を指定できます。dirty候補のcommitは`null`になり、公開には使えません。
@@ -97,7 +97,9 @@ Nodeはルートの`.node-version`、npmは`11.19.0`を使用します。clean t
 GitHub Actionsは、cleanな同一commitから作成した同一tarballを、GitHub-hosted Linuxと
 固定digestのGameCIイメージで検証します。Unity jobはEnvironment `UNITY_LICENSE`の
 `UNITY_LICENSE`・`UNITY_EMAIL`・`UNITY_PASSWORD`を使用し、workflow間も逐次実行します。
-fork PRへはSecretsを渡さず、.NET/package検証のみ実行します。
+Unity jobはEnvironmentの承認待ちがあるため、PRでは`unity-gate`ラベルを付けた同一repositoryのPRと
+手動dispatch、release workflowでだけ実行します（`main`/`develop`へのpushでは実行しません）。
+fork PRへはSecretsを渡さず、ラベルの有無によらず.NET/package検証のみ実行します。
 
 ローカルMacのEditorとlicenseでも同じmatrixを実行できます。
 
@@ -118,12 +120,69 @@ candidate fingerprint、全証拠hash、test XMLと終了コードを照合し�
 欠落・改変・失敗・未実行のgateでは公開へ進めません。過去の件数ではなく、対象commitの
 成功runとartifactを確認してください。
 
+## リリース前のローカル確認
+
+修正の確認にreleaseとUnity CIの承認を待たなくて済むよう、速い順に3段階あります。
+
+### 段階1: specをUnityなしで検査する
+
+実物のOpenAPI document（YAML/JSON）をEditorのloader、source generator、コンパイラへ
+通し、全診断を一覧します。Unityは不要で、数秒で終わります。
+
+```sh
+SourceGenerators/scripts/check-spec.sh /path/to/openapi.yaml
+SourceGenerators/scripts/check-spec.sh /path/to/spec.yaml --output /tmp/generated-client
+```
+
+- 出力にYAMLの診断（`YAML002`など。行:列付き）、generatorの診断（`OACG101`など。
+  severity・id・位置・message）、コンパイルエラー、件数のsummaryが表示されます。
+  errorが1件でもあれば失敗します。
+- `--output <dir>`を指定したときだけ、生成コード（`Generated.cs`）をそのdirectoryへ書きます。
+  repositoryの作業ツリー内は指定できません。
+- specはコピーしません。specのあるdirectoryをproject rootとして読むため、相対`$ref`は
+  そのdirectory内のファイルだけ解決できます（外へ出る参照はloaderが拒否します）。
+  APIクラス名・namespaceは既定値、serializerはNewtonsoft.Jsonです。
+- 機密のspecをこのrepositoryへ置かないでください。scriptは実行前後で`git status --porcelain`を
+  比較し、変化があれば失敗します。
+- 実体は`ExternalSpecCheckTests`で、環境変数`OPENAPI_CODEGEN_CHECK_SPEC`が未設定なら何もせず
+  成功するため、通常の`test.sh`やCIには影響しません。
+
+### 段階2: 利用側のUnity projectでこのworktreeを直接使う
+
+利用側のUnity projectの`Packages/manifest.json`で、baseとadd-onの**両方**を、このrepositoryの
+worktreeへの`file:`参照へ一時的に変えます。
+
+```json
+{
+  "dependencies": {
+    "jp.rhycol.openapicodegen": "file:/absolute/path/to/UnityOpenApiCodeGen/Packages/OpenApiCodeGen",
+    "jp.rhycol.openapicodegen.source-generator": "file:/absolute/path/to/UnityOpenApiCodeGen/Packages/OpenApiCodeGen.SourceGenerator"
+  }
+}
+```
+
+- Editor側のC#（`Packages/OpenApiCodeGen*/Editor`など）の変更は、Unityが再コンパイルすれば即反映されます。
+- `SourceGenerators/Rhycol.OpenApiCodeGen.SourceGenerator/**`のanalyzerを変更した場合は、
+  `SourceGenerators/scripts/sync-analyzer.sh`でUPM内のDLLを更新してからUnityへ戻ります。
+- `manifest.json`（と`packages-lock.json`）のこの変更は利用側でcommitしません。
+- このrepositoryのcheckoutを切り替えると利用側へ波及するので、確認用に専用のworktree
+  （`git worktree add ../UnityOpenApiCodeGen-check <branch>`）を作ってそこを参照してください。
+
+### 段階3: Git URLとcommit SHAで取り込む
+
+branchをpushした後は、READMEの「Add both entries」の例と同じ形で、`#`の後ろをreview済みの
+commit SHAにしたGit URLを両パッケージへ指定します。release前の候補の検証手順と、Unity CIの
+実行条件（`unity-gate`ラベル）は[RELEASE.md](../RELEASE.md)を参照してください。
+
 ## CI
 
-`.github/workflows/source-generator-ci.yml`はpull request、`main`/`develop`へのpush、
-手動dispatchで共通の`source-generator-verify.yml`を呼びます。共通処理は.NET/package検証、
+`.github/workflows/source-generator-ci.yml`はpull request（opened/synchronize/reopened/labeled）、
+`main`/`develop`へのpush、手動dispatchで共通の`source-generator-verify.yml`を呼びます。
+Unity jobの実行条件は[RELEASE.md](../RELEASE.md)の「When the Unity job runs」を参照してください。共通処理は.NET/package検証、
 Unity matrix、証拠集約の後に、実際の公開スクリプトを`PUBLISH=false`で実行します。
-これによりdefault branchへworkflowが入る前のPRでもCD dry-runを確認できます。
+Unity matrixと証拠集約はUnity jobが有効なとき（`unity-gate`ラベル付きの同一repositoryのPR、
+または手動dispatch）だけ動くため、この`PUBLISH=false`の確認もそのときに限られます。
+default branchへworkflowが入る前のPRでも、ラベルを付ければCD dry-runを確認できます。
 手動CIは`main` refから、`main`の祖先SHAだけを検証します。未マージ変更は通常のPR CIで検証します。
 
 DLL更新は`source-generator-update-dll.yml`を`main`から手動実行し、

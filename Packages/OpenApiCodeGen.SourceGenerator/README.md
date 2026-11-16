@@ -19,13 +19,13 @@ Add both packages to the Unity project's `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.2",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.2"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.3",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.3"
   }
 }
 ```
 
-The add-on requires Unity `6000.0` or later, base package `0.6.0-preview.2`, and the
+The add-on requires Unity `6000.0` or later, base package `0.6.0-preview.3`, and the
 libraries of the selected HTTP / JSON combination (see
 [Choose the HTTP and JSON libraries](#choose-the-http-and-json-libraries)).
 Since 0.6.0 the add-on no longer installs `com.unity.nuget.newtonsoft-json`.
@@ -33,7 +33,7 @@ Select **Source Generator (Beta)** in
 `Window/OpenAPI Code Generator/Settings`, then use
 `Window/OpenAPI Code Generator/Generator`.
 
-The examples use the `0.6.0-preview.2` release tag. This is a prerelease; the
+The examples use the `0.6.0-preview.3` release tag. This is a prerelease; the
 latest stable version is `0.5.1`, which does not include the HTTP / JSON library
 selection. To try an unreleased commit, use the
 same reviewed commit SHA in both Git URLs.

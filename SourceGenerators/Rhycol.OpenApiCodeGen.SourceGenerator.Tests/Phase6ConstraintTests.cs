@@ -35,7 +35,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         private static readonly string[] BodySchemas =
         {
             "Name", "Code", "Partial", "Digits", "Letters", "Count", "Price", "Step", "Tags", "AnyList", "Bag",
-            "KeyNames", "Pat", "Dep", "Containing", "Tuple", "Tuple2", "Rec", "Short", "TwoTags", "Level", "RW", "Slow"
+            "KeyNames", "Pat", "Dep", "Containing", "Tuple", "Tuple2", "Rec", "Short", "TwoTags", "Level", "RW", "Slow",
+            "AllOfName"
         };
 
         private static readonly string[] ReadOnlySchemas = { "Pick", "NotShort" };
@@ -139,6 +140,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "\"wo\":{\"type\":\"string\",\"minLength\":3,\"writeOnly\":true}," +
                 "\"plain\":{\"type\":\"string\"}}}," +
                 "\"Slow\":{\"type\":\"string\",\"pattern\":\"^(a|aa)+$\"}," +
+                "\"AllOfName\":{\"type\":\"string\",\"allOf\":[{\"minLength\":1},{\"maxLength\":3}]}," +
                 "\"Pick\":{\"oneOf\":[{\"type\":\"string\",\"minLength\":3},{\"type\":\"string\",\"maxLength\":1}]}," +
                 "\"NotShort\":{\"type\":\"string\",\"not\":{\"type\":\"string\",\"maxLength\":2}}," +
                 "\"FormBody\":{\"type\":\"object\",\"required\":[\"title\"],\"properties\":{" +
@@ -335,6 +337,29 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 string keyword = value.Length < 3 ? "minLength" : "maxLength";
                 await AssertRejected("sendName", keyword, value);
                 await AssertReadRejected("readName", JsonConvert.SerializeObject(value), keyword);
+            }
+        }
+
+        [Theory]
+        [InlineData("a", true)]
+        [InlineData("abc", true)]
+        [InlineData("", false)]
+        [InlineData("abcd", false)]
+        public async Task AllOfPartsThatOnlyAddConstraintsKeepTheStringTypeAndValidate(string value, bool valid)
+        {
+            Type type = Phase4WireHarness.ClientType(Assembly31.Value).GetMethod("sendAllOfName")!
+                .GetParameters()[0].ParameterType;
+            Assert.Equal(typeof(string), type);
+            if (valid)
+            {
+                await AssertSent("sendAllOfName", value);
+                await AssertReadOk("readAllOfName", JsonConvert.SerializeObject(value));
+            }
+            else
+            {
+                string keyword = value.Length < 1 ? "minLength" : "maxLength";
+                await AssertRejected("sendAllOfName", keyword, value);
+                await AssertReadRejected("readAllOfName", JsonConvert.SerializeObject(value), keyword);
             }
         }
 

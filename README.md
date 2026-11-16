@@ -27,8 +27,8 @@ the Source Generator provider. Unity resolves these as separate Git packages.
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.2",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.2"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.3",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.3"
   }
 }
 ```
@@ -41,9 +41,9 @@ Upgrading from 0.5.x with the default combination requires installing
 `com.unity.nuget.newtonsoft-json` `3.2.2` yourself; until then existing
 definitions report `OACG011`.
 
-These examples use the `0.6.0-preview.2` release tag. This is a prerelease; the
+These examples use the `0.6.0-preview.3` release tag. This is a prerelease; the
 latest stable version is `0.5.1`, which does not include the HTTP / JSON library
-selection. To try an unreleased commit, replace `0.6.0-preview.2` with the same
+selection. To try an unreleased commit, replace `0.6.0-preview.3` with the same
 reviewed commit SHA in both Git URLs.
 
 ## Getting started
@@ -148,7 +148,9 @@ limitations, and the IL2CPP / WebGL Player verification results (Unity
 checks .NET tests, analyzer reproducibility/synchronization, and UPM contents.
 It verifies one clean-commit candidate on Unity `2021.3.19f1`, `6000.0.23f1`,
 and `6000.3.2f1` in serial GitHub-hosted jobs, then runs the CD dry-run.
-Fork PRs receive the .NET/package checks without Unity credentials.
+Because the Unity job waits for an Environment approval, it runs only for a
+same-repository PR labelled `unity-gate`, a manual dispatch, or the release
+workflow; the CD dry-run step shares that condition. Fork PRs receive the .NET/package checks without Unity credentials.
 
 Use the successful run and its `verified-release-<run-id>-<attempt>` artifact
 for the exact commit under review. The manifest binds the candidate packages

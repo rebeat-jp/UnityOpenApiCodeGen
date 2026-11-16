@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.6.0-preview.3] - 2026-11-16
+
+### Added
+
+- Evaluate `oneOf` / `anyOf` / `allOf` / `not` with JSON Schema semantics in OpenAPI 3.0 and 3.1 instead of rejecting most combinations as not supported ([#103](https://github.com/rebeat-jp/UnityOpenApiCodeGen/pull/103)). The C# type only has to hold every valid value; whether a value is valid is decided by assertions that are compiled into exception-free `static bool` methods of the generated client. They run on responses and on requests, with both Newtonsoft.Json and System.Text.Json, and use no reflection or `dynamic`, so the output stays IL2CPP, WebGL and AOT safe. The assertions cover the type (with the OpenAPI 3.0 `nullable` rules), `enum` / `const`, `properties` / `required` / `additionalProperties` / `patternProperties` / `propertyNames`, `items` / `prefixItems` / `contains`, the existing constraint keywords and formats, `allOf` / `anyOf` / `oneOf` / `not` and recursive `$ref`. `required` skips `readOnly` properties in requests and `writeOnly` properties in responses. A cycle that consumes no data (for example `A: { not: { $ref: A } }`) reports `OACG100` at the schema that refers to itself.
+- A schema that declares a shape (`properties`, `items` or a schema-valued `additionalProperties`) and whose `oneOf` / `anyOf` members only narrow it (`enum`, `nullable`, `required`, ...) generates one DTO and validates the members as an assertion. Schemas without a shape keep the existing union, and a `discriminator` always keeps the structural union. On an open parent, a property that every member declares with the same type is added to the DTO; otherwise it is `JToken` / `JsonElement`.
+- Accept boolean, number, mixed-type and null-only enums as their base type plus an assertion. C# enums are still generated only for string and integer enums.
+- `allOf` merges the declarations of the same property: the JSON types are intersected (an empty intersection widens to `JToken` / `JsonElement` with `OACG108`), the property is nullable only when every typed declaration is nullable, and a matching `$ref` type is reused (for example `items` narrowed from `Row` to `RowNarrow`). When the merged type loses information, the whole schema is asserted. `oneOf` / `anyOf` / `not` inside a part and `allOf` next to `oneOf` / `anyOf` are accepted. A `required` name that no part declares is asserted on an open object and reported with `OACG108` on a closed one.
+- `not` is always evaluated, including a `not` without a concrete type such as `not: { required: [x] }`, which used to be ignored with `OACG108`. A `not` that contains an unsupported keyword is still ignored with `OACG108`.
+- Request validation also checks the members of unions.
+
+### Fixed
+
+- Read a block sequence written at the same indentation as its parent key (an indentless sequence, YAML 1.2 8.2.3, for example `tags:` followed by `- name: x`) instead of stopping the whole spec with `YAML002` ([#99](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/99)). This covers the root, nested mappings, compact mappings inside sequence items, nested indentless sequences, comments between the key and the first item, block scalars in items and `key: &a` followed by the sequence. Invalid mixes of keys and dashes still report `YAML002` / `YAML003` / `YAML004`.
+- Read plain scalars that continue on deeper-indented lines in block context (as PyYAML writes long descriptions) after `key:`, `- ` and `- key:` ([#100](https://github.com/rebeat-jp/UnityOpenApiCodeGen/pull/100)). Lines are folded as YAML 1.2 7.3.3 specifies. A continuation line that contains `: ` reports `YAML004` (`YAML011` when the value is a sequence item), a comment line ends the scalar, and multi-line keys are still rejected. Flow context is unchanged.
+- A `string` / `integer` / `number` / `boolean` / `array` schema whose `allOf` parts hold only annotations, `x-*`, constraint keywords and `not` keeps its type (for example `List<Item>`) instead of reporting `OACG101` ([#100](https://github.com/rebeat-jp/UnityOpenApiCodeGen/pull/100)). The constraints of the parts are combined, and the `not` of each part is evaluated like a schema-level `not`.
+
+### Changed
+
+- `oneOf` is valid only when exactly one member matches, with or without a `discriminator`. Values that match several open candidates and used to pass are now rejected. The "single fully declared candidate" rule is only used to choose the C# candidate type.
+- OpenAPI 3.0: `type: array` without `items` reports `OACG100` everywhere, including inside `oneOf` / `anyOf` / `not` ("items MUST be present if the type is array"). OpenAPI 3.1 still allows it.
+- OpenAPI 3.0: `nullable: true` with an `enum` that does not list `null` rejects `null`, as the 3.0.3 clarification says, and reports `OACG108`. A referencing schema that adds `nullable` (for example `{ $ref: X, nullable: true }`) still accepts `null`.
+- An `allOf` part (or the root) with `additionalProperties: false` rejects the properties declared by the other parts, as JSON Schema specifies. The C# type still has all the properties, and `OACG108` names the rejected ones.
+- Unsupported keywords in a subtree that is only asserted (`if` / `then` / `else`, `unevaluated*`, OpenAPI 3.1 keywords such as `const` in a 3.0 document) report `OACG101`, as on the typed path.
+- OpenAPI 3.0: `nullable`, `readOnly` and `writeOnly` next to a `$ref` keep working as before. This deviates from the specification on purpose and is documented in the support matrix.
+- Specs that used to be rejected now generate, and generated clients gain the assertion methods above, so responses and requests that used to pass can now be rejected by the stricter rules.
+
 ## [0.6.0-preview.2] - 2026-11-16
 
 ### Fixed

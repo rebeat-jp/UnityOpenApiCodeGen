@@ -2,6 +2,8 @@ name: Source Generator CI
 
 on:
   pull_request:
+    # `labeled` re-runs the workflow when `unity-gate` is added, which switches the Unity job on.
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main, develop]
   workflow_dispatch:
@@ -75,5 +77,9 @@ jobs:
     secrets: inherit
     with:
       commit: ${{ github.event.pull_request.head.sha || inputs.commit || github.sha }}
-      # Forks receive automated package/.NET checks without Unity credentials.
-      unity: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+      # The Unity job needs a manual Environment approval, so it runs only on request:
+      # - workflow_dispatch (manual SHA from main, trusted DLL PR dispatch): always;
+      # - pull_request: only a same-repository PR (forks never get Unity credentials) with the `unity-gate` label,
+      #   and a `labeled` event only when the added label is `unity-gate` (other labels do not re-run Unity);
+      # - push to main/develop: never (release verification runs through source-generator-release.yml).
+      unity: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'unity-gate') && (github.event.action != 'labeled' || github.event.label.name == 'unity-gate')) }}
