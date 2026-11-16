@@ -175,7 +175,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 typeof(JsonConvert).Assembly.Location
             };
             return paths.Where(static path => !string.IsNullOrWhiteSpace(path))
-                .Select(static path => (MetadataReference)MetadataReference.CreateFromFile(path))
+                .Select(static path => Phase4GeneratorTestHarness.FileReference(path))
                 .ToArray();
         }
     }
