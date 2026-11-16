@@ -42,6 +42,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private readonly List<(string Field, string Pattern, bool EcmaScript)> _regexes =
             new List<(string Field, string Pattern, bool EcmaScript)>();
         private readonly JsonSerializerProfile _json;
+        private readonly GeneratedAssertionGraph? _assertionGraph;
         private bool _helpersNeeded;
 
         internal ConstraintValidationEmitter(OpenApiGenerationModel model)
@@ -53,6 +54,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             _dtos = model.Dtos.ToDictionary(static dto => dto.Name, StringComparer.Ordinal);
             _json = json ?? throw new ArgumentNullException(nameof(json));
+            _assertionGraph = model.AssertionGraph;
             _prefix = HttpClientParameterSerializationEmitter.CreatePrefix(model, "__OacgConstraint_");
         }
 
@@ -71,6 +73,32 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private string ActionTypeName => _json.IsSystemTextJson ? SystemTextJsonActionType : NewtonsoftActionType;
 
         // ---- shared with the assertion emitter ------------------------------------------------------
+
+        /// <summary>The entry method of a root of the assertion graph (see <see cref="AssertionEmitter"/>).</summary>
+        internal string AssertionEntryName(string root) => _prefix + "AssertRoot_" + root;
+
+        /// <summary>
+        /// Writes the calls of the assertion entries of <paramref name="roots"/> for the token. A token that was made from a
+        /// typed value (Newtonsoft.Json) is written and read again first, so that dates and other values that became a
+        /// non-string token are the strings of the wire; a response token already is read that way.
+        /// </summary>
+        internal void AppendAssertionCalls(
+            StringBuilder source,
+            string indent,
+            IReadOnlyList<string> roots,
+            string token,
+            string path,
+            string contract,
+            bool normalizeToken)
+        {
+            foreach (string root in roots)
+            {
+                _helpersNeeded = true;
+                source.Append(indent).Append(AssertionEntryName(root)).Append('(')
+                    .Append(normalizeToken && !_json.IsSystemTextJson ? _prefix + "ANormalize(" + token + ")" : token)
+                    .Append(", ").Append(path).Append(", ").Append(contract).AppendLine(", null);");
+            }
+        }
 
         /// <summary>Name prefix of the generated helpers and fields (the assertion emitter adds its members next to them).</summary>
         internal string HelperPrefix => _prefix;
@@ -111,7 +139,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 return false;
             }
 
-            if (type.ConstraintSets.Count > 0)
+            if (type.ConstraintSets.Count > 0 || type.AssertionRoots.Count > 0)
             {
                 return true;
             }
@@ -128,7 +156,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         return false;
                     }
 
-                    return dto.ConstraintSets.Count > 0 ||
+                    return dto.ConstraintSets.Count > 0 || dto.AssertionRoots.Count > 0 ||
                            dto.Properties.Any(property =>
                                !property.Annotations.ReadOnly && Reaches(property.Type, visitedDtos)) ||
                            (dto.ExtensionDataValueType is not null && Reaches(dto.ExtensionDataValueType, visitedDtos));
@@ -335,6 +363,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             AppendOwnChecks(source, "            ", own, "token", "path", "contract", contractScope: false);
+            AppendAssertionCalls(
+                source, "            ", dto is null ? type.AssertionRoots : type.AssertionRoots.Concat(dto.AssertionRoots).ToArray(),
+                "token", "path", "contract", normalizeToken: true);
             switch (type.Kind)
             {
                 case GeneratedTypeKind.Array:
@@ -618,6 +649,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// <summary>Writes the static helpers and the regular expression fields; call after every other member.</summary>
         internal void AppendHelpers(StringBuilder source)
         {
+            if (_assertionGraph is not null && _assertionGraph.Roots.Count > 0)
+            {
+                // Writes the assertion methods (and registers their regular expression fields, which follow).
+                new AssertionEmitter(this, _json, _assertionGraph).AppendMembers(source);
+            }
+
             if (!_helpersNeeded)
             {
                 return;

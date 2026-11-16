@@ -312,6 +312,146 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
+        /// <summary>
+        /// A node that owns a shape and has oneOf / anyOf next to it, and that is open (additionalProperties is not false):
+        /// the properties its alternatives declare and the node does not become optional properties of the node, typed when
+        /// every alternative that says a type agrees (otherwise untyped). The alternatives themselves stay assertions. A
+        /// declaration without a type (only an enum or constraints, such as `{enum: [null]}`) adds no type information.
+        /// A closed node gets no new property: the alternatives can only select among the declared ones.
+        /// </summary>
+        private OpenApiSemanticSchema LiftAlternativeProperties(SpecNode node, OpenApiSemanticSchema shape, string suggestedName)
+        {
+            if (shape.Kind != OpenApiSemanticSchemaKind.Object ||
+                shape.AdditionalProperties == OpenApiSemanticAdditionalProperties.Closed)
+            {
+                return shape;
+            }
+
+            var declared = new HashSet<string>(shape.Properties.Select(static property => property.WireName), StringComparer.Ordinal);
+            var order = new List<string>();
+            var candidates = new Dictionary<string, List<SpecNode>>(StringComparer.Ordinal);
+            foreach (string keyword in new[] { "oneOf", "anyOf" })
+            {
+                SpecNode? listNode = GetProperty(node, keyword);
+                if (listNode is null || listNode.ValueKind != SpecValueKind.Array)
+                {
+                    continue;
+                }
+
+                foreach (SpecNode member in listNode.EnumerateArray())
+                {
+                    SpecNode? body = member;
+                    if (TryGetReference(member, out string reference, out SpecNode referenceNode))
+                    {
+                        ResolvedSpecReference resolved = ResolveReference(reference, referenceNode);
+                        body = string.Equals(resolved.DocumentId, _currentDocumentId, StringComparison.Ordinal) ? resolved.Node : null;
+                    }
+
+                    SpecNode? propertiesNode = body is not null && body.ValueKind == SpecValueKind.Object
+                        ? GetProperty(body, "properties")
+                        : null;
+                    if (propertiesNode is null || propertiesNode.ValueKind != SpecValueKind.Object)
+                    {
+                        continue;
+                    }
+
+                    foreach (SpecProperty property in propertiesNode.EnumerateObject())
+                    {
+                        if (declared.Contains(property.Name) || property.Value.ValueKind != SpecValueKind.Object)
+                        {
+                            continue;
+                        }
+
+                        if (!candidates.TryGetValue(property.Name, out List<SpecNode>? list))
+                        {
+                            list = new List<SpecNode>();
+                            candidates.Add(property.Name, list);
+                            order.Add(property.Name);
+                        }
+
+                        list.Add(property.Value);
+                    }
+                }
+            }
+
+            var lifted = new List<OpenApiSemanticProperty>();
+            foreach (string name in order)
+            {
+                SpecNode[] typed = candidates[name]
+                    .Where(static candidate => candidate.TryGetProperty("type", out _) || candidate.TryGetProperty("$ref", out _))
+                    .ToArray();
+                if (typed.Length == 0)
+                {
+                    continue;
+                }
+
+                OpenApiSemanticSchema[] parsed;
+                try
+                {
+                    parsed = typed
+                        .Select(candidate => ParseSchema(
+                            candidate,
+                            suggestedName + ToPascalFragment(name),
+                            new HashSet<NormalizedSpecNodeIdentity>()))
+                        .ToArray();
+                }
+                catch (OpenApiSemanticException)
+                {
+                    // A declaration the typed model cannot hold: the property stays untyped (extension data).
+                    continue;
+                }
+
+                string signature = GetSchemaSignature(parsed[0].WithNullable(false));
+                bool agree = parsed.All(item => string.Equals(
+                    GetSchemaSignature(item.WithNullable(false)), signature, StringComparison.Ordinal));
+                // Nullable: an alternative may pin the property to null, which the assertions then allow or reject.
+                OpenApiSemanticSchema chosen = agree
+                    ? parsed[0].WithNullable(true)
+                    : CreateAnySchema(typed[0], suggestedName + ToPascalFragment(name), OpenApiSemanticAnnotations.Empty);
+                lifted.Add(new OpenApiSemanticProperty(name, false, chosen, CreateLocation(typed[0])));
+            }
+
+            return lifted.Count == 0 ? shape : shape.WithProperties(shape.Properties.Concat(lifted).ToArray());
+        }
+
+        private string AssertionOrigin(SpecNode node, string tag)
+        {
+            return _currentDocumentId + "|" + node.LogicalPath + "|" + tag;
+        }
+
+        /// <summary>The enum of a schema whose type is not a C# enum (boolean, number, null only, ...): only the values are asserted.</summary>
+        private OpenApiSemanticAssertion CreateEnumAssertion(SpecNode node, SpecNode enumNode)
+        {
+            return new OpenApiSemanticAssertion
+            {
+                Enum = enumNode.EnumerateArray().Select(ToAssertionValue).ToArray(),
+                Origin = AssertionOrigin(node, "enum"),
+                Location = CreateLocation(node)
+            };
+        }
+
+        /// <summary>The oneOf / anyOf next to the shape of a schema: the type is the shape, the alternatives are asserted.</summary>
+        private OpenApiSemanticAssertion CreateAlternativesAssertion(SpecNode node)
+        {
+            return new OpenApiSemanticAssertion
+            {
+                AnyOf = MapAssertionList(node, "anyOf"),
+                OneOf = MapAssertionList(node, "oneOf"),
+                Origin = AssertionOrigin(node, "alternatives"),
+                Location = CreateLocation(node)
+            };
+        }
+
+        private OpenApiSemanticAssertion CreateNotAssertion(SpecNode node, SpecNode notNode)
+        {
+            return new OpenApiSemanticAssertion
+            {
+                Not = MapAssertion(notNode),
+                Origin = AssertionOrigin(node, "not"),
+                Location = CreateLocation(node)
+            };
+        }
+
         private IReadOnlyList<OpenApiSemanticAssertion> MapAssertionList(SpecNode node, string keyword)
         {
             SpecNode? listNode = GetProperty(node, keyword);

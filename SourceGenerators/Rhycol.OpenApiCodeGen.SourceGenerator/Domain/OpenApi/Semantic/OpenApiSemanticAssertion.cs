@@ -114,6 +114,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
     /// </summary>
     internal sealed class OpenApiSemanticAssertion
     {
+        /// <summary>
+        /// Where the tree comes from (document id and logical path, plus what it asserts). Two trees with the same origin
+        /// are the same assertion; the parser puts it into the signature of a schema.
+        /// </summary>
+        internal string Origin { get; set; } = string.Empty;
+
+        /// <summary>The position of the schema the tree was made for (a diagnostic about it points there).</summary>
+        internal OpenApiSourceLocation? Location { get; set; }
+
         /// <summary>The component name for a node that a $ref points to; empty otherwise (only for diagnostics and comments).</summary>
         internal string Name { get; set; } = string.Empty;
 

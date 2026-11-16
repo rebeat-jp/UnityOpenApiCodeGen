@@ -921,34 +921,35 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.False(TryGet(cat.Result!, "TryGetDog", out _));
         }
 
+        // A null-only enum without a null marker is no "null" member of the union: it is a member of its own (an object
+        // schema whose only enum value is null, checked by an assertion). Its null can never be valid, which is a warning.
         [Fact]
-        public void ANullOnlyEnumIsStillRejectedInOpenApi31()
+        public void ANullOnlyEnumIsAMemberWithAnAssertionInOpenApi31()
         {
             string schemas =
                 "'Body':{'type':'object','properties':{'limit':{'anyOf':[{'$ref':'#/components/schemas/Limit'}," +
                 "{'type':'object','enum':[null]}]}}}," + LimitSchema;
 
-            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
-                EchoDocument(schemas, "3.1.0")).RunResult.Diagnostics);
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(schemas, "3.1.0"));
 
-            Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("only null", diagnostic.GetMessage());
+            Assert.DoesNotContain(execution.RunResult.Diagnostics, static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            Assert.Empty(execution.CompilationErrors);
         }
 
         [Theory]
         [InlineData("{'type':'object','nullable':true,'enum':[null],'properties':{'a':{'type':'string'}}}")]
         [InlineData("{'type':'object','nullable':true,'enum':[null,'x']}")]
         [InlineData("{'type':'object','enum':[null]}")]
-        public void OtherShapesOfANullOnlyEnumAreStillRejectedInOpenApi30(string nullPart)
+        public void OtherShapesOfANullOnlyEnumAreMembersWithAnAssertionInOpenApi30(string nullPart)
         {
             string schemas =
                 "'Body':{'type':'object','properties':{'limit':{'anyOf':[{'$ref':'#/components/schemas/Limit'}," +
                 nullPart + "]}}}," + LimitSchema;
 
-            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(
-                EchoDocument(schemas, "3.0.3")).RunResult.Diagnostics);
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(schemas, "3.0.3"));
 
-            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.DoesNotContain(execution.RunResult.Diagnostics, static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            Assert.Empty(execution.CompilationErrors);
         }
 
         [Fact]
@@ -1497,33 +1498,78 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void NotThatCannotBeEvaluatedIsIgnoredWithOacg108()
+        public async Task NotThatHasNoShapeIsEvaluatedByAnAssertion()
         {
-            // required alone has no shape: as a schema it matches every value, so it must not reject all.
+            // required alone has no shape (no type): the typed check cannot decide it, the assertion does.
             const string Schemas = @"'Body':{'type':'object','properties':{'x':{'type':'string'}},'not':{'required':['x']}}";
 
-            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas));
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas));
+
+            Assert.Empty(execution.RunResult.Diagnostics);
+            await Echo(execution, J("{}"), J("{}"));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, J("{}"), J("{'x':'a'}")));
+            await Assert.ThrowsAnyAsync<Exception>(() => Echo(execution, J("{'x':'a'}"), J("{}")));
+        }
+
+        // A request value is serialized and read again as the strings of the wire before the assertions see it, so a
+        // date-time property is a string for `pattern` (a DateTimeOffset token would be skipped by it).
+        [Fact]
+        public async Task AssertionsSeeTheWireStringsOfARequestAndOfAResponse()
+        {
+            const string Schemas = @"'Body':{'type':'object','additionalProperties':false,'required':['at'],
+              'properties':{'at':{'type':'string','format':'date-time'}},
+              'anyOf':[{'properties':{'at':{'pattern':'^2026-'}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas));
+
+            Exchange ok = await Echo(execution, J("{'at':'2026-01-01T00:00:00+00:00'}"), J("{'at':'2026-02-01T00:00:00Z'}"));
+            Assert.NotNull(ok.Result);
+            await Assert.ThrowsAnyAsync<Exception>(() =>
+                Echo(execution, J("{'at':'2025-01-01T00:00:00+00:00'}"), J("{'at':'2026-02-01T00:00:00Z'}")));
+            await MatrixMode.ThrowsSerializationAsync(() =>
+                Echo(execution, J("{'at':'2026-01-01T00:00:00+00:00'}"), J("{'at':'2025-02-01T00:00:00Z'}")));
+        }
+
+        [Fact]
+        public async Task ABooleanEnumKeepsTheBooleanTypeAndAssertsTheValues()
+        {
+            const string Schemas = @"'Body':{'type':'object','additionalProperties':false,'required':['on'],
+              'properties':{'on':{'type':'boolean','enum':[true]}}}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas));
+
+            Exchange ok = await Echo(execution, J("{'on':true}"), J("{'on':true}"));
+            Assert.Equal(true, ReadPath(ok.Result!, "On"));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, J("{'on':true}"), J("{'on':false}")));
+            await Assert.ThrowsAnyAsync<Exception>(() => Echo(execution, J("{'on':false}"), J("{'on':true}")));
+        }
+
+        [Fact]
+        public void ANullInAnEnumOfANonNullableSchemaIsAWarning()
+        {
+            const string Schemas = @"'Body':{'type':'object','additionalProperties':false,
+              'properties':{'on':{'type':'boolean','enum':[true,null]}}}";
+
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.3"));
 
             Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
             Assert.Equal("OACG108", warning.Id);
-            Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
-            Assert.Contains("logical path '/components/schemas/Body/not'", warning.GetMessage());
+            Assert.Contains("null can never be a valid value", warning.GetMessage());
+            Assert.Contains("logical path '/components/schemas/Body/properties/on/enum'", warning.GetMessage());
             Assert.Empty(execution.CompilationErrors);
         }
 
         [Fact]
-        public void RecursiveNotIsIgnoredWithOacg108()
+        public void ANotThatRequiresItsOwnSchemaForTheSameValueIsAGenerationError()
         {
+            // The assertion of Body is "not Body" for the very same value: it could never be evaluated.
             const string Schemas = @"'Body':{'type':'object','properties':{'x':{'type':'string'}},
               'not':{'$ref':'#/components/schemas/Body'}}";
 
-            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas));
+            Diagnostic error = Assert.Single(MatrixMode.GenerateAndCompile(EchoDocument(Schemas)).RunResult.Diagnostics);
 
-            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
-            Assert.Equal("OACG108", warning.Id);
-            Assert.Contains("recursive", warning.GetMessage());
-            Assert.Contains("logical path '/components/schemas/Body/not'", warning.GetMessage());
-            Assert.Empty(execution.CompilationErrors);
+            Assert.Equal("OACG100", error.Id);
+            Assert.Equal(DiagnosticSeverity.Error, error.Severity);
+            Assert.Contains("refers to itself", error.GetMessage());
+            Assert.Contains("logical path '/components/schemas/Body'", error.GetMessage());
         }
 
         // ---- allOf parts that only add validation keywords and not to a non-object type ---------------
@@ -1571,17 +1617,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public void AllOfPartNotThatCannotBeEvaluatedReportsOacg108AtThePart()
+        public void AllOfPartNotWithoutAShapeIsEvaluatedByAnAssertion()
         {
             const string Schemas = @"
               'Body':{'type':'array','items':{'type':'string'},'allOf':[{'not':{'required':['x']}}]}";
 
             Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.4"));
 
-            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
-            Assert.Equal("OACG108", warning.Id);
-            Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
-            Assert.Contains("logical path '/components/schemas/Body/allOf/0/not'", warning.GetMessage());
+            Assert.Empty(execution.RunResult.Diagnostics);
             Assert.Empty(execution.CompilationErrors);
         }
 
@@ -1703,11 +1746,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [Fact]
         public void UnionKeywordsThatCannotBeCombinedReportTheirPosition()
         {
-            Diagnostic properties = Assert.Single(MatrixMode.GenerateAndCompile(EchoDocument(
-                "'Body':{'oneOf':[{'type':'string'},{'type':'integer'}],'properties':{'x':{'type':'string'}}}"))
-                .RunResult.Diagnostics);
-            Assert.Equal("OACG101", properties.Id);
-            Assert.Contains("logical path '/components/schemas/Body/properties'", properties.GetMessage());
+            // properties next to oneOf: the node owns a shape, so the oneOf is an assertion and no union is generated.
+            Phase4GeneratorExecution withProperties = MatrixMode.GenerateAndCompile(EchoDocument(
+                "'Body':{'oneOf':[{'type':'string'},{'type':'integer'}],'properties':{'x':{'type':'string'}}}"));
+            Assert.Empty(withProperties.RunResult.Diagnostics);
+            Assert.Empty(withProperties.CompilationErrors);
 
             Diagnostic allOf = Assert.Single(MatrixMode.GenerateAndCompile(EchoDocument(
                 "'Body':{'oneOf':[{'type':'string'},{'type':'integer'}],'allOf':[{'type':'object'}]}"))

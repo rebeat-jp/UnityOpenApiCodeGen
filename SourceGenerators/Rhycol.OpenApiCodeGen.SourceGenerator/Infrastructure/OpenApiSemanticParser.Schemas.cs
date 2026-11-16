@@ -80,7 +80,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             SpecNode node,
             string suggestedName,
             HashSet<NormalizedSpecNodeIdentity> referenceStack,
-            bool skipAllOf = false)
+            bool skipAllOf = false,
+            bool skipUnion = false,
+            bool skipEnum = false)
         {
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
@@ -93,8 +95,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 return ParseReferenceSchema(node, suggestedName, referenceStack, reference, referenceNode);
             }
 
-            if (HasUnionKeyword(node))
+            if (!skipUnion && HasUnionKeyword(node))
             {
+                if (OwnsShape(node))
+                {
+                    // The node has a shape of its own (properties, items, additionalProperties schema): its type is that
+                    // shape and the oneOf / anyOf next to it only select the valid values, so they are assertions.
+                    OpenApiSemanticSchema owned = ParseSchemaShape(
+                        node, suggestedName, referenceStack, skipAllOf, skipUnion: true, skipEnum: skipEnum);
+                    return LiftAlternativeProperties(node, owned, suggestedName)
+                        .WithAssertions(new[] { CreateAlternativesAssertion(node) });
+                }
+
                 return ParseUnion(node, suggestedName, referenceStack);
             }
 
@@ -130,7 +142,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiSemanticAnnotations annotations = ParseAnnotations(node, allowConst: true);
 
             SpecNode? enumNode = GetProperty(node, "enum");
-            if (enumNode is not null)
+            if (enumNode is not null && !skipEnum && IsAssertionOnlyEnum(enumNode, type))
+            {
+                // No C# enum can hold these values: the type is the base type of the schema and the values are asserted.
+                OpenApiSemanticSchema baseSchema = ParseSchemaShape(
+                    node, suggestedName, referenceStack, skipAllOf, skipUnion, skipEnum: true);
+                if (!baseSchema.Nullable && enumNode.EnumerateArray().Any(static value => value.ValueKind == SpecValueKind.Null))
+                {
+                    AddIgnoredWarning(
+                        enumNode,
+                        "The enum lists null, but the schema is not nullable, so null can never be a valid value.");
+                }
+
+                return baseSchema.WithAssertions(new[] { CreateEnumAssertion(node, enumNode) });
+            }
+
+            if (enumNode is not null && !skipEnum)
             {
                 if (annotations.Const.HasValue)
                 {
@@ -541,6 +568,47 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 annotations: annotations,
                 valueSchema: valueSchema,
                 additionalProperties: mode);
+        }
+
+        // properties, items or an additionalProperties schema: the node describes a shape itself.
+        private static bool OwnsShape(SpecNode node)
+        {
+            if (node.TryGetProperty("discriminator", out _) || node.TryGetProperty("allOf", out _))
+            {
+                return false;
+            }
+
+            return node.TryGetProperty("properties", out _) ||
+                   node.TryGetProperty("items", out _) ||
+                   (node.TryGetProperty("additionalProperties", out SpecNode additional) &&
+                    additional.ValueKind == SpecValueKind.Object);
+        }
+
+        // An enum that a generated C# enum cannot represent: only null, booleans, numbers, objects, arrays or a mixture.
+        private static bool IsAssertionOnlyEnum(SpecNode enumNode, string type)
+        {
+            if (enumNode.ValueKind != SpecValueKind.Array)
+            {
+                return false;
+            }
+
+            SpecNode[] values = enumNode.EnumerateArray().Where(static value => value.ValueKind != SpecValueKind.Null).ToArray();
+            if (enumNode.EnumerateArray().Any() && values.Length == 0)
+            {
+                return true;
+            }
+
+            switch (type)
+            {
+                case "string":
+                case "integer":
+                    return false;
+                case AnyType:
+                    return !(values.All(static value => value.ValueKind == SpecValueKind.String) ||
+                             values.All(static value => value.ValueKind == SpecValueKind.Number && value.IsInteger));
+                default:
+                    return true;
+            }
         }
 
         private OpenApiSemanticSchema ParseEnumSchema(

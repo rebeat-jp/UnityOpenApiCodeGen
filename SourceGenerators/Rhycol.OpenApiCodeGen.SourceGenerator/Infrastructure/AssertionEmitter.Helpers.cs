@@ -76,6 +76,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
+        // A token made from a typed value (JToken.FromObject) may hold dates and the like as non-string tokens: write it
+        // and read it again with DateParseHandling.None, so that the assertions see the strings of the wire.
+        private static global::Newtonsoft.Json.Linq.JToken __P__ANormalize(global::Newtonsoft.Json.Linq.JToken token)
+        {
+            return __P__AParse(token.ToString(global::Newtonsoft.Json.Formatting.None));
+        }
+
         private static bool __P__AIsNull(global::Newtonsoft.Json.Linq.JToken token)
         {
             return token.Type == global::Newtonsoft.Json.Linq.JTokenType.Null || token.Type == global::Newtonsoft.Json.Linq.JTokenType.Undefined;

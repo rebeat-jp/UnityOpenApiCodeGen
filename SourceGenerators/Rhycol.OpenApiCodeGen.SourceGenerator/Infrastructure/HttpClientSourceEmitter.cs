@@ -1471,13 +1471,18 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
                 // Validation keywords (minLength, pattern, ...). A DTO keeps its sets in its model.
                 IReadOnlyList<GeneratedConstraints> constraintSets = type.ConstraintSets;
+                IReadOnlyList<string> assertionRoots = type.AssertionRoots;
                 if (type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? constrainedDto))
                 {
                     constraintSets = type.ConstraintSets.Concat(constrainedDto.ConstraintSets).ToArray();
+                    assertionRoots = type.AssertionRoots.Concat(constrainedDto.AssertionRoots).ToArray();
                 }
 
                 _constraints.AppendOwnChecks(
                     source, "            ", constraintSets, "token", "path", "\"response\"", contractScope: true);
+                // The response token is read with DateParseHandling.None (Newtonsoft.Json): strings stay strings.
+                _constraints.AppendAssertionCalls(
+                    source, "            ", assertionRoots, "token", "path", "\"response\"", normalizeToken: false);
                 AppendNotChecks(source, type);
                 source.AppendLine("        }");
             }

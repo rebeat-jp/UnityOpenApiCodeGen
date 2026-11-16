@@ -510,31 +510,55 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         internal OpenApiSemanticSchema WithNullable(bool nullable)
         {
-            return nullable == Nullable ? this : Clone(nullable, Annotations, NotSchemas, ConstraintSets);
+            return nullable == Nullable ? this : Clone(nullable, Annotations, NotSchemas, ConstraintSets, Assertions);
         }
 
         internal OpenApiSemanticSchema WithAnnotations(OpenApiSemanticAnnotations annotations)
         {
-            return Clone(Nullable, annotations, NotSchemas, ConstraintSets);
+            return Clone(Nullable, annotations, NotSchemas, ConstraintSets, Assertions);
         }
 
         internal OpenApiSemanticSchema WithNot(OpenApiSemanticSchema notSchema)
         {
-            return Clone(Nullable, Annotations, NotSchemas.Concat(new[] { notSchema }).ToArray(), ConstraintSets);
+            return Clone(Nullable, Annotations, NotSchemas.Concat(new[] { notSchema }).ToArray(), ConstraintSets, Assertions);
         }
 
         internal OpenApiSemanticSchema WithConstraintSets(IReadOnlyList<OpenApiSemanticConstraints> sets)
         {
             return sets.Count == 0
                 ? this
-                : Clone(Nullable, Annotations, NotSchemas, ConstraintSets.Concat(sets).ToArray());
+                : Clone(Nullable, Annotations, NotSchemas, ConstraintSets.Concat(sets).ToArray(), Assertions);
+        }
+
+        /// <summary>The same schema with more declared properties (optional ones that the alternatives of a oneOf / anyOf declare).</summary>
+        internal OpenApiSemanticSchema WithProperties(IReadOnlyList<OpenApiSemanticProperty> properties)
+        {
+            return Clone(Nullable, Annotations, NotSchemas, ConstraintSets, Assertions, properties);
+        }
+
+        internal OpenApiSemanticSchema WithoutAssertions()
+        {
+            return Assertions.Count == 0
+                ? this
+                : Clone(Nullable, Annotations, NotSchemas, ConstraintSets, Array.Empty<OpenApiSemanticAssertion>());
+        }
+
+        /// <summary>Adds assertion trees that must hold too (an assertion that is already present is not added twice).</summary>
+        internal OpenApiSemanticSchema WithAssertions(IEnumerable<OpenApiSemanticAssertion> assertions)
+        {
+            OpenApiSemanticAssertion[] added = assertions.Where(item => !Assertions.Contains(item)).ToArray();
+            return added.Length == 0
+                ? this
+                : Clone(Nullable, Annotations, NotSchemas, ConstraintSets, Assertions.Concat(added).ToArray());
         }
 
         private OpenApiSemanticSchema Clone(
             bool nullable,
             OpenApiSemanticAnnotations annotations,
             IReadOnlyList<OpenApiSemanticSchema> notSchemas,
-            IReadOnlyList<OpenApiSemanticConstraints> constraintSets)
+            IReadOnlyList<OpenApiSemanticConstraints> constraintSets,
+            IReadOnlyList<OpenApiSemanticAssertion> assertions,
+            IReadOnlyList<OpenApiSemanticProperty>? properties = null)
         {
             return new OpenApiSemanticSchema(
                 Kind,
@@ -542,7 +566,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 Format,
                 nullable,
                 ReferenceName,
-                Properties,
+                properties ?? Properties,
                 ItemSchema,
                 EnumValues,
                 Location,
@@ -560,7 +584,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 notSchemas,
                 ContentMediaType,
                 constraintSets,
-                Assertions);
+                assertions);
         }
 
         internal OpenApiSourceLocation Location { get; }

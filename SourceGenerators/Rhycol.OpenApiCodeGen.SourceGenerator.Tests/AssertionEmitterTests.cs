@@ -308,13 +308,38 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         // ---- the semantic model is unchanged -----------------------------------------------------------------
 
         [Fact]
-        public void TheParserDoesNotFillTheAssertionsOfTheSemanticSchemasYet()
+        public void TheParserFillsTheAssertionsOnlyForTheShapesTheTypeCannotExpress()
         {
-            foreach (ConformanceFixture fixture in CompositionConformanceFixtures.All.Where(static item => item.CurrentId.Length == 0))
-            {
-                OpenApiSemanticDocument document = OpenApiSemanticParser.Parse(TestBundleFactory.ReadRoot(fixture.Document()));
-                Assert.All(document.Schemas.Values, static schema => Assert.Empty(schema.Assertions));
-            }
+            OpenApiSemanticDocument typed = OpenApiSemanticParser.Parse(
+                TestBundleFactory.ReadRoot(CompositionConformanceFixtures.Get("N2_ArrayWithAllOfOfNots").Document()));
+            Assert.All(typed.Schemas.Values, static schema => Assert.Empty(schema.Assertions));
+
+            OpenApiSemanticDocument asserted = OpenApiSemanticParser.Parse(
+                TestBundleFactory.ReadRoot(CompositionConformanceFixtures.Get("A1_OneOfPinsEnumAndNullable").Document()));
+            OpenApiSemanticSchema body = asserted.Schemas.Single(static pair => pair.Key.Pointer.EndsWith("/Body", StringComparison.Ordinal)).Value;
+            Assert.Equal(OpenApiSemanticSchemaKind.Object, body.Kind);
+            Assert.Single(body.Assertions);
+            Assert.Single(body.Assertions[0].OneOf.Count == 2 ? new[] { body.Assertions[0] } : Array.Empty<OpenApiSemanticAssertion>());
+        }
+
+        [Fact]
+        public void AnOpenNodeLiftsThePropertiesItsAlternativesDeclareAndAClosedNodeDoesNot()
+        {
+            OpenApiSemanticSchema Body(string fixture) => OpenApiSemanticParser
+                .Parse(TestBundleFactory.ReadRoot(CompositionConformanceFixtures.Get(fixture).Document()))
+                .Schemas.Single(static pair => pair.Key.Pointer.EndsWith("/Body", StringComparison.Ordinal)).Value;
+
+            OpenApiSemanticSchema open = Body("A2_OneOfPinsUndeclaredPropertiesToNull");
+            Assert.Equal(new[] { "code", "kind", "ref", "total" }, open.Properties.Select(static p => p.WireName).OrderBy(static n => n, StringComparer.Ordinal));
+            OpenApiSemanticProperty Lifted(string name) => open.Properties.Single(p => p.WireName == name);
+            // The alternatives that say a type agree: ref is a uuid string and code a string enum; kind differs between them (untyped).
+            Assert.Equal("uuid", Lifted("ref").Schema.Format);
+            Assert.Equal(OpenApiSemanticSchemaKind.Enum, Lifted("code").Schema.Kind);
+            Assert.Equal(OpenApiSemanticSchemaKind.Any, Lifted("kind").Schema.Kind);
+            Assert.False(Lifted("code").Required);
+
+            OpenApiSemanticSchema closed = Body("A1_OneOfPinsEnumAndNullable");
+            Assert.Equal(4, closed.Properties.Count);
         }
 
         // ---- the mapping --------------------------------------------------------------------------------------

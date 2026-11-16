@@ -106,11 +106,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
 
         // ---- target behavior (skipped until the phase that implements it) --------------------------------
 
-        [Theory(Skip = "P2: boolean enum and null-only enum")]
+        [Theory]
         [MemberData(nameof(P2Names))]
         public Task P2TargetBehavior(string name) => AssertTargetBehavior(name);
 
-        [Theory(Skip = "P3: constraint-only oneOf/anyOf next to properties become assertions")]
+        [Theory]
         [MemberData(nameof(P3Names))]
         public Task P3TargetBehavior(string name) => AssertTargetBehavior(name);
 
@@ -122,7 +122,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [MemberData(nameof(P5Names))]
         public Task P5TargetBehavior(string name) => AssertTargetBehavior(name);
 
-        [Theory(Skip = "P6: not is always evaluated")]
+        [Theory]
         [MemberData(nameof(P6Names))]
         public Task P6TargetBehavior(string name) => AssertTargetBehavior(name);
 
@@ -150,7 +150,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Exception? responseError = await Capture(() => CallRead(assembly, json));
                 if (instance.Valid && responseError is not null)
                 {
-                    failures.Add("response should be accepted: " + label + " -> " + responseError.GetType().Name);
+                    failures.Add("response should be accepted: " + label + " -> " + responseError.GetType().Name + ": " + responseError.Message);
                 }
                 else if (!instance.Valid && (responseError is null ||
                          responseError.GetType() != MatrixMode.SerializationExceptionType))
@@ -164,7 +164,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 {
                     if (requestError is not null)
                     {
-                        failures.Add("request should be accepted: " + label + " -> " + requestError.GetType().Name);
+                        failures.Add("request should be accepted: " + label + " -> " + requestError.GetType().Name + ": " + requestError.Message);
                     }
                     else if (!JToken.DeepEquals(JToken.Parse(json), JToken.Parse(sent!)))
                     {

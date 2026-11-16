@@ -598,6 +598,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Equal(new[] { "A", "B" }, Enum.GetNames(Load(execution).GetType(Ns + "Body", true)!));
         }
 
+        // These enums have no C# enum: the type is the base type of the schema and the values are an assertion.
         [Theory]
         [InlineData("{\"type\":\"number\",\"enum\":[1.5,2.5]}")]
         [InlineData("{\"type\":\"number\",\"enum\":[1,2]}")]
@@ -605,13 +606,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         [InlineData("{\"enum\":[true,false]}")]
         [InlineData("{\"enum\":[1.5]}")]
         [InlineData("{\"enum\":[\"a\",1]}")]
-        public void NumberBooleanAndMixedEnumsRemainUnsupported(string schema)
+        public void NumberBooleanAndMixedEnumsAreAcceptedAndAssertedAtRunTime(string schema)
         {
-            Diagnostic diagnostic = Assert.Single(
-                Phase4GeneratorTestHarness.GenerateAndCompile(EchoDocument("\"Body\":" + schema)).RunResult.Diagnostics);
+            Phase4GeneratorExecution execution =
+                Phase4GeneratorTestHarness.GenerateAndCompile(EchoDocument("\"Body\":" + schema));
 
-            Assert.Equal("OACG101", diagnostic.Id);
-            Assert.Contains("logical path '/components/schemas/Body/enum'", diagnostic.GetMessage());
+            Assert.Empty(execution.RunResult.Diagnostics);
+            Assert.Empty(execution.CompilationErrors);
         }
 
         [Fact]

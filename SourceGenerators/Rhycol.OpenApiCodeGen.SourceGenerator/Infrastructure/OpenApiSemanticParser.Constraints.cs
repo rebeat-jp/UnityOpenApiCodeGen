@@ -494,6 +494,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     {
                         parts.Add(GetConstraintSignature(set, active));
                     }
+
+                    foreach (OpenApiSemanticAssertion assertion in member.Assertions)
+                    {
+                        parts.Add("as:" + assertion.Origin);
+                    }
                 }
             }
             finally

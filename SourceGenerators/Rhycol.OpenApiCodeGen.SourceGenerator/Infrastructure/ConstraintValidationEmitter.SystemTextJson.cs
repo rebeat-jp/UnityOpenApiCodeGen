@@ -56,6 +56,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 source.AppendLine("                " + _prefix + "Exact = exactBefore;");
                 source.AppendLine("            }");
             }
+
+            AppendAssertionCalls(
+                source, "            ", dto is null ? type.AssertionRoots : type.AssertionRoots.Concat(dto.AssertionRoots).ToArray(),
+                "token", "path", "contract", normalizeToken: false);
             switch (type.Kind)
             {
                 case GeneratedTypeKind.Array:

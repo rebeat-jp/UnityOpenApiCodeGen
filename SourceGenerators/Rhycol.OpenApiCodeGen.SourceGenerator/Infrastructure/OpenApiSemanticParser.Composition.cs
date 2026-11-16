@@ -1120,6 +1120,36 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     OpenApiSourceLocation location = CreateLocation(property.Value);
                     if (composition.Properties.TryGetValue(property.Name, out OpenApiSemanticProperty? existing))
                     {
+                        // Every part has to hold: the assertions of both declarations stack on whichever type is kept.
+                        OpenApiSemanticSchema[] assertionOwners = { existing.Schema, schema };
+                        if (assertionOwners.Any(static owner => owner.Assertions.Count > 0))
+                        {
+                            OpenApiSemanticSchema plainExisting = existing.Schema.WithoutAssertions();
+                            OpenApiSemanticSchema plainIncoming = schema.WithoutAssertions();
+                            IEnumerable<OpenApiSemanticAssertion> all =
+                                existing.Schema.Assertions.Concat(schema.Assertions);
+                            if (string.Equals(
+                                    GetSchemaSignature(plainExisting),
+                                    GetSchemaSignature(plainIncoming),
+                                    StringComparison.Ordinal))
+                            {
+                                composition.Properties[property.Name] = new OpenApiSemanticProperty(
+                                    property.Name, false, plainExisting.WithAssertions(all), existing.Location);
+                                continue;
+                            }
+
+                            if (TryMergeNarrowedProperty(plainExisting, plainIncoming, out OpenApiSemanticSchema narrowedPlain) &&
+                                !NarrowingLeavesNoValue(narrowedPlain))
+                            {
+                                composition.Properties[property.Name] = new OpenApiSemanticProperty(
+                                    property.Name,
+                                    false,
+                                    narrowedPlain.WithAssertions(all),
+                                    ReferenceEquals(narrowedPlain, plainExisting) ? existing.Location : location);
+                                continue;
+                            }
+                        }
+
                         if (!string.Equals(
                                 GetSchemaSignature(existing.Schema),
                                 GetSchemaSignature(schema),
@@ -1561,8 +1591,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (_minorVersion == 1 &&
                 (notNode.ValueKind == SpecValueKind.True || notNode.ValueKind == SpecValueKind.False))
             {
-                AddIgnoredWarning(notNode, "A boolean not schema is not evaluated and was ignored.");
-                return schema;
+                // not true accepts nothing, not false everything: the assertion decides.
+                return schema.WithAssertions(new[] { CreateNotAssertion(node, notNode) });
             }
 
             RequireKind(notNode, SpecValueKind.Object, "The schema not field must be a schema object.");
@@ -1586,26 +1616,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             bool recursive = _notRecursion;
             _notRecursion = previousRecursion || recursive;
-            if (failure is not null)
+            if (failure is not null || recursive || !IsMeaningfulNotSchema(notSchema!, new HashSet<NormalizedSpecNodeIdentity>()))
             {
-                AddIgnoredWarning(
-                    notNode,
-                    "The not schema uses an element that is not supported (" + failure + ") and was ignored.");
-                return schema;
-            }
-
-            if (recursive)
-            {
-                AddIgnoredWarning(notNode, "A recursive not schema is not evaluated and was ignored.");
-                return schema;
-            }
-
-            if (!IsMeaningfulNotSchema(notSchema!, new HashSet<NormalizedSpecNodeIdentity>()))
-            {
-                AddIgnoredWarning(
-                    notNode,
-                    "A not schema without a concrete type or shape would reject every value and was ignored.");
-                return schema;
+                // What the typed check of not cannot decide (an element it does not support, a recursive schema, a schema
+                // without a shape such as only `required`) is decided by the assertion, which has no types.
+                try
+                {
+                    return schema.WithAssertions(new[] { CreateNotAssertion(node, notNode) });
+                }
+                catch (OpenApiSemanticException exception)
+                {
+                    AddIgnoredWarning(
+                        notNode,
+                        "The not schema uses an element that is not supported (" + (failure ?? exception.Message) + ") and was ignored.");
+                    return schema;
+                }
             }
 
             return schema.WithNot(notSchema!);
