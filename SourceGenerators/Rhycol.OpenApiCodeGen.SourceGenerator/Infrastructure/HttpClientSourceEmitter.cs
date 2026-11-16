@@ -1305,12 +1305,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 source.AppendLine("        {");
                 source.AppendLine("            if (token.Type == global::Newtonsoft.Json.Linq.JTokenType.Null)");
                 source.AppendLine("            {");
-                source.AppendLine("                if (nullable)");
-                source.AppendLine("                {");
-                _constraints.AppendAssertionCalls(
-                    source, "                    ", _constraints.AssertionRootsOf(type), "token", "path", "\"response\"", normalizeToken: false);
-                source.AppendLine("                    return;");
-                source.AppendLine("                }");
+                IReadOnlyList<string> nullRoots = _constraints.NullAssertionRootsOf(type);
+                if (nullRoots.Count == 0)
+                {
+                    source.AppendLine("                if (nullable) return;");
+                }
+                else
+                {
+                    source.AppendLine("                if (nullable)");
+                    source.AppendLine("                {");
+                    _constraints.AppendAssertionCalls(
+                        source, "                    ", nullRoots, "token", "path", "\"response\"", normalizeToken: false);
+                    source.AppendLine("                    return;");
+                    source.AppendLine("                }");
+                }
+
                 source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-nullable response value was null at \" + path + \".\");");
                 source.AppendLine("            }");
 
@@ -1368,7 +1377,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
                 else if (type.Kind == GeneratedTypeKind.Union && _unions.TryGetValue(type.Name, out GeneratedUnionModel? union))
                 {
-                    AppendUnionChecks(source, union, type.AssertionRoots.Count > 0);
+                    AppendUnionChecks(source, union, union.AssertsAlternatives && type.AssertionRoots.Count > 0);
                 }
                 else if (type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
                 {

@@ -203,7 +203,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 discriminator: discriminator,
                 unionIsOneOf: isOneOf,
                 assertions: allOfAsAssertion
-                    ? new[] { CreateWholeAssertion(node) }
+                    ? new[] { CreateWholeAssertion(node, assertsAlternatives: true) }
                     : InheritsFromItself(node, memberNodes)
                         ? null
                         : new[] { CreateUnionAssertion(node, nullable, memberNodes, discriminator, isOneOf) });
@@ -1017,6 +1017,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
             }
 
+            // JSON Schema: additionalProperties applies to the properties of its own schema only, so a closed part rejects the properties
+            // that the other parts declare. The typed shape is the union (it accepts them), the assertion decides: no value that
+            // has such a property is valid, which is worth a warning.
+            foreach ((SpecNode closedNode, HashSet<string> ownNames) in composition.ClosedParts)
+            {
+                string[] foreign = composition.Properties.Keys
+                    .Where(name => !ownNames.Contains(name))
+                    .OrderBy(static name => name, StringComparer.Ordinal)
+                    .ToArray();
+                if (foreign.Length == 0)
+                {
+                    continue;
+                }
+
+                composition.NeedsAssertion = true;
+                AddIgnoredWarning(
+                    closedNode,
+                    "This allOf part is closed (additionalProperties: false), so it rejects the properties that the other parts declare (" +
+                    string.Join(", ", foreign) + "); a value that has one of them is not valid.");
+            }
+
             var properties = new List<OpenApiSemanticProperty>();
             foreach (string name in composition.Properties.Keys.OrderBy(static value => value, StringComparer.Ordinal))
             {
@@ -1330,6 +1351,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (additionalNode.ValueKind == SpecValueKind.False)
             {
                 composition.Closed = true;
+                var ownNames = new HashSet<string>(StringComparer.Ordinal);
+                if (propertiesNode is not null)
+                {
+                    foreach (SpecProperty property in propertiesNode.EnumerateObject())
+                    {
+                        ownNames.Add(property.Name);
+                    }
+                }
+
+                composition.ClosedParts.Add((additionalNode, ownNames));
             }
             else if (additionalNode.ValueKind == SpecValueKind.Object)
             {
@@ -1670,6 +1701,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             internal bool Closed { get; set; }
 
+            /// <summary>The parts with additionalProperties: false (the node of the keyword) and the names their own properties declare.</summary>
+            internal List<(SpecNode Node, HashSet<string> OwnNames)> ClosedParts { get; } =
+                new List<(SpecNode Node, HashSet<string> OwnNames)>();
+
             /// <summary>
             /// True when the flattened shape is only an upper bound of the valid values (a lossy merge of same-named properties,
             /// a oneOf / anyOf / not of a part, a required name nobody declares): the whole schema is asserted as written.
@@ -1737,11 +1772,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 {
                     return schema.WithAssertions(new[] { CreateNotAssertion(node, notNode) });
                 }
-                catch (OpenApiSemanticException exception)
+                catch (OpenApiSemanticException exception) when (exception.Kind == OpenApiSemanticErrorKind.UnsupportedElement)
                 {
+                    // An element the assertion cannot evaluate either: the not is ignored. Any other error (an invalid document,
+                    // such as an array without items in OpenAPI 3.0) is the document's error and stays one.
                     AddIgnoredWarning(
                         notNode,
-                        "The not schema uses an element that is not supported (" + (failure ?? exception.Message) + ") and was ignored.");
+                        "The not schema uses an element that is not supported (" + exception.Message + ") and was ignored.");
                     return schema;
                 }
             }

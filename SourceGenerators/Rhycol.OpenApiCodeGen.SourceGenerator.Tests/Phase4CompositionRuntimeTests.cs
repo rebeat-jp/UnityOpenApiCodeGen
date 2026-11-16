@@ -284,7 +284,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
           'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
                            {'type':'object','required':['extra'],
                             'properties':{'extra':{'type':'string'},'count':{'type':'integer'}}}]},
-          'Base':{'type':'object','additionalProperties':false,'required':['id'],
+          'Base':{'type':'object','required':['id'],
                   'properties':{'id':{'type':'integer'}}}";
 
         [Fact]
@@ -321,19 +321,34 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         }
 
         [Fact]
-        public async Task AllOfIsClosedOverTheComposedPropertiesWhenAnyPartIsClosed()
+        public async Task AClosedAllOfPartRejectsThePropertiesOfTheOtherPartsAndWarns()
         {
-            // Base says additionalProperties:false, yet the other part's properties stay valid: closedness
-            // is decided on the composed object.
-            Phase4GeneratorExecution execution = Generate(EchoDocument(AllOfBaseAndExtension));
+            // JSON Schema: additionalProperties applies to the properties of its own schema, so Base (closed) rejects the property
+            // that the other part declares. The typed shape is the union of the parts (it keeps both properties), the assertion decides.
+            const string Schemas = @"
+              'Body':{'allOf':[{'$ref':'#/components/schemas/Base'},
+                               {'type':'object','properties':{'extra':{'type':'string'}}}]},
+              'Base':{'type':'object','additionalProperties':false,'required':['id'],
+                      'properties':{'id':{'type':'integer'}}}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Contains("logical path '/components/schemas/Base/additionalProperties'", warning.GetMessage());
+            Assert.Contains("(extra)", warning.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
             Type body = Load(execution).GetType(Ns + "Body", true)!;
+            Assert.NotNull(body.GetProperty("Id"));
+            Assert.NotNull(body.GetProperty("Extra"));
             Assert.Null(body.GetProperty("AdditionalProperties"));
-            string request = J("{'id':1,'extra':'e'}");
 
-            Exception undeclared = await MatrixMode.ThrowsSerializationAsync(() =>
-                Echo(execution, request, J("{'id':1,'extra':'x','zzz':true}")));
-
-            Assert.Contains("$.zzz", undeclared.Message);
+            string ok = J("{'id':1}");
+            AssertJsonEqual(ok, (await Echo(execution, ok, ok)).RequestJson);
+            string withExtra = J("{'id':1,'extra':'e'}");
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Echo(execution, withExtra, ok));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, ok, withExtra));
+            // An undeclared property is rejected as before.
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, ok, J("{'id':1,'zzz':true}")));
         }
 
         [Fact]
@@ -1442,7 +1457,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
         {
             const string Schemas = @"
               'Body':{'$ref':'#/components/schemas/Base','properties':{'extra':{'type':'string'}},'required':['extra']},
-              'Base':{'type':'object','additionalProperties':false,'required':['id'],'properties':{'id':{'type':'integer'}}}";
+              'Base':{'type':'object','required':['id'],'properties':{'id':{'type':'integer'}}}";
             Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas));
             Type body = Load(execution).GetType(Ns + "Body", true)!;
             Assert.NotNull(body.GetProperty("Id"));
@@ -1454,9 +1469,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Exception missing = await MatrixMode.ThrowsSerializationAsync(() =>
                 Echo(execution, J("{'id':1,'extra':'e'}"), J("{'id':2}")));
             Assert.Contains("$.extra", missing.Message);
-            // Base is closed, so the composed object is closed
-            await MatrixMode.ThrowsSerializationAsync(() =>
-                Echo(execution, J("{'id':1,'extra':'e'}"), J("{'id':2,'extra':'x','zzz':1}")));
+            // No part is closed, so the composed object is open.
+            Exchange open = await Echo(execution, J("{'id':1,'extra':'e'}"), J("{'id':2,'extra':'x','zzz':1}"));
+            Assert.Equal("x", ReadPath(open.Result!, "Extra"));
         }
 
         [Fact]
@@ -2322,6 +2337,275 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             else
             {
                 AssertJsonEqual(J(value), (await Echo(execution, J(value), J(value))).RequestJson);
+            }
+        }
+
+        // ---- review fixes: nullable references, allOf idiom, inheritance bases, unsupported keywords, lifted properties ----------------
+
+        private const string CatDogOpen = @"
+          'Cat':{'type':'object','required':['meow'],'properties':{'meow':{'type':'boolean'}}},
+          'Dog':{'type':'object','required':['bark'],'properties':{'bark':{'type':'string'}}}";
+
+        [Theory]
+        [InlineData("3.0.3", "{'nullable':true,'allOf':[{'$ref':'#/components/schemas/Pet'}]}")]
+        [InlineData("3.0.3", "{'$ref':'#/components/schemas/Pet','nullable':true}")]
+        [InlineData("3.1.0", "{'oneOf':[{'$ref':'#/components/schemas/Pet'},{'type':'null'}]}")]
+        public async Task ANullableReferenceToAUnionAcceptsNullInBothDirections(string version, string property)
+        {
+            // The reference adds null; the union itself (a oneOf that no member matches null) must not reject it.
+            string schemas = @"
+              'Body':{'type':'object','properties':{'pet':" + property + @"}},
+              'Pet':{'oneOf':[{'$ref':'#/components/schemas/Cat'},{'$ref':'#/components/schemas/Dog'}]}," + CatDogOpen;
+            Phase4GeneratorExecution execution = Generate(EchoDocument(schemas, version));
+
+            string nullPet = J("{'pet':null}");
+            AssertJsonEqual(nullPet, (await Echo(execution, nullPet, nullPet)).RequestJson);
+            string cat = J("{'pet':{'meow':true}}");
+            AssertJsonEqual(cat, (await Echo(execution, cat, cat)).RequestJson);
+            // A value that is not null is still judged by the union.
+            string neither = J("{'pet':{}}");
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Echo(execution, neither, cat));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, cat, neither));
+        }
+
+        [Fact]
+        public async Task ANullableReferenceToANullableEnumWithoutNullAcceptsNullButAPlainOneDoesNot()
+        {
+            // The enum itself is nullable without listing null (null is invalid, OACG108); a reference that adds nullable makes
+            // null valid again, a plain reference keeps the enum's decision.
+            const string Schemas = @"
+              'Body':{'type':'object','properties':{
+                'added':{'$ref':'#/components/schemas/Status','nullable':true},
+                'plain':{'$ref':'#/components/schemas/Status'}}},
+              'Status':{'type':'string','nullable':true,'enum':['A','B']}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.3"));
+            Assert.Equal("OACG108", Assert.Single(execution.RunResult.Diagnostics).Id);
+            Assert.Empty(execution.CompilationErrors);
+
+            string added = J("{'added':null}");
+            AssertJsonEqual(added, (await Echo(execution, added, added)).RequestJson);
+            string plain = J("{'plain':null}");
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Echo(execution, plain, added));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, added, plain));
+        }
+
+        [Fact]
+        public async Task ANullableReferenceToADtoWithAssertionsAcceptsNull()
+        {
+            const string Schemas = @"
+              'Body':{'type':'object','properties':{'item':{'$ref':'#/components/schemas/Item','nullable':true}}},
+              'Item':{'type':'object','properties':{'a':{'type':'string'}},'not':{'required':['b']}}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas, "3.0.3"));
+
+            string nullItem = J("{'item':null}");
+            AssertJsonEqual(nullItem, (await Echo(execution, nullItem, nullItem)).RequestJson);
+            string ok = J("{'item':{'a':'x'}}");
+            AssertJsonEqual(ok, (await Echo(execution, ok, ok)).RequestJson);
+            string forbidden = J("{'item':{'b':1}}");
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Echo(execution, forbidden, ok));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, ok, forbidden));
+        }
+
+        [Theory]
+        [InlineData("3.0.3", "{'nullable':true,'allOf':[{'$ref':'#/components/schemas/Person'}]}")]
+        [InlineData("3.1.0", "{'type':['object','null'],'allOf':[{'$ref':'#/components/schemas/Person'}]}")]
+        public async Task ANullableAllOfReferenceInsideAnAlternativeAcceptsNull(string version, string owner)
+        {
+            // Pet is a union without a discriminator, so Cat is judged by the assertion: its owner may be null.
+            string schemas = @"
+              'Body':{'$ref':'#/components/schemas/Pet'},
+              'Pet':{'oneOf':[{'$ref':'#/components/schemas/Cat'},{'$ref':'#/components/schemas/Dog'}]},
+              'Cat':{'type':'object','required':['meow'],'properties':{'meow':{'type':'boolean'},'owner':" + owner + @"}},
+              'Dog':{'type':'object','required':['bark'],'properties':{'bark':{'type':'string'}}},
+              'Person':{'type':'object','required':['name'],'properties':{'name':{'type':'string'}}}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(schemas, version));
+
+            string nullOwner = J("{'meow':true,'owner':null}");
+            AssertJsonEqual(nullOwner, (await Echo(execution, nullOwner, nullOwner)).RequestJson);
+            string person = J("{'meow':true,'owner':{'name':'n'}}");
+            AssertJsonEqual(person, (await Echo(execution, person, person)).RequestJson);
+            string nameless = J("{'meow':true,'owner':{}}");
+            await Assert.ThrowsAnyAsync<Exception>(() => Echo(execution, nameless, person));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, person, nameless));
+        }
+
+        [Fact]
+        public async Task AnInheritanceBaseReachedFromAnotherAssertionIsNotACycle()
+        {
+            // Pet lists Cat / Dog in oneOf and they extend Pet (allOf): the subtypes inherit its properties only. Wrapper is judged
+            // by an assertion that reaches Pet through Owner.pet; it must not follow Pet -> oneOf -> Cat -> allOf -> Pet.
+            const string Schemas = @"
+              'Body':{'oneOf':[{'$ref':'#/components/schemas/Owner'},{'$ref':'#/components/schemas/Other'}]},
+              'Owner':{'type':'object','required':['pet'],'properties':{'pet':{'$ref':'#/components/schemas/Pet'}}},
+              'Other':{'type':'object','required':['tag'],'properties':{'tag':{'type':'string'}}},
+              'Pet':{'oneOf':[{'$ref':'#/components/schemas/Cat'},{'$ref':'#/components/schemas/Dog'}],
+                     'discriminator':{'propertyName':'kind'}},
+              'Cat':{'allOf':[{'$ref':'#/components/schemas/Pet'},
+                              {'type':'object','required':['meow'],'properties':{'meow':{'type':'boolean'}}}]},
+              'Dog':{'allOf':[{'$ref':'#/components/schemas/Pet'},
+                              {'type':'object','required':['bark'],'properties':{'bark':{'type':'string'}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas));
+
+            string owner = J("{'pet':{'kind':'Cat','meow':true}}");
+            AssertJsonEqual(owner, (await Echo(execution, owner, owner)).RequestJson);
+            string other = J("{'tag':'t'}");
+            AssertJsonEqual(other, (await Echo(execution, other, other)).RequestJson);
+            string neither = J("{'pet':{'kind':'Cat'}}");
+            await Assert.ThrowsAnyAsync<Exception>(() => Echo(execution, neither, owner));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, owner, neither));
+        }
+
+        [Fact]
+        public void ACycleWithoutDataIsReportedAtTheSchemaThatRefersToItself()
+        {
+            // Body is the first schema that has an assertion; the cycle is in Loop.
+            const string Schemas = @"
+              'Body':{'type':'object','properties':{'l':{'$ref':'#/components/schemas/Loop'}},'not':{'required':['zzz']}},
+              'Loop':{'type':'object','not':{'$ref':'#/components/schemas/Loop'}}";
+
+            Diagnostic error = Assert.Single(MatrixMode.GenerateAndCompile(EchoDocument(Schemas)).RunResult.Diagnostics);
+
+            Assert.Equal("OACG100", error.Id);
+            Assert.Contains("refers to itself", error.GetMessage());
+            Assert.Contains("logical path '/components/schemas/Loop'", error.GetMessage());
+        }
+
+        [Fact]
+        public async Task ANotWithAnUnsupportedKeywordIsIgnoredWithAWarningLikeBefore()
+        {
+            const string Schemas = @"
+              'Body':{'type':'object','properties':{'a':{'type':'string'}},
+                      'not':{'if':{'required':['a']},'then':{'required':['b']}}}";
+            Phase4GeneratorExecution execution = MatrixMode.GenerateAndCompile(EchoDocument(Schemas));
+
+            Diagnostic warning = Assert.Single(execution.RunResult.Diagnostics);
+            Assert.Equal("OACG108", warning.Id);
+            Assert.Contains("Schema keyword 'if' is not supported", warning.GetMessage());
+            Assert.Contains("was ignored", warning.GetMessage());
+            Assert.Empty(execution.CompilationErrors);
+            // The not is not evaluated (it used to become "not {}", which rejects every value).
+            string ok = J("{'a':'x'}");
+            AssertJsonEqual(ok, (await Echo(execution, ok, ok)).RequestJson);
+        }
+
+        [Fact]
+        public void ANotWhoseCauseIsAnInvalidDocumentStaysAnErrorAndIsNotWarnedAbout()
+        {
+            // The typed check of not stops at the array part (unsupported); the assertion finds the real cause: no items in 3.0.
+            const string Schemas = @"
+              'Body':{'type':'object','properties':{'x':{'type':'string'}},'not':{'allOf':[{'type':'array'}]}}";
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(EchoDocument(Schemas, "3.0.3")).RunResult.Diagnostics);
+
+            Assert.Equal("OACG100", diagnostic.Id);
+            Assert.Contains("'items' is missing", diagnostic.GetMessage());
+        }
+
+        [Theory]
+        [InlineData("3.0.3", "'const':'A'", "const", "/components/schemas/Body/oneOf/0/properties/kind/const")]
+        [InlineData("3.1.0", "'if':{'type':'string'}", "if", "/components/schemas/Body/oneOf/0/properties/kind/if")]
+        [InlineData("3.1.0", "'unevaluatedProperties':false", "unevaluatedProperties", "/components/schemas/Body/oneOf/0/properties/kind/unevaluatedProperties")]
+        public void AKeywordThatOnlyAnAssertionSeesIsOacg101(string version, string keyword, string name, string logicalPath)
+        {
+            string schemas = @"'Body':{'type':'object','properties':{'kind':{'type':'string'}},
+              'oneOf':[{'properties':{'kind':{" + keyword + @"}}},{'required':['kind']}]}";
+
+            Diagnostic diagnostic = Assert.Single(MatrixMode.GenerateAndCompile(EchoDocument(schemas, version)).RunResult.Diagnostics);
+
+            Assert.Equal("OACG101", diagnostic.Id);
+            Assert.Contains("Schema keyword '" + name + "' is not supported", diagnostic.GetMessage());
+            Assert.Contains("logical path '" + logicalPath + "'", diagnostic.GetMessage());
+        }
+
+        [Fact]
+        public async Task APropertyThatOnlySomeAlternativesDeclareIsNotTypedByThem()
+        {
+            // x is declared (string, maxLength 3) by the first alternative only; the value is valid through the second one.
+            const string Schemas = @"
+              'Body':{'type':'object','properties':{'id':{'type':'string'}},
+                'oneOf':[
+                  {'required':['a'],'properties':{'x':{'type':'string','maxLength':3}}},
+                  {'required':['b']}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas));
+
+            string ok = J("{'id':'i','b':1,'x':5}");
+            AssertJsonEqual(ok, (await Echo(execution, ok, ok)).RequestJson);
+            // Through the first alternative the declaration still applies.
+            string first = J("{'id':'i','a':1,'x':'abc'}");
+            AssertJsonEqual(first, (await Echo(execution, first, first)).RequestJson);
+            string tooLong = J("{'id':'i','a':1,'x':'abcd'}");
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Echo(execution, tooLong, first));
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, first, tooLong));
+        }
+
+        [Fact]
+        public async Task ADeclarationWithoutATypeKeepsALiftedPropertyUntyped()
+        {
+            // Both alternatives declare x, but the first one only gives an enum: the other one's string type cannot type x.
+            const string Schemas = @"
+              'Body':{'type':'object','properties':{'id':{'type':'string'}},
+                'oneOf':[
+                  {'properties':{'x':{'enum':[1,2]}}},
+                  {'properties':{'x':{'type':'string'}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas));
+
+            string number = J("{'id':'i','x':1}");
+            AssertJsonEqual(number, (await Echo(execution, number, number)).RequestJson);
+            string text = J("{'id':'i','x':'s'}");
+            AssertJsonEqual(text, (await Echo(execution, text, text)).RequestJson);
+        }
+
+        [Fact]
+        public async Task ALiftedPropertyThatEveryAlternativeDeclaresKeepsItsType()
+        {
+            const string Schemas = @"
+              'Body':{'type':'object','properties':{'id':{'type':'string'}},
+                'oneOf':[
+                  {'required':['a'],'properties':{'x':{'type':'integer'}}},
+                  {'required':['b'],'properties':{'x':{'type':'integer'}}}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas));
+            Type body = Load(execution).GetType(Ns + "Body", true)!;
+            Assert.Equal(typeof(int?), body.GetProperty("X")!.PropertyType);
+
+            string ok = J("{'id':'i','a':1,'x':3}");
+            AssertJsonEqual(ok, (await Echo(execution, ok, ok)).RequestJson);
+        }
+
+        [Fact]
+        public async Task TheRequiredOfAnAlternativeSkipsAReadOnlyPropertyOfTheNodeInARequest()
+        {
+            // The first alternative requires id, which is readOnly: a request does not carry it, so it must not fail there.
+            const string Schemas = @"
+              'Body':{'type':'object','properties':{'id':{'type':'string','readOnly':true},'a':{'type':'string'}},
+                'oneOf':[{'required':['id','a']},{'required':['b']}]}";
+            Phase4GeneratorExecution execution = Generate(EchoDocument(Schemas));
+
+            string request = J("{'a':'x'}");
+            AssertJsonEqual(request, (await Echo(execution, request, J("{'id':'i','a':'x'}"))).RequestJson);
+            // A response has the id, and still has to match one alternative.
+            await MatrixMode.ThrowsSerializationAsync(() => Echo(execution, request, J("{'a':'x'}")));
+        }
+
+        [Fact]
+        public void TheDiscriminatorConditionOfEveryBranchComesFirst()
+        {
+            const string Schemas = @"
+              'Body':{'$ref':'#/components/schemas/Pet'},
+              'Pet':{'oneOf':[{'$ref':'#/components/schemas/Cat'},{'$ref':'#/components/schemas/Dog'},{'$ref':'#/components/schemas/Cow'}],
+                     'discriminator':{'propertyName':'petType'}}," + CatDogOpen + @",
+              'Cow':{'type':'object','required':['moo'],'properties':{'moo':{'type':'boolean'}}}";
+            OpenApiSemanticDocument document = OpenApiSemanticParser.Parse(
+                TestBundleFactory.ReadRoot(EchoDocument(Schemas)));
+
+            OpenApiSemanticSchema pet = document.Schemas.Single(entry => entry.Key.Pointer == "/components/schemas/Pet").Value;
+            OpenApiSemanticAssertion discriminated = Assert.Single(pet.Assertions);
+            Assert.Equal(3, discriminated.AnyOf.Count);
+            foreach (OpenApiSemanticAssertion branch in discriminated.AnyOf)
+            {
+                // [discriminator condition, not other, not other]
+                Assert.Equal(3, branch.AllOf.Count);
+                Assert.Equal("petType", Assert.Single(branch.AllOf[0].Properties).Name);
+                Assert.All(branch.AllOf.Skip(1), static condition => Assert.NotNull(condition.Not));
             }
         }
 

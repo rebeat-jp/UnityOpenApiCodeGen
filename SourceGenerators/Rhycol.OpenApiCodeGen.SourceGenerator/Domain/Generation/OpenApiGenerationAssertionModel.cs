@@ -70,6 +70,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// <summary>The component name of a node that a $ref points to (a comment in the generated code); empty otherwise.</summary>
         internal string Name { get; set; } = string.Empty;
 
+        /// <summary>The position of the schema a named node was made from (a diagnostic about a cycle points there).</summary>
+        internal OpenApiSourceLocation? Location { get; set; }
+
         /// <summary>The allowed types; null when every type is allowed.</summary>
         internal OpenApiSemanticAssertionTypes? Types { get; set; }
 
@@ -245,7 +248,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     if (state[next] == 1)
                     {
                         throw new GeneratedAssertionCycleException(
-                            nodes[next].Name.Length > 0 ? nodes[next].Name : "#" + next.ToString(CultureInfo.InvariantCulture));
+                            nodes[next].Name.Length > 0 ? nodes[next].Name : "#" + next.ToString(CultureInfo.InvariantCulture),
+                            nodes[next].Location);
                     }
 
                     if (state[next] == 0)
@@ -277,7 +281,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 int id = _nodes.Count;
                 _nodes.Add(null);
                 _targets.Add(targetKey, id);
-                var node = new GeneratedAssertionNode(id) { Name = assertion.Name };
+                var node = new GeneratedAssertionNode(id) { Name = assertion.Name, Location = assertion.Location };
                 Fill(node, assertion, inherited);
                 _nodes[id] = node;
                 return id;
@@ -336,6 +340,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 if (readOnly || writeOnly)
                 {
                     into[property.Name] = (readOnly, writeOnly);
+                }
+            }
+
+            foreach (OpenApiSemanticAssertionProperty property in assertion.FlagProperties)
+            {
+                if (property.ReadOnly || property.WriteOnly)
+                {
+                    into.TryGetValue(property.Name, out (bool ReadOnly, bool WriteOnly) known);
+                    into[property.Name] = (property.ReadOnly || known.ReadOnly, property.WriteOnly || known.WriteOnly);
                 }
             }
 
@@ -669,11 +682,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
     /// <summary>A schema that, through allOf / anyOf / oneOf / not / $ref alone, requires itself to hold for the same value.</summary>
     internal sealed class GeneratedAssertionCycleException : InvalidOperationException
     {
-        internal GeneratedAssertionCycleException(string schemaName)
+        internal GeneratedAssertionCycleException(string schemaName, OpenApiSourceLocation? location = null)
             : base("The schema '" + schemaName + "' refers to itself without going into the value; it can never be evaluated.")
         {
             SchemaName = schemaName;
+            Location = location;
         }
+
+        /// <summary>The position of the schema that refers to itself (null when it is not known).</summary>
+        internal OpenApiSourceLocation? Location { get; }
 
         internal string SchemaName { get; }
     }

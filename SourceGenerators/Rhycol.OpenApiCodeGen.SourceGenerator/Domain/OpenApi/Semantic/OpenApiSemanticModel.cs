@@ -536,6 +536,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return Clone(Nullable, Annotations, NotSchemas, ConstraintSets, Assertions, properties);
         }
 
+        /// <summary>The same schema without its own validation keyword sets (the type of a property that only lifts a declaration).</summary>
+        internal OpenApiSemanticSchema WithoutConstraintSets()
+        {
+            return ConstraintSets.Count == 0
+                ? this
+                : Clone(Nullable, Annotations, NotSchemas, Array.Empty<OpenApiSemanticConstraints>(), Assertions);
+        }
+
         internal OpenApiSemanticSchema WithoutAssertions()
         {
             return Assertions.Count == 0

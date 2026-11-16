@@ -1084,10 +1084,7 @@ namespace Rhycol.OpenApiCodeGen.UnityWebRequestVerification
             if (token.Type == global::Newtonsoft.Json.Linq.JTokenType.Null)
             {
                 if (nullable)
-                {
                     return;
-                }
-
                 throw new global::Newtonsoft.Json.JsonSerializationException("Non-nullable response value was null at " + path + ".");
             }
 
@@ -1117,10 +1114,7 @@ namespace Rhycol.OpenApiCodeGen.UnityWebRequestVerification
             if (token.Type == global::Newtonsoft.Json.Linq.JTokenType.Null)
             {
                 if (nullable)
-                {
                     return;
-                }
-
                 throw new global::Newtonsoft.Json.JsonSerializationException("Non-nullable response value was null at " + path + ".");
             }
 
@@ -1154,10 +1148,7 @@ namespace Rhycol.OpenApiCodeGen.UnityWebRequestVerification
             if (token.Type == global::Newtonsoft.Json.Linq.JTokenType.Null)
             {
                 if (nullable)
-                {
                     return;
-                }
-
                 throw new global::Newtonsoft.Json.JsonSerializationException("Non-nullable response value was null at " + path + ".");
             }
 
@@ -1170,10 +1161,7 @@ namespace Rhycol.OpenApiCodeGen.UnityWebRequestVerification
             if (token.Type == global::Newtonsoft.Json.Linq.JTokenType.Null)
             {
                 if (nullable)
-                {
                     return;
-                }
-
                 throw new global::Newtonsoft.Json.JsonSerializationException("Non-nullable response value was null at " + path + ".");
             }
 

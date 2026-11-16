@@ -195,6 +195,16 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// </summary>
         internal OpenApiSemanticAssertion? AnnotationTarget { get; set; }
 
+        /// <summary>
+        /// The properties of the schema that owns the alternatives of this node (a oneOf / anyOf next to the shape). They are not
+        /// asserted again here; only their readOnly / writeOnly flags apply to the `required` of the alternatives.
+        /// </summary>
+        internal IReadOnlyList<OpenApiSemanticAssertionProperty> FlagProperties { get; set; } =
+            Array.Empty<OpenApiSemanticAssertionProperty>();
+
+        /// <summary>True for the assertion that counts the oneOf / anyOf members of a union schema (not for a not or an enum).</summary>
+        internal bool AssertsAlternatives { get; set; }
+
         /// <summary>The boolean schema false (OpenAPI 3.1): no value is valid.</summary>
         internal bool AlwaysFalse { get; set; }
 

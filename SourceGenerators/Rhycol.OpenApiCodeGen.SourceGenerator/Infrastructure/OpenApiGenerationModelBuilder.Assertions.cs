@@ -72,11 +72,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
             catch (GeneratedAssertionCycleException exception)
             {
-                OpenApiSemanticAssertion origin = _assertionOrder[0];
+                // The schema that refers to itself; the position of the first root only when it is not known.
+                OpenApiSourceLocation? origin = exception.Location ?? _assertionOrder[0].Location;
                 throw new OpenApiSemanticException(
                     OpenApiSemanticErrorKind.InvalidDocument,
                     exception.Message,
-                    origin.Location ?? _document.Location,
+                    origin ?? _document.Location,
                     Array.Empty<OpenApiSourceLocation>());
             }
         }

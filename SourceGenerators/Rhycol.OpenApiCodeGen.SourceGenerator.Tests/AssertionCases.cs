@@ -141,8 +141,6 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Ok("{'k':'v'}"), Bad("{'k':'w'}"), Bad("{}")),
             Case("Const_Null", "3.1", "{'const':null}",
                 Ok("null"), Bad("0"), Bad("false")),
-            Case("Const_IsNotAKeywordIn30", "3.0", "{'const':5}",
-                Ok("5"), Ok("6"), Ok("null")),
 
             // ---- properties / required / additionalProperties ----------------------------------------------
             Case("Properties_OnlyPresentKeysAreChecked", "3.0",

@@ -416,6 +416,33 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Document("3.0.3", "{\"minLength\":-1}"), static root => Member(root, "x-a")));
         }
 
+        [Theory]
+        [InlineData("3.0.3", "{\"const\":5}", "const")]
+        [InlineData("3.0.3", "{\"properties\":{\"x\":{\"patternProperties\":{}}}}", "patternProperties")]
+        [InlineData("3.1.0", "{\"if\":{\"required\":[\"a\"]},\"then\":{\"required\":[\"b\"]}}", "if")]
+        [InlineData("3.1.0", "{\"not\":{\"unevaluatedItems\":false}}", "unevaluatedItems")]
+        [InlineData("3.1.0", "{\"somethingUnknown\":1}", "somethingUnknown")]
+        public void AKeywordThatIsNotEvaluatedIsRejectedLikeTheTypedPathDoes(string version, string fragment, string keyword)
+        {
+            OpenApiSemanticException exception = Assert.Throws<OpenApiSemanticException>(() => Map(
+                Document(version, fragment), static root => Member(root, "x-a")));
+
+            Assert.Equal(OpenApiSemanticErrorKind.UnsupportedElement, exception.Kind);
+            Assert.Contains("'" + keyword + "'", exception.Message);
+        }
+
+        [Fact]
+        public void TheSiblingsOfAReferenceIn30AreIgnoredAndNotChecked()
+        {
+            OpenApiSemanticAssertion mapped = Map(
+                "{\"openapi\":\"3.0.3\",\"info\":{\"title\":\"t\",\"version\":\"1\"},\"paths\":{}," +
+                "\"x-a\":{\"$ref\":\"#/components/schemas/T\",\"const\":5,\"somethingUnknown\":true}," +
+                "\"components\":{\"schemas\":{\"T\":{\"type\":\"string\"}}}}",
+                static root => Member(root, "x-a"));
+
+            Assert.Equal("T", mapped.Name);
+        }
+
         private static string Document(string version, string fragment)
         {
             return "{\"openapi\":\"" + version + "\",\"info\":{\"title\":\"t\",\"version\":\"1\"},\"paths\":{},\"x-a\":" +

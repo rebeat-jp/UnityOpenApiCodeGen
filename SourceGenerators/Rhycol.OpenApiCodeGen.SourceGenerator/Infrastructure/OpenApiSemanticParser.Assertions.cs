@@ -22,6 +22,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private readonly Dictionary<NormalizedSpecNodeIdentity, OpenApiSemanticAssertion> _assertionTargets =
             new Dictionary<NormalizedSpecNodeIdentity, OpenApiSemanticAssertion>();
 
+        // The targets as the part of an allOf (see MapAssertion): a base with a discriminator leaves its oneOf / anyOf out.
+        private readonly Dictionary<NormalizedSpecNodeIdentity, OpenApiSemanticAssertion> _assertionBaseTargets =
+            new Dictionary<NormalizedSpecNodeIdentity, OpenApiSemanticAssertion>();
+
         /// <summary>
         /// Creates a mapper for a document whose "openapi" version selects the dialect (the document is not parsed
         /// otherwise). The $refs of the subtrees are resolved against <paramref name="root"/>.
@@ -47,15 +51,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 throw new ArgumentNullException(nameof(node));
             }
 
+            return MapAssertion(node, false);
+        }
+
+        /// <summary>
+        /// <paramref name="allOfPart"/>: the node is a part of an allOf. A node with a discriminator that is a part of an allOf is the
+        /// base of an inheritance hierarchy: its oneOf / anyOf lists its subtypes (the schemas that extend it), which a subtype only
+        /// inherits the properties of (the typed model does the same), so they are not asserted again (it would be a cycle).
+        /// </summary>
+        private OpenApiSemanticAssertion MapAssertion(SpecNode node, bool allOfPart)
+        {
+
             if (_minorVersion == 1 && (node.ValueKind == SpecValueKind.True || node.ValueKind == SpecValueKind.False))
             {
                 return new OpenApiSemanticAssertion { AlwaysFalse = node.ValueKind == SpecValueKind.False };
             }
 
             RequireKind(node, SpecValueKind.Object, "A schema must be an object.");
+            ValidateAssertionKeywords(node);
             if (TryGetReference(node, out string reference, out SpecNode referenceNode))
             {
-                OpenApiSemanticAssertion target = MapAssertionTarget(reference, referenceNode);
+                OpenApiSemanticAssertion target = MapAssertionTarget(reference, referenceNode, allOfPart);
                 if (_minorVersion == 0)
                 {
                     // OpenAPI 3.0: the siblings are ignored, except those the parser keeps (nullable, readOnly, writeOnly).
@@ -63,15 +79,26 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
 
                 var withSiblings = new OpenApiSemanticAssertion { Reference = target };
-                FillAssertion(withSiblings, node);
+                FillAssertion(withSiblings, node, allOfPart);
                 return withSiblings.HasNoOwnKeyword && !withSiblings.ReadOnly && !withSiblings.WriteOnly
                     ? target
                     : withSiblings;
             }
 
             var result = new OpenApiSemanticAssertion();
-            FillAssertion(result, node);
+            FillAssertion(result, node, allOfPart);
             return result;
+        }
+
+        // The mapper has no types to fall back on: a keyword it does not evaluate (if / then / else, unevaluated*, a keyword of the
+        // other dialect, an unknown one) would be ignored without a trace, so it is rejected like the typed path rejects it (OACG101).
+        // The siblings of a 3.0 $ref are ignored by the parser and are not checked.
+        private void ValidateAssertionKeywords(SpecNode node)
+        {
+            if (!IsMinor30ReferenceNode(node))
+            {
+                ValidateUnsupportedSchemaKeywords(node);
+            }
         }
 
         // {$ref, nullable, readOnly, writeOnly} of OpenAPI 3.0, the same siblings that ParseSchema accepts next to $ref.
@@ -108,10 +135,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
         }
 
-        private OpenApiSemanticAssertion MapAssertionTarget(string reference, SpecNode referenceNode)
+        private OpenApiSemanticAssertion MapAssertionTarget(string reference, SpecNode referenceNode, bool allOfPart = false)
         {
             ResolvedSpecReference resolved = ResolveReference(reference, referenceNode);
-            if (_assertionTargets.TryGetValue(resolved.Identity, out OpenApiSemanticAssertion? existing))
+            // Only a base with a discriminator differs when it is the part of an allOf; the other schemas share one node.
+            bool leaveOutAlternatives = allOfPart && HasDiscriminatedAlternatives(resolved.Node);
+            Dictionary<NormalizedSpecNodeIdentity, OpenApiSemanticAssertion> targets =
+                leaveOutAlternatives ? _assertionBaseTargets : _assertionTargets;
+            if (targets.TryGetValue(resolved.Identity, out OpenApiSemanticAssertion? existing))
             {
                 return existing;
             }
@@ -119,9 +150,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             // Registered before the body is mapped: a $ref back to it (a recursive schema) finds the node.
             var target = new OpenApiSemanticAssertion
             {
-                Name = JsonPointerResolver.GetSchemaPointerName(resolved.Pointer, referenceNode)
+                Name = JsonPointerResolver.GetSchemaPointerName(resolved.Pointer, referenceNode),
+                Location = CreateLocation(resolved.Node, resolved.DocumentId)
             };
-            _assertionTargets.Add(resolved.Identity, target);
+            targets.Add(resolved.Identity, target);
             string previousDocumentId = _currentDocumentId;
             try
             {
@@ -133,14 +165,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 else
                 {
                     RequireKind(resolved.Node, SpecValueKind.Object, "A schema must be an object.");
+                    ValidateAssertionKeywords(resolved.Node);
                     if (TryGetReference(resolved.Node, out string innerReference, out SpecNode innerReferenceNode))
                     {
                         // A $ref whose target is a $ref: 3.0 keeps nullable, readOnly and writeOnly, 3.1 keeps every sibling.
-                        OpenApiSemanticAssertion inner = MapAssertionTarget(innerReference, innerReferenceNode);
+                        OpenApiSemanticAssertion inner = MapAssertionTarget(innerReference, innerReferenceNode, allOfPart);
                         if (_minorVersion == 1)
                         {
                             target.Reference = inner;
-                            FillAssertion(target, resolved.Node);
+                            FillAssertion(target, resolved.Node, allOfPart);
                         }
                         else
                         {
@@ -151,7 +184,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     }
                     else
                     {
-                        FillAssertion(target, resolved.Node);
+                        FillAssertion(target, resolved.Node, allOfPart);
                     }
                 }
             }
@@ -163,7 +196,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return target;
         }
 
-        private void FillAssertion(OpenApiSemanticAssertion result, SpecNode node)
+        private static bool HasDiscriminatedAlternatives(SpecNode node)
+        {
+            return node.ValueKind == SpecValueKind.Object &&
+                   node.TryGetProperty("discriminator", out _) &&
+                   (node.TryGetProperty("oneOf", out _) || node.TryGetProperty("anyOf", out _));
+        }
+
+        private void FillAssertion(OpenApiSemanticAssertion result, SpecNode node, bool allOfPart = false)
         {
             result.ReadOnly = GetOptionalBoolean(node, "readOnly") ?? false;
             result.WriteOnly = GetOptionalBoolean(node, "writeOnly") ?? false;
@@ -250,9 +290,27 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 result.Items = MapAssertion(itemsNode);
             }
 
-            result.AllOf = MapAssertionList(node, "allOf");
-            result.AnyOf = MapAssertionList(node, "anyOf");
-            result.OneOf = MapAssertionList(node, "oneOf");
+            IReadOnlyList<OpenApiSemanticAssertion> allOf = MapAssertionList(node, "allOf", allOfPart: true);
+            if (allOf.Count == 1 && IsNullableSingleReferenceIdiom(node))
+            {
+                // allOf: [ { $ref } ] with nullable next to it is the reference that may be null (the parser reads it so): null or the target.
+                allOf = new[]
+                {
+                    new OpenApiSemanticAssertion
+                    {
+                        AnyOf = new[] { new OpenApiSemanticAssertion { Types = OpenApiSemanticAssertionTypes.Null }, allOf[0] },
+                        AnnotationTarget = allOf[0]
+                    }
+                };
+            }
+
+            result.AllOf = allOf;
+            if (!(allOfPart && HasDiscriminatedAlternatives(node)))
+            {
+                result.AnyOf = MapAssertionList(node, "anyOf");
+                result.OneOf = MapAssertionList(node, "oneOf");
+            }
+
             SpecNode? notNode = GetProperty(node, "not");
             if (notNode is not null)
             {
@@ -322,10 +380,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         /// <summary>
         /// A node that owns a shape and has oneOf / anyOf next to it, and that is open (additionalProperties is not false):
-        /// the properties its alternatives declare and the node does not become optional properties of the node, typed when
-        /// every alternative that says a type agrees (otherwise untyped). The alternatives themselves stay assertions. A
-        /// declaration without a type (only an enum or constraints, such as `{enum: [null]}`) adds no type information.
-        /// A closed node gets no new property: the alternatives can only select among the declared ones.
+        /// the properties its alternatives declare and the node does not become optional properties of the node. The type of such a
+        /// property is an upper bound of the values the node accepts, so it is typed only when every alternative declares the
+        /// property and every declaration has a type and says the same (a declaration that only pins null, such as `{enum: [null]}`,
+        /// may differ); otherwise it is untyped (any JSON value). The type carries none of the keywords of an alternative: the
+        /// alternatives stay assertions. A closed node gets no new property: the alternatives can only select among the declared ones.
         /// </summary>
         private OpenApiSemanticSchema LiftAlternativeProperties(SpecNode node, OpenApiSemanticSchema shape, string suggestedName)
         {
@@ -338,6 +397,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             var declared = new HashSet<string>(shape.Properties.Select(static property => property.WireName), StringComparer.Ordinal);
             var order = new List<string>();
             var candidates = new Dictionary<string, List<SpecNode>>(StringComparer.Ordinal);
+            int alternativeCount = 0;
             foreach (string keyword in new[] { "oneOf", "anyOf" })
             {
                 SpecNode? listNode = GetProperty(node, keyword);
@@ -348,6 +408,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
                 foreach (SpecNode member in listNode.EnumerateArray())
                 {
+                    alternativeCount++;
                     SpecNode? body = member;
                     if (TryGetReference(member, out string reference, out SpecNode referenceNode))
                     {
@@ -365,7 +426,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
                     foreach (SpecProperty property in propertiesNode.EnumerateObject())
                     {
-                        if (declared.Contains(property.Name) || property.Value.ValueKind != SpecValueKind.Object)
+                        if (declared.Contains(property.Name))
                         {
                             continue;
                         }
@@ -385,41 +446,103 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             var lifted = new List<OpenApiSemanticProperty>();
             foreach (string name in order)
             {
-                SpecNode[] typed = candidates[name]
-                    .Where(static candidate => candidate.TryGetProperty("type", out _) || candidate.TryGetProperty("$ref", out _))
-                    .ToArray();
-                if (typed.Length == 0)
-                {
-                    continue;
-                }
-
-                OpenApiSemanticSchema[] parsed;
-                try
-                {
-                    parsed = typed
-                        .Select(candidate => ParseSchema(
-                            candidate,
-                            suggestedName + ToPascalFragment(name),
-                            new HashSet<NormalizedSpecNodeIdentity>()))
-                        .ToArray();
-                }
-                catch (OpenApiSemanticException)
-                {
-                    // A declaration the typed model cannot hold: the property stays untyped (extension data).
-                    continue;
-                }
-
-                string signature = GetSchemaSignature(parsed[0].WithNullable(false));
-                bool agree = parsed.All(item => string.Equals(
-                    GetSchemaSignature(item.WithNullable(false)), signature, StringComparison.Ordinal));
-                // Nullable: an alternative may pin the property to null, which the assertions then allow or reject.
-                OpenApiSemanticSchema chosen = agree
-                    ? parsed[0].WithNullable(true)
-                    : CreateAnySchema(typed[0], suggestedName + ToPascalFragment(name), OpenApiSemanticAnnotations.Empty);
-                lifted.Add(new OpenApiSemanticProperty(name, false, chosen, CreateLocation(typed[0])));
+                List<SpecNode> declarations = candidates[name];
+                string propertyName = suggestedName + ToPascalFragment(name);
+                OpenApiSemanticSchema chosen = declarations.Count == alternativeCount
+                    ? TryTypeLiftedProperty(declarations, propertyName) ??
+                      CreateAnySchema(declarations[0], propertyName, OpenApiSemanticAnnotations.Empty)
+                    : CreateAnySchema(declarations[0], propertyName, OpenApiSemanticAnnotations.Empty);
+                lifted.Add(new OpenApiSemanticProperty(name, false, chosen, CreateLocation(declarations[0])));
             }
 
             return lifted.Count == 0 ? shape : shape.WithProperties(shape.Properties.Concat(lifted).ToArray());
+        }
+
+        // The type that every declaration of a lifted property agrees on, or null (untyped).
+        private OpenApiSemanticSchema? TryTypeLiftedProperty(IReadOnlyList<SpecNode> declarations, string propertyName)
+        {
+            var typed = new List<SpecNode>();
+            foreach (SpecNode declaration in declarations)
+            {
+                if (declaration.ValueKind != SpecValueKind.Object)
+                {
+                    return null;
+                }
+
+                if (IsNullOnlyDeclaration(declaration))
+                {
+                    continue;
+                }
+
+                if (!declaration.TryGetProperty("type", out _) && !declaration.TryGetProperty("$ref", out _))
+                {
+                    // Only an enum or constraints: nothing says what the type is, so the property cannot be typed.
+                    return null;
+                }
+
+                typed.Add(declaration);
+            }
+
+            if (typed.Count == 0)
+            {
+                return null;
+            }
+
+            OpenApiSemanticSchema[] parsed;
+            try
+            {
+                parsed = typed
+                    .Select(candidate => ParseSchema(candidate, propertyName, new HashSet<NormalizedSpecNodeIdentity>()))
+                    .ToArray();
+            }
+            catch (OpenApiSemanticException)
+            {
+                // A declaration the typed model cannot hold: the property stays untyped.
+                return null;
+            }
+
+            string signature = GetSchemaSignature(parsed[0].WithNullable(false));
+            if (!parsed.All(item => string.Equals(
+                    GetSchemaSignature(item.WithNullable(false)), signature, StringComparison.Ordinal)))
+            {
+                return null;
+            }
+
+            // Nullable: an alternative may pin the property to null, which the assertions then allow or reject.
+            return parsed[0].WithNullable(true).WithoutConstraintSets().WithoutAssertions();
+        }
+
+        // {enum: [null]}, {nullable: true, enum: [null]} and {type: null}: a declaration that pins the property to null.
+        private static bool IsNullOnlyDeclaration(SpecNode declaration)
+        {
+            if (declaration.TryGetProperty("$ref", out _))
+            {
+                return false;
+            }
+
+            if (declaration.TryGetProperty("type", out SpecNode typeNode))
+            {
+                return typeNode.ValueKind == SpecValueKind.String &&
+                       string.Equals(typeNode.GetString(), "null", StringComparison.Ordinal);
+            }
+
+            if (!declaration.TryGetProperty("enum", out SpecNode enumNode) || enumNode.ValueKind != SpecValueKind.Array)
+            {
+                return false;
+            }
+
+            int count = 0;
+            foreach (SpecNode value in enumNode.EnumerateArray())
+            {
+                if (value.ValueKind != SpecValueKind.Null)
+                {
+                    return false;
+                }
+
+                count++;
+            }
+
+            return count > 0;
         }
 
         private string AssertionOrigin(SpecNode node, string tag)
@@ -445,9 +568,35 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 AnyOf = MapAssertionList(node, "anyOf"),
                 OneOf = MapAssertionList(node, "oneOf"),
+                FlagProperties = MapFlagProperties(node),
+                AssertsAlternatives = true,
                 Origin = AssertionOrigin(node, "alternatives"),
                 Location = CreateLocation(node)
             };
+        }
+
+        // The `required` of an alternative skips a readOnly property in a request (a writeOnly one in a response): the alternatives
+        // do not see the properties of the node they sit next to, so their flags are handed over.
+        private IReadOnlyList<OpenApiSemanticAssertionProperty> MapFlagProperties(SpecNode node)
+        {
+            SpecNode? propertiesNode = GetProperty(node, "properties");
+            if (propertiesNode is null || propertiesNode.ValueKind != SpecValueKind.Object)
+            {
+                return Array.Empty<OpenApiSemanticAssertionProperty>();
+            }
+
+            var flagged = new List<OpenApiSemanticAssertionProperty>();
+            foreach (SpecProperty property in propertiesNode.EnumerateObject())
+            {
+                OpenApiSemanticAssertion child = MapAssertion(property.Value);
+                if (child.EffectiveReadOnly || child.EffectiveWriteOnly)
+                {
+                    flagged.Add(new OpenApiSemanticAssertionProperty(
+                        property.Name, child, child.EffectiveReadOnly, child.EffectiveWriteOnly));
+                }
+            }
+
+            return flagged;
         }
 
         /// <summary>
@@ -464,6 +613,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiSemanticAssertion alternatives = discriminator is not null && isOneOf
                 ? CreateDiscriminatedAssertion(node, memberNodes, discriminator)
                 : CreateAlternativesAssertion(node);
+            alternatives.AssertsAlternatives = true;
             if (!nullable)
             {
                 return alternatives;
@@ -472,6 +622,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return new OpenApiSemanticAssertion
             {
                 AnyOf = new[] { new OpenApiSemanticAssertion { Types = OpenApiSemanticAssertionTypes.Null }, alternatives },
+                AssertsAlternatives = true,
                 Origin = AssertionOrigin(node, "union"),
                 Location = CreateLocation(node)
             };
@@ -492,21 +643,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             var branches = new List<OpenApiSemanticAssertion>();
             for (int index = 0; index < members.Length; index++)
             {
-                var conditions = new List<OpenApiSemanticAssertion>();
-                for (int other = 0; other < members.Length; other++)
-                {
-                    if (other != index)
-                    {
-                        conditions.Add(new OpenApiSemanticAssertion { Not = members[other] });
-                    }
-                }
-
                 IReadOnlyList<string> values = discriminator.MemberValues[index];
                 if (values.Count == 0)
                 {
                     continue;
                 }
 
+                // The discriminator condition comes first: a branch of another member fails right there, so a value is
+                // checked against its own member and the "no other member matches" conditions of one branch only.
+                var conditions = new List<OpenApiSemanticAssertion>();
                 conditions.Add(new OpenApiSemanticAssertion
                 {
                     Properties = new[]
@@ -523,6 +668,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     },
                     Required = new[] { discriminator.PropertyName }
                 });
+                for (int other = 0; other < members.Length; other++)
+                {
+                    if (other != index)
+                    {
+                        conditions.Add(new OpenApiSemanticAssertion { Not = members[other] });
+                    }
+                }
+
                 branches.Add(new OpenApiSemanticAssertion { AllOf = conditions });
             }
 
@@ -593,11 +746,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// The whole schema as written (allOf parts, oneOf / anyOf, not, required, ...). Used where the typed shape is only
         /// an upper bound of the valid values. A wrapper, so that the shared node of a $ref keeps its own origin.
         /// </summary>
-        private OpenApiSemanticAssertion CreateWholeAssertion(SpecNode node)
+        private OpenApiSemanticAssertion CreateWholeAssertion(SpecNode node, bool assertsAlternatives = false)
         {
             return new OpenApiSemanticAssertion
             {
                 AllOf = new[] { MapAssertion(node) },
+                AssertsAlternatives = assertsAlternatives,
                 Origin = AssertionOrigin(node, "whole"),
                 Location = CreateLocation(node)
             };
@@ -613,7 +767,35 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             };
         }
 
-        private IReadOnlyList<OpenApiSemanticAssertion> MapAssertionList(SpecNode node, string keyword)
+        // The condition under which the parser reads allOf: [ { $ref } ] as a reference (ParseAllOf) and nullable keeps it nullable.
+        private bool IsNullableSingleReferenceIdiom(SpecNode node)
+        {
+            SpecNode? allOfNode = GetProperty(node, "allOf");
+            if (allOfNode is null || allOfNode.ValueKind != SpecValueKind.Array)
+            {
+                return false;
+            }
+
+            SpecNode[] parts = allOfNode.EnumerateArray().ToArray();
+            if (parts.Length != 1 || !IsSingleReferenceIdiom(node, parts[0]))
+            {
+                return false;
+            }
+
+            if (_minorVersion == 0)
+            {
+                return ParseNullable(node);
+            }
+
+            SpecNode? typeNode = GetProperty(node, "type");
+            return typeNode is not null &&
+                   typeNode.ValueKind == SpecValueKind.Array &&
+                   typeNode.EnumerateArray().Any(static item =>
+                       item.ValueKind == SpecValueKind.String &&
+                       string.Equals(item.GetString(), "null", StringComparison.Ordinal));
+        }
+
+        private IReadOnlyList<OpenApiSemanticAssertion> MapAssertionList(SpecNode node, string keyword, bool allOfPart = false)
         {
             SpecNode? listNode = GetProperty(node, keyword);
             if (listNode is null)
@@ -622,7 +804,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             RequireKind(listNode, SpecValueKind.Array, "The schema '" + keyword + "' field must be an array.");
-            return listNode.EnumerateArray().Select(MapAssertion).ToArray();
+            return listNode.EnumerateArray().Select(member => MapAssertion(member, allOfPart)).ToArray();
         }
 
         private OpenApiSemanticAssertionTypes ParseAssertionTypes(SpecNode typeNode)

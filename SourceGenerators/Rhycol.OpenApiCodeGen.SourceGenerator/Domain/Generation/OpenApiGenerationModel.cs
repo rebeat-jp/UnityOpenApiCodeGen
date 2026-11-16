@@ -241,8 +241,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string? discriminatorPropertyName,
             IReadOnlyList<GeneratedUnionMemberModel> members,
             OpenApiSemanticAnnotations? annotations = null,
-            int defaultMemberIndex = -1)
+            int defaultMemberIndex = -1,
+            bool assertsAlternatives = false)
         {
+            AssertsAlternatives = assertsAlternatives;
             DefaultMemberIndex = defaultMemberIndex;
             Name = name;
             IsOneOf = isOneOf;
@@ -254,6 +256,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal string Name { get; }
 
         internal bool IsOneOf { get; }
+
+        /// <summary>
+        /// True when the union carries its own assertion that counts the members (oneOf: exactly one, anyOf: at least one). The
+        /// contract then only has to find a member; without it (a base that its members extend) the contract keeps its tie-break.
+        /// </summary>
+        internal bool AssertsAlternatives { get; }
 
         /// <summary>Null when the union has no discriminator.</summary>
         internal string? DiscriminatorPropertyName { get; }
@@ -511,10 +519,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             OpenApiSemanticLiteral? constValue = null,
             IReadOnlyList<GeneratedTypeModel>? notTypes = null,
             IReadOnlyList<GeneratedConstraints>? constraintSets = null,
-            IReadOnlyList<string>? assertionRoots = null)
+            IReadOnlyList<string>? assertionRoots = null,
+            bool nullSkipsAssertions = false)
         {
             ConstraintSets = constraintSets ?? Array.Empty<GeneratedConstraints>();
             AssertionRoots = assertionRoots ?? Array.Empty<string>();
+            NullSkipsAssertions = nullSkipsAssertions;
             NotTypes = notTypes ?? Array.Empty<GeneratedTypeModel>();
             ConstValue = constValue;
             Kind = kind;
@@ -557,20 +567,35 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// </summary>
         internal IReadOnlyList<string> AssertionRoots { get; }
 
+        /// <summary>
+        /// True when the type is a nullable reference ({$ref, nullable: true}, allOf: [ {$ref} ] with nullable, [X, null]): null is
+        /// valid whatever the assertions of the referenced schema say, so they are not run on null.
+        /// </summary>
+        internal bool NullSkipsAssertions { get; }
+
+        internal GeneratedTypeModel WithNullSkipsAssertions(bool value)
+        {
+            return value == NullSkipsAssertions
+                ? this
+                : new GeneratedTypeModel(
+                    Kind, Nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes, ConstraintSets, AssertionRoots, value);
+        }
+
         internal GeneratedTypeModel WithAssertions(IReadOnlyList<string> roots)
         {
             return roots.Count == 0
                 ? this
                 : new GeneratedTypeModel(
                     Kind, Nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes, ConstraintSets,
-                    AssertionRoots.Concat(roots.Where(root => !AssertionRoots.Contains(root))).ToArray());
+                    AssertionRoots.Concat(roots.Where(root => !AssertionRoots.Contains(root))).ToArray(),
+                    NullSkipsAssertions);
         }
 
         internal GeneratedTypeModel WithNot(GeneratedTypeModel notType)
         {
             return new GeneratedTypeModel(
                 Kind, Nullable, Name, ItemType, ValueType, UnionMembers, ConstValue,
-                NotTypes.Concat(new[] { notType }).ToArray(), ConstraintSets, AssertionRoots);
+                NotTypes.Concat(new[] { notType }).ToArray(), ConstraintSets, AssertionRoots, NullSkipsAssertions);
         }
 
         internal GeneratedTypeModel WithConstraints(IReadOnlyList<GeneratedConstraints> constraintSets)
@@ -579,7 +604,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 ? this
                 : new GeneratedTypeModel(
                     Kind, Nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes,
-                    ConstraintSets.Concat(constraintSets).ToArray(), AssertionRoots);
+                    ConstraintSets.Concat(constraintSets).ToArray(), AssertionRoots, NullSkipsAssertions);
         }
 
         internal GeneratedTypeKind Kind { get; }
@@ -594,14 +619,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             return nullable == Nullable
                 ? this
-                : new GeneratedTypeModel(Kind, nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes, ConstraintSets, AssertionRoots);
+                : new GeneratedTypeModel(Kind, nullable, Name, ItemType, ValueType, UnionMembers, ConstValue, NotTypes, ConstraintSets, AssertionRoots, NullSkipsAssertions);
         }
 
         internal GeneratedTypeModel WithConst(OpenApiSemanticLiteral? constValue)
         {
             return System.Nullable.Equals(constValue, ConstValue)
                 ? this
-                : new GeneratedTypeModel(Kind, Nullable, Name, ItemType, ValueType, UnionMembers, constValue, NotTypes, ConstraintSets, AssertionRoots);
+                : new GeneratedTypeModel(Kind, Nullable, Name, ItemType, ValueType, UnionMembers, constValue, NotTypes, ConstraintSets, AssertionRoots, NullSkipsAssertions);
         }
 
         /// <summary>
@@ -627,6 +652,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             return other is not null &&
                    Kind == other.Kind &&
                    Nullable == other.Nullable &&
+                   NullSkipsAssertions == other.NullSkipsAssertions &&
                    string.Equals(Name, other.Name, StringComparison.Ordinal) &&
                    Equals(ItemType, other.ItemType) &&
                    Equals(ValueType, other.ValueType) &&
@@ -648,6 +674,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 int hashCode = (int)Kind;
                 hashCode = (hashCode * 397) ^ Nullable.GetHashCode();
+                hashCode = (hashCode * 397) ^ NullSkipsAssertions.GetHashCode();
                 hashCode = (hashCode * 397) ^ StringComparer.Ordinal.GetHashCode(Name);
                 hashCode = (hashCode * 397) ^ (ItemType?.GetHashCode() ?? 0);
                 hashCode = (hashCode * 397) ^ (ValueType?.GetHashCode() ?? 0);

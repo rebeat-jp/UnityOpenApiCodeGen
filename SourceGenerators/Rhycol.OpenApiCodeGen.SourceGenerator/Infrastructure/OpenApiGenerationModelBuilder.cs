@@ -381,6 +381,10 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                                     : GeneratedTypeKind.Named,
                             schema.Nullable || referencedSchema.Nullable,
                             _componentTypeNames[referenceIdentity]);
+                        // The reference itself is nullable ({$ref, nullable: true}): "null or the target", so null is valid and the assertions
+                        // of the target (a oneOf that no member matches null, an enum without null, ...) are not run on it. Without
+                        // nullable on the reference, the target decides what null means.
+                        named = named.WithNullSkipsAssertions(schema.Nullable);
                         foreach (OpenApiSemanticSchema notSchema in referencedSchema.NotSchemas)
                         {
                             named = named.WithNot(ResolveType(notSchema));
@@ -402,8 +406,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     }
 
                     GeneratedTypeModel resolvedType = ResolveType(referencedSchema);
-                    return resolvedType.WithNullable(
-                        resolvedType.Nullable || schema.Nullable || referencedSchema.Nullable);
+                    return resolvedType
+                        .WithNullable(resolvedType.Nullable || schema.Nullable || referencedSchema.Nullable)
+                        .WithNullSkipsAssertions(resolvedType.NullSkipsAssertions || schema.Nullable);
                 case OpenApiSemanticSchemaKind.Object:
                 case OpenApiSemanticSchemaKind.Enum:
                 case OpenApiSemanticSchemaKind.Union:
