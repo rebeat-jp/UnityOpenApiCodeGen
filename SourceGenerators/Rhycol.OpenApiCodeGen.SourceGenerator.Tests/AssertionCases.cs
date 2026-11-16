@@ -109,7 +109,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 Ok("true"), Ok("false"), Bad("0"), Bad("'true'"), Bad("null")),
             Case("Type_Object", "3.0", "{'type':'object'}",
                 Ok("{}"), Ok("{'a':1}"), Bad("[]"), Bad("null"), Bad("'x'")),
-            Case("Type_Array", "3.0", "{'type':'array'}",
+            Case("Type_Array", "3.0", "{'type':'array','items':{}}",
                 Ok("[]"), Ok("[1,'a']"), Bad("{}"), Bad("null"), Bad("'x'")),
             Case("Type_Union", "3.1", "{'type':['string','null']}",
                 Ok("null"), Ok("'a'"), Bad("1"), Bad("{}")),
@@ -246,7 +246,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 "{'allOf':[{'anyOf':[{'required':['a']},{'required':['b']}]},{'anyOf':[{'required':['c']},{'required':['d']}]}]}",
                 Ok("{'a':1,'c':1}"), Ok("{'b':1,'d':1}"), Bad("{'a':1}"), Bad("{'c':1,'d':1}")),
             Case("Composition_NotWithinAllOf", "3.0",
-                "{'allOf':[{'type':'array','minItems':2},{'not':{'items':{'type':'string'}}}]}",
+                "{'allOf':[{'type':'array','minItems':2,'items':{}},{'not':{'items':{'type':'string'}}}]}",
                 Ok("[1,'a']"), Ok("[1,2]"), Bad("['a','b']"), Bad("[1]")),
 
             // ---- boolean schemas (3.1) -------------------------------------------------------------------

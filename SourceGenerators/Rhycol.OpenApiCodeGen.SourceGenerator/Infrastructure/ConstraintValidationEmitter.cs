@@ -74,6 +74,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         // ---- shared with the assertion emitter ------------------------------------------------------
 
+        /// <summary>The assertion roots of a type, including those of the DTO it names.</summary>
+        internal IReadOnlyList<string> AssertionRootsOf(GeneratedTypeModel type)
+        {
+            return type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto)
+                ? type.AssertionRoots.Concat(dto.AssertionRoots).ToArray()
+                : type.AssertionRoots;
+        }
+
         /// <summary>The entry method of a root of the assertion graph (see <see cref="AssertionEmitter"/>).</summary>
         internal string AssertionEntryName(string root) => _prefix + "AssertRoot_" + root;
 
@@ -351,6 +359,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        {");
             source.AppendLine("            if (token.Type == global::Newtonsoft.Json.Linq.JTokenType.Null)");
             source.AppendLine("            {");
+            // JSON Schema decides whether null is valid (a nullable enum that does not list null, a oneOf that no member matches).
+            AppendAssertionCalls(source, "                ", AssertionRootsOf(type), "token", "path", "contract", normalizeToken: true);
             source.AppendLine("                return;");
             source.AppendLine("            }");
 

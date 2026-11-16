@@ -1305,7 +1305,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 source.AppendLine("        {");
                 source.AppendLine("            if (token.Type == global::Newtonsoft.Json.Linq.JTokenType.Null)");
                 source.AppendLine("            {");
-                source.AppendLine("                if (nullable) return;");
+                source.AppendLine("                if (nullable)");
+                source.AppendLine("                {");
+                _constraints.AppendAssertionCalls(
+                    source, "                    ", _constraints.AssertionRootsOf(type), "token", "path", "\"response\"", normalizeToken: false);
+                source.AppendLine("                    return;");
+                source.AppendLine("                }");
                 source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"Non-nullable response value was null at \" + path + \".\");");
                 source.AppendLine("            }");
 
@@ -1363,7 +1368,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 }
                 else if (type.Kind == GeneratedTypeKind.Union && _unions.TryGetValue(type.Name, out GeneratedUnionModel? union))
                 {
-                    AppendUnionChecks(source, union);
+                    AppendUnionChecks(source, union, type.AssertionRoots.Count > 0);
                 }
                 else if (type.Kind == GeneratedTypeKind.Named && _dtos.TryGetValue(type.Name, out GeneratedDtoModel? dto))
                 {
@@ -1513,7 +1518,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 source.AppendLine("            }");
             }
 
-            private void AppendUnionChecks(StringBuilder source, GeneratedUnionModel union)
+            private void AppendUnionChecks(StringBuilder source, GeneratedUnionModel union, bool asserted)
             {
                 if (union.DiscriminatorPropertyName is string discriminatorName)
                 {
@@ -1574,13 +1579,22 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 int memberIndex = 0;
                 foreach (GeneratedUnionMemberModel member in union.Members)
                 {
-                    source.Append("            bool unionMatched").Append(memberIndex++).AppendLine(" = false;");
+                    if (!(union.IsOneOf && asserted))
+                    {
+                        source.Append("            bool unionMatched").Append(memberIndex).AppendLine(" = false;");
+                    }
+
+                    memberIndex++;
                     source.AppendLine("            try");
                     source.AppendLine("            {");
                     source.Append("                ").Append(MethodName(member.Type))
                         .Append("(token, path, ").Append(member.Type.Nullable ? "true" : "false")
                         .AppendLine(", json, lineStarts, new global::System.Collections.Generic.List<global::System.Tuple<int, int, string>>());");
-                    source.Append("                unionMatched").Append(memberIndex - 1).AppendLine(" = true;");
+                    if (!(union.IsOneOf && asserted))
+                    {
+                        source.Append("                unionMatched").Append(memberIndex - 1).AppendLine(" = true;");
+                    }
+
                     source.AppendLine("                unionMatches++;");
                     source.AppendLine("            }");
                     source.Append("            catch (global::System.Exception exception) when (").Append(_prefix).AppendLine("IsTrialFailure(exception))");
@@ -1588,7 +1602,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     source.AppendLine("            }");
                 }
 
-                if (union.IsOneOf)
+                if (union.IsOneOf && asserted)
+                {
+                    // The assertion of the union counts the matches by JSON Schema (exactly one). The trials only have to find
+                    // a candidate; the overlap of open candidates is no longer tolerated.
+                    source.AppendLine("            if (unionMatches == 0)");
+                    source.AppendLine("                throw new global::Newtonsoft.Json.JsonSerializationException(\"The response value must match exactly one oneOf schema at \" + path + \" but matched 0.\");");
+                }
+                else if (union.IsOneOf)
                 {
                     // Open candidates overlap easily. Tie-break: keep the candidates that declare every
                     // property of the value (as if they were closed); still not exactly one is an error.

@@ -237,6 +237,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             SpecNode? itemsNode = GetProperty(node, "items");
+            if (itemsNode is null && _minorVersion == 0 && typeNode is not null &&
+                typeNode.ValueKind == SpecValueKind.String &&
+                string.Equals(typeNode.GetString(), "array", StringComparison.Ordinal))
+            {
+                // OpenAPI 3.0: items MUST be present if the type is array (3.1 makes it optional).
+                throw Invalid(node, "Required field 'items' is missing (OpenAPI 3.0: items MUST be present if the type is array).");
+            }
+
             if (itemsNode is not null)
             {
                 result.Items = MapAssertion(itemsNode);
@@ -440,6 +448,145 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 Origin = AssertionOrigin(node, "alternatives"),
                 Location = CreateLocation(node)
             };
+        }
+
+        /// <summary>
+        /// The alternatives of a union as JSON Schema counts them (oneOf: exactly one match, anyOf: at least one), for the
+        /// contract and the request validator. A nullable union accepts null, as its type does.
+        /// </summary>
+        private OpenApiSemanticAssertion CreateUnionAssertion(
+            SpecNode node,
+            bool nullable,
+            IReadOnlyList<SpecNode> memberNodes,
+            OpenApiSemanticDiscriminator? discriminator,
+            bool isOneOf)
+        {
+            OpenApiSemanticAssertion alternatives = discriminator is not null && isOneOf
+                ? CreateDiscriminatedAssertion(node, memberNodes, discriminator)
+                : CreateAlternativesAssertion(node);
+            if (!nullable)
+            {
+                return alternatives;
+            }
+
+            return new OpenApiSemanticAssertion
+            {
+                AnyOf = new[] { new OpenApiSemanticAssertion { Types = OpenApiSemanticAssertionTypes.Null }, alternatives },
+                Origin = AssertionOrigin(node, "union"),
+                Location = CreateLocation(node)
+            };
+        }
+
+        /// <summary>
+        /// A discriminated oneOf: the discriminator selects the member (the typed contract checks that member, including the
+        /// discriminator property the generator adds to a closed member), and no other member may match. Written as
+        /// "the discriminator value selects member i and none of the other members matches", one branch per member (plus a
+        /// branch without the discriminator condition for the 3.2 default member).
+        /// </summary>
+        private OpenApiSemanticAssertion CreateDiscriminatedAssertion(
+            SpecNode node,
+            IReadOnlyList<SpecNode> memberNodes,
+            OpenApiSemanticDiscriminator discriminator)
+        {
+            OpenApiSemanticAssertion[] members = memberNodes.Select(MapAssertion).ToArray();
+            var branches = new List<OpenApiSemanticAssertion>();
+            for (int index = 0; index < members.Length; index++)
+            {
+                var conditions = new List<OpenApiSemanticAssertion>();
+                for (int other = 0; other < members.Length; other++)
+                {
+                    if (other != index)
+                    {
+                        conditions.Add(new OpenApiSemanticAssertion { Not = members[other] });
+                    }
+                }
+
+                IReadOnlyList<string> values = discriminator.MemberValues[index];
+                if (values.Count == 0)
+                {
+                    continue;
+                }
+
+                conditions.Add(new OpenApiSemanticAssertion
+                {
+                    Properties = new[]
+                    {
+                        new OpenApiSemanticAssertionProperty(
+                            discriminator.PropertyName,
+                            new OpenApiSemanticAssertion
+                            {
+                                Enum = values.Select(static value => new OpenApiSemanticAssertionValue(
+                                    OpenApiSemanticAssertionValueKind.String, JsonQuote(value))).ToArray()
+                            },
+                            false,
+                            false)
+                    },
+                    Required = new[] { discriminator.PropertyName }
+                });
+                branches.Add(new OpenApiSemanticAssertion { AllOf = conditions });
+            }
+
+            if (discriminator.DefaultMemberIndex >= 0)
+            {
+                // A value that no mapping selects goes to the default member, which takes whatever the mapped members do not claim.
+                branches.Add(new OpenApiSemanticAssertion
+                {
+                    Not = new OpenApiSemanticAssertion
+                    {
+                        Properties = new[]
+                        {
+                            new OpenApiSemanticAssertionProperty(
+                                discriminator.PropertyName,
+                                new OpenApiSemanticAssertion
+                                {
+                                    Enum = discriminator.MemberValues.SelectMany(static values => values).Select(
+                                        static value => new OpenApiSemanticAssertionValue(
+                                            OpenApiSemanticAssertionValueKind.String, JsonQuote(value))).ToArray()
+                                },
+                                false,
+                                false)
+                        },
+                        Required = new[] { discriminator.PropertyName }
+                    }
+                });
+            }
+
+            return new OpenApiSemanticAssertion
+            {
+                AnyOf = branches,
+                Origin = AssertionOrigin(node, "discriminated"),
+                Location = CreateLocation(node)
+            };
+        }
+
+        private static string JsonQuote(string value)
+        {
+            var text = new System.Text.StringBuilder("\"");
+            foreach (char character in value)
+            {
+                switch (character)
+                {
+                    case '"':
+                        text.Append("\\\"");
+                        break;
+                    case '\\':
+                        text.Append("\\\\");
+                        break;
+                    default:
+                        if (character < 0x20)
+                        {
+                            text.Append("\\u").Append(((int)character).ToString("x4", System.Globalization.CultureInfo.InvariantCulture));
+                        }
+                        else
+                        {
+                            text.Append(character);
+                        }
+
+                        break;
+                }
+            }
+
+            return text.Append('"').ToString();
         }
 
         /// <summary>

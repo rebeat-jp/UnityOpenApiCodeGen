@@ -202,13 +202,75 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 unionMembers: members,
                 discriminator: discriminator,
                 unionIsOneOf: isOneOf,
-                assertions: allOfAsAssertion ? new[] { CreateWholeAssertion(node) } : null);
+                assertions: allOfAsAssertion
+                    ? new[] { CreateWholeAssertion(node) }
+                    : InheritsFromItself(node, memberNodes)
+                        ? null
+                        : new[] { CreateUnionAssertion(node, nullable, memberNodes, discriminator, isOneOf) });
             if (discriminator is not null)
             {
                 _discriminatedUnions.Add(union);
             }
 
             return union;
+        }
+
+        /// <summary>
+        /// True when a member lists the union itself in its allOf (the polymorphic base that its members extend): the union is the
+        /// subtype dispatch of that hierarchy, so its alternatives cannot be written as a JSON Schema oneOf (it would refer to itself
+        /// without consuming data) and the typed contract decides.
+        /// </summary>
+        private bool InheritsFromItself(SpecNode node, IReadOnlyList<SpecNode> memberNodes)
+        {
+            var self = new NormalizedSpecNodeIdentity(_currentDocumentId, node.LogicalPath);
+            var visited = new HashSet<NormalizedSpecNodeIdentity>();
+            foreach (SpecNode member in memberNodes)
+            {
+                if (ExtendsIdentity(member, self, visited, 0))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool ExtendsIdentity(SpecNode node, NormalizedSpecNodeIdentity target, HashSet<NormalizedSpecNodeIdentity> visited, int depth)
+        {
+            if (depth > 16 || node.ValueKind != SpecValueKind.Object)
+            {
+                return false;
+            }
+
+            if (TryGetReference(node, out string reference, out SpecNode referenceNode))
+            {
+                ResolvedSpecReference resolved = ResolveReference(reference, referenceNode);
+                if (resolved.Identity.Equals(target))
+                {
+                    return true;
+                }
+
+                if (!visited.Add(resolved.Identity))
+                {
+                    return false;
+                }
+
+                return ExtendsIdentity(resolved.Node, target, visited, depth + 1);
+            }
+
+            SpecNode? allOfNode = GetProperty(node, "allOf");
+            if (allOfNode is not null && allOfNode.ValueKind == SpecValueKind.Array)
+            {
+                foreach (SpecNode part in allOfNode.EnumerateArray())
+                {
+                    if (ExtendsIdentity(part, target, visited, depth + 1))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private bool IsNullTypeSchema(SpecNode part)

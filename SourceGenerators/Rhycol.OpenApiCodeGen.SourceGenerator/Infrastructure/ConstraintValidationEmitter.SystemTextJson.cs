@@ -24,6 +24,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine("        {");
             source.AppendLine("            if (token.ValueKind == global::System.Text.Json.JsonValueKind.Null || token.ValueKind == global::System.Text.Json.JsonValueKind.Undefined)");
             source.AppendLine("            {");
+            AppendAssertionCalls(source, "                ", AssertionRootsOf(type), "token", "path", "contract", normalizeToken: false);
             source.AppendLine("                return;");
             source.AppendLine("            }");
 

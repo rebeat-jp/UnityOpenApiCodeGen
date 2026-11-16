@@ -159,6 +159,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         "The enum lists null, but the schema is not nullable, so null can never be a valid value.");
                 }
 
+                WarnNullableEnumWithoutNull(enumNode, baseSchema.Nullable);
                 return baseSchema.WithAssertions(new[] { CreateEnumAssertion(node, enumNode) });
             }
 
@@ -172,7 +173,13 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     annotations = WithoutConst(annotations);
                 }
 
-                return ParseEnumSchema(node, enumNode, type, suggestedName, format, nullable, annotations);
+                OpenApiSemanticSchema enumSchema =
+                    ParseEnumSchema(node, enumNode, type, suggestedName, format, nullable, annotations);
+                // OpenAPI 3.0.3: nullable adds null to the type, but the enum still has to list it. The C# type stays nullable (an
+                // upper bound); the assertion rejects null.
+                return WarnNullableEnumWithoutNull(enumNode, nullable)
+                    ? enumSchema.WithAssertions(new[] { CreateEnumAssertion(node, enumNode) })
+                    : enumSchema;
             }
 
             string? declaredContentMediaType = type == "string" && GetProperty(node, "contentEncoding") is null
@@ -253,6 +260,21 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 default:
                     throw Unsupported(node, "Unsupported schema type: '" + type + "'.");
             }
+        }
+
+        // OpenAPI 3.0: nullable: true next to an enum that does not list null does not make null valid. True when it warned.
+        private bool WarnNullableEnumWithoutNull(SpecNode enumNode, bool nullable)
+        {
+            if (_minorVersion != 0 || !nullable || enumNode.ValueKind != SpecValueKind.Array ||
+                enumNode.EnumerateArray().Any(static value => value.ValueKind == SpecValueKind.Null))
+            {
+                return false;
+            }
+
+            AddIgnoredWarning(
+                enumNode,
+                "The schema is nullable but its enum does not list null, so null is not a valid value unless you add null to the enum.");
+            return true;
         }
 
         private OpenApiSemanticSchema ParseBooleanSchema(SpecNode node, string suggestedName)

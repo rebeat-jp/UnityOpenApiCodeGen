@@ -347,7 +347,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                 @"'Body':{'type':'object','required':['kind','total'],'additionalProperties':false,
                    'properties':{
                      'kind':{'type':'string','enum':['KIND_A','KIND_B','KIND_C']},
-                     'code':{'type':'string','enum':['CODE_A','CODE_B'],'nullable':true},
+                     'code':{'type':'string','enum':['CODE_A','CODE_B',null],'nullable':true},
                      'ref':{'type':'string','format':'uuid','nullable':true},
                      'total':{'type':'integer','format':'int64','minimum':1}},
                    'allOf':[{'oneOf':[
@@ -378,7 +378,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
                      'note':{'type':'string','nullable':true}},
                    'allOf':[
                      {'anyOf':[{'properties':{'state':{'enum':['STATE_A']}}},
-                               {'properties':{'items':{'type':'array','minItems':1}}}]},
+                               {'properties':{'items':{'type':'array','minItems':1,'items':{'type':'string'}}}}]},
                      {'anyOf':[{'properties':{'state':{'enum':['STATE_B']}}},
                                {'properties':{'note':{'type':'string','nullable':false}}}]}]}",
                 "", "",
