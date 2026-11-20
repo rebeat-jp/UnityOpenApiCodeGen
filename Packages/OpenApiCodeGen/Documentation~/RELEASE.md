@@ -28,7 +28,7 @@ verification process.
 | `jp.rhycol.openapicodegen.source-generator` | Verified GitHub Release `.tgz` asset, distributed by OpenUPM |
 
 The analyzer DLL remains committed in the add-on for Git URL installation.
-Examples use the current `0.6.0-preview.3` release tag (a prerelease; the latest
+Examples use the current `0.6.0-preview.4` release tag (a prerelease; the latest
 stable release is `0.5.1`); to try an unreleased commit, replace
 that ref with the reviewed commit SHA in both Git dependencies. Candidate verification does
 not establish that a version is published.
@@ -129,9 +129,9 @@ does not automatically trigger the ordinary PR workflow.
 
 The current package contract is:
 
-- Base `0.6.0-preview.3`, minimum Unity `2021.3`.
-- Add-on `0.6.0-preview.3`, minimum Unity `6000.0`.
-- Add-on dependency on base `0.6.0-preview.3` only (`pack-release.sh` checks that the
+- Base `0.6.0-preview.4`, minimum Unity `2021.3`.
+- Add-on `0.6.0-preview.4`, minimum Unity `6000.0`.
+- Add-on dependency on base `0.6.0-preview.4` only (`pack-release.sh` checks that the
   dependency set is exactly the base package, in `package.json` and in
   `packages-lock.json`). Since 0.6.0 the add-on no longer depends on
   `com.unity.nuget.newtonsoft-json`; the project installs the libraries of the
@@ -179,8 +179,8 @@ The final `verified-release-<run-id>-<aggregate-execution-attempt>` artifact is
 uploaded only after successful aggregation and dry-run validation. It contains:
 
 ```text
-jp.rhycol.openapicodegen-0.6.0-preview.3.tgz
-jp.rhycol.openapicodegen.source-generator-0.6.0-preview.3.tgz
+jp.rhycol.openapicodegen-0.6.0-preview.4.tgz
+jp.rhycol.openapicodegen.source-generator-0.6.0-preview.4.tgz
 release-manifest.json
 SHA256SUMS
 unity-gate.json
@@ -236,7 +236,7 @@ Start the manual release workflow with an exact 40-character SHA:
 
 ```sh
 gh workflow run source-generator-release.yml --ref main \
-  -f commit=REPLACE_WITH_FULL_COMMIT_SHA -f version=0.6.0-preview.3 -F publish=false
+  -f commit=REPLACE_WITH_FULL_COMMIT_SHA -f version=0.6.0-preview.4 -F publish=false
 ```
 
 The default `publish=false` verifies the full candidate and executes the CD
@@ -342,7 +342,7 @@ evidence archive uses GNU tar and runs on Linux in Actions.
 1. Remove `jp.rhycol.openapicodegen.source-generator` from the Unity project
    manifest and allow Unity to remove its provider define.
 2. Keep the base package and select the Docker provider in Settings.
-3. Pin the base to the latest stable `0.5.1` release if the `0.6.0-preview.3`
+3. Pin the base to the latest stable `0.5.1` release if the `0.6.0-preview.4`
    contract is also implicated.
 4. Regenerate affected clients and adjust code that depended on generated
    types. Record the project/package changes.

@@ -4,11 +4,11 @@
   "files": [
     {
       "path": "RELEASE.html",
-      "sha256": "e09085be3f38f7e19c82f70290aec064307215da2bdcb5e7191a03e34d553b06"
+      "sha256": "f401dc6bd9d9f491e32d9e7a00565101fc13cc6235956f4ca5522d2373dcae8f"
     },
     {
       "path": "RELEASE.md",
-      "sha256": "c305f5b48b4abc348ce32650f1233fe7a238c6c26488baf4f81fdd23d572b3db"
+      "sha256": "4f646624ff5ebb541ccad167bd2b3ddad93203b4d1ad64992ce53e94951a5d7e"
     },
     {
       "path": "SourceGenerators/BuildTools/CI/unity-images.json",

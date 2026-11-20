@@ -12,14 +12,14 @@ Unity 6000.0以降のプロジェクトの`Packages/manifest.json`に両パッ�
 ```json
 {
   "dependencies": {
-    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.3",
-    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.3"
+    "jp.rhycol.openapicodegen": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen#0.6.0-preview.4",
+    "jp.rhycol.openapicodegen.source-generator": "https://github.com/rebeat-jp/UnityOpenApiCodeGen.git?path=/Packages/OpenApiCodeGen.SourceGenerator#0.6.0-preview.4"
   }
 }
 ```
 
 追加パッケージには、選んだHTTP／JSONの組み合わせのライブラリが必要です（[HTTPとJSONのライブラリを選ぶ](#httpとjsonのライブラリを選ぶ)を参照）。
-0.6.0から追加パッケージは`com.unity.nuget.newtonsoft-json`を導入しません。例は`0.6.0-preview.3`のリリースタグを使います。これはプレリリース版です。最新の安定版は`0.5.1`で、HTTP／JSONライブラリの
+0.6.0から追加パッケージは`com.unity.nuget.newtonsoft-json`を導入しません。例は`0.6.0-preview.4`のリリースタグを使います。これはプレリリース版です。最新の安定版は`0.5.1`で、HTTP／JSONライブラリの
 選択は含まれません。
 未リリースのコミットを試す場合は、両URLのタグ部分を同じ検証済みコミットSHAへ置き換えてください。
 
