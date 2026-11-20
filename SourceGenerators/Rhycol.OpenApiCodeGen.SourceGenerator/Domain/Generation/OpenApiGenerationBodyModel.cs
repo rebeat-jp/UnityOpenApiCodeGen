@@ -307,9 +307,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         /// <summary>Media types sent in Accept, primary first.</summary>
         internal IReadOnlyList<string> AcceptMediaTypes { get; }
 
-        /// <summary>The C# type returned by the data-returning method (without Task); null for void.</summary>
-        internal string? ReturnTypeName => Wrapper is not null
-            ? Wrapper.TypeName
-            : DataType is null ? null : GeneratedSourceEmitter.TypeName(DataType);
+        /// <summary>
+        /// The C# type returned by the data-returning method (without Task); null for void. The JSON
+        /// library decides the name of the Any and FreeObject types, so the profile is required.
+        /// </summary>
+        internal string? ReturnTypeName(JsonSerializerProfile json)
+        {
+            return Wrapper is not null
+                ? Wrapper.TypeName
+                : DataType is null ? null : json.TypeName(DataType);
+        }
     }
 }

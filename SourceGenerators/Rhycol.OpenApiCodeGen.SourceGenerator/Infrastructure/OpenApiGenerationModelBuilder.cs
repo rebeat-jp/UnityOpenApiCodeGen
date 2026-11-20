@@ -25,6 +25,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         private readonly HashSet<NormalizedSpecNodeIdentity> _buildingSchemas =
             new HashSet<NormalizedSpecNodeIdentity>();
         private readonly List<GeneratedTypeNameCollision> _typeNameCollisions = new List<GeneratedTypeNameCollision>();
+        private readonly OpenApiWarningCollector _modelWarnings = new OpenApiWarningCollector();
         private readonly Dictionary<string, TypeNameAllocation> _typeNameAllocations =
             new Dictionary<string, TypeNameAllocation>(StringComparer.Ordinal);
 
@@ -106,7 +107,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 _enums.OrderBy(static value => value.Name, StringComparer.Ordinal).ToArray(),
                 operations,
                 _typeNameCollisions.ToArray(),
-                _document.Warnings,
+                _modelWarnings.Count == 0 ? _document.Warnings : _document.Warnings.Concat(_modelWarnings.ToList()).ToArray(),
                 _unions.OrderBy(static value => value.Name, StringComparer.Ordinal).ToArray(),
                 _document.Servers,
                 _usesFileParameter ? _fileParameterTypeName : null,

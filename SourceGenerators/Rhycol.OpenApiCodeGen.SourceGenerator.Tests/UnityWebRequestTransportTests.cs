@@ -538,6 +538,80 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator.Tests
             Assert.Equal(Describe(reference.Result), Describe(adapted.Result));
         }
 
+        private const string CacheControlEnumSpec =
+            "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"t\",\"version\":\"1\"},\"servers\":[{\"url\":\"https://api.example.test\"}]," +
+            "\"paths\":{\"/boot\":{\"get\":{\"operationId\":\"getBoot\",\"responses\":{\"200\":{\"description\":\"ok\",\"headers\":{" +
+            "\"Cache-Control\":{\"required\":true,\"schema\":{\"type\":\"string\",\"enum\":[\"public, max-age=0, s-maxage=30, must-revalidate\",\"private, no-store\"]}}}," +
+            "\"content\":{\"application/json\":{\"schema\":{\"type\":\"object\",\"properties\":{\"ok\":{\"type\":\"boolean\"}}}}}}}}}}}";
+
+        // Issue 110: the adapter re-adds the Unity response headers to HttpResponseHeaders, which reformats
+        // Cache-Control; a declared value must still match and an undeclared one must still fail.
+        [Theory]
+        [InlineData(NewtonsoftJson)]
+        [InlineData(SystemTextJson)]
+        public async Task AReformattedCacheControlEnumIsAcceptedAndAnUndeclaredOneIsRejected(string serializer)
+        {
+            Assembly api = CompileInline("cache-control", CacheControlEnumSpec, serializer);
+            Func<string, Func<HttpResponseMessage>> respond = value => () => Phase4BodyWireHarness.Respond(
+                HttpStatusCode.OK, "{}", "application/json", ("Cache-Control", value));
+
+            TransportOutcome accepted = await Call(
+                api, true, "getBootWithHttpInfo", Respond(respond("public, max-age=0, s-maxage=30, must-revalidate")), Array.Empty<object?>());
+            Assert.Null(accepted.Error);
+            Assert.Equal(
+                "PublicMaxAge0SMaxage30MustRevalidate",
+                accepted.Result!.GetType().GetProperty("CacheControl")!.GetValue(accepted.Result)!.ToString());
+
+            TransportOutcome rejected = await Call(
+                api, true, "getBootWithHttpInfo", Respond(respond("no-cache")), Array.Empty<object?>());
+            Assert.NotNull(rejected.Error);
+            Assert.Contains("Cache-Control", rejected.Error!.Message);
+        }
+
+        // A free-form object body (no properties) together with declared response headers: the WithHttpInfo
+        // result type and the client must name the object type of the chosen serializer (JsonObject for
+        // System.Text.Json), not the Newtonsoft JObject.
+        private const string FreeObjectWithHeadersSpec =
+            "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"t\",\"version\":\"1\"},\"servers\":[{\"url\":\"https://api.example.test\"}]," +
+            "\"paths\":{\"/boot\":{\"get\":{\"operationId\":\"getBoot\",\"responses\":{\"200\":{\"description\":\"ok\"," +
+            "\"headers\":{\"Cache-Control\":{\"required\":true,\"schema\":{\"type\":\"string\",\"enum\":[\"a\",\"b\"]}}}," +
+            "\"content\":{\"application/json\":{\"schema\":{\"type\":\"object\"}}}}}}}}}";
+
+        public static IEnumerable<object[]> SerializersAndTransports()
+        {
+            foreach (string serializer in new[] { NewtonsoftJson, SystemTextJson })
+            {
+                yield return new object[] { serializer, false };
+                yield return new object[] { serializer, true };
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(SerializersAndTransports))]
+        public async Task AFreeObjectBodyWithResponseHeadersUsesTheObjectTypeOfTheSerializer(string serializer, bool unityWebRequest)
+        {
+            Assembly api = unityWebRequest
+                ? CompileInline("free-object-headers", FreeObjectWithHeadersSpec, serializer)
+                : SerializerMatrixHarness.CompileText("free-object-headers", FreeObjectWithHeadersSpec, serializer);
+            Func<HttpResponseMessage> response = () => Phase4BodyWireHarness.Respond(
+                HttpStatusCode.OK, "{\"x\":1,\"y\":\"z\"}", "application/json", ("Cache-Control", "b"));
+            Type objectType = IsStj(serializer)
+                ? typeof(System.Text.Json.Nodes.JsonObject)
+                : typeof(Newtonsoft.Json.Linq.JObject);
+
+            TransportOutcome info = await Call(api, unityWebRequest, "getBootWithHttpInfo", Respond(response), Array.Empty<object?>());
+            Assert.Null(info.Error);
+            object data = Get(info.Result!, "Data")!;
+            Assert.IsType(objectType, data);
+            Assert.Equal("{\"x\":1,\"y\":\"z\"}", JsonText(data));
+            Assert.Equal("B", Get(info.Result!, "CacheControl")!.ToString());
+
+            TransportOutcome plain = await Call(api, unityWebRequest, "getBoot", Respond(response), Array.Empty<object?>());
+            Assert.Null(plain.Error);
+            Assert.IsType(objectType, plain.Result);
+            Assert.Equal("{\"x\":1,\"y\":\"z\"}", JsonText(plain.Result));
+        }
+
         [Fact]
         public async Task SeveralCookiesAreSentAsOneHeaderJoinedWithSemicolons()
         {
