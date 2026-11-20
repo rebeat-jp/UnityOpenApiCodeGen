@@ -5,6 +5,7 @@
 ### Fixed
 
 - A response header whose `enum` or `const` matches the received value no longer fails when System.Net.Http reformats the header ([#110](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/110)). `HttpResponseHeaders` re-parses headers such as `Cache-Control` and `Content-Language` and returns them reordered, respaced, re-cased or split (`public, max-age=0, s-maxage=30, must-revalidate` is read back as `public, must-revalidate, max-age=0, s-maxage=30`), and the original text cannot be read on netstandard2.1 / Mono. The generated client now puts each declared value through the same parsing and, when the reformatted forms are equal, reads the declared value. Values outside the `enum` / `const` still raise `JsonSerializationException` (`JsonException` with System.Text.Json). This applies to both the HttpClient and the UnityWebRequest transports; items of array headers are not mapped.
+- With System.Text.Json, an operation whose success response body is a free-form object (`type: object` without `properties`) or any value, and that declares response `headers`, no longer fails to compile with `CS0400` ('Newtonsoft' not found). The `<Operation>HttpInfo` type and the client methods named the Newtonsoft.Json type (`JObject` / `JToken`) instead of `JsonObject` / `JsonElement`. Both the HttpClient and the UnityWebRequest transports were affected.
 
 ### Added
 

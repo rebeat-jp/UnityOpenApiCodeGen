@@ -120,7 +120,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 source.Append(indent).AppendLine("{");
                 source.Append(indent).AppendLine("    StatusCode = response.StatusCode,");
                 source.Append(indent).AppendLine("    Headers = oacgHeaders,");
-                if (plan.ReturnTypeName is not null)
+                if (plan.ReturnTypeName(_json) is not null)
                 {
                     source.Append(indent).Append("    Data = ").Append(data).AppendLine(",");
                 }
@@ -134,7 +134,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 return;
             }
 
-            if (plan.ReturnTypeName is null)
+            if (plan.ReturnTypeName(_json) is null)
             {
                 source.Append(indent).AppendLine("return;");
             }
