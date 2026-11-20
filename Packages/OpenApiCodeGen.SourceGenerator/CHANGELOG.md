@@ -4,7 +4,12 @@
 
 ### Fixed
 
+- A response header whose `enum` or `const` matches the received value no longer fails when System.Net.Http reformats the header ([#110](https://github.com/rebeat-jp/UnityOpenApiCodeGen/issues/110)). `HttpResponseHeaders` re-parses headers such as `Cache-Control` and `Content-Language` and returns them reordered, respaced, re-cased or split (`public, max-age=0, s-maxage=30, must-revalidate` is read back as `public, must-revalidate, max-age=0, s-maxage=30`), and the original text cannot be read on netstandard2.1 / Mono. The generated client now puts each declared value through the same parsing and, when the reformatted forms are equal, reads the declared value. Values outside the `enum` / `const` still raise `JsonSerializationException` (`JsonException` with System.Text.Json). This applies to both the HttpClient and the UnityWebRequest transports; items of array headers are not mapped.
 - Check `schema.const` on response headers, text response bodies, parameters (`path` / `query` / `header` / `cookie`) and the values of request bodies, including members of request DTOs. A value that differs from the const used to be accepted; it now fails like an `enum` violation: `JsonSerializationException` (`JsonException` with System.Text.Json) for a response, `ArgumentException` naming the parameter before anything is sent for a request. String, boolean, integer and number consts are supported; numbers are compared by value.
+
+### Added
+
+- `OACG109` (Warning): a `pattern` on a response header that System.Net.Http reformats (`Cache-Control`, `ETag`, `Last-Modified`, ...) is matched against the reformatted value, which can differ from the received text.
 
 ## [0.6.0-preview.3] - 2026-11-16
 

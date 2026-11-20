@@ -258,6 +258,15 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.Append(indent).AppendLine("    if (oacgValues != null)");
             source.Append(indent).AppendLine("    {");
             GeneratedTypeModel type = header.Type.WithNullable(false);
+            IReadOnlyList<string> declared = GetDeclaredHeaderStrings(model, type);
+            if (declared.Count > 0)
+            {
+                source.Append(indent).Append("        oacgValues = ").Append(helpers.CanonicalHeader)
+                    .Append('(').Append(wire).Append(", oacgValues, new string[] { ")
+                    .Append(string.Join(", ", declared.Select(GeneratedSourceEmitter.StringLiteral)))
+                    .AppendLine(" });");
+            }
+
             if (type.Kind == GeneratedTypeKind.Array)
             {
                 GeneratedTypeModel item = type.ItemType!.WithNullable(false);
@@ -293,6 +302,56 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             source.Append(indent).AppendLine("}");
+        }
+
+        /// <summary>
+        /// The string values a scalar header declares (string enum members, const and enum keywords). The
+        /// received value is mapped back to one of them when System.Net.Http only reformatted it (issue 110).
+        /// Array headers are split item by item and are not mapped.
+        /// </summary>
+        private static IReadOnlyList<string> GetDeclaredHeaderStrings(OpenApiGenerationModel model, GeneratedTypeModel type)
+        {
+            var values = new List<string>();
+            if (type.Kind == GeneratedTypeKind.Array)
+            {
+                return values;
+            }
+
+            void add(OpenApiSemanticLiteral literal)
+            {
+                if (literal.Kind == OpenApiSemanticLiteralKind.String && !values.Contains(literal.RawText))
+                {
+                    values.Add(literal.RawText);
+                }
+            }
+
+            if (type.Kind == GeneratedTypeKind.NamedEnum)
+            {
+                GeneratedEnumModel? enumModel = model.Enums.FirstOrDefault(
+                    value => string.Equals(value.Name, type.Name, StringComparison.Ordinal));
+                if (enumModel is not null)
+                {
+                    foreach (GeneratedEnumMemberModel member in enumModel.Members)
+                    {
+                        add(member.Value);
+                    }
+                }
+            }
+
+            if (type.ConstValue.HasValue)
+            {
+                add(type.ConstValue.Value);
+            }
+
+            foreach (GeneratedConstraints set in type.ConstraintSets)
+            {
+                foreach (OpenApiSemanticLiteral literal in set.AllowedValues)
+                {
+                    add(literal);
+                }
+            }
+
+            return values;
         }
 
         /// <summary>

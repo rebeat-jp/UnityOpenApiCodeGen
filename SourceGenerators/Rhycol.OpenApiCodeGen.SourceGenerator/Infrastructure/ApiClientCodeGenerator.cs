@@ -234,6 +234,14 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
 
+        private static readonly DiagnosticDescriptor NormalizedHeaderPatternDiagnostic = new(
+            "OACG109",
+            "Response header pattern is checked against the reformatted value",
+            "OpenAPI response header for '{0}' at logical path '{1}': {2}",
+            "OpenApiCodeGen",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
         /// <summary>
         /// ジェネレータの初期化。
         /// Initializes the generator.

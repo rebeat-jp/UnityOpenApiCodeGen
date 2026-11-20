@@ -64,7 +64,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         internal IReadOnlyList<GeneratedOperationModel> Operations { get; }
         internal IReadOnlyList<GeneratedTypeNameCollision> TypeNameCollisions { get; }
 
-        /// <summary>Warnings about ignored elements, reported as OACG108.</summary>
+        /// <summary>Warnings about ignored elements (OACG108) and reformatted response header patterns (OACG109).</summary>
         internal IReadOnlyList<OpenApiSemanticWarning> Warnings { get; }
     }
 

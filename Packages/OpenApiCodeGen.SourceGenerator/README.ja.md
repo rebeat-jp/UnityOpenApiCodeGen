@@ -358,6 +358,7 @@ parameter（仕様どおり無視）、`webhooks`・operationの`callbacks`・re
 | `OACG106` | Invalid generated API identifier | `operationId`の重複 |
 | `OACG107` | Generated type name collision | Warning。型名をsuffixで解消 |
 | `OACG108` | Ignored OpenAPI element | Warning。無視した要素（wire contractは不変） |
+| `OACG109` | Response header pattern is checked against the reformatted value | Warning。System.Net.Httpが整形し直すresponse header（`Cache-Control`、`ETag`、`Last-Modified`など）の`pattern`。`enum`・`const`は影響なし |
 
 ## 生成されたDTOとHTTPクライアント
 

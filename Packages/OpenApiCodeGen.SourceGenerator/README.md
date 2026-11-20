@@ -661,6 +661,7 @@ Bundle and semantic failures use stable diagnostics including:
 | `OACG106` | Invalid generated API identifier | A duplicated explicit `operationId` |
 | `OACG107` | Generated type name collision | Warning: the name was disambiguated with a deterministic suffix |
 | `OACG108` | Ignored OpenAPI element | Warning: reported with its logical path; never changes the wire contract |
+| `OACG109` | Response header pattern is checked against the reformatted value | Warning: a `pattern` on a response header that System.Net.Http reformats (`Cache-Control`, `ETag`, `Last-Modified`, ...); `enum` / `const` are unaffected |
 
 The analyzer reads both Bundle v1 and v2. Bundle v1 remains available for
 backward compatibility; the Editor always writes Bundle v2. The complete

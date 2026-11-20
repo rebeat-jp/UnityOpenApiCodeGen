@@ -75,6 +75,8 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             internal string SplitHeader => Prefix + "SplitHeader";
 
+            internal string CanonicalHeader => Prefix + "CanonicalHeader";
+
             internal string Parse => Prefix + "Parse";
 
             internal string ParseBool => Prefix + "ParseBool";
@@ -675,7 +677,44 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
             return items;
         }
-".Replace("__COLLECT__", names.CollectHeaders).Replace("__GETHEADER__", names.GetHeader).Replace("__SPLIT__", names.SplitHeader));
+
+        // System.Net.Http re-parses the headers it knows (Cache-Control, Content-Language, ...) and returns them
+        // reformatted (reordered, respaced, split), and the original text cannot be read back on netstandard2.1 / Mono.
+        // A declared value is put through the same parsing; when its reformatted form equals the received one, the
+        // declared spelling is returned so the enum / const checks see it. Otherwise the received values are returned.
+        private static string[] __CANON__(string name, string[] values, string[] declared)
+        {
+            foreach (string value in declared)
+            {
+                if (values.Length == 1 && global::System.String.Equals(values[0], value, global::System.StringComparison.Ordinal))
+                {
+                    return values;
+                }
+            }
+            foreach (string value in declared)
+            {
+                using (var probe = new global::System.Net.Http.HttpResponseMessage())
+                {
+                    probe.Content = new global::System.Net.Http.ByteArrayContent(global::System.Array.Empty<byte>());
+                    global::System.Collections.Generic.IEnumerable<string>? reformatted;
+                    if (probe.Headers.TryAddWithoutValidation(name, value))
+                    {
+                        if (!probe.Headers.TryGetValues(name, out reformatted)) continue;
+                    }
+                    else if (!probe.Content.Headers.TryAddWithoutValidation(name, value) ||
+                             !probe.Content.Headers.TryGetValues(name, out reformatted))
+                    {
+                        continue;
+                    }
+                    if (reformatted != null && global::System.Linq.Enumerable.SequenceEqual(reformatted, values, global::System.StringComparer.Ordinal))
+                    {
+                        return new[] { value };
+                    }
+                }
+            }
+            return values;
+        }
+".Replace("__COLLECT__", names.CollectHeaders).Replace("__GETHEADER__", names.GetHeader).Replace("__SPLIT__", names.SplitHeader).Replace("__CANON__", names.CanonicalHeader));
             }
         }
     }
