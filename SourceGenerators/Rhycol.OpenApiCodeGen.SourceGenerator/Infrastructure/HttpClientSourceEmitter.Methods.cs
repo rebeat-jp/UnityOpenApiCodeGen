@@ -86,7 +86,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             // The data method forwards to the WithHttpInfo method and returns its Data.
             GeneratedResponsePlanModel plan = operation.ResponsePlan!;
-            string? returnType = plan.ReturnTypeName;
+            string? returnType = plan.ReturnTypeName(_json);
             string taskType = returnType is null
                 ? "global::System.Threading.Tasks.Task"
                 : "global::System.Threading.Tasks.Task<" + returnType + ">";
@@ -141,9 +141,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
             if (plan is not null)
             {
-                return plan.ReturnTypeName is null
+                return plan.ReturnTypeName(_json) is null
                     ? "global::System.Threading.Tasks.Task"
-                    : "global::System.Threading.Tasks.Task<" + plan.ReturnTypeName + ">";
+                    : "global::System.Threading.Tasks.Task<" + plan.ReturnTypeName(_json) + ">";
             }
 
             return operation.ResponseType is null

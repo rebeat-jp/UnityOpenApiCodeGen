@@ -206,7 +206,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             source.AppendLine();
             source.AppendLine("        /// <summary>Every response header (and content header), by name, case-insensitive.</summary>");
             source.AppendLine("        public global::System.Collections.Generic.IReadOnlyDictionary<string, string[]> Headers { get; internal set; } = new global::System.Collections.Generic.Dictionary<string, string[]>();");
-            if (plan.ReturnTypeName is string dataType)
+            if (plan.ReturnTypeName(_json) is string dataType)
             {
                 source.AppendLine();
                 source.AppendLine("        /// <summary>The data the method without HttpInfo returns.</summary>");
