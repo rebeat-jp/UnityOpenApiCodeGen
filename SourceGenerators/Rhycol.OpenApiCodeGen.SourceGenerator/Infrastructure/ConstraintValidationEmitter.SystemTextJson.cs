@@ -58,6 +58,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 source.AppendLine("            }");
             }
 
+            AppendConstCheck(source, "            ", type);
             AppendAssertionCalls(
                 source, "            ", dto is null ? type.AssertionRoots : type.AssertionRoots.Concat(dto.AssertionRoots).ToArray(),
                 "token", "path", "contract", normalizeToken: false);
@@ -764,6 +765,41 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (global::System.Array.IndexOf(values, text) < 0)
             {
                 __P__Fail(contract, path, ""enum"", ""the value is not one of the allowed values"");
+            }
+        }
+
+        // kind: 0 string, 1 boolean, 2 number (compared by value: 1 equals 1.0).
+        private static void __P__Const(global::System.Text.Json.JsonElement token, string path, string contract, int kind, string expected)
+        {
+            bool equal;
+            if (kind == 0 && token.ValueKind == global::System.Text.Json.JsonValueKind.String)
+            {
+                equal = string.Equals(token.GetString(), expected, global::System.StringComparison.Ordinal);
+            }
+            else if (kind == 1 && (token.ValueKind == global::System.Text.Json.JsonValueKind.True || token.ValueKind == global::System.Text.Json.JsonValueKind.False))
+            {
+                equal = token.GetBoolean() == (expected == ""true"");
+            }
+            else if (kind == 2 && token.ValueKind == global::System.Text.Json.JsonValueKind.Number)
+            {
+                if (token.TryGetDecimal(out decimal left) &&
+                    global::System.Decimal.TryParse(expected, global::System.Globalization.NumberStyles.Float, global::System.Globalization.CultureInfo.InvariantCulture, out decimal right))
+                {
+                    equal = left == right;
+                }
+                else
+                {
+                    equal = token.GetDouble() ==
+                            global::System.Double.Parse(expected, global::System.Globalization.NumberStyles.Float, global::System.Globalization.CultureInfo.InvariantCulture);
+                }
+            }
+            else
+            {
+                return;
+            }
+            if (!equal)
+            {
+                __P__Fail(contract, path, ""const"", ""the value does not equal the declared value"");
             }
         }
 

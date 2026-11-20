@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Check `schema.const` on response headers, text response bodies, parameters (`path` / `query` / `header` / `cookie`) and the values of request bodies, including members of request DTOs. A value that differs from the const used to be accepted; it now fails like an `enum` violation: `JsonSerializationException` (`JsonException` with System.Text.Json) for a response, `ArgumentException` naming the parameter before anything is sent for a request. String, boolean, integer and number consts are supported; numbers are compared by value.
+
 ## [0.6.0-preview.3] - 2026-11-16
 
 ### Added

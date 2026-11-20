@@ -847,7 +847,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td><code>const</code></td>
 <td>Partial</td>
-<td>OpenAPI 3.1のscalar const（string／integer／number／boolean）。成功応答では値の一致を検査し（integer／numberは数値として比較するため<code>2.0</code>は<code>2</code>と等価）、不一致は<code>JsonSerializationException</code>です。request DTOでは、string／整数／浮動小数／decimal／booleanのDTO propertyの初期値になるだけで、request側で値は検証しません（nullableな任意propertyは初期値の対象外）。object／array値は<code>OACG101</code>、schema型と合わない値は<code>OACG100</code>です。<code>null</code>や単一のscalar型を持たないschemaのconst、<code>enum</code>と併記したconstは<code>OACG108</code>で無視します。</td>
+<td>OpenAPI 3.1のscalar const（string／integer／number／boolean）。成功応答では値の一致を検査し（integer／numberは数値として比較するため<code>2.0</code>は<code>2</code>と等価）、不一致は<code>JsonSerializationException</code>です。応答headerとtext bodyも同じく検査し、不一致は同じ例外（System.Text.Jsonでは<code>JsonException</code>）です。request側ではparameter（path／query／header／cookie）とrequest bodyの値（DTO propertyを含む）を送信前に検査し、不一致は<code>ArgumentException</code>です（enumの違反と同じ扱い）。request DTOでは、string／整数／浮動小数／decimal／booleanのDTO propertyの初期値にもなります（nullableな任意propertyは初期値の対象外）。object／array値は<code>OACG101</code>、schema型と合わない値は<code>OACG100</code>です。<code>null</code>や単一のscalar型を持たないschemaのconst、<code>enum</code>と併記したconstは<code>OACG108</code>で無視します。</td>
 </tr>
 <tr>
 <td>description / title / deprecated / default</td>

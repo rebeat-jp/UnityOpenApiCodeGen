@@ -163,7 +163,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                 return false;
             }
 
-            if (type.ConstraintSets.Count > 0 || type.AssertionRoots.Count > 0)
+            if (type.ConstraintSets.Count > 0 || type.AssertionRoots.Count > 0 || HasConstCheck(type))
             {
                 return true;
             }
@@ -389,6 +389,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             }
 
             AppendOwnChecks(source, "            ", own, "token", "path", "contract", contractScope: false);
+            AppendConstCheck(source, "            ", type);
             AppendAssertionCalls(
                 source, "            ", dto is null ? type.AssertionRoots : type.AssertionRoots.Concat(dto.AssertionRoots).ToArray(),
                 "token", "path", "contract", normalizeToken: true);
@@ -592,6 +593,36 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                         .AppendLine(");");
                 }
             }
+        }
+
+        // A typed value (parameter, response header, text body, request member) has no JSON converter that
+        // compares it with a const, so the validator does (null is skipped like every other check).
+        private static bool HasConstCheck(GeneratedTypeModel type)
+        {
+            return type.ConstValue.HasValue && type.ConstValue.Value.Kind != OpenApiSemanticLiteralKind.Null;
+        }
+
+        /// <summary>
+        /// Writes the check that the token equals the const of <paramref name="type"/>. A token of another
+        /// JSON type is ignored (the type is checked when the value is parsed).
+        /// </summary>
+        private void AppendConstCheck(StringBuilder source, string indent, GeneratedTypeModel type)
+        {
+            if (!HasConstCheck(type))
+            {
+                return;
+            }
+
+            _helpersNeeded = true;
+            OpenApiSemanticLiteral literal = type.ConstValue!.Value;
+            string kind = literal.Kind switch
+            {
+                OpenApiSemanticLiteralKind.String => "0",
+                OpenApiSemanticLiteralKind.Boolean => "1",
+                _ => "2",
+            };
+            source.Append(indent).Append(_prefix).Append("Const(token, path, contract, ").Append(kind).Append(", ")
+                .Append(GeneratedSourceEmitter.StringLiteral(literal.RawText)).AppendLine(");");
         }
 
         private void AppendBound(
@@ -1317,6 +1348,48 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             if (global::System.Array.IndexOf(values, text) < 0)
             {
                 __P__Fail(contract, path, ""enum"", ""the value is not one of the allowed values"");
+            }
+        }
+
+        // kind: 0 string, 1 boolean, 2 number (compared by value: 1 equals 1.0).
+        private static void __P__Const(global::Newtonsoft.Json.Linq.JToken token, string path, string contract, int kind, string expected)
+        {
+            bool equal;
+            if (kind == 0 && __P__TryString(token, out string text))
+            {
+                equal = string.Equals(text, expected, global::System.StringComparison.Ordinal);
+            }
+            else if (kind == 1 && token.Type == global::Newtonsoft.Json.Linq.JTokenType.Boolean)
+            {
+                equal = (bool)token == (expected == ""true"");
+            }
+            else if (kind == 2 && (token.Type == global::Newtonsoft.Json.Linq.JTokenType.Integer || token.Type == global::Newtonsoft.Json.Linq.JTokenType.Float))
+            {
+                object? value = ((global::Newtonsoft.Json.Linq.JValue)token).Value;
+                string actual = global::System.Convert.ToString(value, global::System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+                if (!(value is double) && !(value is float) &&
+                    global::System.Decimal.TryParse(actual, global::System.Globalization.NumberStyles.Float, global::System.Globalization.CultureInfo.InvariantCulture, out decimal left) &&
+                    global::System.Decimal.TryParse(expected, global::System.Globalization.NumberStyles.Float, global::System.Globalization.CultureInfo.InvariantCulture, out decimal right))
+                {
+                    equal = left == right;
+                }
+                else if (value is float single)
+                {
+                    equal = single == global::System.Single.Parse(expected, global::System.Globalization.NumberStyles.Float, global::System.Globalization.CultureInfo.InvariantCulture);
+                }
+                else
+                {
+                    equal = global::System.Convert.ToDouble(value, global::System.Globalization.CultureInfo.InvariantCulture) ==
+                            global::System.Double.Parse(expected, global::System.Globalization.NumberStyles.Float, global::System.Globalization.CultureInfo.InvariantCulture);
+                }
+            }
+            else
+            {
+                return;
+            }
+            if (!equal)
+            {
+                __P__Fail(contract, path, ""const"", ""the value does not equal the declared value"");
             }
         }
 
