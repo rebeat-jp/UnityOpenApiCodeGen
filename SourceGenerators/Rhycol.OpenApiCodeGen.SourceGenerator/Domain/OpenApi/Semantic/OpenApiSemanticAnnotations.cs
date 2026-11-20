@@ -135,25 +135,42 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         }
     }
 
+    /// <summary>Which diagnostic a warning is reported as.</summary>
+    internal enum OpenApiSemanticWarningKind
+    {
+        /// <summary>OACG108: an element was ignored.</summary>
+        IgnoredElement,
+
+        /// <summary>OACG109: a response header pattern is checked against the value System.Net.Http reformatted.</summary>
+        NormalizedHeaderPattern
+    }
+
     /// <summary>
-    /// 解析中に収集した「無視した OpenAPI 要素」の Warning（OACG108 の元データ）。
-    /// A warning about an ignored OpenAPI element collected during parsing (source of OACG108).
+    /// 解析中・モデル構築中に収集した Warning（OACG108 / OACG109 の元データ）。
+    /// A warning collected during parsing or model building (source of OACG108 / OACG109).
     /// </summary>
     internal sealed class OpenApiSemanticWarning : IEquatable<OpenApiSemanticWarning>
     {
-        internal OpenApiSemanticWarning(OpenApiSourceLocation location, string message)
+        internal OpenApiSemanticWarning(
+            OpenApiSourceLocation location,
+            string message,
+            OpenApiSemanticWarningKind kind = OpenApiSemanticWarningKind.IgnoredElement)
         {
             Location = location;
             Message = message ?? throw new ArgumentNullException(nameof(message));
+            Kind = kind;
         }
 
         internal OpenApiSourceLocation Location { get; }
 
         internal string Message { get; }
 
+        internal OpenApiSemanticWarningKind Kind { get; }
+
         public bool Equals(OpenApiSemanticWarning? other)
         {
             return other is not null &&
+                   Kind == other.Kind &&
                    Location.Equals(other.Location) &&
                    string.Equals(Message, other.Message, StringComparison.Ordinal);
         }
@@ -167,7 +184,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         {
             unchecked
             {
-                return (Location.GetHashCode() * 397) ^ StringComparer.Ordinal.GetHashCode(Message);
+                return (((Location.GetHashCode() * 397) ^ StringComparer.Ordinal.GetHashCode(Message)) * 397) ^ (int)Kind;
             }
         }
     }
@@ -186,7 +203,12 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
 
         internal void Add(OpenApiSourceLocation location, string message)
         {
-            var warning = new OpenApiSemanticWarning(location, message);
+            Add(location, message, OpenApiSemanticWarningKind.IgnoredElement);
+        }
+
+        internal void Add(OpenApiSourceLocation location, string message, OpenApiSemanticWarningKind kind)
+        {
+            var warning = new OpenApiSemanticWarning(location, message, kind);
             if (_seen.Add(warning))
             {
                 _warnings.Add(warning);

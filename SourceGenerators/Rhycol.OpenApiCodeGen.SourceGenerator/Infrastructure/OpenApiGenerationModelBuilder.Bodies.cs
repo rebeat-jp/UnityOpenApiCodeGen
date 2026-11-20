@@ -523,6 +523,7 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
                     GeneratedTypeModel resolvedType = ResolveType(header.Schema);
                     GeneratedTypeModel headerType = resolvedType.WithNullable(
                         resolvedType.Nullable || header.Schema.Nullable || !header.Required);
+                    WarnAboutNormalizedHeaderPattern(header, resolvedType);
                     string key = header.Name.ToLowerInvariant();
                     int existing = unionHeaders.FindIndex(value => value.Key == key);
                     string propertyName;
@@ -649,6 +650,44 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             string name = AllocateUniqueName(requestedName, _usedTypeNames);
             _typeNameAllocations.Add(name, new TypeNameAllocation(location, emitsDeclaration: false));
             return name;
+        }
+
+        // The response headers System.Net.Http parses into typed values and returns reformatted (reordered,
+        // respaced or split). The original text cannot be read back on netstandard2.1 / Mono (issue 110).
+        private static readonly HashSet<string> NormalizedResponseHeaders = new HashSet<string>(
+            new[]
+            {
+                "Accept-Ranges", "Age", "Cache-Control", "Connection", "Date", "ETag", "Location", "Pragma",
+                "Proxy-Authenticate", "Retry-After", "Server", "Trailer", "Transfer-Encoding", "Upgrade", "Vary", "Via",
+                "Warning", "WWW-Authenticate", "Allow", "Content-Disposition", "Content-Encoding", "Content-Language",
+                "Content-Length", "Content-Location", "Content-MD5", "Content-Range", "Content-Type", "Expires",
+                "Last-Modified"
+            },
+            StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Reports OACG109 when a header that System.Net.Http reformats declares a pattern: enum and const are
+        /// compared after the declared values are reformatted the same way, but a pattern can only be matched
+        /// against the reformatted value.
+        /// </summary>
+        private void WarnAboutNormalizedHeaderPattern(OpenApiSemanticHeader header, GeneratedTypeModel type)
+        {
+            if (!NormalizedResponseHeaders.Contains(header.Name))
+            {
+                return;
+            }
+
+            GeneratedTypeModel scalar = type.Kind == GeneratedTypeKind.Array ? type.ItemType! : type;
+            if (!type.ConstraintSets.Concat(scalar.ConstraintSets).Any(static set => set.Pattern is not null))
+            {
+                return;
+            }
+
+            _modelWarnings.Add(
+                header.Location,
+                "The pattern of response header '" + header.Name + "' is matched against the value as System.Net.Http " +
+                "returns it, which can differ from the received text in order, spacing, case or value notation; enum and const are not affected.",
+                OpenApiSemanticWarningKind.NormalizedHeaderPattern);
         }
     }
 }

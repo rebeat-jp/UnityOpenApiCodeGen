@@ -22,10 +22,11 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
         }
 
         /// <summary>
-        /// 無視した要素の Warning を OACG108 の Diagnostic に変換する。
+        /// 無視した要素の Warning を OACG108、型付きヘッダーの pattern の Warning を OACG109 の Diagnostic に変換する。
         /// 致命エラーで生成が失敗した場合は、収集済みの warning は報告せずエラー診断のみを報告する
         /// （この変換は生成成功後にだけ呼ばれる）。
-        /// Converts ignored-element warnings into OACG108 diagnostics. When a fatal error aborts
+        /// Converts ignored-element warnings into OACG108 diagnostics and reformatted-header pattern warnings
+        /// into OACG109 diagnostics. When a fatal error aborts
         /// generation, already collected warnings are not reported: only the error diagnostic is
         /// (this conversion is only called after generation succeeded).
         /// </summary>
@@ -38,7 +39,9 @@ namespace Rhycol.OpenApiCodeGen.SourceGenerator
             {
                 string sourcePath = GetCollisionSourcePath(warning.Location, bundleSourcePath);
                 diagnostics.Add(Diagnostic.Create(
-                    IgnoredOpenApiElementDiagnostic,
+                    warning.Kind == OpenApiSemanticWarningKind.NormalizedHeaderPattern
+                        ? NormalizedHeaderPatternDiagnostic
+                        : IgnoredOpenApiElementDiagnostic,
                     CreateExternalLocation(sourcePath, warning.Location.Line, warning.Location.Column),
                     sourcePath,
                     warning.Location.LogicalPath,

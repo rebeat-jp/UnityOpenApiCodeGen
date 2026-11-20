@@ -635,7 +635,7 @@ diagnosticのlogical pathはnormalized treeのtraversalで復元します。</p>
 <tr>
 <td>response header</td>
 <td>Partial</td>
-<td>成功responseの<code>headers</code>は、そのoperationに<code>&lt;name&gt;WithHttpInfo</code>メソッド（追加メソッド。<code>&lt;Name&gt;HttpInfo</code>クラスを返す）を生成して公開します。<code>StatusCode</code>、raw <code>Headers</code>（<code>IReadOnlyDictionary&lt;string, string[]&gt;</code>、大小文字を区別しない）、<code>Data</code>（通常のメソッドの戻り値）と、宣言headerごとの型付きプロパティ（<code>X-Rate-Limit</code>は<code>XRateLimit</code>）を持ちます。headerは<code>simple</code>style（scalarとscalarの配列。配列はカンマ区切り）、型は<code>int</code>・<code>double</code>・<code>bool</code>・<code>DateTime</code>・<code>Guid</code>・enumなどをinvariant cultureで読み、不正な値と<code>required</code>の欠落は<code>JsonSerializationException</code>です。通常のメソッドは同じ検査を行い<code>Data</code>だけを返します（headerを宣言したoperationだけが対象で、ほかのoperationに<code>WithHttpInfo</code>は生成しません）。header objectの<code>content</code>、objectのheader、<code>style: simple</code>以外は<code>OACG101</code>、<code>Content-Type</code>は仕様どおり<code>OACG108</code>で無視します。エラーresponseのheaderは検証だけで公開しません。<code>headers</code>はobjectが必要で、scalar・array・nullは位置付き<code>OACG100</code>です。</td>
+<td>成功responseの<code>headers</code>は、そのoperationに<code>&lt;name&gt;WithHttpInfo</code>メソッド（追加メソッド。<code>&lt;Name&gt;HttpInfo</code>クラスを返す）を生成して公開します。<code>StatusCode</code>、raw <code>Headers</code>（<code>IReadOnlyDictionary&lt;string, string[]&gt;</code>、大小文字を区別しない）、<code>Data</code>（通常のメソッドの戻り値）と、宣言headerごとの型付きプロパティ（<code>X-Rate-Limit</code>は<code>XRateLimit</code>）を持ちます。headerは<code>simple</code>style（scalarとscalarの配列。配列はカンマ区切り）、型は<code>int</code>・<code>double</code>・<code>bool</code>・<code>DateTime</code>・<code>Guid</code>・enumなどをinvariant cultureで読み、不正な値と<code>required</code>の欠落は<code>JsonSerializationException</code>です。通常のメソッドは同じ検査を行い<code>Data</code>だけを返します（headerを宣言したoperationだけが対象で、ほかのoperationに<code>WithHttpInfo</code>は生成しません）。header objectの<code>content</code>、objectのheader、<code>style: simple</code>以外は<code>OACG101</code>、<code>Content-Type</code>は仕様どおり<code>OACG108</code>で無視します。エラーresponseのheaderは検証だけで公開しません。<code>headers</code>はobjectが必要で、scalar・array・nullは位置付き<code>OACG100</code>です。<code>Cache-Control</code>・<code>Content-Language</code>などSystem.Net.Httpが型付きで解析し直すheaderは、受信した文字列から並べ替え・空白・大文字小文字・分割・値の表記（<code>max-age=00</code>→<code>max-age=0</code>など）が変わった形でしか読めません（netstandard2.1・Monoでは元の文字列を取り出せません）。scalarのheaderの<code>enum</code>・<code>const</code>は、宣言値を同じ方法で解析し直した形と比べ、一致すれば宣言どおりの値として読みます（宣言にない値は従来どおり<code>JsonSerializationException</code>です）。<code>pattern</code>は解析し直した後の文字列に当てるため、そのheaderに<code>pattern</code>があれば<code>OACG109</code>のWarningを報告します。配列のheaderの項目は対象外です。</td>
 </tr>
 <tr>
 <td><code>components.headers</code></td>
@@ -1788,6 +1788,12 @@ NuGetForUnityや手動配置のDLLでも、参照があれば検出します。<
 <td>Warning</td>
 <td>Ignored OpenAPI element</td>
 <td>要素を意図して無視した場合。wire contractは変わりません。ドキュメント専用の要素（<code>description</code>・<code>example</code>など）は黙って受理するので報告しません。主な場面: <code>Accept</code>／<code>Content-Type</code>／<code>Authorization</code>のheader parameter、webhooks・callbacks・links（とcomponentsの<code>links</code>・<code>callbacks</code>）、生成できる他のmedia typeがあるときのobject・arrayのxml、処理できない別media typeや生成できないerror schema、評価できない<code>not</code>・<code>const</code>・<code>x-enum-*</code>・<code>discriminator</code>、.NET構文を要する<code>pattern</code>、binaryに付いた制約キーワード、Encoding Objectの無視した項目、3.2の<code>itemSchema</code>（逐次media type）・<code>prefixEncoding</code>／<code>itemEncoding</code>・他documentを参照する<code>$self</code>、Swagger 2.0でhostがないときのoperationの<code>schemes</code></td>
+</tr>
+<tr>
+<td><code>OACG109</code></td>
+<td>Warning</td>
+<td>Response header pattern is checked against the reformatted value</td>
+<td>System.Net.Httpが型付きで解析し直すresponse header（<code>Cache-Control</code>、<code>ETag</code>、<code>Last-Modified</code>など）に<code>pattern</code>がある場合。<code>pattern</code>は並べ替え・空白・大文字小文字などが変わった後の文字列に当たります。<code>enum</code>・<code>const</code>は影響を受けません</td>
 </tr>
 </tbody></table>
 <h2 id="player互換性il2cppwebgl">Player互換性（IL2CPP・WebGL）</h2>
